@@ -37,19 +37,12 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
-            mkdir -p /arm-root/output
             cd rkgame-rebuild
-            bash build.sh /arm-root/output/rkgame
-
-        - name: abi-check
-          script: |
-            set -e
-            ls -la /arm-root/output/
+            bash build.sh output/rkgame
+            ls -la output/rkgame
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=/arm-root/output/rkgame
-            test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
+            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
@@ -95,19 +88,12 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
-            mkdir -p /arm-root/output
             cd rkgame-rebuild
-            bash build.sh /arm-root/output/rkgame
-
-        - name: abi-check
-          script: |
-            set -e
-            ls -la /arm-root/output/
+            bash build.sh output/rkgame
+            ls -la output/rkgame
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=/arm-root/output/rkgame
-            test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
+            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
