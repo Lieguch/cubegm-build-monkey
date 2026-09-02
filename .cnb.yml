@@ -41,10 +41,6 @@ main:
             bash build.sh output/rkgame
             ls -la output/rkgame
             echo "BUILD DONE"
-            cd ..
-            git config user.name "cnb" && git config user.email "cnb@cnb.cool"
-            git add rkgame-rebuild/output/rkgame
-            git commit -m "artifact: rkgame binary $(date +%s)" 2>/dev/null && git push origin HEAD:artifact 2>/dev/null || echo "artifact push skipped"
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -88,7 +84,3 @@ main:
             bash build.sh output/rkgame
             ls -la output/rkgame
             echo "BUILD DONE"
-            cd ..
-            git config user.name "cnb" && git config user.email "cnb@cnb.cool"
-            git add rkgame-rebuild/output/rkgame
-            git commit -m "artifact: rkgame binary $(date +%s)" 2>/dev/null && git push origin HEAD:artifact 2>/dev/null || echo "artifact push skipped"
