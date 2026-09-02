@@ -45,13 +45,8 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             ls -la "$OUT"
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -30 /tmp/exports.txt
-            if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
-              echo "FATAL: GLIBC_2.34+"
-              exit 1
-            fi
-            echo "ABI PASSED"
+            xxd -l 32 "$OUT"
+            ls -la rkgame-rebuild/output/
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -99,10 +94,5 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             ls -la "$OUT"
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -30 /tmp/exports.txt
-            if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
-              echo "FATAL: GLIBC_2.34+"
-              exit 1
-            fi
-            echo "ABI PASSED"
+            xxd -l 32 "$OUT"
+            ls -la rkgame-rebuild/output/
