@@ -12,26 +12,20 @@ main:
             set -e
             export DEBIAN_FRONTEND=noninteractive
             if [ -f /arm-root/lib/arm-linux-gnueabihf/libc.so ]; then
-              echo "Sysroot cached"
-              exit 0
+              echo "Sysroot cached"; exit 0
             fi
             apt-get update -qq
             apt-get install -y --no-install-recommends wget dpkg-dev gpg ca-certificates
-            echo "stretch-armhf sources"
-            echo "deb [arch=armhf] http://archive.debian.org/debian stretch main" > /etc/apt/sources.list.d/stretch-armhf.list
-            apt-get update -qq
-            echo "multiarch"
+            echo "deb [arch=armhf trusted=yes] http://archive.debian.org/debian stretch main" > /etc/apt/sources.list.d/stretch-armhf.list
             dpkg --add-architecture armhf
             apt-get update -qq
-            mkdir -p /tmp/arm-pkgs /tmp/arm-root
+            mkdir -p /tmp/arm-pkgs
             cd /tmp/arm-pkgs
-            apt-get download -t stretch libc6:armhf libc6-dev:armhf libstdc++6:armhf libgcc1:armhf linux-libc-dev:armhf libc-bin:armhf libm6:armhf 2>&1 | tail -5
-            echo "extracting"
+            apt-get download -t stretch libc6:armhf libc6-dev:armhf libstdc++6:armhf libgcc1:armhf linux-libc-dev:armhf libc-bin:armhf libm6:armhf 2>&1 | tail -10
+            mkdir -p /tmp/arm-root
             for deb in /tmp/arm-pkgs/*.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
-            echo "verify"
             ls /tmp/arm-root/lib/arm-linux-gnueabihf/libc.so
             find /tmp/arm-root -name "libdl*" | head -5
-            echo "copy"
             mkdir -p /arm-root
             cp -a /tmp/arm-root/. /arm-root/
             echo "DONE"
