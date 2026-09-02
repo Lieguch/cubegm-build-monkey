@@ -44,7 +44,11 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            file "$OUT"
+            echo "STEP1: ls" && ls -la "$OUT"
+            echo "STEP2: file" && file "$OUT"
+            echo "STEP3: which python3" && which python3
+            echo "STEP4: py ver" && python3 --version
+            echo "STEP5: py read" && python3 -c "d=open('rkgame-rebuild/output/rkgame','rb').read(); print(len(d))"
             python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
@@ -97,7 +101,11 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            file "$OUT"
+            echo "STEP1: ls" && ls -la "$OUT"
+            echo "STEP2: file" && file "$OUT"
+            echo "STEP3: which python3" && which python3
+            echo "STEP4: py ver" && python3 --version
+            echo "STEP5: py read" && python3 -c "d=open('rkgame-rebuild/output/rkgame','rb').read(); print(len(d))"
             python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
