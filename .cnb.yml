@@ -39,10 +39,11 @@ main:
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
             cd rkgame-rebuild
             bash build.sh output/rkgame
-            ls -la output/rkgame
+            ls -la output/
+            if [ ! -f output/rkgame ]; then echo "BINARY MISSING"; exit 1; fi
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt
+            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt || true
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
@@ -90,10 +91,11 @@ main:
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
             cd rkgame-rebuild
             bash build.sh output/rkgame
-            ls -la output/rkgame
+            ls -la output/
+            if [ ! -f output/rkgame ]; then echo "BINARY MISSING"; exit 1; fi
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt
+            arm-linux-gnueabihf-objdump -T output/rkgame > /tmp/exports.txt || true
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
