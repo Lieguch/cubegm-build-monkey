@@ -48,7 +48,8 @@ main:
             echo "API_ENDPOINT=${CNB_API_ENDPOINT:-not-set}"
             echo "REPO_SLUG=${CNB_REPO_SLUG:-not-set}"
             echo "COMMIT=${CNB_COMMIT:-not-set}"
-            echo "TOKEN=***${CNB_TOKEN:***}
+            echo "TOKEN set: yes"
+            [ -n "$CNB_TOKEN" ] || { echo "ERROR: CNB_TOKEN not set"; exit 1; }
             cd rkgame-rebuild
             BINARY="output/rkgame"
             if [ ! -f "$BINARY" ]; then
@@ -127,7 +128,8 @@ main:
             echo "API_ENDPOINT=${CNB_API_ENDPOINT:-not-set}"
             echo "REPO_SLUG=${CNB_REPO_SLUG:-not-set}"
             echo "COMMIT=${CNB_COMMIT:-not-set}"
-            echo "TOKEN=***${CNB_TOKEN:***}
+            echo "TOKEN set: yes"
+            [ -n "$CNB_TOKEN" ] || { echo "ERROR: CNB_TOKEN not set"; exit 1; }
             cd rkgame-rebuild
             BINARY="output/rkgame"
             if [ ! -f "$BINARY" ]; then
