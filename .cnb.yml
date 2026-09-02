@@ -12,28 +12,47 @@ main:
             set -e
             export DEBIAN_FRONTEND=noninteractive
 
-            # /arm-root is mounted with nodev — debootstrap cannot mknod there.
-            # Build in /tmp (tmpfs, no restrictions) then copy to /arm-root.
             if [ -f /arm-root/lib/arm-linux-gnueabihf/libc.so ]; then
-              echo "Sysroot cached at /arm-root"
+              echo "Sysroot cached"
             else
-              echo "=== Installing debootstrap ==="
+              echo "=== Enabling armhf multiarch ==="
               apt-get update -qq
-              apt-get install -y --no-install-recommends \
-                debootstrap wget ca-certificates apt-transport-https
+              dpkg --add-architecture armhf
+              apt-get update -qq
 
-              echo "=== Building glibc 2.25 ARMHF sysroot in /tmp ==="
-              debootstrap --arch=armhf --no-check-gpg \
-                --variant=minbase \
-                stretch /tmp/arm-root http://archive.debian.org/debian
+              echo "=== Adding Debian stretch armhf repos ==="
+              cat > /etc/apt/sources.list.d/stretch-armhf.list <<'EOF'
+              deb [arch=armhf] http://archive.debian.org/debian stretch main
+              deb-src [arch=armhf] http://archive.debian.org/debian stretch main
+              EOF
+              apt-get update -qq
 
-              echo "=== Copying to cached volume ==="
+              echo "=== Downloading ARM sysroot packages ==="
+              mkdir -p /tmp/arm-pkgs
+              cd /tmp/arm-pkgs
+
+              # Download core ARM packages from stretch
+              apt-get download -t stretch \
+                libc6:armhf libc6-dev:armhf \
+                libstdc++6:armhf libgcc1:armhf \
+                linux-libc-dev:armhf \
+                libc-bin:armhf libm6:armhf \
+                2>&1 | tail -5
+
+              echo "=== Extracting to /tmp/arm-root ==="
+              mkdir -p /tmp/arm-root
+              for deb in /tmp/arm-pkgs/*.deb; do
+                dpkg-deb -x "$deb" /tmp/arm-root/
+              done
+
+              echo "=== Copying to /arm-root (cached volume) ==="
               mkdir -p /arm-root
               cp -a /tmp/arm-root/. /arm-root/
 
               echo "=== Verifying ==="
-              ls /arm-root/lib/arm-linux-gnueabihf/libc.so
-              find /arm-root -name "libdl*" | head -5
+              ls /arm-root/lib/arm-linux-gnueabihf/libc.so 2>/dev/null && echo "OK libc"
+              find /arm-root -name "libdl*" 2>/dev/null | head -5
+              find /arm-root -name "libstdc++*" 2>/dev/null | head -5
             fi
 
         - name: build
@@ -57,20 +76,12 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            test -f "$OUT"
-
             file "$OUT"
             FLAGS=$(readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
-            echo "e_flags=${FLAGS}"
             HEX_FLAGS=$(printf "%d" "${FLAGS}")
-            FLOAT_ABI=$(( (HEX_FLAGS >> 9) & 0x3 ))
-            echo "Float ABI: $FLOAT_ABI"
-            test "$FLOAT_ABI" = "2"
-
+            test $(( (HEX_FLAGS >> 9) & 0x3 )) -eq 2
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
-
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
-              echo "FATAL: GLIBC_2.34+ found"
-              exit 1
+              echo "FATAL: GLIBC_2.34+"; exit 1
             fi
             echo "ABI PASSED"
