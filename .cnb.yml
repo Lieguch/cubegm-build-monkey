@@ -42,6 +42,42 @@ main:
             ls -la output/rkgame
             echo "BUILD DONE"
 
+        - name: pack-and-upload
+          script: |
+            set -e
+            echo "API_ENDPOINT=${CNB_API_ENDPOINT:-not-set}"
+            echo "REPO_SLUG=${CNB_REPO_SLUG:-not-set}"
+            echo "COMMIT=${CNB_COMMIT:-not-set}"
+            echo "TOKEN=***${CNB_TOKEN:***}
+            cd rkgame-rebuild
+            BINARY="output/rkgame"
+            if [ ! -f "$BINARY" ]; then
+              echo "ERROR: $BINARY not found"; exit 1
+            fi
+            tar -czf dist.tar.gz "$BINARY"
+            FILE_SIZE=$(stat -c%s dist.tar.gz)
+            echo "dist.tar.gz size=$FILE_SIZE"
+            UPLOAD_URL=$(curl -sS -X POST \
+              -H "Authorization: Bearer $CNB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/vnd.cnb.api+json" \
+              -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
+              "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
+            echo "GET_UPLOAD_URL_RESP: $UPLOAD_URL"
+            SIGNED_URL=$(echo "$UPLOAD_URL" | grep -o '"upload_url"[^,]*' | cut -d'"' -f4)
+            VERIFY_URL=$(echo "$UPLOAD_URL" | grep -o '"verify_url"[^,]*' | cut -d'"' -f4)
+            echo "SIGNED_URL=*** $SIGNED_URL"
+            echo "VERIFY_URL=*** $VERIFY_URL"
+            [ -n "$SIGNED_URL" ] || { echo "Failed to parse upload_url"; exit 1; }
+            [ -n "$VERIFY_URL" ] || { echo "Failed to parse verify_url"; exit 1; }
+            curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL"
+            echo "PUT OK"
+            curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" \
+              -H "Accept: application/vnd.cnb.api+json" "$VERIFY_URL"
+            echo "VERIFY OK"
+            echo "DOWNLOAD_URL: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
+            echo "UPLOAD DONE"
+
   api_trigger_build:
     - name: rkgame-rebuild
       docker:
@@ -84,3 +120,39 @@ main:
             bash build.sh output/rkgame
             ls -la output/rkgame
             echo "BUILD DONE"
+
+        - name: pack-and-upload
+          script: |
+            set -e
+            echo "API_ENDPOINT=${CNB_API_ENDPOINT:-not-set}"
+            echo "REPO_SLUG=${CNB_REPO_SLUG:-not-set}"
+            echo "COMMIT=${CNB_COMMIT:-not-set}"
+            echo "TOKEN=***${CNB_TOKEN:***}
+            cd rkgame-rebuild
+            BINARY="output/rkgame"
+            if [ ! -f "$BINARY" ]; then
+              echo "ERROR: $BINARY not found"; exit 1
+            fi
+            tar -czf dist.tar.gz "$BINARY"
+            FILE_SIZE=$(stat -c%s dist.tar.gz)
+            echo "dist.tar.gz size=$FILE_SIZE"
+            UPLOAD_URL=$(curl -sS -X POST \
+              -H "Authorization: Bearer $CNB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/vnd.cnb.api+json" \
+              -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
+              "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
+            echo "GET_UPLOAD_URL_RESP: $UPLOAD_URL"
+            SIGNED_URL=$(echo "$UPLOAD_URL" | grep -o '"upload_url"[^,]*' | cut -d'"' -f4)
+            VERIFY_URL=$(echo "$UPLOAD_URL" | grep -o '"verify_url"[^,]*' | cut -d'"' -f4)
+            echo "SIGNED_URL=*** $SIGNED_URL"
+            echo "VERIFY_URL=*** $VERIFY_URL"
+            [ -n "$SIGNED_URL" ] || { echo "Failed to parse upload_url"; exit 1; }
+            [ -n "$VERIFY_URL" ] || { echo "Failed to parse verify_url"; exit 1; }
+            curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL"
+            echo "PUT OK"
+            curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" \
+              -H "Accept: application/vnd.cnb.api+json" "$VERIFY_URL"
+            echo "VERIFY OK"
+            echo "DOWNLOAD_URL: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
+            echo "UPLOAD DONE"
