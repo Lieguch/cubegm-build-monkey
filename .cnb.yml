@@ -5,6 +5,7 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
+          - /output-bin:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -37,17 +38,17 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
+            mkdir -p /output-bin
             cd rkgame-rebuild
-            bash build.sh output/rkgame
+            bash build.sh /output-bin/rkgame
 
         - name: abi-check
           script: |
             set -e
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=rkgame-rebuild/output/rkgame
-            test -f "$OUT" && echo "FILE EXISTS" || echo "FILE NOT FOUND"
-            ls -la rkgame-rebuild/output/
+            OUT=/output-bin/rkgame
+            test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
@@ -62,6 +63,7 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
+          - /output-bin:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -94,17 +96,17 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
+            mkdir -p /output-bin
             cd rkgame-rebuild
-            bash build.sh output/rkgame
+            bash build.sh /output-bin/rkgame
 
         - name: abi-check
           script: |
             set -e
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=rkgame-rebuild/output/rkgame
-            test -f "$OUT" && echo "FILE EXISTS" || echo "FILE NOT FOUND"
-            ls -la rkgame-rebuild/output/
+            OUT=/output-bin/rkgame
+            test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
