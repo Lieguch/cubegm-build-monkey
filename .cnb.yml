@@ -45,16 +45,7 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
-            python3 -c "
-import struct
-with open('rkgame-rebuild/output/rkgame', 'rb') as f:
-    data = f.read()
-flags = struct.unpack('<I', data[20:24])[0]
-print(f'FLAGS=0x{flags:08x}')
-fp_abi = (flags >> 9) & 0x3
-print(f'FP_ABI={fp_abi} (2=hard, 0=soft, 1=vfp)')
-assert fp_abi == 2, f'Not hard-float ABI! Got {fp_abi}'
-"
+            python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
               echo "FATAL: GLIBC_2.34+"; exit 1
@@ -107,16 +98,7 @@ assert fp_abi == 2, f'Not hard-float ABI! Got {fp_abi}'
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
-            python3 -c "
-import struct
-with open('rkgame-rebuild/output/rkgame', 'rb') as f:
-    data = f.read()
-flags = struct.unpack('<I', data[20:24])[0]
-print(f'FLAGS=0x{flags:08x}')
-fp_abi = (flags >> 9) & 0x3
-print(f'FP_ABI={fp_abi} (2=hard, 0=soft, 1=vfp)')
-assert fp_abi == 2, f'Not hard-float ABI! Got {fp_abi}'
-"
+            python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
               echo "FATAL: GLIBC_2.34+"; exit 1
