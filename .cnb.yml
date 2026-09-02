@@ -40,71 +40,16 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
+            tar -czf /tmp/dist.tar.gz output/rkgame
+            echo "dist.tar.gz size=$(stat -c%s /tmp/dist.tar.gz)"
             echo "BUILD DONE"
 
-        - name: pack-and-upload
-          script: |
-            set -ex
-            apt-get update -qq && apt-get install -y --no-install-recommends curl git python3 || true
-            cd rkgame-rebuild
-            BINARY="output/rkgame"
-            [ -f "$BINARY" ] || { echo "BINARY not found"; exit 1; }
-            file "$BINARY"
-            # Write diagnostics to a file for investigation
-            {
-              echo "=== ENV ==="
-              env | sort
-              echo "=== FILES ==="
-              ls -la output/
-              echo "=== BINARY ==="
-              file "$BINARY" || true
-              echo "=== CNB_TOKEN check ==="
-              echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
-              echo "CNB_API_ENDPOINT=${CNB_API_ENDPOINT:-MISSING}"
-              echo "CNB_REPO_SLUG=${CNB_REPO_SLUG:-MISSING}"
-              echo "CNB_COMMIT=${CNB_COMMIT:-MISSING}"
-              echo "=== API TEST ==="
-              if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ]; then
-                curl -sS -X POST \
-                  -H "Authorization: Bearer $CNB_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -H "Accept: application/vnd.cnb.api+json" \
-                  -d '{"asset_name":"test.txt","size":1}' \
-                  "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url" \
-                  || echo "API FAILED"
-              else
-                echo "CNB_TOKEN/ENDPOINT not set"
-              fi
-            } > /tmp/debug.txt 2>&1 || true
-            # Show it
-            cat /tmp/debug.txt
-            # Try API upload
-            if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ] && [ -n "$CNB_REPO_SLUG" ] && [ -n "$CNB_COMMIT" ]; then
-              tar -czf dist.tar.gz "$BINARY"
-              FILE_SIZE=$(stat -c%s dist.tar.gz)
-              RESP=$(curl -sS -X POST \
-                -H "Authorization: Bearer $CNB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -H "Accept: application/vnd.cnb.api+json" \
-                -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
-                "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
-              echo "UPLOAD_RESP=$RESP"
-              if echo "$RESP" | grep -q '"upload_url"'; then
-                SIGNED_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
-                VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
-                curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL" && echo "PUT OK"
-                curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" "$VERIFY_URL" && echo "VERIFY OK"
-                echo "DOWNLOAD: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
-              fi
-            fi
-            # Commit diagnostics file
-            git config user.email "cnb@lieguch"
-            git config user.name "CNB"
-            cp /tmp/debug.txt debug-pack-upload.txt
-            git add debug-pack-upload.txt || true
-            git commit -m "auto: debug-pack-upload" || true
-            git push origin main || echo "push failed"
-            echo "DONE"
+        - name: upload
+          docker:
+            image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - /tmp/dist.tar.gz
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -147,68 +92,13 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
+            tar -czf /tmp/dist.tar.gz output/rkgame
+            echo "dist.tar.gz size=$(stat -c%s /tmp/dist.tar.gz)"
             echo "BUILD DONE"
 
-        - name: pack-and-upload
-          script: |
-            set -ex
-            apt-get update -qq && apt-get install -y --no-install-recommends curl git python3 || true
-            cd rkgame-rebuild
-            BINARY="output/rkgame"
-            [ -f "$BINARY" ] || { echo "BINARY not found"; exit 1; }
-            file "$BINARY"
-            # Write diagnostics to a file for investigation
-            {
-              echo "=== ENV ==="
-              env | sort
-              echo "=== FILES ==="
-              ls -la output/
-              echo "=== BINARY ==="
-              file "$BINARY" || true
-              echo "=== CNB_TOKEN check ==="
-              echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
-              echo "CNB_API_ENDPOINT=${CNB_API_ENDPOINT:-MISSING}"
-              echo "CNB_REPO_SLUG=${CNB_REPO_SLUG:-MISSING}"
-              echo "CNB_COMMIT=${CNB_COMMIT:-MISSING}"
-              echo "=== API TEST ==="
-              if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ]; then
-                curl -sS -X POST \
-                  -H "Authorization: Bearer $CNB_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -H "Accept: application/vnd.cnb.api+json" \
-                  -d '{"asset_name":"test.txt","size":1}' \
-                  "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url" \
-                  || echo "API FAILED"
-              else
-                echo "CNB_TOKEN/ENDPOINT not set"
-              fi
-            } > /tmp/debug.txt 2>&1 || true
-            # Show it
-            cat /tmp/debug.txt
-            # Try API upload
-            if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ] && [ -n "$CNB_REPO_SLUG" ] && [ -n "$CNB_COMMIT" ]; then
-              tar -czf dist.tar.gz "$BINARY"
-              FILE_SIZE=$(stat -c%s dist.tar.gz)
-              RESP=$(curl -sS -X POST \
-                -H "Authorization: Bearer $CNB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -H "Accept: application/vnd.cnb.api+json" \
-                -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
-                "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
-              echo "UPLOAD_RESP=$RESP"
-              if echo "$RESP" | grep -q '"upload_url"'; then
-                SIGNED_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
-                VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
-                curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL" && echo "PUT OK"
-                curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" "$VERIFY_URL" && echo "VERIFY OK"
-                echo "DOWNLOAD: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
-              fi
-            fi
-            # Commit diagnostics file
-            git config user.email "cnb@lieguch"
-            git config user.name "CNB"
-            cp /tmp/debug.txt debug-pack-upload.txt
-            git add debug-pack-upload.txt || true
-            git commit -m "auto: debug-pack-upload" || true
-            git push origin main || echo "push failed"
-            echo "DONE"
+        - name: upload
+          docker:
+            image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - /tmp/dist.tar.gz
