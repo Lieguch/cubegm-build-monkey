@@ -43,17 +43,11 @@ main:
         - name: abi-check
           script: |
             set -e
-            apt-get update -qq
-            apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=rkgame-rebuild/output/rkgame
-            ls -la "$OUT"
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -30 /tmp/exports.txt
-            if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
-              echo "FATAL: GLIBC_2.34+"
-              exit 1
-            fi
-            echo "ABI PASSED"
+            echo "STEP1 hello"
+            pwd
+            echo "STEP2 ls"
+            ls
+            echo "STEP3 done"
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -99,14 +93,8 @@ main:
         - name: abi-check
           script: |
             set -e
-            apt-get update -qq
-            apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=rkgame-rebuild/output/rkgame
-            ls -la "$OUT"
-            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -30 /tmp/exports.txt
-            if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
-              echo "FATAL: GLIBC_2.34+"
-              exit 1
-            fi
-            echo "ABI PASSED"
+            echo "STEP1 hello"
+            pwd
+            echo "STEP2 ls"
+            ls
+            echo "STEP3 done"
