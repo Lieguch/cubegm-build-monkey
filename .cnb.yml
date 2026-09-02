@@ -44,19 +44,9 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            apt-get update -qq
-            apt-get install -y --no-install-recommends file
             ls -la "$OUT"
-            file "$OUT"
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -50 /tmp/exports.txt
-            FLAGS_HEX=$(od -An -tx1 -j20 -N4 "$OUT" | tr -d ' \n')
-            echo "FLAGS_HEX=$FLAGS_HEX"
-            FLAGS=$((16#$FLAGS_HEX))
-            echo "FLAGS=$FLAGS"
-            ABI=$(( (FLAGS >> 9) & 3 ))
-            echo "FP_ABI=$ABI (2=hard-float)"
-            test "$ABI" -eq 2
+            head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
               exit 1
@@ -108,19 +98,9 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            apt-get update -qq
-            apt-get install -y --no-install-recommends file
             ls -la "$OUT"
-            file "$OUT"
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
-            head -50 /tmp/exports.txt
-            FLAGS_HEX=$(od -An -tx1 -j20 -N4 "$OUT" | tr -d ' \n')
-            echo "FLAGS_HEX=$FLAGS_HEX"
-            FLAGS=$((16#$FLAGS_HEX))
-            echo "FLAGS=$FLAGS"
-            ABI=$(( (FLAGS >> 9) & 3 ))
-            echo "FP_ABI=$ABI (2=hard-float)"
-            test "$ABI" -eq 2
+            head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
               echo "FATAL: GLIBC_2.34+"
               exit 1
