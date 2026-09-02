@@ -1,0 +1,83 @@
+main:
+  push:
+    - name: rkgame-rebuild
+      docker:
+        image: ubuntu:22.04
+        volumes:
+          - /arm-root:copy-on-write    # 跨运行缓存 glibc 2.25 sysroot
+
+      stages:
+        - name: setup-sysroot
+          script: |
+            set -e
+            if [ -d /arm-root/lib/arm-linux-gnueabihf ] && \
+               [ -f /arm-root/lib/arm-linux-gnueabihf/libc.so ]; then
+              echo "Sysroot /arm-root already cached, skipping debootstrap"
+            else
+              echo "=== Installing debootstrap ==="
+              apt-get update -qq
+              apt-get install -y --no-install-recommends debootstrap
+
+              echo "=== Building glibc 2.25 ARMHF sysroot ==="
+              debootstrap --arch=armhf --variant=minbase \
+                --include=libc6-dev,libstdc++6 \
+                stretch /arm-root http://archive.debian.org/debian
+
+              echo "=== Verifying sysroot glibc version ==="
+              LD_DEBUG=all /arm-root/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3 --print-file-system-info 2>&1 | head -5 || true
+              ls /arm-root/lib/arm-linux-gnueabihf/libc-*.so* 2>/dev/null || echo "no libc versioned file"
+              ls /arm-root/lib/arm-linux-gnueabihf/libdl-*.so* 2>/dev/null || echo "no libdl versioned file"
+            fi
+
+        - name: build
+          script: |
+            set -e
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+              binutils-arm-linux-gnueabihf file
+
+            export CC=arm-linux-gnueabihf-gcc
+            export SYSROOT=/arm-root
+
+            echo "=== GCC version ==="
+            "$CC" --version
+            echo "=== Sysroot libc ==="
+            file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
+
+            cd rkgame-rebuild
+            bash build.sh output/rkgame
+
+        - name: abi-check
+          script: |
+            set -e
+            OUT=rkgame-rebuild/output/rkgame
+            test -f "$OUT"
+
+            echo "=== file ==="
+            file "$OUT"
+
+            echo "=== ELF header ==="
+            readelf -h "$OUT"
+
+            echo "=== ELF flags check ==="
+            FLAGS=$(readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
+            echo "e_flags=${FLAGS}"
+            HEX_FLAGS=$(printf "%d" "${FLAGS}")
+            FLOAT_ABI=$(( (HEX_FLAGS >> 9) & 0x3 ))
+            echo "Float ABI: $FLOAT_ABI (0=soft, 1=softfp, 2=hardfp)"
+            if [ "$FLOAT_ABI" != "2" ]; then
+              echo "FATAL: not hard-float (got $FLOAT_ABI)"
+              exit 1
+            fi
+
+            echo "=== Dynamic symbols (first 50) ==="
+            arm-linux-gnueabihf-objdump -T "$OUT" | head -50
+
+            echo "=== GLIBC version check ==="
+            if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
+              echo "FATAL: GLIBC_2.34+ found"
+              arm-linux-gnueabihf-objdump -T "$OUT" | grep "GLIBC_2\."
+              exit 1
+            fi
+            echo "ABI check PASSED: hard-float, no GLIBC_2.34+"
