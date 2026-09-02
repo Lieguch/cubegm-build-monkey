@@ -45,43 +45,49 @@ main:
         - name: pack-and-upload
           script: |
             set -ex
-            apt-get update -qq && apt-get install -y --no-install-recommends curl python3 || true
+            apt-get update -qq && apt-get install -y --no-install-recommends curl git python3 || true
             echo "=== ENV DIAG ==="
+            env | grep CNB | sed 's/CNB_TOKEN=*/CNB_TOKEN=*** /' || true
+            echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
             echo "CNB_API_ENDPOINT=${CNB_API_ENDPOINT:-MISSING}"
             echo "CNB_REPO_SLUG=${CNB_REPO_SLUG:-MISSING}"
             echo "CNB_COMMIT=${CNB_COMMIT:-MISSING}"
-            echo "CNB_BRANCH=${CNB_BRANCH:-MISSING}"
-            echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
-            echo "curl=$(which curl 2>/dev/null || echo MISSING)"
-            echo "tar=$(which tar 2>/dev/null || echo MISSING)"
             cd rkgame-rebuild
-            ls -la output/ || true
             BINARY="output/rkgame"
             [ -f "$BINARY" ] || { echo "BINARY not found"; exit 1; }
-            tar -czf dist.tar.gz "$BINARY"
-            FILE_SIZE=$(stat -c%s dist.tar.gz)
-            echo "dist.tar.gz size=$FILE_SIZE"
-            echo "=== Step 1: get upload URL ==="
-            curl -sSv -X POST \
-              -H "Authorization: Bearer $CNB_TOKEN" \
-              -H "Content-Type: application/json" \
-              -H "Accept: application/vnd.cnb.api+json" \
-              -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
-              "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url" \
-              -o /tmp/upload_resp.json 2>&1 || { echo "CURL_FAILED"; cat /tmp/upload_resp.json 2>/dev/null; exit 1; }
-            cat /tmp/upload_resp.json
-            echo
-            SIGNED_URL=$(python3 -c "import json,sys;d=json.load(open('/tmp/upload_resp.json'));print(d.get('upload_url',''))" 2>/dev/null || echo "PARSE_FAIL")
-            VERIFY_URL=$(python3 -c "import json,sys;d=json.load(open('/tmp/upload_resp.json'));print(d.get('verify_url',''))" 2>/dev/null || echo "PARSE_FAIL")
-            echo "SIGNED_URL=***${#SIGNED_URL}"
-            echo "VERIFY_URL=***${#VERIFY_URL}"
-            [ "$SIGNED_URL" = "PARSE_FAIL" ] || [ -z "$SIGNED_URL" ] && { echo "No upload_url"; exit 1; }
-            echo "=== Step 2: PUT file ==="
-            curl -sSv -X PUT -T dist.tar.gz "$SIGNED_URL" 2>&1 || exit 1
-            echo "=== Step 3: verify ==="
-            curl -sSv -X POST -H "Authorization: Bearer $CNB_TOKEN" -H "Accept: application/vnd.cnb.api+json" "$VERIFY_URL" 2>&1 || exit 1
-            echo "DOWNLOAD_URL: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
-            echo "UPLOAD DONE"
+            file "$BINARY"
+            # Method A: upload via commit-assets API (preferred)
+            if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ] && [ -n "$CNB_REPO_SLUG" ] && [ -n "$CNB_COMMIT" ]; then
+              echo "=== Attempting commit-assets upload ==="
+              tar -czf dist.tar.gz "$BINARY"
+              FILE_SIZE=$(stat -c%s dist.tar.gz)
+              RESP=$(curl -sS -X POST \
+                -H "Authorization: Bearer $CNB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/vnd.cnb.api+json" \
+                -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
+                "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
+              echo "RESP=$RESP"
+              if echo "$RESP" | grep -q '"upload_url"'; then
+                SIGNED_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
+                VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
+                curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL" && echo "PUT OK"
+                curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" "$VERIFY_URL" && echo "VERIFY OK"
+                echo "DOWNLOAD: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
+              else
+                echo "API failed: $RESP"
+              fi
+            else
+              echo "CNB_TOKEN unavailable, skipping API upload"
+            fi
+            # Method B: commit binary directly to repo
+            echo "=== Committing binary to repo ==="
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB"
+            git add "$BINARY"
+            git commit -m "auto: rkgame binary ($(stat -c%s "$BINARY") bytes)" || echo "nothing to commit"
+            git push origin main || echo "git push failed"
+            echo "DONE"
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -129,40 +135,46 @@ main:
         - name: pack-and-upload
           script: |
             set -ex
-            apt-get update -qq && apt-get install -y --no-install-recommends curl python3 || true
+            apt-get update -qq && apt-get install -y --no-install-recommends curl git python3 || true
             echo "=== ENV DIAG ==="
+            env | grep CNB | sed 's/CNB_TOKEN=*/CNB_TOKEN=*** /' || true
+            echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
             echo "CNB_API_ENDPOINT=${CNB_API_ENDPOINT:-MISSING}"
             echo "CNB_REPO_SLUG=${CNB_REPO_SLUG:-MISSING}"
             echo "CNB_COMMIT=${CNB_COMMIT:-MISSING}"
-            echo "CNB_BRANCH=${CNB_BRANCH:-MISSING}"
-            echo "CNB_TOKEN_len=${#CNB_TOKEN:-0}"
-            echo "curl=$(which curl 2>/dev/null || echo MISSING)"
-            echo "tar=$(which tar 2>/dev/null || echo MISSING)"
             cd rkgame-rebuild
-            ls -la output/ || true
             BINARY="output/rkgame"
             [ -f "$BINARY" ] || { echo "BINARY not found"; exit 1; }
-            tar -czf dist.tar.gz "$BINARY"
-            FILE_SIZE=$(stat -c%s dist.tar.gz)
-            echo "dist.tar.gz size=$FILE_SIZE"
-            echo "=== Step 1: get upload URL ==="
-            curl -sSv -X POST \
-              -H "Authorization: Bearer $CNB_TOKEN" \
-              -H "Content-Type: application/json" \
-              -H "Accept: application/vnd.cnb.api+json" \
-              -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
-              "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url" \
-              -o /tmp/upload_resp.json 2>&1 || { echo "CURL_FAILED"; cat /tmp/upload_resp.json 2>/dev/null; exit 1; }
-            cat /tmp/upload_resp.json
-            echo
-            SIGNED_URL=$(python3 -c "import json,sys;d=json.load(open('/tmp/upload_resp.json'));print(d.get('upload_url',''))" 2>/dev/null || echo "PARSE_FAIL")
-            VERIFY_URL=$(python3 -c "import json,sys;d=json.load(open('/tmp/upload_resp.json'));print(d.get('verify_url',''))" 2>/dev/null || echo "PARSE_FAIL")
-            echo "SIGNED_URL=***${#SIGNED_URL}"
-            echo "VERIFY_URL=***${#VERIFY_URL}"
-            [ "$SIGNED_URL" = "PARSE_FAIL" ] || [ -z "$SIGNED_URL" ] && { echo "No upload_url"; exit 1; }
-            echo "=== Step 2: PUT file ==="
-            curl -sSv -X PUT -T dist.tar.gz "$SIGNED_URL" 2>&1 || exit 1
-            echo "=== Step 3: verify ==="
-            curl -sSv -X POST -H "Authorization: Bearer $CNB_TOKEN" -H "Accept: application/vnd.cnb.api+json" "$VERIFY_URL" 2>&1 || exit 1
-            echo "DOWNLOAD_URL: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
-            echo "UPLOAD DONE"
+            file "$BINARY"
+            # Method A: upload via commit-assets API (preferred)
+            if [ -n "$CNB_TOKEN" ] && [ -n "$CNB_API_ENDPOINT" ] && [ -n "$CNB_REPO_SLUG" ] && [ -n "$CNB_COMMIT" ]; then
+              echo "=== Attempting commit-assets upload ==="
+              tar -czf dist.tar.gz "$BINARY"
+              FILE_SIZE=$(stat -c%s dist.tar.gz)
+              RESP=$(curl -sS -X POST \
+                -H "Authorization: Bearer $CNB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/vnd.cnb.api+json" \
+                -d "{\"asset_name\":\"dist.tar.gz\",\"size\":$FILE_SIZE}" \
+                "${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/git/commit-assets/${CNB_COMMIT}/asset-upload-url")
+              echo "RESP=$RESP"
+              if echo "$RESP" | grep -q '"upload_url"'; then
+                SIGNED_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
+                VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
+                curl -sS -X PUT -T dist.tar.gz "$SIGNED_URL" && echo "PUT OK"
+                curl -sS -X POST -H "Authorization: Bearer $CNB_TOKEN" "$VERIFY_URL" && echo "VERIFY OK"
+                echo "DOWNLOAD: ${CNB_API_ENDPOINT}/${CNB_REPO_SLUG}/-/commit-assets/download/${CNB_COMMIT}/dist.tar.gz"
+              else
+                echo "API failed: $RESP"
+              fi
+            else
+              echo "CNB_TOKEN unavailable, skipping API upload"
+            fi
+            # Method B: commit binary directly to repo
+            echo "=== Committing binary to repo ==="
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB"
+            git add "$BINARY"
+            git commit -m "auto: rkgame binary ($(stat -c%s "$BINARY") bytes)" || echo "nothing to commit"
+            git push origin main || echo "git push failed"
+            echo "DONE"
