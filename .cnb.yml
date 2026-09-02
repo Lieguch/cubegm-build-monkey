@@ -5,7 +5,6 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
-          - /output-bin:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -38,16 +37,17 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
-            mkdir -p /output-bin
+            mkdir -p /arm-root/output
             cd rkgame-rebuild
-            bash build.sh /output-bin/rkgame
+            bash build.sh /arm-root/output/rkgame
 
         - name: abi-check
           script: |
             set -e
+            ls -la /arm-root/output/
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=/output-bin/rkgame
+            OUT=/arm-root/output/rkgame
             test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
@@ -63,7 +63,6 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
-          - /output-bin:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -96,16 +95,17 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
-            mkdir -p /output-bin
+            mkdir -p /arm-root/output
             cd rkgame-rebuild
-            bash build.sh /output-bin/rkgame
+            bash build.sh /arm-root/output/rkgame
 
         - name: abi-check
           script: |
             set -e
+            ls -la /arm-root/output/
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
-            OUT=/output-bin/rkgame
+            OUT=/arm-root/output/rkgame
             test -f "$OUT" && echo "EXISTS" || (echo "MISSING"; exit 1)
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
