@@ -45,8 +45,11 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
+            readelf -h "$OUT"
             FLAGS=$(readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
+            echo "FLAGS=$FLAGS"
             HEX_FLAGS=$(printf "%d" "${FLAGS}")
+            echo "HEX_FLAGS=$HEX_FLAGS"
             test $(( (HEX_FLAGS >> 9) & 0x3 )) -eq 2
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
@@ -100,8 +103,11 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
+            readelf -h "$OUT"
             FLAGS=$(readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
+            echo "FLAGS=$FLAGS"
             HEX_FLAGS=$(printf "%d" "${FLAGS}")
+            echo "HEX_FLAGS=$HEX_FLAGS"
             test $(( (HEX_FLAGS >> 9) & 0x3 )) -eq 2
             arm-linux-gnueabihf-objdump -T "$OUT" | head -50
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
