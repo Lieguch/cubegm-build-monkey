@@ -46,6 +46,8 @@ main:
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
             OUT=rkgame-rebuild/output/rkgame
+            test -f "$OUT" && echo "FILE EXISTS" || echo "FILE NOT FOUND"
+            ls -la rkgame-rebuild/output/
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
@@ -101,6 +103,8 @@ main:
             apt-get update -qq
             apt-get install -y --no-install-recommends binutils-arm-linux-gnueabihf
             OUT=rkgame-rebuild/output/rkgame
+            test -f "$OUT" && echo "FILE EXISTS" || echo "FILE NOT FOUND"
+            ls -la rkgame-rebuild/output/
             arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt
             head -30 /tmp/exports.txt
             if grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])" /tmp/exports.txt; then
