@@ -45,8 +45,8 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
-            arm-linux-gnueabihf-readelf -h "$OUT"
-            FLAGS=$(arm-linux-gnueabihf-readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
+            arm-linux-gnueabihf-objdump -f "$OUT"
+            FLAGS=$(arm-linux-gnueabihf-objdump -f "$OUT" | grep "flags" | awk '{print $NF}' | tr -d ',')
             echo "FLAGS=$FLAGS"
             HEX_FLAGS=$(printf "%d" "${FLAGS}")
             echo "HEX_FLAGS=$HEX_FLAGS"
@@ -103,8 +103,8 @@ main:
             set -e
             OUT=rkgame-rebuild/output/rkgame
             file "$OUT"
-            arm-linux-gnueabihf-readelf -h "$OUT"
-            FLAGS=$(arm-linux-gnueabihf-readelf -h "$OUT" | grep "Flags:" | awk '{print $2}' | tr -d ',')
+            arm-linux-gnueabihf-objdump -f "$OUT"
+            FLAGS=$(arm-linux-gnueabihf-objdump -f "$OUT" | grep "flags" | awk '{print $NF}' | tr -d ',')
             echo "FLAGS=$FLAGS"
             HEX_FLAGS=$(printf "%d" "${FLAGS}")
             echo "HEX_FLAGS=$HEX_FLAGS"
