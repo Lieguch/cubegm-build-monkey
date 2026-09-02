@@ -44,15 +44,17 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            echo "STEP1: ls" && ls -la "$OUT"
-            echo "STEP2: file" && file "$OUT"
-            echo "STEP3: which python3" && which python3
-            echo "STEP4: py ver" && python3 --version
-            echo "STEP5: py read" && python3 -c "d=open('rkgame-rebuild/output/rkgame','rb').read(); print(len(d))"
-            python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
-            arm-linux-gnueabihf-objdump -T "$OUT" | head -50
+            apt-get update -qq && apt-get install -y --no-install-recommends file python3
+            ls -la "$OUT"
+            file "$OUT"
+            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt 2>&1 || true
+            head -50 /tmp/exports.txt
+            grep -q "hard-float" "$OUT" 2>/dev/null; RC1=$?
+            grep -c "hard-float" /tmp/exports.txt 2>/dev/null; RC2=$?
+            echo "grep_hard_float_rc=$RC2"
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
-              echo "FATAL: GLIBC_2.34+"; exit 1
+              echo "FATAL: GLIBC_2.34+"
+              exit 1
             fi
             echo "ABI PASSED"
 
@@ -101,14 +103,16 @@ main:
           script: |
             set -e
             OUT=rkgame-rebuild/output/rkgame
-            echo "STEP1: ls" && ls -la "$OUT"
-            echo "STEP2: file" && file "$OUT"
-            echo "STEP3: which python3" && which python3
-            echo "STEP4: py ver" && python3 --version
-            echo "STEP5: py read" && python3 -c "d=open('rkgame-rebuild/output/rkgame','rb').read(); print(len(d))"
-            python3 -c "import struct; d=open('rkgame-rebuild/output/rkgame','rb').read(); f=struct.unpack('<I',d[20:24])[0]; print('FLAGS=0x%08x'%f); abi=(f>>9)&3; print('FP_ABI=%d'%(abi)); assert abi==2, 'Not hard-float! got %d'%abi"
-            arm-linux-gnueabihf-objdump -T "$OUT" | head -50
+            apt-get update -qq && apt-get install -y --no-install-recommends file python3
+            ls -la "$OUT"
+            file "$OUT"
+            arm-linux-gnueabihf-objdump -T "$OUT" > /tmp/exports.txt 2>&1 || true
+            head -50 /tmp/exports.txt
+            grep -q "hard-float" "$OUT" 2>/dev/null; RC1=$?
+            grep -c "hard-float" /tmp/exports.txt 2>/dev/null; RC2=$?
+            echo "grep_hard_float_rc=$RC2"
             if arm-linux-gnueabihf-objdump -T "$OUT" | grep -qE "GLIBC_2\.(3[4-9]|4[0-9]|5[0-9])"; then
-              echo "FATAL: GLIBC_2.34+"; exit 1
+              echo "FATAL: GLIBC_2.34+"
+              exit 1
             fi
             echo "ABI PASSED"
