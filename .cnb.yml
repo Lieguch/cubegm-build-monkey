@@ -5,6 +5,7 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
+          - /artifacts:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -40,8 +41,9 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
-            tar -czf /tmp/dist.tar.gz output/rkgame
-            echo "dist.tar.gz size=$(stat -c%s /tmp/dist.tar.gz)"
+            mkdir -p /artifacts
+            tar -czf /artifacts/dist.tar.gz output/rkgame
+            echo "dist.tar.gz size=$(stat -c%s /artifacts/dist.tar.gz)"
             echo "BUILD DONE"
 
         - name: upload
@@ -49,7 +51,7 @@ main:
             image: cnbcool/attachments:latest
           settings:
             attachments:
-              - /tmp/dist.tar.gz
+              - /artifacts/dist.tar.gz
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -57,6 +59,7 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
+          - /artifacts:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -92,8 +95,9 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
-            tar -czf /tmp/dist.tar.gz output/rkgame
-            echo "dist.tar.gz size=$(stat -c%s /tmp/dist.tar.gz)"
+            mkdir -p /artifacts
+            tar -czf /artifacts/dist.tar.gz output/rkgame
+            echo "dist.tar.gz size=$(stat -c%s /artifacts/dist.tar.gz)"
             echo "BUILD DONE"
 
         - name: upload
@@ -101,4 +105,4 @@ main:
             image: cnbcool/attachments:latest
           settings:
             attachments:
-              - /tmp/dist.tar.gz
+              - /artifacts/dist.tar.gz
