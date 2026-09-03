@@ -5,7 +5,6 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
-          - /build-output:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -24,7 +23,6 @@ main:
             wget -q "$BASE/g/gcc-6/libstdc++6_6.3.0-18+deb9u1_armhf.deb"
             wget -q "$BASE/g/gcc-6/libgcc1_6.3.0-18+deb9u1_armhf.deb"
             for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
-            find /tmp/arm-root -name "libc.so" -path "*arm-linux*"
             mkdir -p /arm-root
             cp -a /tmp/arm-root/. /arm-root/
             echo "SYSROOT ready"
@@ -33,54 +31,22 @@ main:
           script: |
             set -e
             apt-get update -qq
-            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file
+            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file git
             export CC=arm-linux-gnueabihf-gcc
             export SYSROOT=/arm-root
             "$CC" --version
-            file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
             cd rkgame-rebuild
             bash build.sh output/rkgame
+            file output/rkgame
             ls -la output/rkgame
-            mkdir -p /build-output
-            cp output/rkgame /build-output/rkgame
-            echo "cp done: $(ls -la /build-output/)"
+            # Commit binary into repo using existing git credentials
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git add output/rkgame
+            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+            git push origin main
+            echo "BINARY COMMITTED"
             echo "BUILD DONE"
-
-        - name: upload
-          script: |
-            set -e
-            apt-get update -qq && apt-get install -y --no-install-recommends curl || true
-            ls -la /build-output/ || { echo "no /build-output"; exit 1; }
-            cp /build-output/rkgame /tmp/rkgame
-            ls -la /tmp/rkgame
-            # Use CNB commit-assets API with hardcoded token
-            TOKEN=30BG1a42ZeeRcRVqDn7Oe9466mE
-            API=https://api.cnb.cool
-            SLUG=lieguch/cubeGM
-            # Get CNB_COMMIT from git log
-            cd rkgame-rebuild 2>/dev/null || cd ..
-            COMMIT=$(git rev-parse HEAD)
-            echo "COMMIT=$COMMIT"
-            [ -n "$COMMIT" ] || { echo "COMMIT missing"; exit 1; }
-            sha256=$(sha256sum /tmp/rkgame | awk '{print $1}')
-            SIZE=$(stat -c%s /tmp/rkgame)
-            echo "sha256=$sha256 size=$SIZE"
-            RESP=$(curl -sS -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              -H "Accept: application/vnd.cnb.api+json" \
-              -d "{\"asset_name\":\"rkgame\",\"size\":$SIZE}" \
-              "$API/$SLUG/-/git/commit-assets/$COMMIT/asset-upload-url")
-            echo "RESP=$RESP"
-            UPLOAD_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
-            VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
-            echo "UPLOAD_URL set: ${#UPLOAD_URL}"
-            curl -sS -X PUT -T /tmp/rkgame "$UPLOAD_URL"
-            echo "PUT done"
-            curl -sS -X POST -H "Authorization: Bearer $TOKEN" "$VERIFY_URL"
-            echo "VERIFY done"
-            echo "DOWNLOAD_URL: $API/$SLUG/-/commit-assets/download/$COMMIT/rkgame"
-            echo "UPLOAD DONE"
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -88,7 +54,6 @@ main:
         image: ubuntu:22.04
         volumes:
           - /arm-root:copy-on-write
-          - /build-output:copy-on-write
       stages:
         - name: setup-sysroot
           script: |
@@ -107,7 +72,6 @@ main:
             wget -q "$BASE/g/gcc-6/libstdc++6_6.3.0-18+deb9u1_armhf.deb"
             wget -q "$BASE/g/gcc-6/libgcc1_6.3.0-18+deb9u1_armhf.deb"
             for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
-            find /tmp/arm-root -name "libc.so" -path "*arm-linux*"
             mkdir -p /arm-root
             cp -a /tmp/arm-root/. /arm-root/
             echo "SYSROOT ready"
@@ -116,43 +80,18 @@ main:
           script: |
             set -e
             apt-get update -qq
-            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file
+            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file git
             export CC=arm-linux-gnueabihf-gcc
             export SYSROOT=/arm-root
             "$CC" --version
-            file "$SYSROOT/lib/arm-linux-gnueabihf/libc.so"
             cd rkgame-rebuild
             bash build.sh output/rkgame
+            file output/rkgame
             ls -la output/rkgame
-            mkdir -p /build-output
-            cp output/rkgame /build-output/rkgame
-            echo "cp done: $(ls -la /build-output/)"
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git add output/rkgame
+            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+            git push origin main
+            echo "BINARY COMMITTED"
             echo "BUILD DONE"
-
-        - name: upload
-          script: |
-            set -e
-            apt-get update -qq && apt-get install -y --no-install-recommends curl || true
-            ls -la /build-output/ || { echo "no /build-output"; exit 1; }
-            cp /build-output/rkgame /tmp/rkgame
-            ls -la /tmp/rkgame
-            TOKEN=30BG1a42ZeeRcRVqDn7Oe9466mE
-            API=https://api.cnb.cool
-            SLUG=lieguch/cubeGM
-            cd rkgame-rebuild 2>/dev/null || cd ..
-            COMMIT=$(git rev-parse HEAD)
-            echo "COMMIT=$COMMIT"
-            [ -n "$COMMIT" ] || { echo "COMMIT missing"; exit 1; }
-            SIZE=$(stat -c%s /tmp/rkgame)
-            RESP=$(curl -sS -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              -H "Accept: application/vnd.cnb.api+json" \
-              -d "{\"asset_name\":\"rkgame\",\"size\":$SIZE}" \
-              "$API/$SLUG/-/git/commit-assets/$COMMIT/asset-upload-url")
-            echo "RESP=$RESP"
-            UPLOAD_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'])")
-            VERIFY_URL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['verify_url'])")
-            curl -sS -X PUT -T /tmp/rkgame "$UPLOAD_URL"
-            curl -sS -X POST -H "Authorization: Bearer $TOKEN" "$VERIFY_URL"
-            echo "UPLOAD DONE"
