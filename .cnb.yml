@@ -40,16 +40,19 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
-            cp output/rkgame dist.tar.gz
-            ls -la dist.tar.gz
             echo "BUILD DONE"
 
         - name: upload
           docker:
             image: cnbcool/attachments:latest
           settings:
-            attachments:
-              - dist.tar.gz
+            env:
+              PLUGIN_TYPE: UPLOAD
+              PLUGIN_COMMIT: ${CNB_COMMIT}
+              PLUGIN_ATTACHMENTS: ./rkgame-rebuild/output/rkgame
+              CNB_REPO_SLUG: lieguch/cubeGM
+              CNB_API_ENDPOINT: https://api.cnb.cool
+              CNB_WEB_ENDPOINT: https://cnb.cool
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -92,13 +95,16 @@ main:
             cd rkgame-rebuild
             bash build.sh output/rkgame
             ls -la output/rkgame
-            cp output/rkgame dist.tar.gz
-            ls -la dist.tar.gz
             echo "BUILD DONE"
 
         - name: upload
           docker:
             image: cnbcool/attachments:latest
           settings:
-            attachments:
-              - dist.tar.gz
+            env:
+              PLUGIN_TYPE: UPLOAD
+              PLUGIN_COMMIT: ${CNB_COMMIT}
+              PLUGIN_ATTACHMENTS: ./rkgame-rebuild/output/rkgame
+              CNB_REPO_SLUG: lieguch/cubeGM
+              CNB_API_ENDPOINT: https://api.cnb.cool
+              CNB_WEB_ENDPOINT: https://cnb.cool
