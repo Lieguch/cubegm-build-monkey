@@ -39,6 +39,7 @@
 #include <stdarg.h>
 
 #include "rkgame.h"
+#include "debug.h"
 
 /* ---- 全局变量定义 ---- */
 
@@ -234,16 +235,16 @@ static void main_menu(void)
 
 int main(int argc, char **argv)
 {
+    DBGP(MAIN_BEGIN);
     LOG("rkgame v1.5.0 (rebuild)");
 
-    /* 获取程序目录 */
     get_executable_path(work_path, sizeof(work_path));
+    DBGP(GET_PATH);
     LOG("work_path = %s", work_path);
 
-    /* 资源路径 */
     snprintf(resource_path, sizeof(resource_path), "%sresource/", work_path);
 
-    /* 加载配置 */
+    DBGP(CONFIG_LOAD);
     config_load();
 
     /* 如果有命令行参数，优先用参数指定 autorun */
@@ -261,9 +262,13 @@ int main(int argc, char **argv)
     LOG("autorunfile = %s", autorunfile);
 
     /* 初始化子系统 */
+    DBGP(DISP_INIT);
     disp_init();
+    DBGP(AUDIO_INIT);
     audio_init();
+    DBGP(SRAM_INIT);
     sram_init();
+    DBGP(JOY_INIT);
     joy_init();
 
     /* 菜单 / autorun */
@@ -275,15 +280,17 @@ int main(int argc, char **argv)
     } else if (strcmp(autorunfile, "/JoystickTest") == 0) {
         LOG("entering joystick test mode");
     } else {
+        DBGP(CORE_DLOPEN);
         autorun(autorunfile, autorundriver);
     }
 
-    /* 清理 */
+    DBGP(SHUTDOWN);
     sram_unload();
     joy_close_all();
     core_unload();
     audio_shutdown();
     disp_shutdown();
 
+    DBGP(END);
     return 0;
 }

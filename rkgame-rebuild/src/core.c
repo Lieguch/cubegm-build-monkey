@@ -14,6 +14,7 @@
  * 无需 __asm__ 版本锁定或运行时兜底。 */
 
 #include "rkgame.h"
+#include "debug.h"
 
 /* ---- 配置项表 ---- */
 static char corecfg[16000];
@@ -46,6 +47,7 @@ int core_load(const char *rom_path, const char *core_name)
     }
 
     snprintf(path, sizeof(path), "%s/cores/%s", work_path, core_name);
+    DBGP(CORE_DLOPEN);
     core_handle = dlopen(path, RTLD_NOW);
     if (!core_handle) {
         ERR("Core_Load: dlopen %s fail", path);
@@ -78,6 +80,7 @@ int core_load(const char *rom_path, const char *core_name)
         "retro_set_progress_callback");
     ctx.retro_get_log_callback     = get_core_symbol(core_handle, "retro_get_log_callback");
     ctx.retro_set_unzip            = get_core_symbol(core_handle, "retro_set_unzip");
+    DBGP(CORE_DLSYM);
 
     if (!ctx.retro_get_memory_data || !ctx.retro_get_memory_size) {
         ERR("Core_Load: core missing retro_get_memory_data/size — SRAM persistence unavailable");
@@ -105,6 +108,7 @@ int core_load(const char *rom_path, const char *core_name)
 
     ctx.retro_set_environment(retro_get_env_cb);
 
+    DBGP(CORE_INIT);
     if (ctx.retro_init)
         ctx.retro_init();
 
@@ -130,6 +134,7 @@ int core_load(const char *rom_path, const char *core_name)
     game_info.metadata = NULL;
 
     if (ctx.retro_load_game) {
+        DBGP(CORE_LOADGAME);
         ctx.retro_load_game(&game_info);
         LOG("Core_Load: retro_load_game done");
     }
@@ -155,6 +160,7 @@ int core_load(const char *rom_path, const char *core_name)
 
 void core_unload(void)
 {
+    DBGP(CORE_UNLOAD);
     if (!core_handle) return;
     if (ctx.retro_unload_game)
         ctx.retro_unload_game();
@@ -168,6 +174,7 @@ void core_unload(void)
 
 int core_run(void)
 {
+    DBGP(CORE_RUN);
     LOG("core_run: entering main loop");
     while (1) {
         if (ctx.retro_run) {

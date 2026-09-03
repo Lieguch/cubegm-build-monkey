@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 extern int main(int argc, char **argv);
+extern void dbg_init(void);
 
 /* 入口点：由 ld.so 通过 -e _rkgame_start 调用。
  * ld.so 已设置好栈、TLS、环境变量等基础环境。
@@ -28,7 +29,8 @@ extern int main(int argc, char **argv);
 void _rkgame_start(void)
 {
     extern int main(int, char **);
-    /* rkgame 不读取 argv[1]/argv[2]，config.xml 已提供路径 */
+    /* 最早期崩溃也能记录到 rkgame.crash.log（ENTRY 阶段标记） */
+    dbg_init();
     int ret = main(0, 0);
     _exit(ret);
 }
