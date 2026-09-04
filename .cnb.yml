@@ -72,7 +72,11 @@ main:
             mkdir -p /sdcard/cubegm
             mkdir -p /tmp
             
+            # Build stage did 'git checkout main' at the end, which removed
+            # output/rkgame. Checkout artifacts to get the binary back.
             cd rkgame-rebuild
+            git checkout artifacts 2>/dev/null || git checkout -f artifacts
+            
             set +e
             
             # Run under qemu with full log capture. timeout=15s because
@@ -196,6 +200,9 @@ main:
             export SYSROOT=/arm-root
             mkdir -p /sdcard/cubegm /tmp
             cd rkgame-rebuild
+            # Build stage did 'git checkout main', which removed output/rkgame.
+            # Checkout artifacts to get the binary back.
+            git checkout artifacts 2>/dev/null || git checkout -f artifacts
             set +e
             echo "=== Running rkgame under qemu-arm ==="
             echo "Binary: $(stat -c%s output/rkgame) bytes"
