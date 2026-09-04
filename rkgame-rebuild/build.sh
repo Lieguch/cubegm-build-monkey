@@ -48,19 +48,30 @@ done
 
 # Generate linker scripts for shared-only libs (avoid broken host symlinks)
 mk_script() {
-    local name="$1"; local shared="$2"
+    local name="$1"; shift
+    local content="$*"
     cat > "$TMPDIR/${name}" <<EOF
 /* GNU ld script
-   Use the shared library only.  */
+   Use shared + static fallback.  */
 OUTPUT_FORMAT(elf32-littlearm)
-GROUP ( AS_NEEDED ( "$shared" ) )
+GROUP ( AS_NEEDED ( $content ) )
 EOF
 }
+
+# libc.so must pull in libc_nonshared.a (which contains __libc_csu_init/
+# __libc_csu_fini that crt1.o references). Debian's real libc.so script
+# does this; our minimal script must replicate it.
+NONSHARED="$SYSROOT/usr/lib/arm-linux-gnueabihf/libc_nonshared.a"
+if [ -f "$NONSHARED" ]; then
+    mk_script libc.so "$RUNTIME_DIR/libc.so.6 $NONSHARED"
+else
+    echo "WARNING: libc_nonshared.a not found; __libc_csu_init will be unresolved"
+    mk_script libc.so "$RUNTIME_DIR/libc.so.6"
+fi
 
 mk_script libdl.so    "$RUNTIME_DIR/libdl.so.2"
 mk_script libm.so     "$RUNTIME_DIR/libm.so.6"
 mk_script libpthread.so "$RUNTIME_DIR/libpthread.so.0"
-mk_script libc.so     "$RUNTIME_DIR/libc.so.6"
 
 echo "Linker scripts:"
 ls -la "$TMPDIR/"
