@@ -15,19 +15,13 @@ set -e
 
 CC="${CC:-arm-linux-gnueabihf-gcc}"
 SYSROOT="${SYSROOT:-}"
-LDDIR="${LDDIR:-}"
 
 echo "=== rkgame-rebuild ==="
 echo "CC=$CC"
 echo "SYSROOT=$SYSROOT"
-echo "LDDIR=$LDDIR"
 
 if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
     echo "FATAL: SYSROOT not set or does not exist"
-    exit 1
-fi
-if [ -z "$LDDIR" ] || [ ! -d "$LDDIR" ]; then
-    echo "FATAL: LDDIR not set or does not exist"
     exit 1
 fi
 

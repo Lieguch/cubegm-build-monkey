@@ -36,12 +36,10 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             cd rkgame-rebuild
-            # Run build with output captured to log (set +e to capture failure)
             set +e
             bash build.sh output/rkgame > build.log 2>&1
             BUILD_STATUS=$?
             set -e
-            # Always push log for debugging
             git config user.email "cnb@lieguch"
             git config user.name "CNB-Build"
             git checkout -B artifacts
@@ -60,6 +58,74 @@ main:
               cat build.log
               exit $BUILD_STATUS
             fi
+
+        - name: test-emu
+          script: |
+            set -e
+            apt-get update -qq
+            apt-get install -y --no-install-recommends qemu-user-static strace
+            qemu-arm-static --version | head -3
+            
+            export SYSROOT=/arm-root
+            
+            # Setup fake SD card rootfs paths (so dbg_init multi-path fallback is exercised)
+            mkdir -p /sdcard/cubegm
+            mkdir -p /tmp
+            
+            cd rkgame-rebuild
+            set +e
+            
+            # Run under qemu with full log capture. timeout=15s because
+            # the binary may hang waiting for /dev/dri which qemu can't provide.
+            # -L sets qemu's root prefix so /lib/... resolves under /arm-root
+            # -E sets env vars that qemu passes to the guest
+            echo "=== Running rkgame under qemu-arm ==="
+            echo "Binary: $(stat -c%s output/rkgame) bytes"
+            
+            rm -f /tmp/rkgame.log /sdcard/cubegm/rkgame.log
+            timeout 15 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+                -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
+                -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
+                -E HOME=/tmp \
+                -E TMPDIR=/tmp \
+                ./output/rkgame 2>&1 | tee test-emu.log
+            EXIT_CODE=${PIPESTATUS[0]}
+            set -e
+            
+            echo ""
+            echo "=== EXIT CODE: $EXIT_CODE ==="
+            echo ""
+            echo "=== Log files created during run ==="
+            find / -name "rkgame.log" -newer test-emu.log 2>/dev/null | head
+            find / -name "rkgame.log" 2>/dev/null | while read f; do
+                echo "--- $f ---"
+                cat "$f" 2>/dev/null || echo "(unreadable)"
+            done
+            
+            echo ""
+            echo "=== Symbol resolution check (using ldd via qemu) ==="
+            qemu-arm-static -L /arm-root -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
+                /arm-root/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3 --verify ./output/rkgame 2>&1 | head -20 || true
+            
+            echo ""
+            echo "=== ldd equivalent ==="
+            # ldd is not usually on qemu user, use direct check
+            grep -aoE "lib[a-z_]+\.so\.[0-9]+" ./output/rkgame | sort -u || true
+            
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git checkout -B artifacts
+            git add test-emu.log 2>/dev/null || true
+            if [ $EXIT_CODE -eq 0 ]; then
+              git commit -m "auto: qemu test PASSED (exit=0)"
+            else
+              git commit -m "auto: qemu test FAILED (exit=$EXIT_CODE)"
+            fi
+            git push origin artifacts --force
+            git checkout main
+            echo "TEST DONE (exit=$EXIT_CODE)"
+            # Don't exit non-zero - we still want artifacts
+            exit 0
 
   api_trigger_build:
     - name: rkgame-rebuild
@@ -98,14 +164,62 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             cd rkgame-rebuild
-            bash build.sh output/rkgame
-            file output/rkgame
-            ls -la output/rkgame
+            set +e
+            bash build.sh output/rkgame > build.log 2>&1
+            BUILD_STATUS=$?
+            set -e
             git config user.email "cnb@lieguch"
             git config user.name "CNB-Build"
             git checkout -B artifacts
-            git add output/rkgame
-            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+            git add build.log
+            if [ $BUILD_STATUS -eq 0 ] && [ -f output/rkgame ]; then
+              git add output/rkgame
+              git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+              git push origin artifacts --force
+              git checkout main
+              echo "BUILD DONE"
+            else
+              git commit -m "auto: build FAILED (status=$BUILD_STATUS)"
+              git push origin artifacts --force
+              git checkout main
+              echo "BUILD FAILED (status=$BUILD_STATUS)"
+              cat build.log
+              exit $BUILD_STATUS
+            fi
+
+        - name: test-emu
+          script: |
+            set -e
+            apt-get update -qq
+            apt-get install -y --no-install-recommends qemu-user-static
+            qemu-arm-static --version | head -3
+            export SYSROOT=/arm-root
+            mkdir -p /sdcard/cubegm /tmp
+            cd rkgame-rebuild
+            set +e
+            echo "=== Running rkgame under qemu-arm ==="
+            echo "Binary: $(stat -c%s output/rkgame) bytes"
+            rm -f /tmp/rkgame.log /sdcard/cubegm/rkgame.log
+            timeout 15 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+                -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
+                -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
+                -E HOME=/tmp \
+                -E TMPDIR=/tmp \
+                ./output/rkgame 2>&1 | tee test-emu.log
+            EXIT_CODE=${PIPESTATUS[0]}
+            set -e
+            echo "=== EXIT CODE: $EXIT_CODE ==="
+            echo "=== Log files ==="
+            find / -name "rkgame.log" 2>/dev/null | while read f; do
+                echo "--- $f ---"
+                cat "$f" 2>/dev/null || echo "(unreadable)"
+            done
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git checkout -B artifacts
+            git add test-emu.log 2>/dev/null || true
+            git commit -m "auto: qemu test (exit=$EXIT_CODE)"
             git push origin artifacts --force
             git checkout main
-            echo "BUILD DONE"
+            echo "TEST DONE (exit=$EXIT_CODE)"
+            exit 0
