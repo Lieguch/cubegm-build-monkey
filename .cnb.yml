@@ -130,8 +130,9 @@ main:
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
-                ./output/rkgame 2>&1 | tee test-emu.log
-            EXIT_CODE=${PIPESTATUS[0]}
+                ./output/rkgame > test-emu.log 2>&1
+            EXIT_CODE=$?
+            cat test-emu.log
             set -e
             
             echo ""
@@ -288,8 +289,9 @@ main:
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
-                ./output/rkgame 2>&1 | tee test-emu.log
-            EXIT_CODE=${PIPESTATUS[0]}
+                ./output/rkgame > test-emu.log 2>&1
+            EXIT_CODE=$?
+            cat test-emu.log
             set -e
             echo "=== EXIT CODE: $EXIT_CODE ==="
             echo "=== Log files ==="
