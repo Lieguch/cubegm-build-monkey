@@ -36,9 +36,11 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             cd rkgame-rebuild
-            # Run build with output captured to log
+            # Run build with output captured to log (set +e to capture failure)
+            set +e
             bash build.sh output/rkgame > build.log 2>&1
             BUILD_STATUS=$?
+            set -e
             # Always push log for debugging
             git config user.email "cnb@lieguch"
             git config user.name "CNB-Build"
