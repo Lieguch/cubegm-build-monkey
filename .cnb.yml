@@ -11,7 +11,7 @@ main:
             set -e
             apt-get update -qq
             apt-get install -y --no-install-recommends wget dpkg-dev ca-certificates
-            if [ -f /arm-root/lib/arm-linux-gnueabihf/libc.so ]; then
+            if [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libc.so ]; then
               echo "Sysroot cached"; exit 0
             fi
             mkdir -p /tmp/arm-pkgs /tmp/arm-root
@@ -61,7 +61,7 @@ main:
             set -e
             apt-get update -qq
             apt-get install -y --no-install-recommends wget dpkg-dev ca-certificates
-            if [ -f /arm-root/lib/arm-linux-gnueabihf/libc.so ]; then
+            if [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libc.so ]; then
               echo "Sysroot cached"; exit 0
             fi
             mkdir -p /tmp/arm-pkgs /tmp/arm-root
