@@ -25,6 +25,46 @@ main:
             for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
             mkdir -p /arm-root
             cp -a /tmp/arm-root/. /arm-root/
+
+            # Fix broken absolute symlinks.
+            # Debian 9 packages ship libdl.so/libm.so/libpthread.so as
+            # symlinks to absolute paths like /lib/arm-linux-gnueabihf/*.so.2.
+            # These don't exist on CNB host. Replace with RELATIVE symlinks
+            # so the linker can resolve them within the sysroot.
+            # Also fix libc.so linker script: replace absolute paths with
+            # relative (same-dir) paths so --sysroot is not needed.
+            LIBDIR=/arm-root/usr/lib/arm-linux-gnueabihf
+            RUNDIR=/arm-root/lib/arm-linux-gnueabihf
+
+            # libdl.so -> ../../lib/arm-linux-gnueabihf/libdl.so.2
+            ln -sf ../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
+            # libm.so -> ../../lib/arm-linux-gnueabihf/libm.so.6
+            ln -sf ../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
+            # libpthread.so -> ../../lib/arm-linux-gnueabihf/libpthread.so.0
+            ln -sf ../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
+
+            # libc.so is a linker script with absolute path /usr/lib/...
+            # Replace with relative path (libc.so.6 is in the same directory)
+            if [ -f "$LIBDIR/libc.so" ] && [ ! -L "$LIBDIR/libc.so" ]; then
+              cat > "$LIBDIR/libc.so" <<'EOS'
+/* GNU ld script
+   Use libc.so.6 and libc_nonshared.a if available
+   */
+GROUP ( AS_NEEDED ( libc.so.6 libc_nonshared.a ) )
+EOS
+              echo "Fixed libc.so linker script (relative paths)"
+            fi
+
+            # Verify all fixed symlinks resolve
+            echo "Verifying symlinks..."
+            for f in libdl.so libm.so libpthread.so; do
+              target=$(readlink -f "$LIBDIR/$f")
+              echo "  $f -> $target"
+              if [ ! -f "$target" ]; then
+                echo "FATAL: $f target not found: $target"
+                exit 1
+              fi
+            done
             echo "SYSROOT ready"
 
         - name: build
@@ -157,6 +197,46 @@ main:
             for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
             mkdir -p /arm-root
             cp -a /tmp/arm-root/. /arm-root/
+
+            # Fix broken absolute symlinks.
+            # Debian 9 packages ship libdl.so/libm.so/libpthread.so as
+            # symlinks to absolute paths like /lib/arm-linux-gnueabihf/*.so.2.
+            # These don't exist on CNB host. Replace with RELATIVE symlinks
+            # so the linker can resolve them within the sysroot.
+            # Also fix libc.so linker script: replace absolute paths with
+            # relative (same-dir) paths so --sysroot is not needed.
+            LIBDIR=/arm-root/usr/lib/arm-linux-gnueabihf
+            RUNDIR=/arm-root/lib/arm-linux-gnueabihf
+
+            # libdl.so -> ../../lib/arm-linux-gnueabihf/libdl.so.2
+            ln -sf ../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
+            # libm.so -> ../../lib/arm-linux-gnueabihf/libm.so.6
+            ln -sf ../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
+            # libpthread.so -> ../../lib/arm-linux-gnueabihf/libpthread.so.0
+            ln -sf ../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
+
+            # libc.so is a linker script with absolute path /usr/lib/...
+            # Replace with relative path (libc.so.6 is in the same directory)
+            if [ -f "$LIBDIR/libc.so" ] && [ ! -L "$LIBDIR/libc.so" ]; then
+              cat > "$LIBDIR/libc.so" <<'EOS'
+/* GNU ld script
+   Use libc.so.6 and libc_nonshared.a if available
+   */
+GROUP ( AS_NEEDED ( libc.so.6 libc_nonshared.a ) )
+EOS
+              echo "Fixed libc.so linker script (relative paths)"
+            fi
+
+            # Verify all fixed symlinks resolve
+            echo "Verifying symlinks..."
+            for f in libdl.so libm.so libpthread.so; do
+              target=$(readlink -f "$LIBDIR/$f")
+              echo "  $f -> $target"
+              if [ ! -f "$target" ]; then
+                echo "FATAL: $f target not found: $target"
+                exit 1
+              fi
+            done
             echo "SYSROOT ready"
 
         - name: build
