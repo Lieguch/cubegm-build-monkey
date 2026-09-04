@@ -40,17 +40,17 @@ main:
             LIBDIR=/arm-root/usr/lib/arm-linux-gnueabihf
             RUNDIR=/arm-root/lib/arm-linux-gnueabihf
 
-            # libdl.so -> ../../lib/arm-linux-gnueabihf/libdl.so.2
-            ln -sf ../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
-            # libm.so -> ../../lib/arm-linux-gnueabihf/libm.so.6
-            ln -sf ../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
-            # libpthread.so -> ../../lib/arm-linux-gnueabihf/libpthread.so.0
-            ln -sf ../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
+            # libdl.so -> ../../../lib/arm-linux-gnueabihf/libdl.so.2
+            ln -sf ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
+            # libm.so -> ../../../lib/arm-linux-gnueabihf/libm.so.6
+            ln -sf ../../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
+            # libpthread.so -> ../../../lib/arm-linux-gnueabihf/libpthread.so.0
+            ln -sf ../../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
 
             # libc.so is a linker script. The script is in /usr/lib/...
             # but libc.so.6 is in /lib/... and libc_nonshared.a is in /usr/lib/...
-            # Use relative paths: ../../lib/... for libc.so.6, same-dir for libc_nonshared.a
-            printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
+            # Use relative paths: ../../../lib/... for libc.so.6, same-dir for libc_nonshared.a
+            printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
             echo "Fixed libc.so linker script (relative paths)"
 
             # Verify all fixed symlinks resolve
@@ -210,17 +210,17 @@ main:
             LIBDIR=/arm-root/usr/lib/arm-linux-gnueabihf
             RUNDIR=/arm-root/lib/arm-linux-gnueabihf
 
-            # libdl.so -> ../../lib/arm-linux-gnueabihf/libdl.so.2
-            ln -sf ../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
-            # libm.so -> ../../lib/arm-linux-gnueabihf/libm.so.6
-            ln -sf ../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
-            # libpthread.so -> ../../lib/arm-linux-gnueabihf/libpthread.so.0
-            ln -sf ../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
+            # libdl.so -> ../../../lib/arm-linux-gnueabihf/libdl.so.2
+            ln -sf ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$LIBDIR/libdl.so"
+            # libm.so -> ../../../lib/arm-linux-gnueabihf/libm.so.6
+            ln -sf ../../../lib/arm-linux-gnueabihf/libm.so.6 "$LIBDIR/libm.so"
+            # libpthread.so -> ../../../lib/arm-linux-gnueabihf/libpthread.so.0
+            ln -sf ../../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
 
             # libc.so is a linker script. The script is in /usr/lib/...
             # but libc.so.6 is in /lib/... and libc_nonshared.a is in /usr/lib/...
-            # Use relative paths: ../../lib/... for libc.so.6, same-dir for libc_nonshared.a
-            printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
+            # Use relative paths: ../../../lib/... for libc.so.6, same-dir for libc_nonshared.a
+            printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
             echo "Fixed libc.so linker script (relative paths)"
 
             # Verify all fixed symlinks resolve
