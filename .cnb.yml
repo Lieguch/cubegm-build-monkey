@@ -36,18 +36,28 @@ main:
             export SYSROOT=/arm-root
             "$CC" --version
             cd rkgame-rebuild
-            bash build.sh output/rkgame
-            file output/rkgame
-            ls -la output/rkgame
-            # Push binary to artifacts branch (not main, to avoid recursive builds)
+            # Run build with output captured to log
+            bash build.sh output/rkgame > build.log 2>&1
+            BUILD_STATUS=$?
+            # Always push log for debugging
             git config user.email "cnb@lieguch"
             git config user.name "CNB-Build"
             git checkout -B artifacts
-            git add output/rkgame
-            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
-            git push origin artifacts --force
-            git checkout main
-            echo "BUILD DONE"
+            git add build.log
+            if [ $BUILD_STATUS -eq 0 ] && [ -f output/rkgame ]; then
+              git add output/rkgame
+              git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+              git push origin artifacts --force
+              git checkout main
+              echo "BUILD DONE"
+            else
+              git commit -m "auto: build FAILED (status=$BUILD_STATUS)"
+              git push origin artifacts --force
+              git checkout main
+              echo "BUILD FAILED (status=$BUILD_STATUS)"
+              cat build.log
+              exit $BUILD_STATUS
+            fi
 
   api_trigger_build:
     - name: rkgame-rebuild
