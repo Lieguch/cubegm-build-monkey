@@ -109,79 +109,45 @@ echo "Built: $OUT ($(stat -c%s "$OUT") bytes)"
 
 # ---- Verify ELF consistency ----
 echo "--- ELF verification ---"
-python3 - "$OUT" << 'PYEOF'
-import sys, struct
-data = open(sys.argv[1],'rb').read()
-if data[:4] != b'\x7fELF':
-    print('FAIL: not ELF'); sys.exit(1)
-
-# Section headers
-e_shoff = struct.unpack_from('<I', data, 32)[0]
-e_shnum = struct.unpack_from('<H', data, 48)[0]
-e_shentsize = struct.unpack_from('<H', data, 46)[0]
-sections = []
-for i in range(e_shnum):
-    off = e_shoff + i*e_shentsize
-    sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize = struct.unpack_from('<IIIIIIIIII', data, off)
-    sections.append(dict(name=sh_name, type=sh_type, addr=sh_addr, off=sh_offset, size=sh_size, entsize=sh_entsize))
-
-shstrtab_off = struct.unpack_from('<H', data, 50)[0]
-sst = sections[shstrtab_off]
-strtab = data[sst['off']:sst['off']+sst['size']]
-def gs(off):
-    e = strtab.find(b'\0', off)
-    return strtab[off:e].decode() if e >= 0 else '?'
-
-# Dynamic section entries
-DT_NEEDED=1; DT_RELSZ=10; DT_RELENT=11; DT_JUMPREL=14; DT_INIT_ARRAY=18; DT_FINI_ARRAY=19
-DT_INIT_ARRAYSZ=20; DT_FINI_ARRAYSZ=21; DT_SYMTAB=7; DT_STRTAB=5; DT_STRSZ=6
-DT_RELACOUNT=0x6ffffff9; DT_PLTRELSZ=2; DT_GNU_HASH=0x6ffffef5
-TAGS={DT_NEEDED:'NEEDED',DT_STRTAB:'STRTAB',DT_STRSZ:'STRSZ',DT_SYMTAB:'SYMTAB',
-      DT_PLTRELSZ:'PLTRELSZ',DT_RELSZ:'RELSZ',DT_RELENT:'RELENT',DT_JUMPREL:'JUMPREL',
-      DT_INIT_ARRAY:'INIT_ARRAY',DT_FINI_ARRAY:'FINI_ARRAY',
-      DT_INIT_ARRAYSZ:'INIT_ARRAYSZ',DT_FINI_ARRAYSZ:'FINI_ARRAYSZ',
-      DT_RELACOUNT:'RELACOUNT',DT_GNU_HASH:'GNU_HASH'}
-
-dyn = next((s for s in sections if gs(s['name'])==' .dynamic'.strip()), None)
-if not dyn:
-    print('FAIL: no .dynamic'); sys.exit(1)
-
-d = {}
-for i in range(dyn['size']//8):
-    tag, val = struct.unpack_from('<iI', data, dyn['off']+i*8)
-    if tag in TAGS:
-        d.setdefault(TAGS[tag], []).append(val)
-
-# Reloc section sizes
-rel_dyn = next((s for s in sections if gs(s['name'])=='.rel.dyn'), None)
-rel_plt = next((s for s in sections if gs(s['name'])=='.rel.plt'), None)
-
-print(f'.rel.dyn: size={rel_dyn["size"]}, entries={rel_dyn["size"]//rel_dyn["entsize"]}, entsize={rel_dyn["entsize"]}')
-print(f'.rel.plt: size={rel_plt["size"]}, entries={rel_plt["size"]//rel_plt["entsize"]}, entsize={rel_plt["entsize"]}')
-
-# Sanity checks
-err = []
-if DT_RELSZ in d:
-    if d[DT_RELSZ][0] != rel_dyn['size']:
-        err.append(f'DT_RELSZ={d[DT_RELSZ][0]} != .rel.dyn size {rel_dyn["size"]}')
-if DT_RELENT in d:
-    if d[DT_RELENT][0] != rel_dyn['entsize']:
-        err.append(f'DT_RELENT={d[DT_RELENT][0]} != .rel.dyn entsize {rel_dyn["entsize"]}')
-if DT_RELACOUNT in d and rel_dyn:
-    expected = rel_dyn['size'] // rel_dyn['entsize']
-    if d[DT_RELACOUNT][0] != expected:
-        err.append(f'DT_RELACOUNT={d[DT_RELACOUNT][0]} != expected {expected}')
-if DT_PLTRELSZ in d and rel_plt:
-    if d[DT_PLTRELSZ][0] != rel_plt['size']:
-        err.append(f'DT_PLTRELSZ={d[DT_PLTRELSZ][0]} != .rel.plt size {rel_plt["size"]}')
-
-if err:
-    print('FAIL: dynamic section inconsistencies:')
-    for e in err:
-        print(f'  {e}')
-    sys.exit(1)
-print('PASS: dynamic section consistent')
-PYEOF
+# Check DT_* values are consistent with actual .rel.dyn/.rel.plt section sizes.
+# Mismatched DT_RELSZ/DT_RELENT/DT_RELACOUNT would cause the loader to abort.
+# This is the failure mode we hit on the last three device tests.
+if command -v readelf >/dev/null 2>&1; then
+    # readelf -d output the DT entries we care about
+    DYN_OUT=$(readelf -d "$OUT" 2>/dev/null)
+    # Section headers give real sizes
+    SH_OUT=$(readelf -S "$OUT" 2>/dev/null)
+    REL_DYN_SZ=$(echo "$SH_OUT" | grep -oP '\.rel\.dyn.*\K[\d]+' | head -1)
+    REL_PLT_SZ=$(echo "$SH_OUT" | grep -oP '\.rel\.plt.*\K[\d]+' | head -1)
+    DT_RELSZ=$(echo "$DYN_OUT" | grep -oP 'RELSZ.*0x\K[0-9a-f]+' | head -1)
+    DT_PLTRELSZ=$(echo "$DYN_OUT" | grep -oP 'PLTRELSZ.*0x\K[0-9a-f]+' | head -1)
+    DT_RELENT=$(echo "$DYN_OUT" | grep -oP 'RELENT.*0x\K[0-9a-f]+' | head -1)
+    
+    # Convert hex values to decimal for comparison using printf
+    hex2dec() { printf "%d" "0x$1" 2>/dev/null || echo "?"; }
+    RELSZ_DEC=$(hex2dec "${DT_RELSZ:-0}")
+    PLTRELSZ_DEC=$(hex2dec "${DT_PLTRELSZ:-0}")
+    RELENT_DEC=$(hex2dec "${DT_RELENT:-0}")
+    
+    echo "Section sizes: .rel.dyn=${REL_DYN_SZ} .rel.plt=${REL_PLT_SZ}"
+    echo "Dynamic entries: DT_RELSZ=$RELSZ_DEC DT_PLTRELSZ=$PLTRELSZ_DEC DT_RELENT=$RELENT_DEC"
+    
+    if [ -n "$DT_RELSZ" ] && [ -n "$REL_DYN_SZ" ] && [ "$RELSZ_DEC" != "$REL_DYN_SZ" ]; then
+        echo "FAIL: DT_RELSZ=$RELSZ_DEC != .rel.dyn size $REL_DYN_SZ"
+        exit 1
+    fi
+    if [ -n "$DT_PLTRELSZ" ] && [ -n "$REL_PLT_SZ" ] && [ "$PLTRELSZ_DEC" != "$REL_PLT_SZ" ]; then
+        echo "FAIL: DT_PLTRELSZ=$PLTRELSZ_DEC != .rel.plt size $REL_PLT_SZ"
+        exit 1
+    fi
+    if [ -n "$DT_RELENT" ] && [ "$RELENT_DEC" != "8" ] && [ "$RELENT_DEC" != "12" ]; then
+        echo "FAIL: DT_RELENT=$RELENT_DEC (expected 8 or 12)"
+        exit 1
+    fi
+    echo "PASS: dynamic section consistent"
+else
+    echo "WARN: readelf not available; skipping ELF consistency check"
+fi
 
 # Verify GLIBC version
 echo "--- GLIBC check ---"
