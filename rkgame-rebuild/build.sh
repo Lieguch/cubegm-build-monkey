@@ -8,13 +8,15 @@ CC="${CC:-arm-linux-gnueabihf-gcc}"
 SYSROOT="${SYSROOT:-}"
 
 CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -D_GNU_SOURCE -Wall"
-LDFLAGS="-nostartfiles -Wl,-e,_rkgame_start -Wl,--no-as-needed -ldl -lpthread -lm"
+LDFLAGS="-Wl,--no-as-needed -ldl -lpthread -lm -lc"
 
 if [ -n "$SYSROOT" ] && [ -d "$SYSROOT" ]; then
   CFLAGS="$CFLAGS --sysroot=$SYSROOT"
+  LDFLAGS="$LDFLAGS --sysroot=$SYSROOT"
 fi
 
-SRC=$(ls src/*.c)
+# 标准入口点，不需要 entry.c（-nostartfiles 会跳过 glibc 初始化导致启动失败）
+SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c"
 OUT="${1:-output/rkgame}"
 mkdir -p "$(dirname "$OUT")"
 

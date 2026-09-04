@@ -235,6 +235,7 @@ static void main_menu(void)
 
 int main(int argc, char **argv)
 {
+    dbg_init();
     DBGP(MAIN_BEGIN);
     LOG("rkgame v1.5.0 (rebuild)");
 
