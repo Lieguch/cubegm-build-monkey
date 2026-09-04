@@ -53,6 +53,19 @@ main:
             printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
             echo "Fixed libc.so linker script (relative paths)"
 
+            # The device's dynamic linker is at /lib/ld-linux-armhf.so.3
+            # (NOT /lib/arm-linux-gnueabihf/ld-linux-armhf.so.3).
+            # Our --dynamic-linker flag must match the device's path.
+            # Ensure the sysroot has the linker at /arm-root/lib/ld-linux-armhf.so.3
+            if [ -f "$RUNDIR/ld-linux-armhf.so.3" ] && [ ! -f /arm-root/lib/ld-linux-armhf.so.3 ]; then
+              ln -sf arm-linux-gnueabihf/ld-linux-armhf.so.3 /arm-root/lib/ld-linux-armhf.so.3
+              echo "Created symlink: /arm-root/lib/ld-linux-armhf.so.3"
+            elif [ -f /arm-root/lib/ld-linux-armhf.so.3 ]; then
+              echo "Dynamic linker already at /arm-root/lib/ld-linux-armhf.so.3"
+            else
+              echo "WARNING: ld-linux-armhf.so.3 not found in either location"
+            fi
+
             # Verify all fixed symlinks resolve
             echo "Verifying symlinks..."
             for f in libdl.so libm.so libpthread.so; do
@@ -223,6 +236,19 @@ main:
             # Use relative paths: ../../../lib/... for libc.so.6, same-dir for libc_nonshared.a
             printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
             echo "Fixed libc.so linker script (relative paths)"
+
+            # The device's dynamic linker is at /lib/ld-linux-armhf.so.3
+            # (NOT /lib/arm-linux-gnueabihf/ld-linux-armhf.so.3).
+            # Our --dynamic-linker flag must match the device's path.
+            # Ensure the sysroot has the linker at /arm-root/lib/ld-linux-armhf.so.3
+            if [ -f "$RUNDIR/ld-linux-armhf.so.3" ] && [ ! -f /arm-root/lib/ld-linux-armhf.so.3 ]; then
+              ln -sf arm-linux-gnueabihf/ld-linux-armhf.so.3 /arm-root/lib/ld-linux-armhf.so.3
+              echo "Created symlink: /arm-root/lib/ld-linux-armhf.so.3"
+            elif [ -f /arm-root/lib/ld-linux-armhf.so.3 ]; then
+              echo "Dynamic linker already at /arm-root/lib/ld-linux-armhf.so.3"
+            else
+              echo "WARNING: ld-linux-armhf.so.3 not found in either location"
+            fi
 
             # Verify all fixed symlinks resolve
             echo "Verifying symlinks..."

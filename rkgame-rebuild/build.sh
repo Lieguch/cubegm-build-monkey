@@ -37,7 +37,7 @@ DEV_DIR="$SYSROOT/usr/lib/arm-linux-gnueabihf"
 # Verify runtime libs exist
 for f in "$RUNTIME_DIR/libc.so.6" "$RUNTIME_DIR/libdl.so.2" \
          "$RUNTIME_DIR/libpthread.so.0" "$RUNTIME_DIR/libm.so.6" \
-         "$RUNTIME_DIR/ld-linux-armhf.so.3" \
+         "$SYSROOT/lib/ld-linux-armhf.so.3" \
          "$DEV_DIR/libc.so" "$DEV_DIR/libc_nonshared.a"; do
     if [ ! -f "$f" ]; then
         echo "FATAL: missing $f"
@@ -83,7 +83,7 @@ $CC $CFLAGS \
     -L"$RUNTIME_DIR" \
     $LIBGCC_OPTS \
     -Wl,--no-as-needed \
-    -Wl,--dynamic-linker,/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3 \
+    -Wl,--dynamic-linker,/lib/ld-linux-armhf.so.3 \
     -lc -ldl -lpthread -lm \
     "$DEV_DIR/crtn.o"
 
