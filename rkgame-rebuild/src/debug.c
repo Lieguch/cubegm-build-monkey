@@ -32,7 +32,12 @@
 
 /* ---- 常量 ---- */
 
-#define LOG_PATH        "/sdcard/cubegm/rkgame.log"
+#define LOG_PATHS_DEFAULT \
+    "/sdcard/cubegm/rkgame.log" \
+    "/sdcard/rkgame.log" \
+    "/tmp/rkgame.log" \
+    "/dev/null"
+
 #define CRASH_LOG_PATH  "/sdcard/cubegm/rkgame.crash.log"
 
 /* 环形缓冲区：保存最后 N 条日志，崩溃时一次性写入 crash.log */
@@ -285,10 +290,50 @@ void dbg_probe(int stage_id)
 
 void dbg_init(void)
 {
-    g_log_fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    /* ---- 1) 立刻向 stderr 输出可见标记（诊断：确认 main() 是否被执行） ---- */
+    const char *banner = "=== rkgame rebuild starting ===\n";
+    (void)write(2, banner, 32);
+
+    /* ---- 2) 尝试多个日志路径（SD 卡写失败时降级） ---- */
+    const char *const candidates[] = {
+        "/sdcard/cubegm/rkgame.log",
+        "/sdcard/rkgame.log",
+        "/tmp/rkgame.log",
+        NULL
+    };
+    int i;
+    const char *chosen = NULL;
+    int open_errno = 0;
+
+    for (i = 0; candidates[i]; i++) {
+        int fd = open(candidates[i], O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd >= 0) {
+            g_log_fd = fd;
+            chosen = candidates[i];
+            break;
+        }
+        open_errno = errno;
+    }
+
+    /* ---- 3) 报告日志文件状态 ---- */
     if (g_log_fd >= 0) {
         const char *header = "--- rkgame session start ---\n";
         write(g_log_fd, header, 28);
+        char stbuf[128];
+        int n = 0;
+        n += strncpy_n("[DBG] log path = ", stbuf + n, sizeof(stbuf) - n - 1);
+        n += strncpy_n(chosen, stbuf + n, sizeof(stbuf) - n - 1);
+        stbuf[n++] = '\n';
+        write(2, stbuf, n);
+        write(g_log_fd, stbuf, n);
+    } else {
+        char stbuf[160];
+        int n = 0;
+        n += strncpy_n("[DBG] FATAL: cannot open any log path (errno=", stbuf + n, sizeof(stbuf) - n - 1);
+        n += itoa32(stbuf + n, open_errno);
+        stbuf[n++] = ')';
+        stbuf[n++] = '\n';
+        write(2, stbuf, n);
     }
 
     struct sigaction sa;
