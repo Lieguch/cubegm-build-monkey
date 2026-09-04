@@ -2,15 +2,25 @@
 # Cross-compile for RK3036G (glibc 2.29 device)
 # Uses Debian 9 (glibc 2.24) sysroot so DT_NEEDED resolves on device.
 #
-# KEY ISSUE (2026-09-04):
-# Debian 9 glibc-dev ships libdl.so and libm.so as SYMLINKS to
-# /lib/arm-linux-gnueabihf/libdl.so.2 (absolute host path).
-# These absolute paths don't exist on CNB host (Ubuntu 22.04), so ld
-# silently falls back to static libdl.a/libm.a, producing a broken
-# .dynamic section (wrong DT_RELSZ/DT_RELENT/DT_RELACOUNT).
-# Fix: create a temp dir with proper linker scripts for libdl.so and
-# libm.so that point at the shared .so.2 in the sysroot, then use
-# standard -lc -ldl -lpthread -lm flags.
+# ROOT CAUSE (2026-09-04, fixed):
+# Debian 9 glibc-dev ships libdl.so/libm.so/libpthread.so as SYMLINKS to
+# absolute paths like /lib/arm-linux-gnueabihf/libdl.so.2. On CNB host
+# (Ubuntu 22.04) these absolute paths don't exist. We create temp linker
+# scripts pointing at the shared .so.2 in the sysroot.
+#
+# CRITICAL BUG (found 2026-09-04): The linker scripts previously used paths
+# WITH the $SYSROOT prefix (e.g. /arm-root/lib/...). Since --sysroot=/arm-root
+# prepends /arm-root to root-relative paths, the linker saw /arm-root/arm-root/...
+# which doesn't exist. The linker silently fell back to wrong libraries,
+# producing a SCRAMBLED .dynamic section:
+#   - DT_RELSZ missing entirely
+#   - DT_REL pointing to .fini address instead of .rel.dyn
+#   - DT_INIT_ARRAY pointing to .rel.dyn address
+#   - DT_FINI_ARRAY containing .rel.dyn size (440)
+# Any loader refuses to load such a binary → main() never runs → no log.
+#
+# FIX: linker script paths must be ROOT-RELATIVE (e.g. /lib/... NOT /arm-root/lib/...).
+# --sysroot will prepend /arm-root correctly.
 set -e
 
 CC="${CC:-arm-linux-gnueabihf-gcc}"
@@ -31,6 +41,7 @@ OUT="${1:-output/rkgame}"
 mkdir -p "$(dirname "$OUT")"
 
 RUNTIME_DIR="$SYSROOT/lib/arm-linux-gnueabihf"
+DEV_DIR="$SYSROOT/usr/lib/arm-linux-gnueabihf"
 
 # ---- Build a "linker-script dir" that mirrors sysroot but fixes broken symlinks ----
 TMPDIR="$(mktemp -d /tmp/rkld.XXXXXX)"
@@ -46,7 +57,13 @@ for f in "$RUNTIME_DIR/libc.so.6" "$RUNTIME_DIR/libdl.so.2" \
     fi
 done
 
-# Generate linker scripts for shared-only libs (avoid broken host symlinks)
+# Generate linker scripts for shared-only libs (avoid broken host symlinks).
+# CRITICAL: paths inside scripts must be ROOT-RELATIVE (e.g. /lib/...) NOT
+# absolute with $SYSROOT prefix (e.g. /arm-root/lib/...). --sysroot prepends
+# $SYSROOT to root-relative paths; if the path already includes $SYSROOT,
+# the linker sees /arm-root/arm-root/... and silently falls back to wrong
+# libs, producing a scrambled .dynamic section (DT_REL/DT_RELSZ/DT_INIT_ARRAY
+# all pointing to wrong addresses).
 mk_script() {
     local name="$1"; shift
     local content="$*"
@@ -61,17 +78,17 @@ EOF
 # libc.so must pull in libc_nonshared.a (which contains __libc_csu_init/
 # __libc_csu_fini that crt1.o references). Debian's real libc.so script
 # does this; our minimal script must replicate it.
-NONSHARED="$SYSROOT/usr/lib/arm-linux-gnueabihf/libc_nonshared.a"
-if [ -f "$NONSHARED" ]; then
-    mk_script libc.so "$RUNTIME_DIR/libc.so.6 $NONSHARED"
+NONSHARED_REAL="$DEV_DIR/libc_nonshared.a"
+if [ -f "$NONSHARED_REAL" ]; then
+    mk_script libc.so "/lib/arm-linux-gnueabihf/libc.so.6 /usr/lib/arm-linux-gnueabihf/libc_nonshared.a"
 else
     echo "WARNING: libc_nonshared.a not found; __libc_csu_init will be unresolved"
-    mk_script libc.so "$RUNTIME_DIR/libc.so.6"
+    mk_script libc.so "/lib/arm-linux-gnueabihf/libc.so.6"
 fi
 
-mk_script libdl.so    "$RUNTIME_DIR/libdl.so.2"
-mk_script libm.so     "$RUNTIME_DIR/libm.so.6"
-mk_script libpthread.so "$RUNTIME_DIR/libpthread.so.0"
+mk_script libdl.so    "/lib/arm-linux-gnueabihf/libdl.so.2"
+mk_script libm.so     "/lib/arm-linux-gnueabihf/libm.so.6"
+mk_script libpthread.so "/lib/arm-linux-gnueabihf/libpthread.so.0"
 
 echo "Linker scripts:"
 ls -la "$TMPDIR/"
@@ -110,41 +127,68 @@ echo "Built: $OUT ($(stat -c%s "$OUT") bytes)"
 # ---- Verify ELF consistency ----
 echo "--- ELF verification ---"
 # Check DT_* values are consistent with actual .rel.dyn/.rel.plt section sizes.
-# Mismatched DT_RELSZ/DT_RELENT/DT_RELACOUNT would cause the loader to abort.
-# This is the failure mode we hit on the last three device tests.
+# Mismatched DT_RELSZ/DT_RELENT would cause the loader to abort before main().
+# We use awk (not grep -oP) for reliable column parsing of readelf output.
 if command -v readelf >/dev/null 2>&1; then
-    # readelf -d output the DT entries we care about
-    DYN_OUT=$(readelf -d "$OUT" 2>/dev/null)
-    # Section headers give real sizes
     SH_OUT=$(readelf -S "$OUT" 2>/dev/null)
-    REL_DYN_SZ=$(echo "$SH_OUT" | grep -oP '\.rel\.dyn.*\K[\d]+' | head -1)
-    REL_PLT_SZ=$(echo "$SH_OUT" | grep -oP '\.rel\.plt.*\K[\d]+' | head -1)
-    DT_RELSZ=$(echo "$DYN_OUT" | grep -oP 'RELSZ.*0x\K[0-9a-f]+' | head -1)
-    DT_PLTRELSZ=$(echo "$DYN_OUT" | grep -oP 'PLTRELSZ.*0x\K[0-9a-f]+' | head -1)
-    DT_RELENT=$(echo "$DYN_OUT" | grep -oP 'RELENT.*0x\K[0-9a-f]+' | head -1)
-    
-    # Convert hex values to decimal for comparison using printf
-    hex2dec() { printf "%d" "0x$1" 2>/dev/null || echo "?"; }
-    RELSZ_DEC=$(hex2dec "${DT_RELSZ:-0}")
-    PLTRELSZ_DEC=$(hex2dec "${DT_PLTRELSZ:-0}")
-    RELENT_DEC=$(hex2dec "${DT_RELENT:-0}")
-    
-    echo "Section sizes: .rel.dyn=${REL_DYN_SZ} .rel.plt=${REL_PLT_SZ}"
-    echo "Dynamic entries: DT_RELSZ=$RELSZ_DEC DT_PLTRELSZ=$PLTRELSZ_DEC DT_RELENT=$RELENT_DEC"
-    
-    if [ -n "$DT_RELSZ" ] && [ -n "$REL_DYN_SZ" ] && [ "$RELSZ_DEC" != "$REL_DYN_SZ" ]; then
-        echo "FAIL: DT_RELSZ=$RELSZ_DEC != .rel.dyn size $REL_DYN_SZ"
+    DYN_OUT=$(readelf -d "$OUT" 2>/dev/null)
+
+    # readelf -S column layout (default field splitting):
+    #  [ 9] .rel.dyn  REL  00000000  002f38  000180  08  A  27  0  4
+    #   1    2       3    4        5       6       7  8  9  10 11 12
+    # $7 = Size (hex), $8 = Entsize (hex)
+    REL_DYN_SZ=$(echo "$SH_OUT" | awk '$3==".rel.dyn" {print $7}')
+    REL_PLT_SZ=$(echo "$SH_OUT" | awk '$3==".rel.plt" {print $7}')
+
+    # readelf -d: value is the LAST field on the line (after the tag name).
+    # readelf shows hex as 0x... or decimal; awk can handle both.
+    DT_RELSZ=$(echo "$DYN_OUT" | awk '/\(RELSZ\)/ {print $NF}')
+    DT_PLTRELSZ=$(echo "$DYN_OUT" | awk '/\(PLTRELSZ\)/ {print $NF}')
+    DT_RELENT=$(echo "$DYN_OUT" | awk '/\(RELENT\)/ {print $NF}')
+    DT_REL=$(echo "$DYN_OUT" | awk '/\(REL\)/ {print $NF}')
+
+    # Convert hex (0x...) to decimal for comparison
+    hex2dec() {
+        if [ -z "$1" ]; then echo ""; return; fi
+        case "$1" in
+            0x*|0X*) printf "%d" "$1" 2>/dev/null || echo "" ;;
+            *)      echo "$1" ;;  # already decimal
+        esac
+    }
+    REL_DYN_SZ_DEC=$(hex2dec "$REL_DYN_SZ")
+    REL_PLT_SZ_DEC=$(hex2dec "$REL_PLT_SZ")
+    RELSZ_DEC=$(hex2dec "$DT_RELSZ")
+    PLTRELSZ_DEC=$(hex2dec "$DT_PLTRELSZ")
+    RELENT_DEC=$(hex2dec "$DT_RELENT")
+
+    echo "Section sizes: .rel.dyn=${REL_DYN_SZ} (${REL_DYN_SZ_DEC}) .rel.plt=${REL_PLT_SZ} (${REL_PLT_SZ_DEC})"
+    echo "Dynamic: DT_REL=${DT_REL} DT_RELSZ=${DT_RELSZ} (${RELSZ_DEC}) DT_PLTRELSZ=${DT_PLTRELSZ} (${PLTRELSZ_DEC}) DT_RELENT=${DT_RELENT} (${RELENT_DEC})"
+
+    ERRORS=0
+    if [ -z "$DT_RELSZ" ]; then
+        echo "FAIL: DT_RELSZ missing (loader cannot process relocations)"
+        ERRORS=1
+    elif [ -n "$REL_DYN_SZ_DEC" ] && [ "$RELSZ_DEC" != "$REL_DYN_SZ_DEC" ]; then
+        echo "FAIL: DT_RELSZ=$RELSZ_DEC != .rel.dyn size $REL_DYN_SZ_DEC"
+        ERRORS=1
+    fi
+    if [ -z "$DT_PLTRELSZ" ]; then
+        echo "FAIL: DT_PLTRELSZ missing"
+        ERRORS=1
+    elif [ -n "$REL_PLT_SZ_DEC" ] && [ "$PLTRELSZ_DEC" != "$REL_PLT_SZ_DEC" ]; then
+        echo "FAIL: DT_PLTRELSZ=$PLTRELSZ_DEC != .rel.plt size $REL_PLT_SZ_DEC"
+        ERRORS=1
+    fi
+    if [ -n "$RELENT_DEC" ] && [ "$RELENT_DEC" != "8" ] && [ "$RELENT_DEC" != "12" ]; then
+        echo "FAIL: DT_RELENT=$RELENT_DEC (expected 8 for R_REL32 or 12 for R_RELA)"
+        ERRORS=1
+    fi
+    if [ "$ERRORS" -eq 0 ]; then
+        echo "PASS: dynamic section consistent"
+    else
+        echo "FAIL: dynamic section has errors"
         exit 1
     fi
-    if [ -n "$DT_PLTRELSZ" ] && [ -n "$REL_PLT_SZ" ] && [ "$PLTRELSZ_DEC" != "$REL_PLT_SZ" ]; then
-        echo "FAIL: DT_PLTRELSZ=$PLTRELSZ_DEC != .rel.plt size $REL_PLT_SZ"
-        exit 1
-    fi
-    if [ -n "$DT_RELENT" ] && [ "$RELENT_DEC" != "8" ] && [ "$RELENT_DEC" != "12" ]; then
-        echo "FAIL: DT_RELENT=$RELENT_DEC (expected 8 or 12)"
-        exit 1
-    fi
-    echo "PASS: dynamic section consistent"
 else
     echo "WARN: readelf not available; skipping ELF consistency check"
 fi
