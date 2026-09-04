@@ -56,6 +56,12 @@ echo "--- Building ---"
 # Build with -nostdlib + --sysroot
 # --sysroot is critical: libc.so linker script uses absolute paths like
 # /lib/arm-linux-gnueabihf/libc.so.6 which must be resolved relative to sysroot
+#
+# IMPORTANT: libdl.so and libm.so in Debian 9 are broken symlinks pointing to
+# /lib/arm-linux-gnueabihf/libdl.so.2 (absolute host path) which does NOT exist
+# on the CNB host. So -ldl/-lm silently fall back to static libdl.a/libm.a,
+# which have undefined __dlopen/__dlclose/__dlsym that only resolve via
+# libc.so.6 shared. Fix: pass shared runtime libs by absolute path.
 $CC $CFLAGS \
     --sysroot="$SYSROOT" \
     -nostdlib \
@@ -68,7 +74,12 @@ $CC $CFLAGS \
     $LIBGCC_OPTS \
     -Wl,--no-as-needed \
     -Wl,--dynamic-linker,/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3 \
-    -lc -ldl -lpthread -lm \
+    "$RUNTIME_DIR/libc-2.24.so" \
+    "$RUNTIME_DIR/libdl-2.24.so" \
+    "$RUNTIME_DIR/libpthread-2.24.so" \
+    "$RUNTIME_DIR/libm-2.24.so" \
+    "$CRT_DIR/libc_nonshared.a" \
+    "$CRT_DIR/libpthread_nonshared.a" \
     "$CRT_DIR/crtn.o"
 
 echo "Built: $OUT ($(stat -c%s "$OUT") bytes)"
