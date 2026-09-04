@@ -31,7 +31,7 @@ main:
           script: |
             set -e
             apt-get update -qq
-            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file
+            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file git
             export CC=arm-linux-gnueabihf-gcc
             export SYSROOT=/arm-root
             "$CC" --version
@@ -39,6 +39,14 @@ main:
             bash build.sh output/rkgame
             file output/rkgame
             ls -la output/rkgame
+            # Push binary to artifacts branch (not main, to avoid recursive builds)
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git checkout -B artifacts
+            git add output/rkgame
+            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+            git push origin artifacts --force
+            git checkout main
             echo "BUILD DONE"
 
   api_trigger_build:
@@ -73,7 +81,7 @@ main:
           script: |
             set -e
             apt-get update -qq
-            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file
+            apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf file git
             export CC=arm-linux-gnueabihf-gcc
             export SYSROOT=/arm-root
             "$CC" --version
@@ -81,4 +89,11 @@ main:
             bash build.sh output/rkgame
             file output/rkgame
             ls -la output/rkgame
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Build"
+            git checkout -B artifacts
+            git add output/rkgame
+            git commit -m "auto: rkgame build artifact ($(stat -c%s output/rkgame) bytes)"
+            git push origin artifacts --force
+            git checkout main
             echo "BUILD DONE"
