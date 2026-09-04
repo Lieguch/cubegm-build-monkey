@@ -53,8 +53,11 @@ fi
 
 echo "--- Building ---"
 
-# Build with -nostdlib
+# Build with -nostdlib + --sysroot
+# --sysroot is critical: libc.so linker script uses absolute paths like
+# /lib/arm-linux-gnueabihf/libc.so.6 which must be resolved relative to sysroot
 $CC $CFLAGS \
+    --sysroot="$SYSROOT" \
     -nostdlib \
     "$CRT_DIR/crt1.o" \
     "$CRT_DIR/crti.o" \
