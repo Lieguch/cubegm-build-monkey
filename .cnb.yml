@@ -230,21 +230,7 @@ main:
             #   6) 再跑一次 15 秒长测，验证 main_menu 周期性重绘 (redraws=N)
 
             echo "=== Step 1: create shm segment (simulate icube) ==="
-            cat > /tmp/mkshm.py << 'PYEOF'
-import ctypes
-LIBC = ctypes.CDLL(None)
-IPC_PRIVATE = 0
-SHM_R = 0o600
-shmid = LIBC.shmget(IPC_PRIVATE, 4096, SHM_R | 0o600)
-if shmid < 0:
-    raise SystemExit('shmget failed: ' + str(ctypes.get_errno()))
-print('SHM_CREATED shmid=%d' % shmid)
-ptr = LIBC.shmat(shmid, None, 0)
-if ptr == -1:
-    raise SystemExit('shmat failed')
-print('SHM_ATTACHED ptr=%d' % ptr)
-PYEOF
-            python3 /tmp/mkshm.py
+            python3 tools/mkshm.py
 
             echo ""
             echo "=== Step 2: start rkgame (foreground, will be killed by test) ==="
