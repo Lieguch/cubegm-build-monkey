@@ -39,7 +39,8 @@
     "/tmp/rkgame.log" \
     "/dev/null"
 
-#define CRASH_LOG_PATH  "/sdcard/cubegm/rkgame.crash.log"
+#define CRASH_LOG_PATH_DEFAULT  "/sdcard/cubegm/rkgame.crash.log"
+static char g_crash_log_path[512] = CRASH_LOG_PATH_DEFAULT;
 
 /* 环形缓冲区：保存最后 N 条日志，崩溃时一次性写入 crash.log */
 #define DBG_LOG_HISTORY  30
@@ -128,7 +129,7 @@ static int strncpy_n(const char *src, char *dst, int n)
 
 static void crash_handler(int sig, siginfo_t *info, void *ucontext)
 {
-    int fd = open(CRASH_LOG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(g_crash_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0)
         return;
 
@@ -319,24 +320,47 @@ void dbg_init(void)
     (void)write(2, banner, 32);
 
     /* ---- 2) 尝试多个日志路径（SD 卡写失败时降级） ---- */
-    const char *const candidates[] = {
-        "/sdcard/cubegm/rkgame.log",
-        "/sdcard/rkgame.log",
-        "/tmp/rkgame.log",
-        NULL
-    };
-    int i;
+
+    /* 优先：RKGAME_WORK_PATH 环境变量（CI 测试 / 运维覆盖用） */
+    const char *env_path = getenv("RKGAME_WORK_PATH");
+    char env_log[512];
     const char *chosen = NULL;
     int open_errno = 0;
 
-    for (i = 0; candidates[i]; i++) {
-        int fd = open(candidates[i], O_WRONLY | O_CREAT | O_APPEND, 0644);
-        if (fd >= 0) {
-            g_log_fd = fd;
-            chosen = candidates[i];
-            break;
+    if (env_path && env_path[0] != '\0') {
+        int plen = snprintf(env_log, sizeof(env_log), "%srkgame.log", env_path);
+        if (plen > 0 && (size_t)plen < sizeof(env_log)) {
+            int fd = open(env_log, O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd >= 0) {
+                g_log_fd = fd;
+                chosen = env_log;
+            } else {
+                open_errno = errno;
+            }
         }
-        open_errno = errno;
+        /* 同时设置 crash log 路径 */
+        snprintf(g_crash_log_path, sizeof(g_crash_log_path),
+                 "%srkgame.crash.log", env_path);
+    }
+
+    /* 回退：硬编码候选路径 */
+    if (g_log_fd < 0) {
+        const char *const candidates[] = {
+            "/sdcard/cubegm/rkgame.log",
+            "/sdcard/rkgame.log",
+            "/tmp/rkgame.log",
+            NULL
+        };
+        int i;
+        for (i = 0; candidates[i]; i++) {
+            int fd = open(candidates[i], O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd >= 0) {
+                g_log_fd = fd;
+                chosen = candidates[i];
+                break;
+            }
+            open_errno = errno;
+        }
     }
 
     /* ---- 3) 报告日志文件状态 ---- */
