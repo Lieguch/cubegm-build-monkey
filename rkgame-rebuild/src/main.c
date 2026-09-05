@@ -42,6 +42,7 @@
 
 #include "rkgame.h"
 #include "debug.h"
+#include "heartbeat.h"
 
 /* ---- 全局变量定义 ---- */
 
@@ -277,14 +278,39 @@ static void main_menu(void)
      * 菜单 UI；若这里返回，launcher 会认为 rkgame 已退出并重启进程，形成
      * 7 秒一次的重启循环。因此先进入阻塞事件循环：轮询手柄，但绝不退出。
      * 后续 Phase 4 应把这里替换成真实菜单 UI。
+     *
+     * 真机观察（2026-09-05）：icube launcher 每 ~7 秒 kill+respawn 一次
+     * rkgame，但本循环 while(1) 不会自己退出。icube strings 显示它用
+     * shmget/shmat/shmdt/shmctl 做父子通信。可能 icube 用 shm 心跳
+     * 看门狗检测子进程是否活着。heartbeat 模块已加信号处理 + shm 探测
+     * + 心跳文件写入，用于真机诊断。
      */
     time_t last_heartbeat = 0;
+    time_t last_redraw    = 0;
+    int    redraw_count   = 0;
 
     while (1) {
         struct timeval tv;
         fd_set rfds;
         int i;
         int maxfd = -1;
+
+        /* 周期性更新心跳文件 + 检查是否收到信号 */
+        hb_tick();
+        int sig = hb_get_last_signal();
+        if (sig != 0) {
+            LOG("main_menu: caught signal %d (still alive, "
+                "SA_RESTART will resume the wait below)", sig);
+        }
+
+        /* 周期性重绘菜单（每 5 秒），让 DRM 显示不褪色，并验证
+         * disp_draw_menu 不会 crash。 */
+        time_t now = time(NULL);
+        if (disp_is_ready() && now - last_redraw >= 5) {
+            disp_draw_menu();
+            redraw_count++;
+            last_redraw = now;
+        }
 
         FD_ZERO(&rfds);
         for (i = 0; i < joy_dev_count; i++) {
@@ -303,14 +329,16 @@ static void main_menu(void)
                 continue;
             }
         } else {
-            /* 无手柄时也不退出；避免 launcher 重启循环。 */
-            struct timespec ts = { 60, 0 };
+            /* 无手柄时也不退出；避免 launcher 重启循环。
+             * 用 1 秒粒度而非 60 秒，让心跳文件和重绘更及时，
+             * 也让真机诊断更容易看出进程是否活着。 */
+            struct timespec ts = { 1, 0 };
             nanosleep(&ts, NULL);
         }
 
-        time_t now = time(NULL);
         if (now != last_heartbeat) {
-            LOG("main_menu: still active (no autorun configured), waiting for Phase 4 UI");
+            LOG("main_menu: still active (no autorun configured), "
+                "waiting for Phase 4 UI, redraws=%d", redraw_count);
             last_heartbeat = now;
         }
     }
@@ -324,11 +352,42 @@ int main(int argc, char **argv)
     DBGP(MAIN_BEGIN);
     LOG("rkgame v1.5.0 (rebuild)");
 
+    /* 尽早安装信号处理器，让任何阶段的信号都能被记录 */
+    hb_install_signal_handlers();
+
     get_executable_path(work_path, sizeof(work_path));
     DBGP(GET_PATH);
     LOG("work_path = %s", work_path);
 
     snprintf(resource_path, sizeof(resource_path), "%sresource/", work_path);
+
+    /* 启动心跳文件（work_path/heartbeat）：真机跑一次后可用 stat 判断
+     * 进程是否活着、被 kill 的时刻。 */
+    {
+        char hb_path[576];
+        snprintf(hb_path, sizeof(hb_path), "%sheartbeat", work_path);
+        hb_init(hb_path);
+    }
+
+    /* 写 PID 文件（work_path/rkgame.pid）：CI 测试 / 运维脚本可以
+     * 通过它精确 kill 特定实例，而不是误伤同名的 qemu-arm-static。
+     * 真机上也可用于监控/诊断。 */
+    {
+        char pid_path[576];
+        int pid_fd;
+        char pid_buf[32];
+        int n;
+        snprintf(pid_path, sizeof(pid_path), "%srkgame.pid", work_path);
+        pid_fd = open(pid_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (pid_fd >= 0) {
+            n = snprintf(pid_buf, sizeof(pid_buf), "%d\n", (int)getpid());
+            if (n > 0) {
+                ssize_t w = write(pid_fd, pid_buf, (size_t)n);
+                (void)w;
+            }
+            close(pid_fd);
+        }
+    }
 
     DBGP(CONFIG_LOAD);
     config_load();
@@ -382,6 +441,7 @@ int main(int argc, char **argv)
     core_unload();
     audio_shutdown();
     disp_shutdown();
+    hb_shutdown();
 
     DBGP(END);
     return 0;

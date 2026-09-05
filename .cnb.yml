@@ -206,81 +206,176 @@ main:
             # pre-existing content would bleed into this run).
             mkdir -p /sdcard/cubegm /tmp
             : > /sdcard/cubegm/rkgame.log
-            rm -f /sdcard/cubegm/rkgame.crash.log /tmp/rkgame.log
+            rm -f /sdcard/cubegm/rkgame.crash.log /tmp/rkgame.log \
+                  /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
 
             # Build stage did 'git checkout main' at the end, which removed
             # output/rkgame. Checkout artifacts to get the binary back.
             cd rkgame-rebuild
             git checkout artifacts 2>/dev/null || git checkout -f artifacts
 
+            # ========== 端到端测试：模拟 icube launcher 的 shm 场景 ==========
+            #
+            # 真机 icube launcher 用 fork+execl 拉起 rkgame 并通过 shm
+            # (shmget/shmat/shmdt/shmctl) 做父子通信。strings 显示 icube
+            # 还调用 killall rkgame。我们的 rkgame 目前不做 shm 交互，
+            # 真机每 ~7 秒被 kill+respawn。
+            #
+            # 本测试：
+            #   1) 用 Python 创建一个 shm 段（模拟 icube）
+            #   2) 启动 rkgame，验证 hb_detect_icube_shm() 探测到 shm
+            #   3) 验证 hb_init() 创建 heartbeat 文件并写入时间戳
+            #   4) 验证 PID 文件创建
+            #   5) 发送 SIGTERM，验证信号处理记录（SA_RESTART 让进程存活）
+            #   6) 再跑一次 15 秒长测，验证 main_menu 周期性重绘 (redraws=N)
+
+            echo "=== Step 1: create shm segment (simulate icube) ==="
+            python3 -c "
+from sys import version_info
+# Python 3.5+ has multiprocessing.shared_memory (posix shm)
+import struct, ctypes
+LIBC = ctypes.CDLL(None)
+IPC_PRIVATE = 0
+SHM_R = 0o600
+shmid = LIBC.shmget(IPC_PRIVATE, 4096, SHM_R | 0o600)
+if shmid < 0:
+    raise SystemExit('shmget failed: ' + str(ctypes.get_errno()))
+print('SHM_CREATED shmid=%d' % shmid)
+# Hold a reference so it survives after this script exits.
+# The shared memory remains visible to other processes on the same host
+# as long as at least one process has it attached or it hasn't been
+# shmctl(IPC_RMID)'d. We attach to keep it alive.
+ptr = LIBC.shmat(shmid, None, 0)
+if ptr == -1:
+    raise SystemExit('shmat failed')
+print('SHM_ATTACHED ptr=%d' % ptr)
+"
+
+            echo ""
+            echo "=== Step 2: start rkgame (foreground, will be killed by test) ==="
             set +e
 
-            echo "=== Running rkgame under qemu-arm (8s timeout) ==="
-            echo "Binary: $(stat -c%s output/rkgame) bytes"
-            echo "Note: main_menu() intentionally blocks; exit=124 (timeout) is the expected PASS outcome."
-
-            # Capture child stdout/stderr into test-emu.log.
-            # dbg_init() first prints the banner to fd 2, then dup2's fd 2
-            # to the device-side log fd. So test-emu.log will only contain
-            # the pre-redirect banner; the full session goes to /sdcard/cubegm/rkgame.log.
-            timeout 8 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+            qemu-arm-static -L /arm-root -cpu cortex-a7 \
                 -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
-                ./output/rkgame > test-emu.log 2>&1
+                ./output/rkgame > test-emu.log 2>&1 &
+            QEMU_HOST_PID=$!
+
+            # Wait for the device-side log to be created (indicates main() has started)
+            sleep 4
+
+            # Extract the in-process PID from the pid file.
+            # qemu-arm-static runs the ARM32 binary in a Linux process on the
+            # host, and getpid() inside that process returns the host PID.
+            if [ -f /sdcard/cubegm/rkgame.pid ]; then
+              RK_PID=$(cat /sdcard/cubegm/rkgame.pid)
+              echo "rkgame PID (in-process): $RK_PID"
+              echo "qemu-arm-static host PID: $QEMU_HOST_PID"
+            else
+              RK_PID=""
+              echo "WARNING: no rkgame.pid file; falling back to qemu host PID"
+            fi
+
+            # Verify init chain ran
+            echo ""
+            echo "=== Step 3: verify init chain ==="
+            HAS_BANNER=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
+            HAS_START=0;  grep -q "session start"           /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
+            HAS_SHM=0;    grep -q "found shm"              /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SHM=1
+            HAS_SIG=0;    grep -q "signal handlers installed" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIG=1
+            HAS_HB=0;     [ -f /sdcard/cubegm/heartbeat ] && HAS_HB=1
+
+            echo "  banner=$HAS_BANNER start=$HAS_START shm=$HAS_SHM sig=$HAS_SIG hb=$HAS_HB"
+
+            echo ""
+            echo "=== Step 4: send SIGTERM, check process survives ==="
+            TARGET_PID=${RK_PID:-$QEMU_HOST_PID}
+            kill -TERM "$TARGET_PID" 2>/dev/null || echo "  kill failed (no process)"
+            sleep 2
+            if kill -0 "$TARGET_PID" 2>/dev/null; then
+              echo "  PASS: rkgame survived SIGTERM (SA_RESTART)"
+              SIG_TERM_HANDLED=1
+            else
+              echo "  FAIL: rkgame died on SIGTERM"
+              SIG_TERM_HANDLED=0
+            fi
+
+            # Confirm the signal was logged
+            HAS_SIGLOG=0; grep -q "caught signal" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIGLOG=1
+            echo "  signal logged in rkgame.log: $HAS_SIGLOG"
+
+            # Read heartbeat file
+            echo ""
+            echo "=== Step 5: heartbeat file content (last 5 lines) ==="
+            tail -5 /sdcard/cubegm/heartbeat 2>/dev/null || echo "(no heartbeat file)"
+
+            # Force-kill for cleanup
+            kill -KILL "$QEMU_HOST_PID" 2>/dev/null || true
+            wait "$QEMU_HOST_PID" 2>/dev/null || true
+            set -e
+
+            # ========== 端到端测试 2：长测（重绘 + 持续心跳）==========
+            echo ""
+            echo "=== Step 6: 15s long-run to verify main_menu redraw + heartbeat ==="
+            : > /sdcard/cubegm/rkgame.log
+            rm -f /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
+            set +e
+            timeout 15 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+                -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
+                -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
+                -E HOME=/tmp \
+                -E TMPDIR=/tmp \
+                ./output/rkgame > test-emu-long.log 2>&1
             EXIT_CODE=$?
             set -e
 
-            echo ""
-            echo "=== child stdout/stderr (test-emu.log) ==="
-            cat test-emu.log
+            HAS_REDRAW=0; grep -q "redraws=" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_REDRAW=1
+            HAS_TICKS=0; [ -f /sdcard/cubegm/heartbeat ] && [ "$(wc -l < /sdcard/cubegm/heartbeat)" -ge 5 ] && HAS_TICKS=1
+            RECOUNT=0; grep -o "redraws=[0-9]*" /sdcard/cubegm/rkgame.log 2>/dev/null | tail -1 | grep -o "[0-9]*" || true
 
+            echo "  exit=$EXIT_CODE redraw_logged=$HAS_REDRAW hb_ticks=$HAS_TICKS last_redraws=$RECOUNT"
+
+            # ========== PASS/FAIL ==========
             echo ""
-            echo "=== device-side session log (/sdcard/cubegm/rkgame.log) ==="
-            if [ -f /sdcard/cubegm/rkgame.log ]; then
-              cat /sdcard/cubegm/rkgame.log
+            echo "=== device-side session log (last 30 lines) ==="
+            tail -30 /sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no log)"
+
+            HAS_BANNER2=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER2=1
+
+            FAILS=0
+            [ "$HAS_BANNER" -eq 1 ]  || { echo "FAIL: no session banner"; FAILS=$((FAILS+1)); }
+            [ "$HAS_START" -eq 1 ]   || { echo "FAIL: no session start"; FAILS=$((FAILS+1)); }
+            [ "$HAS_SHM" -eq 1 ]     || { echo "FAIL: shm probe did not find icube's shm (was it created?)"; FAILS=$((FAILS+1)); }
+            [ "$HAS_SIG" -eq 1 ]     || { echo "FAIL: signal handlers not installed"; FAILS=$((FAILS+1)); }
+            [ "$HAS_HB" -eq 1 ]      || { echo "FAIL: heartbeat file not created"; FAILS=$((FAILS+1)); }
+            [ "$SIG_TERM_HANDLED" -eq 1 ] || { echo "FAIL: died on SIGTERM"; FAILS=$((FAILS+1)); }
+            [ "$HAS_REDRAW" -eq 1 ]  || { echo "FAIL: no redraw log entry"; FAILS=$((FAILS+1)); }
+            [ "$HAS_TICKS" -eq 1 ]   || { echo "FAIL: heartbeat file has < 5 ticks"; FAILS=$((FAILS+1)); }
+
+            if [ "$FAILS" -eq 0 ]; then
+              RESULT="PASS (all end-to-end checks)"
             else
-              echo "(no device-side log file)"
-            fi
-
-            if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
-              echo ""
-              echo "=== CRASH LOG (/sdcard/cubegm/rkgame.crash.log) ==="
-              cat /sdcard/cubegm/rkgame.crash.log
-            fi
-
-            # PASS/FAIL criteria:
-            #   PASS: exit=124 (timeout from blocking main_menu) AND session banner + start in device log
-            #   PASS: exit=0 (clean shutdown)
-            #   FAIL: any other exit code (crash, symbol resolution error, etc.)
-            HAS_BANNER=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
-            HAS_START=0;  grep -q "session start"           /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
-
-            if [ $EXIT_CODE -eq 124 ] && [ $HAS_BANNER -eq 1 ] && [ $HAS_START -eq 1 ]; then
-              RESULT="PASS (timeout; session alive)"
-            elif [ $EXIT_CODE -eq 0 ]; then
-              RESULT="PASS (clean exit)"
-            else
-              RESULT="FAIL (exit=$EXIT_CODE)"
+              RESULT="FAIL ($FAILS checks failed)"
             fi
 
             echo ""
-            echo "=== RESULT: $RESULT (exit=$EXIT_CODE, banner=$HAS_BANNER, start=$HAS_START) ==="
+            echo "=== RESULT: $RESULT (exit=$EXIT_CODE) ==="
 
             git config user.email "cnb@lieguch"
             git config user.name "CNB-Build"
             git checkout -B artifacts
-            git add test-emu.log 2>/dev/null || true
-            # Preserve the device-side session log as a separate artifact so
-            # reviewers can read the actual dbg_log output.
+            git add test-emu.log test-emu-long.log 2>/dev/null || true
             cp /sdcard/cubegm/rkgame.log ./test-emu-device.log 2>/dev/null || true
             git add test-emu-device.log 2>/dev/null || true
+            cp /sdcard/cubegm/heartbeat ./test-emu-heartbeat.log 2>/dev/null || true
+            git add test-emu-heartbeat.log 2>/dev/null || true
             if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
               cp /sdcard/cubegm/rkgame.crash.log ./test-emu-crash.log
               git add test-emu-crash.log 2>/dev/null || true
             fi
-            git commit -m "auto: qemu test $RESULT (exit=$EXIT_CODE)"
+            git commit -m "auto: qemu e2e test $RESULT (exit=$EXIT_CODE)"
             git push origin artifacts --force
             git checkout main
             echo "TEST DONE ($RESULT)"
