@@ -77,6 +77,21 @@ main:
               ln -sf libdrm.so.2 /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
               echo "  Created libdrm.so symlink -> libdrm.so.2"
             fi
+            # xf86drm.h + xf86drmMode.h include <drm.h>, <drm_mode.h>,
+            # <drm_fourcc.h>, etc. libdrm-dev ships all of them under
+            # /usr/include/libdrm/. Rather than picking one-off symlinks,
+            # bulk-link every top-level .h in libdrm/ up to /usr/include/.
+            # This lets '#include <drm.h>' and friends resolve without
+            # touching -I flags.
+            if [ -d /arm-root/usr/include/libdrm ]; then
+              for f in /arm-root/usr/include/libdrm/*.h; do
+                base=$(basename "$f")
+                if [ ! -f "/arm-root/usr/include/$base" ]; then
+                  ln -sf "libdrm/$base" "/arm-root/usr/include/$base"
+                fi
+              done
+              echo "  Bulk-linked libdrm/*.h -> /usr/include/*.h"
+            fi
 
             # ALWAYS fix broken absolute symlinks (not just on first setup).
             # Debian 9 packages ship libdl.so/libm.so/libpthread.so as
@@ -348,6 +363,21 @@ main:
             if [ ! -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so ] && [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2 ]; then
               ln -sf libdrm.so.2 /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
               echo "  Created libdrm.so symlink -> libdrm.so.2"
+            fi
+            # xf86drm.h + xf86drmMode.h include <drm.h>, <drm_mode.h>,
+            # <drm_fourcc.h>, etc. libdrm-dev ships all of them under
+            # /usr/include/libdrm/. Rather than picking one-off symlinks,
+            # bulk-link every top-level .h in libdrm/ up to /usr/include/.
+            # This lets '#include <drm.h>' and friends resolve without
+            # touching -I flags.
+            if [ -d /arm-root/usr/include/libdrm ]; then
+              for f in /arm-root/usr/include/libdrm/*.h; do
+                base=$(basename "$f")
+                if [ ! -f "/arm-root/usr/include/$base" ]; then
+                  ln -sf "libdrm/$base" "/arm-root/usr/include/$base"
+                fi
+              done
+              echo "  Bulk-linked libdrm/*.h -> /usr/include/*.h"
             fi
 
             # ALWAYS fix broken absolute symlinks (not just on first setup).
