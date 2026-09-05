@@ -217,9 +217,9 @@ jobs:
           git config user.email "github-actions@users.noreply.github.com"
           git config user.name "GitHub Actions"
           git checkout -B artifacts
-          git add rkgame-rebuild/build.log
+          git add -f rkgame-rebuild/build.log
           if [ "$BUILD_STATUS" -eq 0 ] && [ -f rkgame-rebuild/output/rkgame ]; then
-            git add rkgame-rebuild/output/rkgame
+            git add -f rkgame-rebuild/output/rkgame
             git commit -m "auto: rkgame build artifact ($(stat -c%s rkgame-rebuild/output/rkgame) bytes)"
           else
             git commit -m "auto: build FAILED (status=$BUILD_STATUS)"
@@ -371,14 +371,14 @@ jobs:
           git config user.email "github-actions@users.noreply.github.com"
           git config user.name "GitHub Actions"
           git checkout -B artifacts
-          git add rkgame-rebuild/test-emu.log rkgame-rebuild/test-emu-long.log 2>/dev/null || true
+          git add -f rkgame-rebuild/test-emu.log rkgame-rebuild/test-emu-long.log 2>/dev/null || true
           cp /sdcard/cubegm/rkgame.log rkgame-rebuild/test-emu-device.log 2>/dev/null || true
-          git add rkgame-rebuild/test-emu-device.log 2>/dev/null || true
+          git add -f rkgame-rebuild/test-emu-device.log 2>/dev/null || true
           cp /sdcard/cubegm/heartbeat rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
-          git add rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
+          git add -f rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
           if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
             cp /sdcard/cubegm/rkgame.crash.log rkgame-rebuild/test-emu-crash.log
-            git add rkgame-rebuild/test-emu-crash.log 2>/dev/null || true
+            git add -f rkgame-rebuild/test-emu-crash.log 2>/dev/null || true
           fi
           git commit -m "auto: qemu e2e test ${{ steps.test.outputs.RESULT }} (exit=${{ steps.test.outputs.EXIT_CODE }})" --allow-empty
           git push origin artifacts --force
