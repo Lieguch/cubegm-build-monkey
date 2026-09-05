@@ -37,6 +37,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <time.h>
+#include <sys/select.h>
 
 #include "rkgame.h"
 #include "debug.h"
@@ -90,7 +92,10 @@ void rklog(int level, const char *fmt, ...)
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
     buf[n++] = '\n';
 
-    (void)write(2, buf, n);
+    /*
+     * 只通过 dbg_log 写日志。dbg_init() 已把 fd 2 重定向到同一个 g_log_fd；
+     * 如果这里再 write(2,...) 会形成双 fd 重复/交错。
+     */
     dbg_log(DBG_LEVEL_DEBUG, "%s", buf);
 }
 
@@ -268,9 +273,51 @@ void autorun(const char *rom, const char *driver)
 
 static void main_menu(void)
 {
-    LOG("main_menu: not implemented yet");
-    /* 留待 Phase 4 实现 */
-    ERR("main_menu: 暂不支持，需通过 autorun 启动");
+    LOG("main_menu: placeholder menu active; keeping process alive until UI/ROM autorun");
+    ERR("main_menu: 暂不支持完整 UI，需通过 autorun 启动 ROM");
+
+    /*
+     * 原厂无 autorun 时会进入菜单并保持前台进程。当前 rebuild 还没有 DRM/KMS
+     * 菜单 UI；若这里返回，launcher 会认为 rkgame 已退出并重启进程，形成
+     * 7 秒一次的重启循环。因此先进入阻塞事件循环：轮询手柄，但绝不退出。
+     * 后续 Phase 4 应把这里替换成真实菜单 UI。
+     */
+    time_t last_heartbeat = 0;
+
+    while (1) {
+        struct timeval tv;
+        fd_set rfds;
+        int i;
+        int maxfd = -1;
+
+        FD_ZERO(&rfds);
+        for (i = 0; i < joy_dev_count; i++) {
+            if (joy_devs[i].event_fd >= 0) {
+                FD_SET(joy_devs[i].event_fd, &rfds);
+                if (joy_devs[i].event_fd > maxfd)
+                    maxfd = joy_devs[i].event_fd;
+            }
+        }
+
+        if (maxfd >= 0) {
+            tv.tv_sec = 60;
+            tv.tv_usec = 0;
+            if (select(maxfd + 1, &rfds, NULL, NULL, &tv) > 0) {
+                (void)joy_poll();
+                continue;
+            }
+        } else {
+            /* 无手柄时也不退出；避免 launcher 重启循环。 */
+            struct timespec ts = { 60, 0 };
+            nanosleep(&ts, NULL);
+        }
+
+        time_t now = time(NULL);
+        if (now != last_heartbeat) {
+            LOG("main_menu: still active (no autorun configured), waiting for Phase 4 UI");
+            last_heartbeat = now;
+        }
+    }
 }
 
 /* ---- 入口 ---- */

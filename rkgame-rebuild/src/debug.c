@@ -204,6 +204,29 @@ static void crash_handler(int sig, siginfo_t *info, void *ucontext)
 
 /* ---- 日志写入 ---- */
 
+/*
+ * 关键：launcher 可能已经把自己的 stderr（fd 2）重定向到 rkgame.log。
+ * 如果 dbg_init() 再独立 open 一个 fd 写同一个文件，两个 O_APPEND fd 会
+ * 以不同进程内状态交错，真机日志里会出现半行/乱码。这里统一把 fd 2
+ * dup2 到 g_log_fd，让 write(2,...)/fprintf(stderr,...)/dbg_log() 共享
+ * 同一个文件描述符。
+ */
+static void dbg_redirect_stderr(void)
+{
+    if (g_log_fd < 0)
+        return;
+
+    int saved = dup(2);
+    if (saved < 0)
+        return;
+
+    if (dup2(g_log_fd, 2) < 0) {
+        close(saved);
+        return;
+    }
+    close(saved);
+}
+
 static void dbg_write_to_fd(const char *data, int len)
 {
     if (g_log_fd < 0)
@@ -318,6 +341,9 @@ void dbg_init(void)
 
     /* ---- 3) 报告日志文件状态 ---- */
     if (g_log_fd >= 0) {
+        /* 统一 fd 2 与日志 fd，避免 launcher 重定向 stderr 后双 fd 交错。 */
+        dbg_redirect_stderr();
+
         /* banner 同时写入日志文件（之前只写 stderr，设备上不可见） */
         write(g_log_fd, banner, 32);
         const char *header = "--- rkgame session start ---\n";
@@ -328,7 +354,6 @@ void dbg_init(void)
         n += strncpy_n(chosen, stbuf + n, sizeof(stbuf) - n - 1);
         stbuf[n++] = '\n';
         write(2, stbuf, n);
-        write(g_log_fd, stbuf, n);
     } else {
         char stbuf[160];
         int n = 0;
