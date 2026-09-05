@@ -12,47 +12,70 @@ main:
             apt-get update -qq
             apt-get install -y --no-install-recommends wget dpkg-dev ca-certificates
 
-            # If sysroot not yet built, download Debian 9 packages
+            # Two-phase setup: base glibc package OR individual DRM add-on.
+            # Prior to 2026-09-05, libdrm was bundled in the glibc-only
+            # download block, so when /arm-root cached libc.so but the
+            # libdrm .debs had never been fetched (because the block was
+            # skipped on cache), libdrm.so/xf86drm.h ended up missing.
+            BASE=http://archive.debian.org/debian/pool/main
+            mkdir -p /arm-root
+            LIBDRM_OK=0
+            if [ -f /arm-root/usr/include/xf86drm.h ] || [ -f /arm-root/usr/include/libdrm/xf86drm.h ]; then
+              if [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so ] || [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2 ]; then
+                LIBDRM_OK=1
+                echo "libdrm already present, skipping DRM add-on"
+              fi
+            fi
+
             if [ ! -f /arm-root/usr/lib/arm-linux-gnueabihf/libc.so ]; then
               mkdir -p /tmp/arm-pkgs /tmp/arm-root
               cd /tmp/arm-pkgs
-              BASE=http://archive.debian.org/debian/pool/main
+              echo "  downloading glibc packages..."
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6-dev_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc-bin_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libstdc++6_6.3.0-18+deb9u1_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libgcc1_6.3.0-18+deb9u1_armhf.deb"
-              # DRM/KMS headers + runtime (for Phase 4 display layer)
-              echo "  downloading linux-libc-dev..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
-              echo "  downloading libdrm2..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
-              echo "  downloading libdrm-dev..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
-              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
-              mkdir -p /arm-root
-              cp -a /tmp/arm-root/. /arm-root/
-              echo "SYSROOT downloaded"
-
-              # Diagnostic: verify DRM files landed where expected
-              echo "--- DRM probe (post-extract) ---"
-              echo "  /arm-root/usr/lib/arm-linux-gnueabihf/libdrm*:"
-              ls -la /arm-root/usr/lib/arm-linux-gnueabihf/libdrm* 2>&1 || echo "  NONE"
-              echo "  /arm-root/usr/include/xf86drm.h:"
-              ls -la /arm-root/usr/include/xf86drm.h /arm-root/usr/include/xf86drmMode.h 2>&1 || echo "  NONE"
-              echo "  xf86drm*.h anywhere:"
-              find /arm-root/usr/include -name 'xf86drm*.h' 2>/dev/null || echo "  NONE"
-              echo "  libdrm* anywhere:"
-              find /arm-root/usr/lib -name 'libdrm*' 2>/dev/null | head -20 || echo "  NONE"
-              # If xf86drm.h is under /usr/include/libdrm/, symlink it to the
-              # location our code expects (#include <xf86drm.h>).
-              if [ ! -f /arm-root/usr/include/xf86drm.h ] && [ -f /arm-root/usr/include/libdrm/xf86drm.h ]; then
-                ln -sf libdrm/xf86drm.h /arm-root/usr/include/xf86drm.h
-                ln -sf libdrm/xf86drmMode.h /arm-root/usr/include/xf86drmMode.h
-                echo "  Created xf86drm.h symlinks"
+              if [ $LIBDRM_OK -eq 0 ]; then
+                echo "  downloading linux-libc-dev..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+                echo "  downloading libdrm2..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+                echo "  downloading libdrm-dev..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
               fi
+              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
+              cp -a /tmp/arm-root/. /arm-root/
+              echo "SYSROOT packages downloaded (base + $([ $LIBDRM_OK -eq 0 ] && echo 'drm' || echo 'none'))"
             else
-              echo "SYSROOT cached, applying symlink fixes..."
+              echo "SYSROOT base cached"
+              if [ $LIBDRM_OK -eq 0 ]; then
+                mkdir -p /tmp/arm-pkgs-drm /tmp/arm-root-drm
+                cd /tmp/arm-pkgs-drm
+                echo "  downloading linux-libc-dev (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+                echo "  downloading libdrm2 (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+                echo "  downloading libdrm-dev (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
+                for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root-drm/; done
+                cp -a /tmp/arm-root-drm/. /arm-root/
+                echo "DRM add-on packages added to sysroot"
+              fi
+            fi
+
+            # Post-extract normalization: Debian 9 libdrm-dev puts xf86drm.h
+            # under /usr/include/libdrm/ and only ships libdrm.so.2 (no
+            # unversioned .so symlink). Linker + preprocessor need the
+            # conventional paths.
+            if [ -f /arm-root/usr/include/libdrm/xf86drm.h ] && [ ! -f /arm-root/usr/include/xf86drm.h ]; then
+              ln -sf libdrm/xf86drm.h /arm-root/usr/include/xf86drm.h
+              ln -sf libdrm/xf86drmMode.h /arm-root/usr/include/xf86drmMode.h
+              echo "  Created xf86drm.h + xf86drmMode.h symlinks from libdrm/"
+            fi
+            if [ ! -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so ] && [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2 ]; then
+              ln -sf libdrm.so.2 /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
+              echo "  Created libdrm.so symlink -> libdrm.so.2"
             fi
 
             # ALWAYS fix broken absolute symlinks (not just on first setup).
@@ -261,47 +284,70 @@ main:
             apt-get update -qq
             apt-get install -y --no-install-recommends wget dpkg-dev ca-certificates
 
-            # If sysroot not yet built, download Debian 9 packages
+            # Two-phase setup: base glibc package OR individual DRM add-on.
+            # Prior to 2026-09-05, libdrm was bundled in the glibc-only
+            # download block, so when /arm-root cached libc.so but the
+            # libdrm .debs had never been fetched (because the block was
+            # skipped on cache), libdrm.so/xf86drm.h ended up missing.
+            BASE=http://archive.debian.org/debian/pool/main
+            mkdir -p /arm-root
+            LIBDRM_OK=0
+            if [ -f /arm-root/usr/include/xf86drm.h ] || [ -f /arm-root/usr/include/libdrm/xf86drm.h ]; then
+              if [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so ] || [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2 ]; then
+                LIBDRM_OK=1
+                echo "libdrm already present, skipping DRM add-on"
+              fi
+            fi
+
             if [ ! -f /arm-root/usr/lib/arm-linux-gnueabihf/libc.so ]; then
               mkdir -p /tmp/arm-pkgs /tmp/arm-root
               cd /tmp/arm-pkgs
-              BASE=http://archive.debian.org/debian/pool/main
+              echo "  downloading glibc packages..."
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6-dev_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc-bin_2.24-11+deb9u4_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libstdc++6_6.3.0-18+deb9u1_armhf.deb"
               wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libgcc1_6.3.0-18+deb9u1_armhf.deb"
-              # DRM/KMS headers + runtime (for Phase 4 display layer)
-              echo "  downloading linux-libc-dev..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
-              echo "  downloading libdrm2..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
-              echo "  downloading libdrm-dev..."
-              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
-              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
-              mkdir -p /arm-root
-              cp -a /tmp/arm-root/. /arm-root/
-              echo "SYSROOT downloaded"
-
-              # Diagnostic: verify DRM files landed where expected
-              echo "--- DRM probe (post-extract) ---"
-              echo "  /arm-root/usr/lib/arm-linux-gnueabihf/libdrm*:"
-              ls -la /arm-root/usr/lib/arm-linux-gnueabihf/libdrm* 2>&1 || echo "  NONE"
-              echo "  /arm-root/usr/include/xf86drm.h:"
-              ls -la /arm-root/usr/include/xf86drm.h /arm-root/usr/include/xf86drmMode.h 2>&1 || echo "  NONE"
-              echo "  xf86drm*.h anywhere:"
-              find /arm-root/usr/include -name 'xf86drm*.h' 2>/dev/null || echo "  NONE"
-              echo "  libdrm* anywhere:"
-              find /arm-root/usr/lib -name 'libdrm*' 2>/dev/null | head -20 || echo "  NONE"
-              # If xf86drm.h is under /usr/include/libdrm/, symlink it to the
-              # location our code expects (#include <xf86drm.h>).
-              if [ ! -f /arm-root/usr/include/xf86drm.h ] && [ -f /arm-root/usr/include/libdrm/xf86drm.h ]; then
-                ln -sf libdrm/xf86drm.h /arm-root/usr/include/xf86drm.h
-                ln -sf libdrm/xf86drmMode.h /arm-root/usr/include/xf86drmMode.h
-                echo "  Created xf86drm.h symlinks"
+              if [ $LIBDRM_OK -eq 0 ]; then
+                echo "  downloading linux-libc-dev..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+                echo "  downloading libdrm2..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+                echo "  downloading libdrm-dev..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
               fi
+              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
+              cp -a /tmp/arm-root/. /arm-root/
+              echo "SYSROOT packages downloaded (base + $([ $LIBDRM_OK -eq 0 ] && echo 'drm' || echo 'none'))"
             else
-              echo "SYSROOT cached, applying symlink fixes..."
+              echo "SYSROOT base cached"
+              if [ $LIBDRM_OK -eq 0 ]; then
+                mkdir -p /tmp/arm-pkgs-drm /tmp/arm-root-drm
+                cd /tmp/arm-pkgs-drm
+                echo "  downloading linux-libc-dev (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+                echo "  downloading libdrm2 (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+                echo "  downloading libdrm-dev (add-on)..."
+                wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
+                for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root-drm/; done
+                cp -a /tmp/arm-root-drm/. /arm-root/
+                echo "DRM add-on packages added to sysroot"
+              fi
+            fi
+
+            # Post-extract normalization: Debian 9 libdrm-dev puts xf86drm.h
+            # under /usr/include/libdrm/ and only ships libdrm.so.2 (no
+            # unversioned .so symlink). Linker + preprocessor need the
+            # conventional paths.
+            if [ -f /arm-root/usr/include/libdrm/xf86drm.h ] && [ ! -f /arm-root/usr/include/xf86drm.h ]; then
+              ln -sf libdrm/xf86drm.h /arm-root/usr/include/xf86drm.h
+              ln -sf libdrm/xf86drmMode.h /arm-root/usr/include/xf86drmMode.h
+              echo "  Created xf86drm.h + xf86drmMode.h symlinks from libdrm/"
+            fi
+            if [ ! -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so ] && [ -f /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2 ]; then
+              ln -sf libdrm.so.2 /arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
+              echo "  Created libdrm.so symlink -> libdrm.so.2"
             fi
 
             # ALWAYS fix broken absolute symlinks (not just on first setup).
