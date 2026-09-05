@@ -72,17 +72,26 @@ void rklog(int level, const char *fmt, ...)
 {
     va_list ap;
     const char *prefix;
+    char buf[512];
+    int n;
+
     switch (level) {
         case RKLOG_ERROR: prefix = "[RK-E]"; break;
         case RKLOG_WARN:  prefix = "[RK-W]"; break;
         case RKLOG_INFO:  prefix = "[RK-I]"; break;
         default:          prefix = "[RK-D]"; break;
     }
-    fprintf(stderr, "%s ", prefix);
+
+    n = snprintf(buf, sizeof(buf), "%s ", prefix);
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
     va_end(ap);
-    fprintf(stderr, "\n");
+    if (n < 0) n = 0;
+    if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
+    buf[n++] = '\n';
+
+    (void)write(2, buf, n);
+    dbg_log(DBG_LEVEL_DEBUG, "%s", buf);
 }
 
 /* ---- 显示层占位实现（DRM/KMS 待 Phase 4 实现） ---- */
@@ -135,78 +144,111 @@ static void get_executable_path(char *out, size_t out_size)
 
 void config_load(void)
 {
+    /* 原厂固件用 setting.xml（非 config.xml），格式为 <autorun file="..." driver="..."/> */
+    const char *cfg_files[] = { "setting.xml", "config.xml", NULL };
+    FILE *fp = NULL;
     char path[600];
-    snprintf(path, sizeof(path), "%s/config.xml", work_path);
 
-    FILE *fp = fopen(path, "r");
+    for (int i = 0; cfg_files[i]; i++) {
+        snprintf(path, sizeof(path), "%s%s", work_path, cfg_files[i]);
+        fp = fopen(path, "r");
+        if (fp) break;
+    }
+
     if (!fp) {
-        ERR("config_load: open %s fail (errno=%d: %s)", path, errno, strerror(errno));
-        /* 回退到 defaults */
+        ERR("config_load: no config file in %s", work_path);
         memset(&g_cfg, 0, sizeof(g_cfg));
-        strcpy(g_cfg.autorun_path, "/sdcard/cubegm/roms/fba/");
         return;
     }
 
-    /* 简易 XML 解析：读取 <autorun>...</autorun> 和 <device> 等标签 */
     char *buf = malloc(64 * 1024);
     if (!buf) { fclose(fp); return; }
     size_t n = fread(buf, 1, 64 * 1024 - 1, fp);
     buf[n] = '\0';
     fclose(fp);
 
-    /* 提取 autorun 路径 */
-    char *tag = strstr(buf, "<autorun>");
+    /* 1) 解析 <autorun file="..." driver="..."/>（属性语法，原厂 setting.xml 格式） */
+    char *tag = strstr(buf, "<autorun");
     if (tag) {
-        tag += strlen("<autorun>");
-        char *end = strstr(tag, "</autorun>");
-        if (end) {
-            size_t len = end - tag;
-            if (len < sizeof(g_cfg.autorun_path))
-                memcpy(g_cfg.autorun_path, tag, len);
-            g_cfg.autorun_path[len] = '\0';
+        /* file="..." */
+        char *f = strstr(tag, "file=");
+        if (f) {
+            f += 5;
+            if (*f == '"') {
+                f++;
+                char *end = strchr(f, '"');
+                if (end) {
+                    size_t len = (size_t)(end - f);
+                    if (len < sizeof(g_cfg.autorun_path)) {
+                        memcpy(g_cfg.autorun_path, f, len);
+                        g_cfg.autorun_path[len] = '\0';
+                    }
+                }
+            }
+        }
+        /* driver="..." */
+        char *d = strstr(tag, "driver=");
+        if (d) {
+            d += 7;
+            if (*d == '"') {
+                d++;
+                char *end = strchr(d, '"');
+                if (end) {
+                    size_t len = (size_t)(end - d);
+                    if (len < sizeof(g_cfg.autorun_driver)) {
+                        memcpy(g_cfg.autorun_driver, d, len);
+                        g_cfg.autorun_driver[len] = '\0';
+                    }
+                }
+            }
         }
     }
 
-    /* 提取 core 名 */
+    /* 2) 回退：<core>name</core>（子元素文本，非原厂格式但保留兼容） */
     tag = strstr(buf, "<core>");
-    if (tag) {
-        tag += strlen("<core>");
+    if (tag && !g_cfg.core_name[0]) {
+        tag += 7;
         char *end = strstr(tag, "</core>");
         if (end) {
-            size_t len = end - tag;
-            if (len < sizeof(g_cfg.core_name))
+            size_t len = (size_t)(end - tag);
+            if (len < sizeof(g_cfg.core_name)) {
                 memcpy(g_cfg.core_name, tag, len);
-            g_cfg.core_name[len] = '\0';
+                g_cfg.core_name[len] = '\0';
+            }
         }
     }
 
-    /* 提取 device0_type / device1_type */
+    /* 3) device0_type / device1_type */
     tag = strstr(buf, "<device0_type>");
     if (tag) {
-        tag += strlen("<device0_type>");
+        tag += 15;
         char *end = strstr(tag, "</device0_type>");
         if (end) {
-            size_t len = end - tag;
-            if (len < sizeof(g_cfg.device0_type))
+            size_t len = (size_t)(end - tag);
+            if (len < sizeof(g_cfg.device0_type)) {
                 memcpy(g_cfg.device0_type, tag, len);
-            g_cfg.device0_type[len] = '\0';
+                g_cfg.device0_type[len] = '\0';
+            }
         }
     }
     tag = strstr(buf, "<device1_type>");
     if (tag) {
-        tag += strlen("<device1_type>");
+        tag += 15;
         char *end = strstr(tag, "</device1_type>");
         if (end) {
-            size_t len = end - tag;
-            if (len < sizeof(g_cfg.device1_type))
+            size_t len = (size_t)(end - tag);
+            if (len < sizeof(g_cfg.device1_type)) {
                 memcpy(g_cfg.device1_type, tag, len);
-            g_cfg.device1_type[len] = '\0';
+                g_cfg.device1_type[len] = '\0';
+            }
         }
     }
 
     free(buf);
-    LOG("config: autorun=%s core=%s dev0=%s dev1=%s",
-        g_cfg.autorun_path, g_cfg.core_name, g_cfg.device0_type, g_cfg.device1_type);
+    LOG("config: autorun=%s core=%s driver=%s dev0=%s dev1=%s",
+        g_cfg.autorun_path, g_cfg.core_name,
+        g_cfg.autorun_driver,
+        g_cfg.device0_type, g_cfg.device1_type);
 }
 
 /* ---- autorun ---- */
@@ -258,6 +300,8 @@ int main(int argc, char **argv)
     }
     if (argc >= 3) {
         strncpy(autorundriver, argv[2], sizeof(autorundriver) - 1);
+    } else if (g_cfg.autorun_driver[0]) {
+        strncpy(autorundriver, g_cfg.autorun_driver, sizeof(autorundriver) - 1);
     }
 
     LOG("autorunfile = %s", autorunfile);

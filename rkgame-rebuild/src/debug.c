@@ -318,6 +318,8 @@ void dbg_init(void)
 
     /* ---- 3) 报告日志文件状态 ---- */
     if (g_log_fd >= 0) {
+        /* banner 同时写入日志文件（之前只写 stderr，设备上不可见） */
+        write(g_log_fd, banner, 32);
         const char *header = "--- rkgame session start ---\n";
         write(g_log_fd, header, 28);
         char stbuf[128];
