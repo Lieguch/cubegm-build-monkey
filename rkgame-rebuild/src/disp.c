@@ -45,6 +45,7 @@
 #if HAVE_DRM
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <drm_fourcc.h>
 #endif
 
 #include "rkgame.h"
@@ -223,7 +224,7 @@ static int drm_find_connector(void)
         drmModeConnector *conn = drmModeGetConnector(g_dri_fd, res->connectors[i]);
         if (!conn) continue;
 
-        if (conn->connector_status != DRM_MODE_CONNECTED) {
+        if (conn->connection != DRM_MODE_CONNECTED) {
             drmModeFreeConnector(conn);
             continue;
         }
@@ -317,7 +318,7 @@ int disp_init(void)
         return -1;
     }
 
-    size_t map_size = (size_t)crm.pitches[0] * (size_t)g_fb_h;
+    size_t map_size = (size_t)crm.pitch * (size_t)g_fb_h;
     g_fb_mem = mmap(NULL, map_size, PROT_READ | PROT_WRITE,
                     MAP_SHARED, g_dri_fd, map.offset);
     if (g_fb_mem == MAP_FAILED) {
@@ -325,22 +326,19 @@ int disp_init(void)
         drm_cleanup();
         return -1;
     }
-    g_fb_pitch = (int)crm.pitches[0];
+    g_fb_pitch = (int)crm.pitch;
 
-    /* 创建 framebuffer */
-    struct drm_mode_addfb2 addfb = { 0 };
-    addfb.handle       = crm.handle;
-    addfb.width        = (uint32_t)g_fb_w;
-    addfb.height       = (uint32_t)g_fb_h;
-    addfb.pixel_format = DRM_FORMAT_XRGB8888;
-    addfb.pitch[0]     = (uint32_t)g_fb_pitch;
-    addfb.offset[0]    = 0;
-    if (ioctl(g_dri_fd, DRM_IOCTL_MODE_ADDFB2, &addfb) < 0) {
-        ERR("disp_init: ADDFB2 failed: %s", strerror(errno));
+    /* 创建 framebuffer (XRGB8888 = 32bpp ARGB, alpha=0) */
+    uint32_t fb_id = 0;
+    if (drmModeAddFB2(g_dri_fd, (uint32_t)g_fb_w, (uint32_t)g_fb_h,
+                      DRM_FORMAT_XRGB8888, crm.handle,
+                      (uint32_t)g_fb_pitch, 0, 0, 0,
+                      &fb_id, 0) < 0) {
+        ERR("disp_init: drmModeAddFB2 failed: %s", strerror(errno));
         drm_cleanup();
         return -1;
     }
-    g_fb_id = addfb.fb_id;
+    g_fb_id = fb_id;
 
     /* 启用 CRTC */
     if (drmModeSetCrtc(g_dri_fd, g_crtc_id, g_fb_id, 0, 0,
