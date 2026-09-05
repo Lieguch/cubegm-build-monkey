@@ -329,10 +329,16 @@ int disp_init(void)
     g_fb_pitch = (int)crm.pitch;
 
     /* 创建 framebuffer (XRGB8888 = 32bpp ARGB, alpha=0) */
+    /* libdrm 2.4's drmModeAddFB2 takes pointer-to-array params:
+     *   drmModeAddFB2(fd, w, h, format, bo_handles[4], pitches[4],
+     *                 offsets[4], *buf_id, flags)
+     */
+    uint32_t handles[] = { crm.handle, 0, 0, 0 };
+    uint32_t pitches[] = { (uint32_t)g_fb_pitch, 0, 0, 0 };
+    uint32_t offsets[] = { 0, 0, 0, 0 };
     uint32_t fb_id = 0;
     if (drmModeAddFB2(g_dri_fd, (uint32_t)g_fb_w, (uint32_t)g_fb_h,
-                      DRM_FORMAT_XRGB8888, crm.handle,
-                      (uint32_t)g_fb_pitch, 0, 0, 0,
+                      DRM_FORMAT_XRGB8888, handles, pitches, offsets,
                       &fb_id, 0) < 0) {
         ERR("disp_init: drmModeAddFB2 failed: %s", strerror(errno));
         drm_cleanup();
