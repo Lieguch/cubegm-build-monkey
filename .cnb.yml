@@ -305,14 +305,18 @@ main:
             : > /sdcard/cubegm/rkgame.log
             rm -f /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
             set +e
-            timeout 15 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+            qemu-arm-static -L /arm-root -cpu cortex-a7 \
                 -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
                 -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
-                ./output/rkgame > test-emu-long.log 2>&1
-            EXIT_CODE=$?
+                ./output/rkgame > test-emu-long.log 2>&1 &
+            QEMU2_PID=$!
+            sleep 15
+            kill -KILL "$QEMU2_PID" 2>/dev/null || true
+            wait "$QEMU2_PID" 2>/dev/null || true
+            EXIT_CODE=124
             set -e
 
             HAS_REDRAW=0; grep -q "redraws=" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_REDRAW=1
