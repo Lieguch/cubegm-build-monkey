@@ -35,12 +35,20 @@ RUNTIME_DIR="$SYSROOT/lib/arm-linux-gnueabihf"
 DEV_DIR="$SYSROOT/usr/lib/arm-linux-gnueabihf"
 
 # Check if libdrm is available in sysroot (for DRM/KMS display)
+# Probe what's actually present so we can diagnose CI issues
 DRM_LIB=""
+DRM_CFLAGS=""
+echo "--- DRM/KMS probe ---"
+echo "  DEV_DIR=$DEV_DIR"
+echo "  SYSROOT/usr/include=$SYSROOT/usr/include"
+if ls "$DEV_DIR"/libdrm* 2>/dev/null; then echo "  libdrm files above"; fi
+if ls "$SYSROOT/usr/include/xf86drm.h" "$SYSROOT/usr/include/xf86drmMode.h" 2>/dev/null; then echo "  DRM headers above"; fi
 if [ -f "$DEV_DIR/libdrm.so" ] && [ -f "$SYSROOT/usr/include/xf86drm.h" ]; then
     DRM_LIB="-ldrm"
-    echo "DRM/KMS support: enabled (libdrm found)"
+    CFLAGS="$CFLAGS -DHAVE_DRM=1 -I$SYSROOT/usr/include"
+    echo "DRM/KMS support: enabled"
 else
-    echo "DRM/KMS support: disabled (libdrm not found, falling back to log-only)"
+    echo "DRM/KMS support: disabled (falling back to log-only)"
 fi
 
 # Verify runtime libs exist

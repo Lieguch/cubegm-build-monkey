@@ -514,8 +514,13 @@ void disp_draw_menu(void)
 
     /* 状态 */
     char status[128];
+#if HAVE_DRM
     snprintf(status, sizeof(status), "DRM/KMS: %dx%d @%uHz",
              g_fb_w, g_fb_h, g_mode.vrefresh);
+#else
+    snprintf(status, sizeof(status), "DRM/KMS: %dx%d (no DRM)",
+             g_fb_w, g_fb_h);
+#endif
     int status_x = (w - (int)strlen(status) * 6) / 2;
     disp_draw_text(status_x, title_y + 16, status, CLR_GREEN);
 
