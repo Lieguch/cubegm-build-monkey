@@ -341,7 +341,11 @@ void dbg_init(void)
 
     /* ---- 3) 报告日志文件状态 ---- */
     if (g_log_fd >= 0) {
-        /* 统一 fd 2 与日志 fd，避免 launcher 重定向 stderr 后双 fd 交错。 */
+        /*
+         * 先输出本次会话的 banner，再统一 fd 2 与日志 fd。
+         * 这样 CI 的 test-emu.log 会先看到启动横幅，随后所有日志统一进入日志文件。
+         */
+        write(2, banner, 32);
         dbg_redirect_stderr();
 
         /* banner 同时写入日志文件（之前只写 stderr，设备上不可见） */
