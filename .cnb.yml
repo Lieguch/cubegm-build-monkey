@@ -242,6 +242,7 @@ main:
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
+                -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
                 ./output/rkgame > test-emu.log 2>&1 &
             QEMU_HOST_PID=$!
 
@@ -309,6 +310,7 @@ main:
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
+                -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
                 ./output/rkgame > test-emu-long.log 2>&1
             EXIT_CODE=$?
             set -e

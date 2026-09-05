@@ -120,17 +120,45 @@ void config_save(void) { LOG("config_save: not implemented"); }
 /*
  * get_executable_path：读取 /proc/self/exe 链接获取自身路径。
  * 原版用 getcwd 替代，但那样拿到的是当前工作目录而非程序路径。
+ *
+ * 优先级：
+ *   1. RKGAME_WORK_PATH 环境变量（CI 测试 / 运维覆盖用）
+ *   2. /proc/self/exe（真实设备路径）
+ *   3. qemu 检测：qemu-arm-static 下 readlink 返回 qemu 路径，用默认 /sdcard/cubegm/
+ *   4. readlink 失败：回退 /sdcard/cubegm/
  */
 static void get_executable_path(char *out, size_t out_size)
 {
+    /* 1. 环境变量覆盖（CI 测试用） */
+    const char *env = getenv("RKGAME_WORK_PATH");
+    if (env && *env) {
+        strncpy(out, env, out_size - 1);
+        out[out_size - 1] = '\0';
+        size_t l = strlen(out);
+        if (l > 0 && out[l-1] != '/') {
+            if (l + 1 < out_size) {
+                out[l] = '/';
+                out[l+1] = '\0';
+            }
+        }
+        return;
+    }
+
+    /* 2. 读 /proc/self/exe */
     ssize_t len = readlink("/proc/self/exe", out, out_size - 1);
     if (len < 0) {
-        /* 退路：用 argv[0] */
-        snprintf(out, out_size, "/sdcard/cubegm/rkgame");
+        snprintf(out, out_size, "/sdcard/cubegm/");
         return;
     }
     out[len] = '\0';
-    /* 截取到父目录 */
+
+    /* 3. qemu 检测：qemu-arm-static 下返回 /usr/bin/qemu-arm-static */
+    if (strstr(out, "qemu")) {
+        snprintf(out, out_size, "/sdcard/cubegm/");
+        return;
+    }
+
+    /* 4. 截取到父目录 */
     char *last_slash = strrchr(out, '/');
     if (last_slash) {
         *(last_slash + 1) = '\0';
@@ -388,6 +416,9 @@ int main(int argc, char **argv)
             close(pid_fd);
         }
     }
+
+    /* 探测 icube launcher 创建的 SysV shm 段（诊断 kill 机制） */
+    hb_detect_icube_shm();
 
     DBGP(CONFIG_LOAD);
     config_load();
