@@ -208,11 +208,16 @@ int  core_run(void);
 /* (see above) */
 
 /* disp.c */
-void disp_init(void);
+int  disp_init(void);
 void disp_shutdown(void);
+bool disp_is_ready(void);
 void disp_set_rotation(uint32_t rot);
 void disp_set_colormode(int mode);
 void disp_flip(const void *buf, unsigned width, unsigned height, size_t pitch);
+void disp_clear(uint32_t color);
+void disp_draw_rect(int x, int y, int w, int h, uint32_t color);
+void disp_draw_text(int x, int y, const char *text, uint32_t color);
+void disp_draw_menu(void);
 
 /* audio.c */
 void audio_init(void);

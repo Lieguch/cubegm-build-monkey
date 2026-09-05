@@ -99,16 +99,7 @@ void rklog(int level, const char *fmt, ...)
     dbg_log(DBG_LEVEL_DEBUG, "%s", buf);
 }
 
-/* ---- 显示层占位实现（DRM/KMS 待 Phase 4 实现） ---- */
-
-void disp_init(void)         { LOG("disp_init: placeholder"); }
-void disp_shutdown(void)     { LOG("disp_shutdown"); }
-void disp_set_rotation(uint32_t rot) { LOG("disp_set_rotation: %u", rot); }
-void disp_set_colormode(int mode)    { LOG("disp_set_colormode: %d", mode); }
-void disp_flip(const void *buf, unsigned w, unsigned h, size_t p)
-{
-    (void)buf; (void)w; (void)h; (void)p;
-}
+/* ---- 显示层（实现见 disp.c） ---- */
 
 /* ---- 音频层占位实现（ALSA 待 Phase 4 实现） ---- */
 
@@ -273,8 +264,13 @@ void autorun(const char *rom, const char *driver)
 
 static void main_menu(void)
 {
-    LOG("main_menu: placeholder menu active; keeping process alive until UI/ROM autorun");
+    LOG("main_menu: entering menu (DRM ready=%d)", disp_is_ready() ? 1 : 0);
     ERR("main_menu: 暂不支持完整 UI，需通过 autorun 启动 ROM");
+
+    /* 如果 DRM/KMS 可用，渲染启动画面菜单 */
+    if (disp_is_ready()) {
+        disp_draw_menu();
+    }
 
     /*
      * 原厂无 autorun 时会进入菜单并保持前台进程。当前 rebuild 还没有 DRM/KMS
@@ -355,7 +351,11 @@ int main(int argc, char **argv)
 
     /* 初始化子系统 */
     DBGP(DISP_INIT);
-    disp_init();
+    int disp_rc = disp_init();
+    if (disp_rc == 0)
+        LOG("disp_init: DRM/KMS ready");
+    else
+        LOG("disp_init: DRM/KMS unavailable (rc=%d), log-only mode", disp_rc);
     DBGP(AUDIO_INIT);
     audio_init();
     DBGP(SRAM_INIT);

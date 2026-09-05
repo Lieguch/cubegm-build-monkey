@@ -27,12 +27,21 @@ if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
 fi
 
 CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -D_GNU_SOURCE -Wall"
-SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c"
+SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/disp.c"
 OUT="${1:-output/rkgame}"
 mkdir -p "$(dirname "$OUT")"
 
 RUNTIME_DIR="$SYSROOT/lib/arm-linux-gnueabihf"
 DEV_DIR="$SYSROOT/usr/lib/arm-linux-gnueabihf"
+
+# Check if libdrm is available in sysroot (for DRM/KMS display)
+DRM_LIB=""
+if [ -f "$DEV_DIR/libdrm.so" ] && [ -f "$SYSROOT/usr/include/xf86drm.h" ]; then
+    DRM_LIB="-ldrm"
+    echo "DRM/KMS support: enabled (libdrm found)"
+else
+    echo "DRM/KMS support: disabled (libdrm not found, falling back to log-only)"
+fi
 
 # Verify runtime libs exist
 for f in "$RUNTIME_DIR/libc.so.6" "$RUNTIME_DIR/libdl.so.2" \
@@ -85,6 +94,7 @@ $CC $CFLAGS \
     -Wl,--no-as-needed \
     -Wl,--dynamic-linker,/lib/ld-linux-armhf.so.3 \
     -lc -ldl -lpthread -lm \
+    $DRM_LIB \
     "$DEV_DIR/crtn.o"
 
 echo "Built: $OUT ($(stat -c%s "$OUT") bytes)"
