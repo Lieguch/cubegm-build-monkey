@@ -218,11 +218,11 @@ jobs:
           git config user.name "GitHub Actions"
           git checkout -B artifacts
           git add -f rkgame-rebuild/build.log
-          if [ "$BUILD_STATUS" -eq 0 ] && [ -f rkgame-rebuild/output/rkgame ]; then
+          if [ "${{ steps.build.outputs.status }}" = "0" ] && [ -f rkgame-rebuild/output/rkgame ]; then
             git add -f rkgame-rebuild/output/rkgame
             git commit -m "auto: rkgame build artifact ($(stat -c%s rkgame-rebuild/output/rkgame) bytes)"
           else
-            git commit -m "auto: build FAILED (status=$BUILD_STATUS)"
+            git commit -m "auto: build FAILED (status=${{ steps.build.outputs.status }})"
           fi
           git push origin artifacts --force
 
@@ -245,10 +245,10 @@ jobs:
           set -e
 
           # Prepare clean log paths (dbg_init opens with O_APPEND).
-          mkdir -p /sdcard/cubegm /tmp
-          : > /sdcard/cubegm/rkgame.log
-          rm -f /sdcard/cubegm/rkgame.crash.log /tmp/rkgame.log \
-                /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
+          mkdir -p /tmp/sdcard/cubegm /tmp
+          : > /tmp/sdcard/cubegm/rkgame.log
+          rm -f /tmp/sdcard/cubegm/rkgame.crash.log /tmp/rkgame.log \
+                /tmp/sdcard/cubegm/heartbeat /tmp/sdcard/cubegm/rkgame.pid
 
           cd rkgame-rebuild
 
@@ -263,15 +263,15 @@ jobs:
               -E PATH="$SYSROOT/usr/bin:/usr/bin:/bin" \
               -E HOME=/tmp \
               -E TMPDIR=/tmp \
-              -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
+              -E RKGAME_WORK_PATH=/tmp/sdcard/cubegm/ \
               ./output/rkgame > test-emu.log 2>&1 &
           QEMU_HOST_PID=$!
 
           # Wait for main() to start (log file created).
           sleep 4
 
-          if [ -f /sdcard/cubegm/rkgame.pid ]; then
-            RK_PID=$(cat /sdcard/cubegm/rkgame.pid)
+          if [ -f /tmp/sdcard/cubegm/rkgame.pid ]; then
+            RK_PID=$(cat /tmp/sdcard/cubegm/rkgame.pid)
             echo "rkgame PID (in-process): $RK_PID"
             echo "qemu-arm-static host PID: $QEMU_HOST_PID"
           else
@@ -281,11 +281,11 @@ jobs:
 
           echo ""
           echo "=== Step 3: verify init chain ==="
-          HAS_BANNER=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
-          HAS_START=0;  grep -q "session start"           /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
-          HAS_SHM=0;    grep -q "found shm"              /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SHM=1
-          HAS_SIG=0;    grep -q "signal handlers installed" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIG=1
-          HAS_HB=0;     [ -f /sdcard/cubegm/heartbeat ] && HAS_HB=1
+          HAS_BANNER=0; grep -q "rkgame rebuild starting" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
+          HAS_START=0;  grep -q "session start"           /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
+          HAS_SHM=0;    grep -q "found shm"              /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SHM=1
+          HAS_SIG=0;    grep -q "signal handlers installed" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIG=1
+          HAS_HB=0;     [ -f /tmp/sdcard/cubegm/heartbeat ] && HAS_HB=1
           echo "  banner=$HAS_BANNER start=$HAS_START shm=$HAS_SHM sig=$HAS_SIG hb=$HAS_HB"
 
           echo ""
@@ -301,12 +301,12 @@ jobs:
             SIG_TERM_HANDLED=0
           fi
 
-          HAS_SIGLOG=0; grep -q "caught signal" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIGLOG=1
+          HAS_SIGLOG=0; grep -q "caught signal" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIGLOG=1
           echo "  signal logged in rkgame.log: $HAS_SIGLOG"
 
           echo ""
           echo "=== Step 5: heartbeat file content (last 5 lines) ==="
-          tail -5 /sdcard/cubegm/heartbeat 2>/dev/null || echo "(no heartbeat file)"
+          tail -5 /tmp/sdcard/cubegm/heartbeat 2>/dev/null || echo "(no heartbeat file)"
 
           kill -KILL "$QEMU_HOST_PID" 2>/dev/null || true
           wait "$QEMU_HOST_PID" 2>/dev/null || true
@@ -314,15 +314,15 @@ jobs:
 
           echo ""
           echo "=== Step 6: 15s long-run to verify main_menu redraw + heartbeat ==="
-          : > /sdcard/cubegm/rkgame.log
-          rm -f /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
+          : > /tmp/sdcard/cubegm/rkgame.log
+          rm -f /tmp/sdcard/cubegm/heartbeat /tmp/sdcard/cubegm/rkgame.pid
           set +e
           qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 \
               -E LD_LIBRARY_PATH="$SYSROOT/lib/arm-linux-gnueabihf" \
               -E PATH="$SYSROOT/usr/bin:/usr/bin:/bin" \
               -E HOME=/tmp \
               -E TMPDIR=/tmp \
-              -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
+              -E RKGAME_WORK_PATH=/tmp/sdcard/cubegm/ \
               ./output/rkgame > test-emu-long.log 2>&1 &
           QEMU2_PID=$!
           sleep 15
@@ -331,16 +331,16 @@ jobs:
           EXIT_CODE=124
           set -e
 
-          HAS_REDRAW=0; grep -q "redraws=" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_REDRAW=1
-          HAS_TICKS=0; [ -f /sdcard/cubegm/heartbeat ] && [ "$(wc -l < /sdcard/cubegm/heartbeat)" -ge 5 ] && HAS_TICKS=1
-          RECOUNT=0; grep -o "redraws=[0-9]*" /sdcard/cubegm/rkgame.log 2>/dev/null | tail -1 | grep -o "[0-9]*" || true
+          HAS_REDRAW=0; grep -q "redraws=" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_REDRAW=1
+          HAS_TICKS=0; [ -f /tmp/sdcard/cubegm/heartbeat ] && [ "$(wc -l < /tmp/sdcard/cubegm/heartbeat)" -ge 5 ] && HAS_TICKS=1
+          RECOUNT=0; grep -o "redraws=[0-9]*" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null | tail -1 | grep -o "[0-9]*" || true
           echo "  exit=$EXIT_CODE redraw_logged=$HAS_REDRAW hb_ticks=$HAS_TICKS last_redraws=$RECOUNT"
 
           echo ""
           echo "=== device-side session log (last 30 lines) ==="
-          tail -30 /sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no log)"
+          tail -30 /tmp/sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no log)"
 
-          HAS_BANNER2=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER2=1
+          HAS_BANNER2=0; grep -q "rkgame rebuild starting" /tmp/sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER2=1
 
           FAILS=0
           [ "$HAS_BANNER" -eq 1 ]  || { echo "FAIL: no session banner"; FAILS=$((FAILS+1)); }
@@ -372,12 +372,12 @@ jobs:
           git config user.name "GitHub Actions"
           git checkout -B artifacts
           git add -f rkgame-rebuild/test-emu.log rkgame-rebuild/test-emu-long.log 2>/dev/null || true
-          cp /sdcard/cubegm/rkgame.log rkgame-rebuild/test-emu-device.log 2>/dev/null || true
+          cp /tmp/sdcard/cubegm/rkgame.log rkgame-rebuild/test-emu-device.log 2>/dev/null || true
           git add -f rkgame-rebuild/test-emu-device.log 2>/dev/null || true
-          cp /sdcard/cubegm/heartbeat rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
+          cp /tmp/sdcard/cubegm/heartbeat rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
           git add -f rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
-          if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
-            cp /sdcard/cubegm/rkgame.crash.log rkgame-rebuild/test-emu-crash.log
+          if [ -f /tmp/sdcard/cubegm/rkgame.crash.log ]; then
+            cp /tmp/sdcard/cubegm/rkgame.crash.log rkgame-rebuild/test-emu-crash.log
             git add -f rkgame-rebuild/test-emu-crash.log 2>/dev/null || true
           fi
           git commit -m "auto: qemu e2e test ${{ steps.test.outputs.RESULT }} (exit=${{ steps.test.outputs.EXIT_CODE }})" --allow-empty
