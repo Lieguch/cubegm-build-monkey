@@ -1,0 +1,405 @@
+# GitHub Actions workflow for rkgame-rebuild (migrated from CNB .cnb.yml 2026-09-05)
+#
+# Equivalent to the CNB `main.push.rkgame-rebuild` job (3 stages: setup-sysroot,
+# build, test-emu). The CNB `api_trigger_build` job is folded in via
+# `workflow_dispatch` — both triggers share the comprehensive test-emu logic.
+#
+# Key CNB → GitHub Actions mapping:
+#   Docker volume /arm-root:copy-on-write   →  actions/cache (key: rkgame-sysroot-v2)
+#   cnb.cool git push origin artifacts      →  github origin push (GITHUB_TOKEN, contents:write)
+#   cnb `git checkout -B artifacts`         →  same command (works identically)
+#   two jobs (main.push + api_trigger_build)→  one workflow (push + workflow_dispatch)
+#
+# Trigger: push to main, or manual dispatch (Actions → rkgame-rebuild → Run workflow).
+
+name: rkgame-rebuild
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rkgame-build
+  cancel-in-progress: true
+
+jobs:
+  rkgame:
+    name: rkgame rebuild + qemu e2e
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    env:
+      SYSROOT: /home/runner/arm-root
+      CC: arm-linux-gnueabihf-gcc
+
+    steps:
+      # ----- Checkout (full history so we can operate on artifacts branch) -----
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ----- Restore cached sysroot (Debian 9 glibc 2.24 + libdrm) -----
+      - name: Restore sysroot cache
+        id: sysroot-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/arm-root
+          key: rkgame-sysroot-v2
+
+      # ----- Stage 1: setup-sysroot -----
+      # Idempotent: on cache hit the download block is skipped because libc.so
+      # already exists. Symlink fixes run every time (volume cache used to
+      # silently lose relative symlinks on CNB; cache save/restore should
+      # preserve them, but re-running is cheap insurance).
+      - name: Setup sysroot
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends wget dpkg-dev ca-certificates
+
+          BASE=http://archive.debian.org/debian/pool/main
+          mkdir -p "$SYSROOT"
+          LIBDRM_OK=0
+          if [ -f "$SYSROOT/usr/include/xf86drm.h" ] || [ -f "$SYSROOT/usr/include/libdrm/xf86drm.h" ]; then
+            if [ -f "$SYSROOT/usr/lib/arm-linux-gnueabihf/libdrm.so" ] || [ -f "$SYSROOT/usr/lib/arm-linux-gnueabihf/libdrm.so.2" ]; then
+              LIBDRM_OK=1
+              echo "libdrm already present, skipping DRM add-on"
+            fi
+          fi
+
+          if [ ! -f "$SYSROOT/usr/lib/arm-linux-gnueabihf/libc.so" ]; then
+            mkdir -p /tmp/arm-pkgs /tmp/arm-root
+            cd /tmp/arm-pkgs
+            echo "  downloading glibc packages..."
+            wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6_2.24-11+deb9u4_armhf.deb"
+            wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc6-dev_2.24-11+deb9u4_armhf.deb"
+            wget -q --progress=dot:mega --timeout=60 "$BASE/g/glibc/libc-bin_2.24-11+deb9u4_armhf.deb"
+            wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libstdc++6_6.3.0-18+deb9u1_armhf.deb"
+            wget -q --progress=dot:mega --timeout=60 "$BASE/g/gcc-6/libgcc1_6.3.0-18+deb9u1_armhf.deb"
+            if [ $LIBDRM_OK -eq 0 ]; then
+              echo "  downloading linux-libc-dev..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+              echo "  downloading libdrm2..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+              echo "  downloading libdrm-dev..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
+            fi
+            for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
+            cp -a /tmp/arm-root/. "$SYSROOT"/
+            echo "SYSROOT packages downloaded (base + $([ $LIBDRM_OK -eq 0 ] && echo 'drm' || echo 'none'))"
+          else
+            echo "SYSROOT base cached"
+            if [ $LIBDRM_OK -eq 0 ]; then
+              mkdir -p /tmp/arm-pkgs-drm /tmp/arm-root-drm
+              cd /tmp/arm-pkgs-drm
+              echo "  downloading linux-libc-dev (add-on)..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/l/linux/linux-libc-dev_4.9.228-1_armhf.deb"
+              echo "  downloading libdrm2 (add-on)..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm2_2.4.97-1_armhf.deb"
+              echo "  downloading libdrm-dev (add-on)..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
+              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root-drm/; done
+              cp -a /tmp/arm-root-drm/. "$SYSROOT"/
+              echo "DRM add-on packages added to sysroot"
+            fi
+          fi
+
+          # Post-extract normalization: xf86drm.h lives under /usr/include/libdrm/
+          # in Debian 9. Bulk-link every .h up to /usr/include/ so '#include <drm.h>'
+          # etc. resolve without -I flags.
+          if [ -d "$SYSROOT/usr/include/libdrm" ]; then
+            for f in "$SYSROOT"/usr/include/libdrm/*.h; do
+              base=$(basename "$f")
+              if [ ! -f "$SYSROOT/usr/include/$base" ]; then
+                ln -sf "libdrm/$base" "$SYSROOT/usr/include/$base"
+              fi
+            done
+            echo "  Bulk-linked libdrm/*.h -> /usr/include/*.h"
+          fi
+
+          # ALWAYS fix broken absolute symlinks. Debian 9 ships libdl.so/libm.so/
+          # libpthread.so as symlinks to /lib/arm-linux-gnueabihf/*.so.2 (doesn't
+          # exist on runner). Replace with RELATIVE symlinks.
+          LIBDIR="$SYSROOT/usr/lib/arm-linux-gnueabihf"
+          RUNDIR="$SYSROOT/lib/arm-linux-gnueabihf"
+
+          ln -sf ../../../lib/arm-linux-gnueabihf/libdl.so.2     "$LIBDIR/libdl.so"
+          ln -sf ../../../lib/arm-linux-gnueabihf/libm.so.6      "$LIBDIR/libm.so"
+          ln -sf ../../../lib/arm-linux-gnueabihf/libpthread.so.0 "$LIBDIR/libpthread.so"
+
+          # libc.so is a linker script with absolute paths. Rewrite with relative.
+          printf '/* GNU ld script\n   Use libc.so.6 and libc_nonshared.a if available\n   */\nGROUP ( AS_NEEDED ( ../../../lib/arm-linux-gnueabihf/libc.so.6 libc_nonshared.a ) )\n' > "$LIBDIR/libc.so"
+          echo "Fixed libc.so linker script (relative paths)"
+
+          # Device's dynamic linker is at /lib/ld-linux-armhf.so.3 (NOT
+          # /lib/arm-linux-gnueabihf/ld-linux-armhf.so.3). Ensure sysroot has it
+          # at the device's path.
+          if [ -f "$RUNDIR/ld-linux-armhf.so.3" ] && [ ! -f "$SYSROOT/lib/ld-linux-armhf.so.3" ]; then
+            ln -sf arm-linux-gnueabihf/ld-linux-armhf.so.3 "$SYSROOT/lib/ld-linux-armhf.so.3"
+            echo "Created symlink: $SYSROOT/lib/ld-linux-armhf.so.3"
+          elif [ -f "$SYSROOT/lib/ld-linux-armhf.so.3" ]; then
+            echo "Dynamic linker already at $SYSROOT/lib/ld-linux-armhf.so.3"
+          else
+            echo "WARNING: ld-linux-armhf.so.3 not found"
+          fi
+
+          # Verify fixed symlinks resolve.
+          echo "Verifying symlinks..."
+          for f in libdl.so libm.so libpthread.so; do
+            target=$(readlink -f "$LIBDIR/$f")
+            echo "  $f -> $target"
+            if [ ! -f "$target" ]; then
+              echo "FATAL: $f target not found: $target"
+              exit 1
+            fi
+          done
+          echo "SYSROOT ready"
+
+          # Always-on DRM diagnostic
+          echo "--- DRM presence check (always) ---"
+          echo "  libdrm files under $SYSROOT/usr/lib:"
+          find "$SYSROOT/usr/lib" -name 'libdrm*' 2>/dev/null | head -20
+          echo "  xf86drm headers:"
+          find "$SYSROOT/usr/include" -name 'xf86drm*.h' 2>/dev/null
+          echo "  Expected $SYSROOT/usr/include/xf86drm.h:"
+          ls -la "$SYSROOT/usr/include/xf86drm.h" 2>&1
+          if [ ! -f "$SYSROOT/usr/include/xf86drm.h" ] && [ -f "$SYSROOT/usr/include/libdrm/xf86drm.h" ]; then
+            ln -sf libdrm/xf86drm.h     "$SYSROOT/usr/include/xf86drm.h"
+            ln -sf libdrm/xf86drmMode.h "$SYSROOT/usr/include/xf86drmMode.h"
+            echo "  Created xf86drm.h symlinks (was under libdrm/)"
+          fi
+          if [ ! -f "$LIBDIR/libdrm.so" ] && [ -f "$LIBDIR/libdrm.so.2" ]; then
+            ln -sf libdrm.so.2 "$LIBDIR/libdrm.so"
+            echo "  Created libdrm.so symlink"
+          fi
+
+      # ----- Save sysroot cache (only on cache miss) -----
+      - name: Save sysroot cache
+        if: steps.sysroot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/arm-root
+          key: rkgame-sysroot-v2
+
+      # ----- Install cross-compiler -----
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf file
+
+      # ----- Stage 2: build -----
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          set +e
+          cd rkgame-rebuild
+          bash build.sh output/rkgame > build.log 2>&1
+          BUILD_STATUS=$?
+          set -e
+          echo "status=$BUILD_STATUS" >> "$GITHUB_OUTPUT"
+          echo "=== build.log ==="
+          cat build.log
+
+      # ----- Commit build artifact to artifacts branch -----
+      - name: Commit build artifact to artifacts branch
+        if: always()
+        shell: bash
+        run: |
+          git config user.email "github-actions@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git checkout -B artifacts
+          git add rkgame-rebuild/build.log
+          if [ "$BUILD_STATUS" -eq 0 ] && [ -f rkgame-rebuild/output/rkgame ]; then
+            git add rkgame-rebuild/output/rkgame
+            git commit -m "auto: rkgame build artifact ($(stat -c%s rkgame-rebuild/output/rkgame) bytes)"
+          else
+            git commit -m "auto: build FAILED (status=$BUILD_STATUS)"
+          fi
+          git push origin artifacts --force
+
+      # ----- Install qemu + python3 for end-to-end test -----
+      - name: Setup qemu
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user-static python3
+          qemu-arm-static --version | head -3
+          python3 --version
+
+      # ----- Stage 3: test-emu (end-to-end, simulates icube shm) -----
+      # Only runs if the build succeeded. Logic is identical to the CNB
+      # main.push.test-emu stage: shm probe + SIGTERM survival + 15s long-run.
+      - name: Test (emu)
+        id: test
+        if: steps.build.outputs.status == '0'
+        shell: bash
+        run: |
+          set -e
+
+          # Prepare clean log paths (dbg_init opens with O_APPEND).
+          mkdir -p /sdcard/cubegm /tmp
+          : > /sdcard/cubegm/rkgame.log
+          rm -f /sdcard/cubegm/rkgame.crash.log /tmp/rkgame.log \
+                /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
+
+          cd rkgame-rebuild
+
+          echo "=== Step 1: create shm segment (simulate icube) ==="
+          python3 tools/mkshm.py
+
+          echo ""
+          echo "=== Step 2: start rkgame (foreground, will be killed by test) ==="
+          set +e
+          qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 \
+              -E LD_LIBRARY_PATH="$SYSROOT/lib/arm-linux-gnueabihf" \
+              -E PATH="$SYSROOT/usr/bin:/usr/bin:/bin" \
+              -E HOME=/tmp \
+              -E TMPDIR=/tmp \
+              -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
+              ./output/rkgame > test-emu.log 2>&1 &
+          QEMU_HOST_PID=$!
+
+          # Wait for main() to start (log file created).
+          sleep 4
+
+          if [ -f /sdcard/cubegm/rkgame.pid ]; then
+            RK_PID=$(cat /sdcard/cubegm/rkgame.pid)
+            echo "rkgame PID (in-process): $RK_PID"
+            echo "qemu-arm-static host PID: $QEMU_HOST_PID"
+          else
+            RK_PID=""
+            echo "WARNING: no rkgame.pid file; falling back to qemu host PID"
+          fi
+
+          echo ""
+          echo "=== Step 3: verify init chain ==="
+          HAS_BANNER=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
+          HAS_START=0;  grep -q "session start"           /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
+          HAS_SHM=0;    grep -q "found shm"              /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SHM=1
+          HAS_SIG=0;    grep -q "signal handlers installed" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIG=1
+          HAS_HB=0;     [ -f /sdcard/cubegm/heartbeat ] && HAS_HB=1
+          echo "  banner=$HAS_BANNER start=$HAS_START shm=$HAS_SHM sig=$HAS_SIG hb=$HAS_HB"
+
+          echo ""
+          echo "=== Step 4: send SIGTERM, check process survives ==="
+          TARGET_PID=${RK_PID:-$QEMU_HOST_PID}
+          kill -TERM "$TARGET_PID" 2>/dev/null || echo "  kill failed (no process)"
+          sleep 2
+          if kill -0 "$TARGET_PID" 2>/dev/null; then
+            echo "  PASS: rkgame survived SIGTERM (SA_RESTART)"
+            SIG_TERM_HANDLED=1
+          else
+            echo "  FAIL: rkgame died on SIGTERM"
+            SIG_TERM_HANDLED=0
+          fi
+
+          HAS_SIGLOG=0; grep -q "caught signal" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_SIGLOG=1
+          echo "  signal logged in rkgame.log: $HAS_SIGLOG"
+
+          echo ""
+          echo "=== Step 5: heartbeat file content (last 5 lines) ==="
+          tail -5 /sdcard/cubegm/heartbeat 2>/dev/null || echo "(no heartbeat file)"
+
+          kill -KILL "$QEMU_HOST_PID" 2>/dev/null || true
+          wait "$QEMU_HOST_PID" 2>/dev/null || true
+          set -e
+
+          echo ""
+          echo "=== Step 6: 15s long-run to verify main_menu redraw + heartbeat ==="
+          : > /sdcard/cubegm/rkgame.log
+          rm -f /sdcard/cubegm/heartbeat /sdcard/cubegm/rkgame.pid
+          set +e
+          qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 \
+              -E LD_LIBRARY_PATH="$SYSROOT/lib/arm-linux-gnueabihf" \
+              -E PATH="$SYSROOT/usr/bin:/usr/bin:/bin" \
+              -E HOME=/tmp \
+              -E TMPDIR=/tmp \
+              -E RKGAME_WORK_PATH=/sdcard/cubegm/ \
+              ./output/rkgame > test-emu-long.log 2>&1 &
+          QEMU2_PID=$!
+          sleep 15
+          kill -KILL "$QEMU2_PID" 2>/dev/null || true
+          wait "$QEMU2_PID" 2>/dev/null || true
+          EXIT_CODE=124
+          set -e
+
+          HAS_REDRAW=0; grep -q "redraws=" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_REDRAW=1
+          HAS_TICKS=0; [ -f /sdcard/cubegm/heartbeat ] && [ "$(wc -l < /sdcard/cubegm/heartbeat)" -ge 5 ] && HAS_TICKS=1
+          RECOUNT=0; grep -o "redraws=[0-9]*" /sdcard/cubegm/rkgame.log 2>/dev/null | tail -1 | grep -o "[0-9]*" || true
+          echo "  exit=$EXIT_CODE redraw_logged=$HAS_REDRAW hb_ticks=$HAS_TICKS last_redraws=$RECOUNT"
+
+          echo ""
+          echo "=== device-side session log (last 30 lines) ==="
+          tail -30 /sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no log)"
+
+          HAS_BANNER2=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER2=1
+
+          FAILS=0
+          [ "$HAS_BANNER" -eq 1 ]  || { echo "FAIL: no session banner"; FAILS=$((FAILS+1)); }
+          [ "$HAS_START" -eq 1 ]   || { echo "FAIL: no session start"; FAILS=$((FAILS+1)); }
+          [ "$HAS_SHM" -eq 1 ]     || { echo "FAIL: shm probe did not find icube's shm"; FAILS=$((FAILS+1)); }
+          [ "$HAS_SIG" -eq 1 ]     || { echo "FAIL: signal handlers not installed"; FAILS=$((FAILS+1)); }
+          [ "$HAS_HB" -eq 1 ]      || { echo "FAIL: heartbeat file not created"; FAILS=$((FAILS+1)); }
+          [ "$SIG_TERM_HANDLED" -eq 1 ] || { echo "FAIL: died on SIGTERM"; FAILS=$((FAILS+1)); }
+          [ "$HAS_REDRAW" -eq 1 ]  || { echo "FAIL: no redraw log entry"; FAILS=$((FAILS+1)); }
+          [ "$HAS_TICKS" -eq 1 ]   || { echo "FAIL: heartbeat file has < 5 ticks"; FAILS=$((FAILS+1)); }
+
+          if [ "$FAILS" -eq 0 ]; then
+            RESULT="PASS (all end-to-end checks)"
+          else
+            RESULT="FAIL ($FAILS checks failed)"
+          fi
+
+          echo ""
+          echo "=== RESULT: $RESULT (exit=$EXIT_CODE) ==="
+          echo "RESULT=$RESULT" >> "$GITHUB_OUTPUT"
+          echo "EXIT_CODE=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+      # ----- Commit test results to artifacts branch -----
+      - name: Commit test results to artifacts branch
+        if: always() && steps.build.outputs.status == '0'
+        shell: bash
+        run: |
+          git config user.email "github-actions@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git checkout -B artifacts
+          git add rkgame-rebuild/test-emu.log rkgame-rebuild/test-emu-long.log 2>/dev/null || true
+          cp /sdcard/cubegm/rkgame.log rkgame-rebuild/test-emu-device.log 2>/dev/null || true
+          git add rkgame-rebuild/test-emu-device.log 2>/dev/null || true
+          cp /sdcard/cubegm/heartbeat rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
+          git add rkgame-rebuild/test-emu-heartbeat.log 2>/dev/null || true
+          if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
+            cp /sdcard/cubegm/rkgame.crash.log rkgame-rebuild/test-emu-crash.log
+            git add rkgame-rebuild/test-emu-crash.log 2>/dev/null || true
+          fi
+          git commit -m "auto: qemu e2e test ${{ steps.test.outputs.RESULT }} (exit=${{ steps.test.outputs.EXIT_CODE }})" --allow-empty
+          git push origin artifacts --force
+
+      # ----- Step summary -----
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## rkgame-rebuild result"
+            echo ""
+            echo "| Stage | Status |"
+            echo "|-------|--------|"
+            echo "| build | ${{ steps.build.outputs.status == '0' && 'PASS' || 'FAIL' }} (exit=${{ steps.build.outputs.status }}) |"
+            echo "| test-emu | ${{ steps.test.outputs.RESULT || 'SKIPPED' }} |"
+            echo ""
+            if [ -f rkgame-rebuild/output/rkgame ]; then
+              echo "**Binary size**: $(stat -c%s rkgame-rebuild/output/rkgame) bytes"
+              echo "**SHA256**: $(sha256sum rkgame-rebuild/output/rkgame | awk '{print $1}')"
+            fi
+            echo ""
+            echo "**Run**: ${{ github.run_id }} | **SHA**: ${{ github.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,23 @@
+# Build artifacts (committed to artifacts branch by CI, not main)
+rkgame-rebuild/build.log
+rkgame-rebuild/output/rkgame
+rkgame-rebuild/test-emu.log
+rkgame-rebuild/test-emu-long.log
+rkgame-rebuild/test-emu-device.log
+rkgame-rebuild/test-emu-heartbeat.log
+rkgame-rebuild/test-emu-crash.log
+rkgame-rebuild/test-emu-*.log
+
+# Legacy/debug binaries at repo root
+rkgame-debug-*
+
+# Sysroot (only lives on CI runner at /home/runner/arm-root)
+arm-root/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
