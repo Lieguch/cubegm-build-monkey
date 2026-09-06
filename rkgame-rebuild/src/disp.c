@@ -429,6 +429,8 @@ void disp_draw_text(int x, int y, const char *text, uint32_t color)
 {
     if (!g_drm_ready || !g_fb_mem) return;
 
+    int scale = 3;  /* 3x 放大，5x7 字体在 1280x720 屏幕上可见 */
+
     for (const char *p = text; *p; p++) {
         unsigned char c = (unsigned char)*p;
         if (c >= 32 && c <= 126) {
@@ -437,11 +439,16 @@ void disp_draw_text(int x, int y, const char *text, uint32_t color)
                 unsigned char bits = glyph[row] & 0x1f;
                 for (int col = 0; col < 5; col++) {
                     if (bits & (1u << col))
-                        disp_draw_pixel(x + col, y + row, color);
+                        /* 放大：每个像素变成 scale x scale 的方块 */
+                        for (int sy = 0; sy < scale; sy++) {
+                            for (int sx = 0; sx < scale; sx++) {
+                                disp_draw_pixel(x + col * scale + sx, y + row * scale + sy, color);
+                            }
+                        }
                 }
             }
         }
-        x += 6; /* 5 pixels + 1 spacing */
+        x += 6 * scale; /* 5 pixels + 1 spacing, 放大 */
     }
 }
 
