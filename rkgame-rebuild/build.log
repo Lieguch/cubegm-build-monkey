@@ -1,0 +1,372 @@
+=== rkgame-rebuild ===
+CC=arm-linux-gnueabihf-gcc
+SYSROOT=/home/runner/arm-root
+--- DRM/KMS probe ---
+  DEV_DIR=/home/runner/arm-root/usr/lib/arm-linux-gnueabihf
+  SYSROOT/usr/include=/home/runner/arm-root/usr/include
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2.4.0
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_amdgpu.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_etnaviv.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_exynos.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_freedreno.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_nouveau.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_omap.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_radeon.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_tegra.so
+  libdrm files above
+/home/runner/arm-root/usr/include/xf86drm.h
+/home/runner/arm-root/usr/include/xf86drmMode.h
+  DRM headers above
+DRM/KMS support: enabled
+  libdl.so -> ../../../lib/arm-linux-gnueabihf/libdl.so.2 (relative, OK)
+  libm.so -> ../../../lib/arm-linux-gnueabihf/libm.so.6 (relative, OK)
+  libpthread.so -> ../../../lib/arm-linux-gnueabihf/libpthread.so.0 (relative, OK)
+libgcc: /usr/lib/gcc-cross/arm-linux-gnueabihf/11/libgcc.a
+--- Building ---
+src/main.c:28: warning: "_GNU_SOURCE" redefined
+   28 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/main.c:33:
+In function ‘strncpy’,
+    inlined from ‘main’ at src/main.c:436:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 1023 bytes from a string of length 1023 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘main’ at src/main.c:443:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 127 bytes from a string of length 127 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/core.c:5: warning: "_GNU_SOURCE" redefined
+    5 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/core.c: In function ‘core_load’:
+src/core.c:109:31: warning: passing argument 1 of ‘ctx.retro_set_environment’ from incompatible pointer type [-Wincompatible-pointer-types]
+  109 |     ctx.retro_set_environment(retro_get_env_cb);
+      |                               ^~~~~~~~~~~~~~~~
+      |                               |
+      |                               void * (*)(void *, unsigned int,  void *)
+src/core.c:109:31: note: expected ‘void (*)(unsigned int,  void *)’ but argument is of type ‘void * (*)(void *, unsigned int,  void *)’
+src/core.c: In function ‘retro_get_env_cb’:
+src/core.c:209:65: warning: ‘saves/’ directive output may be truncated writing 6 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  209 |             snprintf(save_directory, sizeof(save_directory), "%ssaves/", work_path);
+      |                                                                 ^~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 7 and 518 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c:202:69: warning: ‘core/’ directive output may be truncated writing 5 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  202 |             snprintf(system_directory, sizeof(system_directory), "%score/", work_path);
+      |                                                                     ^~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 6 and 517 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c: In function ‘core_load’:
+src/core.c:36:37: warning: ‘/cores/’ directive output may be truncated writing 7 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+   36 |     snprintf(path, sizeof(path), "%s/cores/%s.cfg", work_path, core_name);
+      |                                     ^~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 12 or more bytes (assuming 523) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c:49:37: warning: ‘/cores/’ directive output may be truncated writing 7 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+   49 |     snprintf(path, sizeof(path), "%s/cores/%s", work_path, core_name);
+      |                                     ^~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 8 or more bytes (assuming 519) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/evdev.c:33: warning: "_GNU_SOURCE" redefined
+   33 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/evdev.c:66: warning: "KEY_UP" redefined
+   66 | #define KEY_UP      (1 << 0)   /* 0x01 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:178: note: this is the location of the previous definition
+  178 | #define KEY_UP                  103
+      | 
+src/evdev.c:67: warning: "KEY_DOWN" redefined
+   67 | #define KEY_DOWN    (1 << 1)   /* 0x02 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:183: note: this is the location of the previous definition
+  183 | #define KEY_DOWN                108
+      | 
+src/evdev.c:68: warning: "KEY_LEFT" redefined
+   68 | #define KEY_LEFT    (1 << 2)   /* 0x04 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:180: note: this is the location of the previous definition
+  180 | #define KEY_LEFT                105
+      | 
+src/evdev.c:69: warning: "KEY_RIGHT" redefined
+   69 | #define KEY_RIGHT   (1 << 3)   /* 0x08 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:181: note: this is the location of the previous definition
+  181 | #define KEY_RIGHT               106
+      | 
+src/evdev.c:70: warning: "KEY_A" redefined
+   70 | #define KEY_A       (1 << 4)   /* 0x10 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:105: note: this is the location of the previous definition
+  105 | #define KEY_A                   30
+      | 
+src/evdev.c:71: warning: "KEY_B" redefined
+   71 | #define KEY_B       (1 << 5)   /* 0x20 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:123: note: this is the location of the previous definition
+  123 | #define KEY_B                   48
+      | 
+src/evdev.c:72: warning: "KEY_X" redefined
+   72 | #define KEY_X       (1 << 6)   /* 0x40 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:120: note: this is the location of the previous definition
+  120 | #define KEY_X                   45
+      | 
+src/evdev.c:73: warning: "KEY_Y" redefined
+   73 | #define KEY_Y       (1 << 7)   /* 0x80 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:96: note: this is the location of the previous definition
+   96 | #define KEY_Y                   21
+      | 
+src/evdev.c:79: warning: "KEY_SELECT" redefined
+   79 | #define KEY_SELECT  (1 << 13)
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:423: note: this is the location of the previous definition
+  423 | #define KEY_SELECT              0x161
+      | 
+src/evdev.c:115:21: warning: initialization of ‘unsigned int’ from ‘const uint32_t *’ {aka ‘const unsigned int *’} makes integer from pointer without a cast [-Wint-conversion]
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     ^~~~~~~~~~~~~~~
+src/evdev.c:115:21: note: (near initialization for ‘built_in_profiles[0].button_map[0]’)
+src/evdev.c:112:55: warning: missing braces around initializer [-Wmissing-braces]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                                       ^
+......
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {              }
+src/evdev.c:119:21: warning: initialization of ‘unsigned int’ from ‘const uint32_t *’ {aka ‘const unsigned int *’} makes integer from pointer without a cast [-Wint-conversion]
+  119 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     ^~~~~~~~~~~~~~~~~~
+src/evdev.c:119:21: note: (near initialization for ‘built_in_profiles[1].button_map[0]’)
+src/evdev.c:112:55: warning: missing braces around initializer [-Wmissing-braces]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                                       ^
+......
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {              }
+......
+  119 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+src/evdev.c:123:21: warning: initialization of ‘unsigned int’ from ‘const uint32_t *’ {aka ‘const unsigned int *’} makes integer from pointer without a cast [-Wint-conversion]
+  123 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     ^~~~~~~~~~~~~~~~~~
+src/evdev.c:123:21: note: (near initialization for ‘built_in_profiles[2].button_map[0]’)
+src/evdev.c:112:55: warning: missing braces around initializer [-Wmissing-braces]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                                       ^
+......
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {              }
+......
+  119 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+......
+  123 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+src/evdev.c:127:21: warning: initialization of ‘unsigned int’ from ‘const uint32_t *’ {aka ‘const unsigned int *’} makes integer from pointer without a cast [-Wint-conversion]
+  127 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     ^~~~~~~~~~~~~~~~~~
+src/evdev.c:127:21: note: (near initialization for ‘built_in_profiles[3].button_map[0]’)
+src/evdev.c:112:55: warning: missing braces around initializer [-Wmissing-braces]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                                       ^
+......
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {              }
+......
+  119 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+......
+  123 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+......
+  127 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+src/evdev.c:112:55: warning: missing braces around initializer [-Wmissing-braces]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                                       ^
+......
+  115 |       .button_map = sn30_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {              }
+......
+  119 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+......
+  123 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+......
+  127 |       .button_map = generic_button_map, .axis_left = 0, .axis_right = 1, .hat = 0 },
+      |                     {                 }
+src/evdev.c:112:33: warning: ‘built_in_profiles’ defined but not used [-Wunused-const-variable=]
+  112 | static const joystick_profile_t built_in_profiles[] = {
+      |                                 ^~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/evdev.c:36:
+In function ‘strncpy’,
+    inlined from ‘joy_open’ at src/evdev.c:178:5:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 127 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/evdev.c: In function ‘joy_autodetect’:
+src/evdev.c:216:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 53 [-Wformat-truncation=]
+  216 |             snprintf(path, sizeof(path), "/dev/input/%s", name);
+      |                                                      ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/evdev.c:34:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 12 and 267 bytes into a destination of size 64
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/sram.c:51: warning: "_GNU_SOURCE" redefined
+   51 | 
+      | 
+<command-line>: note: this is the location of the previous definition
+src/sram.c:207:14: warning: ‘sram_flush_thread_fn’ defined but not used [-Wunused-function]
+  207 |         snprintf(save_directory, sizeof(save_directory), SRAMSHIM_DEFAULT_DIR);
+      |              ^~~~~~~~~~~~~~~~~~~~
+src/sram.c:137:13: warning: ‘sram_snapshot_and_signal’ defined but not used [-Wunused-function]
+  137 |         }
+      |             ^                       
+src/sram.c:89:21: warning: ‘g_flush_thread’ defined but not used [-Wunused-variable]
+   89 |             sram_state.size = 0;
+      |                     ^~~~~~~~~~~~  
+src/sram.c: In function ‘sram_build_path’:
+src/sram.c:503:14: warning: ‘/’ directive output may be truncated writing 1 byte into a region of size between 0 and 511 [-Wformat-truncation=]
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/sram.c:53:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 7 or more bytes (assuming 518) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/debug.c:19: warning: "_GNU_SOURCE" redefined
+   19 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/debug.c: In function ‘dbg_init’:
+src/debug.c:325:28: warning: implicit declaration of function ‘getenv’ [-Wimplicit-function-declaration]
+  325 |     const char *env_path = getenv("RKGAME_WORK_PATH");
+      |                            ^~~~~~
+src/debug.c:325:28: warning: initialization of ‘const char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+src/debug.c:320:11: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  320 |     (void)write(2, banner, 32);
+      |           ^~~~~~~~~~~~~~~~~~~~
+src/debug.c:374:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  374 |         write(2, banner, 32);
+      |         ^~~~~~~~~~~~~~~~~~~~
+src/debug.c:378:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  378 |         write(g_log_fd, banner, 32);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c:380:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  380 |         write(g_log_fd, header, 28);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c:386:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  386 |         write(2, stbuf, n);
+      |         ^~~~~~~~~~~~~~~~~~
+src/debug.c:394:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  394 |         write(2, stbuf, n);
+      |         ^~~~~~~~~~~~~~~~~~
+src/debug.c: In function ‘crash_handler’:
+src/debug.c:155:5: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  155 |     write(fd, buf, n);
+      |     ^~~~~~~~~~~~~~~~~
+src/debug.c:163:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  163 |         write(fd, buf, n);
+      |         ^~~~~~~~~~~~~~~~~
+src/debug.c:187:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  187 |             write(fd, buf, n);
+      |             ^~~~~~~~~~~~~~~~~
+src/debug.c:190:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  190 |         write(fd, buf, 1);
+      |         ^~~~~~~~~~~~~~~~~
+src/debug.c:199:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  199 |             write(fd, e->text, e->len);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c: In function ‘dbg_close’:
+src/debug.c:417:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  417 |         write(g_log_fd, footer, 28);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/disp.c: In function ‘drm_find_connector’:
+src/disp.c:222:9: warning: variable ‘best’ set but not used [-Wunused-but-set-variable]
+  222 |     int best = -1;
+      |         ^~~~
+src/heartbeat.c:5: warning: "_GNU_SOURCE" redefined
+    5 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+Built: output/rkgame (41504 bytes)
+--- ELF verification ---
+Section sizes: .rel.dyn=0001d0 (0001d0) .rel.plt= ()
+Dynamic: DT_REL=0xacc DT_RELSZ=(bytes) ((bytes)) DT_PLTRELSZ=(bytes) ((bytes)) DT_RELENT=(bytes) ((bytes))
+FAIL: DT_RELSZ=(bytes) != .rel.dyn size 0001d0
+FAIL: DT_RELENT=(bytes) (expected 8 for R_REL32 or 12 for R_RELA)
+WARN: dynamic section has errors (parsing may be unreliable)
+      Proceeding anyway - verify on device
+--- GLIBC check ---
+PASS: no GLIBC_2.3x+ symbols
+=== DONE ===
