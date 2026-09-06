@@ -294,7 +294,7 @@ void autorun(const char *rom, const char *driver)
 static void main_menu(void)
 {
     LOG("main_menu: entering menu (DRM ready=%d)", disp_is_ready() ? 1 : 0);
-    ERR("main_menu: 暂不支持完整 UI，需通过 autorun 启动 ROM");
+    ERR("main_menu: full UI not supported yet, need autorun to start ROM");
 
     /* 如果 DRM/KMS 可用，渲染启动画面菜单 */
     if (disp_is_ready()) {
@@ -325,6 +325,7 @@ static void main_menu(void)
 
         /* 周期性更新心跳文件 + 检查是否收到信号 */
         hb_tick();
+        hb_shm_heartbeat();  /* 更新 icube shm 计数器，防止被 kill */
         int sig = hb_get_last_signal();
         if (sig != 0) {
             LOG("main_menu: caught signal %d (still alive, "
@@ -420,6 +421,9 @@ int main(int argc, char **argv)
     /* 探测 icube launcher 创建的 SysV shm 段（诊断 kill 机制） */
     hb_detect_icube_shm();
 
+    /* 附加到 icube shm 段，定期更新计数器证明进程活着 */
+    hb_shm_attach();
+
     DBGP(CONFIG_LOAD);
     config_load();
 
@@ -472,6 +476,7 @@ int main(int argc, char **argv)
     core_unload();
     audio_shutdown();
     disp_shutdown();
+    hb_shm_detach();
     hb_shutdown();
 
     DBGP(END);

@@ -23,6 +23,11 @@ static int  hb_fd = -1;
 static char hb_path[512];
 static volatile sig_atomic_t last_signal = 0;
 
+/* icube shm 段句柄 */
+static int  hb_shmid = -1;
+static int *hb_shm = NULL;
+static int  hb_shm_counter = 0;
+
 /*
  * 信号处理器：SA_RESTART + 只置标志位。
  *
@@ -143,4 +148,59 @@ void hb_detect_icube_shm(void)
             "shm heartbeat; next step is to reverse-engineer its "
             "message format", found);
     }
+}
+
+/*
+ * icube shm 协议 (从 ShareMemCreat @ 0x0000a774 反编译)
+ * 
+ * key=0x4d2 (1234), size=8, flags=0x3b6 (IPC_CREAT|IPC_EXCL|0666)
+ * shm[0] = 1  (存活标志)
+ * shm[1] = 计数器/时间戳 (icube 每 7-8 秒检查是否更新)
+ * 
+ * rkgame 主循环必须定期更新 shm[1]，否则 icube 会 kill 进程。
+ */
+void hb_shm_attach(void)
+{
+    /* 尝试获取 icube 创建的 shm 段 (key=0x4d2) */
+    hb_shmid = shmget(0x4d2, 8, 0666);  /* 不传 IPC_CREAT，只连接已有段 */
+    if (hb_shmid < 0) {
+        /* icube 可能还没创建，我们创建它 */
+        hb_shmid = shmget(0x4d2, 8, IPC_CREAT | 0666);
+        if (hb_shmid < 0) {
+            ERR("heartbeat: shmget(0x4d2) failed: %s", strerror(errno));
+            return;
+        }
+        LOG("heartbeat: created shm key=0x4d2 size=8");
+    } else {
+        LOG("heartbeat: attached to existing shm key=0x4d2 shmid=%d", hb_shmid);
+    }
+
+    hb_shm = (int *)shmat(hb_shmid, NULL, 0);
+    if (hb_shm == (int *)-1) {
+        ERR("heartbeat: shmat failed: %s", strerror(errno));
+        hb_shmid = -1;
+        return;
+    }
+
+    /* 初始化 shm 内容 */
+    hb_shm[0] = 1;  /* 存活标志 */
+    hb_shm[1] = 0;  /* 计数器 */
+    LOG("heartbeat: shm attached at %p, shm[0]=1 shm[1]=0", (void *)hb_shm);
+}
+
+void hb_shm_heartbeat(void)
+{
+    if (!hb_shm) return;
+    hb_shm_counter++;
+    hb_shm[1] = hb_shm_counter;  /* 更新计数器，证明进程活着 */
+    /* shm[0] 保持 1，表示存活 */
+}
+
+void hb_shm_detach(void)
+{
+    if (hb_shm) {
+        shmdt(hb_shm);
+        hb_shm = NULL;
+    }
+    /* 不删除 shm 段，留给 icube 处理 */
 }

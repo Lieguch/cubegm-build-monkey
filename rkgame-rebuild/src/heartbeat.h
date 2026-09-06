@@ -35,4 +35,12 @@ int  hb_get_last_signal(void);
 
 void hb_detect_icube_shm(void);
 
+/* icube shm 协议 (key=0x4d2, size=8, IPC_CREAT|IPC_EXCL|0666)
+ * shm[0] = 1  (存活标志)
+ * shm[1] = 计数器/时间戳 (icube 每 7-8 秒检查是否更新)
+ */
+void hb_shm_attach(void);
+void hb_shm_heartbeat(void);
+void hb_shm_detach(void);
+
 #endif /* HEARTBEAT_H */
