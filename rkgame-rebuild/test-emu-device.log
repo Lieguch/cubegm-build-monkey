@@ -1,0 +1,97 @@
+=== rkgame rebuild starting ===
+--- rkgame session start ---[DBG] log path = /tmp/sdcard/cubegm/rkgame.log
+P: ENTRY: _rkgame_start()
+P: MAIN: begin
+1985073119 D: [RK-I] rkgame v1.5.0 (rebuild)
+
+1985073119 D: [RK-I] heartbeat: signal handlers installed (SIGTERM/SIGINT/SIGALRM/SIGCHLD, SA_RESTART)
+Èˇ?
+P: PATH: get_executable_path
+1985073120 D: [RK-I] work_path = /tmp/sdcard/cubegm/
+
+1985073120 D: [RK-I] heartbeat: writing to /tmp/sdcard/cubegm/heartbeat
+
+1985073121 D: [RK-I] heartbeat: found shm shmid=0 size=4096 uid=1001 nattch=0 atime=1788691462 ctime=1788691462
+
+1985073121 D: [RK-I] heartbeat: found shm shmid=1 size=8 uid=1001 nattch=0 atime=1788691462 ctime=1788691462
+62
+
+1985073121 D: [RK-I] heartbeat: 2 shm segment(s) found ‚Äî icube likely uses shm heartbeat; next step is to reverse-engineer its message format
+ˇ?
+
+1985073121 D: [RK-I] heartbeat: attached to existing shm key=0x4d2 shmid=1
+gm/heartbeat
+
+1985073122 D: [RK-I] heartbeat: shm attached at 0x3ee0c000, shm[0]=1 shm[1]=0
+(Âˇ?ê‰ˇ?
+1985073129 D: [RK-I] heartbeat: heartbeat thread started successfully
+
+1985073130 D: [RK-I] heartbeat: heartbeat thread started (20ms interval)
+
+P: CFG: config_load
+1985073132 D: [RK-E] config_load: no config file in /tmp/sdcard/cubegm/
+
+1985073132 D: [RK-I] autorunfile = 
+tbeat thread started successfully
+
+P: DISP: disp_init
+1985073132 D: [RK-E] disp_init: /dev/dri/card0: No such file or directory
+E
+1985073132 D: [RK-I] disp_init: DRM/KMS unavailable (rc=-1), log-only mode
+SSAGES/libc.mo
+P: AUDIO: audio_init
+1985073132 D: [RK-I] audio_init: placeholder
+ilable (rc=-1), log-only mode
+SSAGES/libc.mo
+P: SRAM: sram_init
+1985073133 D: [RK-I] sram_init: dir=/sdcard/cubegm/saves interval=10s
+mode
+SSAGES/libc.mo
+P: JOY: joy_init
+1985073133 D: [RK-I] joy_init: initializing
+it: dir=/sdcard/cubegm/saves interval=10s
+mode
+SSAGES/libc.mo
+1985073133 D: [RK-I] joy_autodetect: scanning /dev/input/
+x„ˇ?àt@
+1985073133 D: [RK-I] joy_autodetect: found 0 devices
+put/
+x„ˇ?àt@
+1985073133 D: [RK-I] joy_init: 0 device(s) ready
+m/saves interval=10s
+mode
+SSAGES/libc.mo
+1985073133 D: [RK-I] main_menu: entering menu (DRM ready=0)
+erval=10s
+mode
+SSAGES/libc.mo
+1985073133 D: [RK-E] main_menu: full UI not supported yet, need autorun to start ROM
+c.mo
+1985074134 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985075134 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985076134 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985077135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985078135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985079135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985080135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985081135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985082135 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985083136 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985084136 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985085136 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985086136 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+1985087136 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
