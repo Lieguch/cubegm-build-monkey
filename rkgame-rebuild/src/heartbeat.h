@@ -43,4 +43,9 @@ void hb_shm_attach(void);
 void hb_shm_heartbeat(void);
 void hb_shm_detach(void);
 
+/* 独立心跳线程（原厂 XintiaoThread 机制）
+ * 每 20ms 更新一次 shm[1]，不受主循环 select() 阻塞影响 */
+void hb_start_heartbeat_thread(void);
+void hb_stop_heartbeat_thread(void);
+
 #endif /* HEARTBEAT_H */

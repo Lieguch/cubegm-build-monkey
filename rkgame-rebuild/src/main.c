@@ -422,8 +422,9 @@ int main(int argc, char **argv)
     /* 探测 icube launcher 创建的 SysV shm 段（诊断 kill 机制） */
     hb_detect_icube_shm();
 
-    /* 附加到 icube shm 段，定期更新计数器证明进程活着 */
+    /* 附加到 icube shm 段，启动独立心跳线程（原厂 XintiaoThread 机制） */
     hb_shm_attach();
+    hb_start_heartbeat_thread();  /* 每 20ms 更新一次 shm[1]，不受主循环阻塞 */
 
     DBGP(CONFIG_LOAD);
     config_load();
@@ -477,6 +478,7 @@ int main(int argc, char **argv)
     core_unload();
     audio_shutdown();
     disp_shutdown();
+    hb_stop_heartbeat_thread();  /* 停止心跳线程 */
     hb_shm_detach();
     hb_shutdown();
 

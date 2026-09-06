@@ -18,6 +18,7 @@
 #include "rkgame.h"
 #include "debug.h"
 #include "heartbeat.h"
+#include <pthread.h>
 
 static int  hb_fd = -1;
 static char hb_path[512];
@@ -27,6 +28,10 @@ static volatile sig_atomic_t last_signal = 0;
 static int  hb_shmid = -1;
 static int *hb_shm = NULL;
 static int  hb_shm_counter = 0;
+
+/* 心跳线程 */
+static pthread_t hb_thread = 0;
+static volatile int hb_thread_running = 0;
 
 /*
  * 信号处理器：SA_RESTART + 只置标志位。
@@ -204,4 +209,55 @@ void hb_shm_detach(void)
         hb_shm = NULL;
     }
     /* 不删除 shm 段，留给 icube 处理 */
+}
+
+/*
+ * 独立心跳线程（原厂 XintiaoThread 机制）
+ * 
+ * 原厂代码：
+ *   do {
+ *       xintiao();      // shm[0]=1, shm[1]++
+ *       usleep(20000);  // 每 20ms 一次
+ *   } while(true);
+ * 
+ * 关键：心跳必须在独立线程中，不受主循环 select() 阻塞影响。
+ * 这样 icube 检查 shm[1] 时，永远能看到新鲜的时间戳。
+ */
+static void *hb_heartbeat_thread(void *arg)
+{
+    (void)arg;
+    LOG("heartbeat: heartbeat thread started (20ms interval)");
+    
+    while (hb_thread_running) {
+        hb_shm_heartbeat();  /* 更新 shm[1] 计数器 */
+        usleep(20000);       /* 每 20ms 一次，与原厂一致 */
+    }
+    
+    LOG("heartbeat: heartbeat thread stopped");
+    return NULL;
+}
+
+void hb_start_heartbeat_thread(void)
+{
+    if (hb_thread_running) return;  /* 已经在运行 */
+    
+    hb_thread_running = 1;
+    int rc = pthread_create(&hb_thread, NULL, hb_heartbeat_thread, NULL);
+    if (rc != 0) {
+        ERR("heartbeat: pthread_create failed: %s", strerror(rc));
+        hb_thread_running = 0;
+        return;
+    }
+    
+    /* 分离线程，避免资源泄漏 */
+    pthread_detach(hb_thread);
+    LOG("heartbeat: heartbeat thread started successfully");
+}
+
+void hb_stop_heartbeat_thread(void)
+{
+    if (!hb_thread_running) return;
+    
+    hb_thread_running = 0;
+    /* 不等待线程结束，因为线程是分离的 */
 }
