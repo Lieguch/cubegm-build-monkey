@@ -347,7 +347,9 @@ void dbg_init(void)
     if (g_log_fd < 0) {
         const char *const candidates[] = {
             "/sdcard/cubegm/rkgame.log",
+            "/mnt/sdcard/cubegm/rkgame.log",   /* 真机常见挂载点 */
             "/sdcard/rkgame.log",
+            "/mnt/sdcard/rkgame.log",
             "/tmp/rkgame.log",
             NULL
         };

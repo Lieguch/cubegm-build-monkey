@@ -161,16 +161,17 @@ void hb_detect_icube_shm(void)
  */
 void hb_shm_attach(void)
 {
-    /* 尝试获取 icube 创建的 shm 段 (key=0x4d2) */
+    /* 1. 尝试连接 icube 已创建的 shm 段 (key=0x4d2) */
     hb_shmid = shmget(0x4d2, 8, 0666);  /* 不传 IPC_CREAT，只连接已有段 */
     if (hb_shmid < 0) {
-        /* icube 可能还没创建，我们创建它 */
+        /* 2. icube 可能还没创建，我们创建它 */
+        /* flags = IPC_CREAT | 0666 (不带 IPC_EXCL，允许连接已有段) */
         hb_shmid = shmget(0x4d2, 8, IPC_CREAT | 0666);
         if (hb_shmid < 0) {
             ERR("heartbeat: shmget(0x4d2) failed: %s", strerror(errno));
             return;
         }
-        LOG("heartbeat: created shm key=0x4d2 size=8");
+        LOG("heartbeat: created shm key=0x4d2 size=8 shmid=%d", hb_shmid);
     } else {
         LOG("heartbeat: attached to existing shm key=0x4d2 shmid=%d", hb_shmid);
     }
