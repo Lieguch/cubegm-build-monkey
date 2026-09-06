@@ -351,7 +351,9 @@ static void main_menu(void)
         }
 
         if (maxfd >= 0) {
-            tv.tv_sec = 60;
+            /* 缩短超时到 5 秒，确保每 5 秒更新一次 shm[1] 计数器
+             * icube 每 8 秒检查一次，5 秒间隔足够让 shm[1] 保持"新鲜" */
+            tv.tv_sec = 5;
             tv.tv_usec = 0;
             if (select(maxfd + 1, &rfds, NULL, NULL, &tv) > 0) {
                 (void)joy_poll();
@@ -359,8 +361,7 @@ static void main_menu(void)
             }
         } else {
             /* 无手柄时也不退出；避免 launcher 重启循环。
-             * 用 1 秒粒度而非 60 秒，让心跳文件和重绘更及时，
-             * 也让真机诊断更容易看出进程是否活着。 */
+             * 用 1 秒粒度而非 60 秒，让心跳文件和重绘更及时。 */
             struct timespec ts = { 1, 0 };
             nanosleep(&ts, NULL);
         }
