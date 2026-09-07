@@ -130,23 +130,34 @@ int InitRFJoystick(void)
 }
 
 /* ============================================================
- * resource_cpd_load() — resource.cpd 加载桩
+ * resource_cpd_load() — resource.cpd / UI_Res.cpd 加载桩
  *
- * 原厂：加载 resource.cpd / UI_Res.cpd（密码 hichip123）中的 UI 资源。
- * 我方：当前 UI 走 ui_*.zip 包，未使用 .cpd 格式。
- * 保留桩函数以备后续逆向 .cpd 格式时接入。
+ * 原厂：加载 resource.cpd / UI_Res.cpd 中的 UI 资源。
  *
- * .cpd 格式说明：
- *   - 自定义资源容器（非标准 ZIP）
- *   - 密码：hichip123（strings 实证）
- *   - 内含 UI 位图、字体、动画等
+ * ★ 联网搜索修正（2026-09-07，R36S Wiki）：
+ *   .cpd 实际是 ZIP 格式（非自定义容器），可直接用 unzip 解压。
+ *   资源结构：
+ *     - UI_Res.cpd: 平台背景（640x480 BGRA raw）、图标精灵表、设置屏幕
+ *     - resource.cpd: 游戏列表布局（game.raw）、菜单布局（menu.raw）、
+ *                     无数据占位图（nodata.raw, 320x240 RGB565）、ui.cfg
+ *     - ui_*.cpd: 语言特定覆盖（26 种语言）
+ *     - joystick.cpd: 控制器映射图像
+ *
+ * 我方：当前 UI 走 ui_*.zip 包（ui_en/cn/sp/ru/ar/po/ko/ge/fr），
+ *       .cpd 格式与 .zip 兼容（都是 ZIP），但文件名和内容结构不同。
+ * 保留桩函数以备后续接入 .cpd 解压。
  * ============================================================ */
 
 int resource_cpd_load(const char *path)
 {
     (void)path;
-    LOG("resource_cpd_load: stub (UI uses ui_*.zip; .cpd format not reverse-engineered)");
-    LOG("resource_cpd_load: factory password = 'hichip123' (strings evidence)");
+    LOG("resource_cpd_load: stub (.cpd = ZIP format, same as ui_*.zip)");
+    LOG("resource_cpd_load: factory resources:");
+    LOG("resource_cpd_load:   UI_Res.cpd  = backgrounds + icon sprites");
+    LOG("resource_cpd_load:   resource.cpd = game.raw/menu.raw/nodata.raw/ui.cfg");
+    LOG("resource_cpd_load:   ui_*.cpd    = 26 language overlays");
+    LOG("resource_cpd_load:   joystick.cpd = controller mapping images");
+    LOG("resource_cpd_load: current UI uses ui_*.zip; .cpd not reverse-engineered");
     return 0;
 }
 
