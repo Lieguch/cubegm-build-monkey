@@ -27,7 +27,9 @@ if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
 fi
 
 CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -D_GNU_SOURCE -Wall"
-SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/dbg_overlay.c src/disp.c src/heartbeat.c src/core_table.c src/font.c src/ui_zip.c src/ui.c src/audio.c src/game_list.c src/menu_log.c src/wqw.c src/keymap.c src/thumbnail.c lib/mxml/mxml.c lib/libiconv/iconv.c"
+SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/dbg_overlay.c src/disp.c src/heartbeat.c src/core_table.c src/font.c src/ui_zip.c src/ui.c src/audio.c src/game_list.c src/menu_log.c src/wqw.c src/keymap.c src/thumbnail.c \
+     src/ui_menu.c src/ui_setting.c src/ui_search.c src/ui_recent.c src/ui_shoucang.c src/ui_save_state.c src/ui_load_state.c src/ui_run_game.c src/ui_config.c src/ui_video_setting.c src/ui_joystick_setting.c src/ui_search_file_list.c src/ui_pause.c src/ui_joystick_test.c \
+     lib/mxml/mxml.c lib/libiconv/iconv.c"
 OUT="${1:-output/rkgame}"
 mkdir -p "$(dirname "$OUT")"
 
