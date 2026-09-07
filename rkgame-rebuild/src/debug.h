@@ -46,12 +46,7 @@ enum {
     DBG_ST_CORE_UNLOAD,     /* core_unload */
     DBG_ST_SHUTDOWN,        /* 清理阶段 */
     DBG_ST_END,             /* main() 正常退出 */
-    DBG_ST_UNKNOWN = -1,
 };
-
-/* 获取阶段名（供 debug overlay 显示当前进度） */
-const char *dbg_stage_name(int stage_id);
-int dbg_current_stage(void);
 
 /* ---- 初始化 ---- */
 /* 在 entry.c _rkgame_start() 中，main() 之前调用。
@@ -76,14 +71,5 @@ void dbg_log(int level, const char *fmt, ...);
 
 /* ---- 关闭 ---- */
 void dbg_close(void);
-
-/* ---- 日志历史访问（供 debug overlay 显示最近日志） ---- */
-/* 获取最近 N 条日志文本（环形缓冲区，最新在最后）。
- * 返回实际条数；每个 out[i] 最长 max_len 字符（含 \0）。 */
-int dbg_get_last_logs(char out[][128], int max_count);
-
-/* 获取当前日志级别 */
-int dbg_get_level(void);
-void dbg_set_level(int level);
 
 #endif /* RKGAME_DEBUG_H */

@@ -377,9 +377,6 @@ void disp_game_present(void);
 /* thumbnail.c — 缩略图提取（WQW .dat 容器） */
 #include "thumbnail.h"
 
-/* dbg_overlay.c — 屏幕调试叠加层（实体机无终端时用） */
-#include "dbg_overlay.h"
-
 /* 游戏列表导航状态（main.c 定义，ui.c 读取） */
 extern int menu_gl_selected;   /* 当前选中索引 */
 extern int menu_gl_scroll;     /* 滚动偏移 */

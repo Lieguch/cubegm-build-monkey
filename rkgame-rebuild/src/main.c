@@ -767,11 +767,6 @@ static void main_menu(void)
             for (i = 0; i < 26; i++) gl_prev_keys[i] = 0;
         }
 
-        /* 调试叠加层：每帧检查 SELECT+START 长按 + 渲染 overlay */
-        if (dbg_overlay_tick()) {
-            disp_present();
-        }
-
         FD_ZERO(&rfds);
         for (i = 0; i < joy_dev_count; i++) {
             if (joy_devs[i].event_fd >= 0) {
@@ -828,9 +823,6 @@ int main(int argc, char **argv)
     dbg_init();
     DBGP(MAIN_BEGIN);
     LOG("rkgame v1.5.0 (rebuild)");
-
-    /* 初始化屏幕调试叠加层（实体机无终端，用 SELECT+START 2s 切换） */
-    dbg_overlay_init();
 
     /* 尽早安装信号处理器，让任何阶段的信号都能被记录 */
     hb_install_signal_handlers();

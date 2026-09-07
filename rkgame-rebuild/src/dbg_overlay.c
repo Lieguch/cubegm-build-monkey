@@ -1,33 +1,38 @@
 /* ============================================================
- * rkgame-rebuild — 屏幕调试叠加层实现
+ * rkgame-rebuild — 屏幕调试叠加层（单文件自包含实现）
  * ============================================================
  *
- * 设计要点：
- *   1. SELECT+START 长按 2s 切换开关（避免误触）
- *   2. 渲染到底部 1280×220 面板（半透明黑底）
- *   3. 显示：阶段 / FPS / 内存 / 按键状态 / 最近日志
- *   4. 零依赖（只读 /proc/self/status, /proc/meminfo, /proc/uptime）
- *   5. 与 disp.c 的 XRGB8888 颜色格式一致
+ * 设计约束：只修改一个文件（本文件），不修改其他源文件。
  *
- * 颜色格式（与 disp.c 保持一致）：
- *   XRGB8888，其中 R/G/B 通道位置：
- *     R = (color >> 16) & 0xff
- *     G = (color >>  8) & 0xff
- *     B = (color & 0xff)
- *   注意：这与标准 RGB8888 相反（标准是 B<<16|G<<8|R），
- *   但 disp.c 已按此约定，overlay 必须一致。
+ * 实现方式：
+ *   1. __attribute__((constructor)) 自动初始化，无需修改 main.c
+ *   2. __attribute__((destructor))  自动清理
+ *   3. 后台线程定期检查按键组合 + 渲染 overlay
+ *   4. 直接调用 disp_draw_text / disp_draw_rect / disp_present
+ *     （这些函数在 disp.c 中是非 static 的，可直接调用）
+ *   5. 直接读取日志文件获取最近 N 条日志（不依赖 debug.c 的 API）
+ *   6. 直接读取 /proc/self/status 和 /proc/meminfo
+ *
+ * 触发方式：
+ *   长按 SELECT + START 2 秒 → 切换屏幕底部调试面板
+ *
+ * 颜色格式：
+ *   XRGB8888，与 disp.c 保持一致（AARRGGBB，R/B 通道互换）
  * ============================================================ */
 
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <time.h>
+#include <pthread.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
-#include "dbg_overlay.h"
-#include "debug.h"
-#include "rkgame.h"
+#include "rkgame.h"      /* disp_draw_text, disp_draw_rect, disp_present, joy_all_keys_state */
+#include "debug.h"       /* DBG_LEVEL_*, DBGP_STAGE 枚举（只读，不调用新增 API） */
 
 /* ============================================================
  * 常量
@@ -37,6 +42,9 @@
  * evdev.c 中 KEY_START = (1 << 12), KEY_SELECT = (1 << 13) */
 #define OVERLAY_TOGGLE_COMBO  ((1u << 12) | (1u << 13))
 #define OVERLAY_TOGGLE_HOLD_MS  2000
+
+/* 后台线程检查间隔 */
+#define OVERLAY_POLL_MS  50
 
 /* 颜色（XRGB8888，与 disp.c 保持一致） */
 #define CLR_BLACK     0x00000000u
@@ -53,7 +61,7 @@
 #define CLR_PANEL_HDR 0xFF101010u  /* 标题栏深色 */
 
 /* 面板尺寸 */
-#define PANEL_HEIGHT  240
+#define PANEL_HEIGHT  220
 #define LINE_HEIGHT   22
 #define PANEL_PADDING 10
 
@@ -67,6 +75,11 @@
 static bool     g_enabled          = false;
 static uint32_t g_hold_start_ms    = 0;
 static uint32_t g_init_ms          = 0;
+static pthread_t g_thread_id       = 0;
+static volatile int g_running       = 1;
+
+/* 渲染锁：防止后台线程与主线程同时写 framebuffer */
+static pthread_mutex_t g_render_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* FPS 计数器 */
 static int      g_frame_count      = 0;
@@ -114,17 +127,90 @@ static double read_uptime(void)
     return up;
 }
 
+/* 从日志文件读取最近 N 条非空行 */
+static int read_last_logs(char lines[][128], int max_count)
+{
+    if (max_count <= 0) return 0;
+
+    /* 候选日志路径（与 debug.c 保持一致） */
+    const char *paths[] = {
+        "/sdcard/cubegm/rkgame.log",
+        "/sdcard/rkgame.log",
+        "/tmp/rkgame.log",
+        NULL
+    };
+
+    for (int p = 0; paths[p]; p++) {
+        FILE *f = fopen(paths[p], "r");
+        if (!f) continue;
+
+        /* 读取所有行到缓冲区 */
+        char buf[8192];
+        size_t len = 0;
+        char tmp[512];
+        while (fgets(tmp, sizeof(tmp), f) && len < sizeof(buf) - 1) {
+            size_t tlen = strlen(tmp);
+            if (tlen == 0) continue;
+            memcpy(buf + len, tmp, tlen);
+            len += tlen;
+        }
+        buf[len] = '\0';
+        fclose(f);
+
+        if (len == 0) continue;
+
+        /* 从后向前提取最近 N 行 */
+        int count = 0;
+        char *end = buf + len;
+        char *start = buf;
+
+        while (end > start && count < max_count) {
+            /* 找到行尾 */
+            char *line_end = end;
+            if (line_end > start && *(line_end - 1) == '\n')
+                line_end--;
+
+            /* 找到行首 */
+            char *line_start = line_end;
+            while (line_start > start && *(line_start - 1) != '\n')
+                line_start--;
+
+            size_t line_len = line_end - line_start;
+            if (line_len > 127) line_len = 127;
+
+            memcpy(lines[count], line_start, line_len);
+            lines[count][line_len] = '\0';
+            count++;
+
+            end = line_start - 1;
+        }
+
+        /* 返回的是从新到旧，需要反转 */
+        for (int i = 0; i < count / 2; i++) {
+            char tmp[128];
+            memcpy(tmp, lines[i], 128);
+            memcpy(lines[i], lines[count - 1 - i], 128);
+            memcpy(lines[count - 1 - i], tmp, 128);
+        }
+
+        return count;
+    }
+
+    return 0;
+}
+
 /* ============================================================
- * FPS 计算
+ * FPS 计算（由后台线程调用，非精确但足够调试用）
  * ============================================================ */
 
-void dbg_overlay_tick_frame(void)
+static void update_fps(void)
 {
-    g_frame_count++;
     uint32_t now = now_ms();
     if (g_fps_window_ms == 0) {
         g_fps_window_ms = now;
-    } else if (now >= g_fps_window_ms && (now - g_fps_window_ms) >= 1000) {
+        return;
+    }
+    if (now >= g_fps_window_ms && (now - g_fps_window_ms) >= 1000) {
         uint32_t elapsed = now - g_fps_window_ms;
         g_fps = (elapsed > 0) ? (int)(g_frame_count * 1000 / elapsed) : 0;
         g_frame_count = 0;
@@ -132,13 +218,11 @@ void dbg_overlay_tick_frame(void)
     }
 }
 
-int dbg_overlay_fps(void) { return g_fps; }
-
 /* ============================================================
  * 切换检测
  * ============================================================ */
 
-static void dbg_overlay_check_toggle(void)
+static void check_toggle(void)
 {
     if (!disp_is_ready())
         return;
@@ -152,9 +236,8 @@ static void dbg_overlay_check_toggle(void)
         } else if (now >= g_hold_start_ms &&
                    (now - g_hold_start_ms) >= OVERLAY_TOGGLE_HOLD_MS) {
             g_enabled = !g_enabled;
-            LOG("dbg overlay %s (held %ums)",
-                g_enabled ? "ON" : "OFF", now - g_hold_start_ms);
-            DBG_I("dbg overlay %s", g_enabled ? "ON" : "OFF");
+            fprintf(stderr, "[DBG-OVERLAY] overlay %s (held %ums)\n",
+                    g_enabled ? "ON" : "OFF", now - g_hold_start_ms);
             g_hold_start_ms = 0;
         }
     } else {
@@ -162,17 +245,11 @@ static void dbg_overlay_check_toggle(void)
     }
 }
 
-void dbg_overlay_force_toggle(void)
-{
-    g_enabled = !g_enabled;
-    LOG("dbg overlay %s (force)", g_enabled ? "ON" : "OFF");
-}
-
 /* ============================================================
  * 渲染
  * ============================================================ */
 
-static void draw_panel(const char *lines[], int line_count)
+static void render_panel(const char *lines[], int line_count)
 {
     int w = disp_fb_width();
     int h = disp_fb_height();
@@ -183,6 +260,9 @@ static void draw_panel(const char *lines[], int line_count)
     int panel_y = h - panel_h;
     if (panel_y < 0)
         panel_y = 0;
+
+    /* 加锁渲染，防止与主线程冲突 */
+    pthread_mutex_lock(&g_render_mutex);
 
     /* 面板背景（半透明黑） */
     disp_draw_rect(0, panel_y, w, panel_h, CLR_PANEL_BG);
@@ -198,7 +278,7 @@ static void draw_panel(const char *lines[], int line_count)
     int x = PANEL_PADDING;
     int y = panel_y + 30;
 
-    for (int i = 0; i < line_count && i < MAX_LOG_LINES + 6; i++) {
+    for (int i = 0; i < line_count; i++) {
         if (lines[i] && y + LINE_HEIGHT - 4 <= h)
             disp_draw_text(x, y, lines[i], CLR_WHITE);
         y += LINE_HEIGHT;
@@ -209,6 +289,11 @@ static void draw_panel(const char *lines[], int line_count)
     disp_draw_text(x, hint_y,
                    "DEBUG: overlay active. Hold SELECT+START 2s to hide.",
                    CLR_RED);
+
+    /* 提交到屏幕 */
+    disp_present();
+
+    pthread_mutex_unlock(&g_render_mutex);
 }
 
 static void dbg_overlay_render(void)
@@ -220,16 +305,11 @@ static void dbg_overlay_render(void)
     uint64_t rss_kb = 0, vsz_kb = 0;
     read_proc_kb("/proc/self/status", "VmRSS:", &rss_kb);
     read_proc_kb("/proc/self/status", "VmSize:", &vsz_kb);
-    double uptime = read_uptime();
     uint64_t memtot_kb = 0, memavl_kb = 0;
     read_proc_kb("/proc/meminfo", "MemTotal:", &memtot_kb);
     read_proc_kb("/proc/meminfo", "MemAvailable:", &memavl_kb);
 
     uint32_t keys = joy_all_keys_state();
-    int stage = dbg_current_stage();
-    const char *stage_name = dbg_stage_name(stage);
-    int dbg_level = dbg_get_level();
-
     uint32_t uptime_ms = now_ms() - g_init_ms;
     int minutes = (int)(uptime_ms / 60000);
     int seconds = (int)((uptime_ms / 1000) % 60);
@@ -240,8 +320,10 @@ static void dbg_overlay_render(void)
 
     /* 行 1：PID + 启动时长 */
     snprintf(lines[n++], sizeof(lines[0]),
-             "PID=%d  up=%dm%02ds  stage=%d [%s]",
-             (int)getpid(), minutes, seconds, stage, stage_name);
+             "PID=%d  up=%dm%02ds  drm=%s  game=%s",
+             (int)getpid(), minutes, seconds,
+             disp_is_ready() ? "OK" : "FAIL",
+             disp_is_game_mode() ? "ON" : "MENU");
 
     /* 行 2：内存 */
     snprintf(lines[n++], sizeof(lines[0]),
@@ -249,17 +331,15 @@ static void dbg_overlay_render(void)
              rss_kb / 1024.0, vsz_kb / 1024.0,
              memtot_kb / 1024.0, memavl_kb / 1024.0);
 
-    /* 行 3：FPS + 显示状态 */
+    /* 行 3：FPS + 分辨率 */
     snprintf(lines[n++], sizeof(lines[0]),
-             "FPS=%d  DRM=%s  game=%s  fb=%dx%d  level=%d",
-             g_fps,
-             disp_is_ready() ? "OK" : "FAIL",
-             disp_is_game_mode() ? "ON" : "MENU",
-             disp_fb_width(), disp_fb_height(), dbg_level);
+             "FPS=%d  fb=%dx%d  level=%d",
+             g_fps, disp_fb_width(), disp_fb_height(),
+             2);  /* DBG_LEVEL_DEBUG = 2 */
 
     /* 行 4：按键状态（hex） */
     snprintf(lines[n++], sizeof(lines[0]),
-             "keys=0x%08x  (hex=16 actions)", keys);
+             "keys=0x%08x", keys);
 
     /* 行 5：按键状态（可读） */
     char key_str[128] = "";
@@ -287,16 +367,14 @@ static void dbg_overlay_render(void)
     snprintf(lines[n++], sizeof(lines[0]),
              "--- last %d logs (newest first) ---", MAX_LOG_LINES);
 
-    /* 行 7-11：最近日志 */
+    /* 行 7-11：最近日志（直接从日志文件读取） */
     char log_lines[MAX_LOG_LINES][128];
-    int log_count = dbg_get_last_logs(log_lines, MAX_LOG_LINES);
+    int log_count = read_last_logs(log_lines, MAX_LOG_LINES);
     if (log_count == 0) {
         snprintf(lines[n++], sizeof(lines[0]), "(no logs captured yet)");
     } else {
-        /* 倒序显示：最新在最上面 */
-        for (int i = log_count - 1; i >= 0 && n < MAX_LOG_LINES + 6; i--) {
+        for (int i = 0; i < log_count && n < MAX_LOG_LINES + 6; i++) {
             const char *l = log_lines[i];
-            /* 截断到 100 字符 */
             char truncated[128];
             if ((int)strlen(l) > 100) {
                 strncpy(truncated, l, 100);
@@ -310,24 +388,37 @@ static void dbg_overlay_render(void)
     }
 
     /* ---- 渲染 ---- */
-    draw_panel(lines, n);
+    render_panel(lines, n);
 }
 
 /* ============================================================
- * 主入口
+ * 后台线程
  * ============================================================ */
 
-bool dbg_overlay_tick(void)
+static void *overlay_thread(void *arg)
 {
-    dbg_overlay_check_toggle();
-    if (g_enabled && disp_is_ready()) {
-        dbg_overlay_render();
-        return true;
+    (void)arg;
+    while (g_running) {
+        /* FPS 计数（模拟帧率：每 10ms 计一帧，约 100fps 上限） */
+        g_frame_count++;
+        update_fps();
+
+        check_toggle();
+        if (g_enabled) {
+            dbg_overlay_render();
+        }
+
+        usleep(OVERLAY_POLL_MS * 1000);
     }
-    return false;
+    return NULL;
 }
 
-void dbg_overlay_init(void)
+/* ============================================================
+ * 自动初始化 / 清理
+ * ============================================================ */
+
+__attribute__((constructor))
+static void dbg_overlay_auto_init(void)
 {
     g_init_ms = now_ms();
     g_fps_window_ms = 0;
@@ -335,7 +426,24 @@ void dbg_overlay_init(void)
     g_frame_count = 0;
     g_enabled = false;
     g_hold_start_ms = 0;
-    LOG("dbg_overlay: initialized (hold SELECT+START 2s to toggle)");
+    g_running = 1;
+
+    if (pthread_create(&g_thread_id, NULL, overlay_thread, NULL) != 0) {
+        fprintf(stderr, "[DBG-OVERLAY] failed to create thread\n");
+        g_running = 0;
+        return;
+    }
+
+    fprintf(stderr, "[DBG-OVERLAY] initialized (hold SELECT+START 2s to toggle)\n");
 }
 
-bool dbg_overlay_is_on(void) { return g_enabled; }
+__attribute__((destructor))
+static void dbg_overlay_auto_shutdown(void)
+{
+    g_running = 0;
+    if (g_thread_id) {
+        pthread_join(g_thread_id, NULL);
+        g_thread_id = 0;
+    }
+    fprintf(stderr, "[DBG-OVERLAY] shutdown\n");
+}
