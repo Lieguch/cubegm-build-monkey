@@ -70,6 +70,7 @@ static const char *const g_stage_names[] = {
 
 static int g_log_fd = -1;
 static int g_debug_level = DBG_LEVEL_DEBUG;
+static int g_current_stage = DBG_ST_UNKNOWN;
 
 /* 日志历史条目 */
 struct dbg_log_entry {
@@ -293,6 +294,7 @@ void dbg_probe(int stage_id)
 {
     if (stage_id < 0 || stage_id >= DBG_ST_END)
         return;
+    g_current_stage = stage_id;
     char buf[128];
     int len = 3;
     buf[0] = 'P';
@@ -418,4 +420,51 @@ void dbg_close(void)
         close(g_log_fd);
         g_log_fd = -1;
     }
+}
+
+/* ============================================================
+ * 调试访问 API（供 dbg_overlay 使用）
+ * ============================================================ */
+
+const char *dbg_stage_name(int stage_id)
+{
+    if (stage_id < 0 || stage_id >= DBG_ST_END)
+        return "[unknown]";
+    return g_stage_names[stage_id];
+}
+
+int dbg_current_stage(void)
+{
+    return g_current_stage;
+}
+
+/*
+ * 获取最近 N 条日志文本（环形缓冲区，最新在最后）。
+ * 每个 out[i] 最多 max_len 字符（含 \0）。
+ * 返回实际拷贝的条数。
+ */
+int dbg_get_last_logs(char out[][128], int max_count)
+{
+    if (!out || max_count <= 0)
+        return 0;
+    int n = (max_count < g_log_count) ? max_count : g_log_count;
+    for (int i = 0; i < n; i++) {
+        int idx = (g_log_idx - n + i + DBG_LOG_HISTORY) % DBG_LOG_HISTORY;
+        const struct dbg_log_entry *e = &g_log_history[idx];
+        int len = (e->len < 127) ? e->len : 127;
+        memcpy(out[i], e->text, len);
+        out[i][len] = '\0';
+    }
+    return n;
+}
+
+int dbg_get_level(void)
+{
+    return g_debug_level;
+}
+
+void dbg_set_level(int level)
+{
+    if (level >= DBG_LEVEL_OFF && level <= DBG_LEVEL_TRACE)
+        g_debug_level = level;
 }

@@ -27,7 +27,7 @@ if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
 fi
 
 CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -D_GNU_SOURCE -Wall"
-SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/disp.c src/heartbeat.c src/core_table.c src/font.c src/ui_zip.c src/ui.c src/audio.c src/game_list.c src/menu_log.c src/wqw.c src/keymap.c src/thumbnail.c"
+SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/dbg_overlay.c src/disp.c src/heartbeat.c src/core_table.c src/font.c src/ui_zip.c src/ui.c src/audio.c src/game_list.c src/menu_log.c src/wqw.c src/keymap.c src/thumbnail.c"
 OUT="${1:-output/rkgame}"
 mkdir -p "$(dirname "$OUT")"
 

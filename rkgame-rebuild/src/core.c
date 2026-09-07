@@ -13,6 +13,8 @@
  * dlopen/dlsym/dlclose 全部为 @GLIBC_2.4，设备 glibc 2.29 完全兼容。
  * 无需 __asm__ 版本锁定或运行时兜底。 */
 
+#include "dbg_overlay.h"
+
 #include "rkgame.h"
 #include "debug.h"
 
@@ -277,12 +279,24 @@ int core_run(void)
                 paused = 0;
             }
             last_pause_keys = cur;
-            /* 暂停时不运行游戏 */
+            /* 暂停时不运行游戏，但允许调试叠加层运行 */
+            dbg_overlay_tick_frame();
+            if (dbg_overlay_tick()) {
+                disp_present();
+            }
             continue;
         }
 
         if (ctx.retro_run) {
             ctx.retro_run();
+        }
+
+        /* 调试叠加层：FPS 计数 + SELECT+START 长按检测 + 渲染 overlay
+         * 注意：disp_flip 已调用 SetCrtc，若 overlay 开启则再调用一次
+         * disp_present() 将 overlay 绘制在 game frame 之上。 */
+        dbg_overlay_tick_frame();
+        if (dbg_overlay_tick()) {
+            disp_present();
         }
     }
     return 0;
