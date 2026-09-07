@@ -881,6 +881,11 @@ int main(int argc, char **argv)
     DBGP(CONFIG_LOAD);
     config_load();
 
+    /* 加载 cores/config.xml（SeletEmuCore @ 0x3c9aec）
+     * 动态扩展 ext→core 映射，作为硬编码 core_table 的补充。
+     * 对齐原厂 core_info_list 在 SeletEmuCore() 时从 config.xml 填充。 */
+    load_cores_config_xml(work_path);
+
     /* 加载 menu.log（菜单恢复） */
     LoadMenuLog();
 
