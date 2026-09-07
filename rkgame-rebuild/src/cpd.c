@@ -44,11 +44,12 @@ static unsigned char *extract_raw_from_zip(ui_zip_t *z, const char *name,
     if (expected < 8) return NULL;
 
     /* 2) 解压到 malloc'd 缓冲区（ui_zip_extract 内部负责分配） */
-    unsigned char *buf = NULL;
+    void *data = NULL;
     size_t actual_size = 0;
-    if (ui_zip_extract(z, name, (void **)&buf, &actual_size) != 0 || !buf) {
+    if (ui_zip_extract(z, name, &data, &actual_size) != 0 || !data) {
         return NULL;
     }
+    unsigned char *buf = (unsigned char *)data;
     if (actual_size < 8) {
         free(buf);
         return NULL;
@@ -85,11 +86,12 @@ static unsigned char *extract_data_from_zip(ui_zip_t *z, const char *name,
     if (expected == 0) return NULL;
 
     /* 2) 解压 */
-    unsigned char *buf = NULL;
+    void *data = NULL;
     size_t actual_size = 0;
-    if (ui_zip_extract(z, name, (void **)&buf, &actual_size) != 0 || !buf) {
+    if (ui_zip_extract(z, name, &data, &actual_size) != 0 || !data) {
         return NULL;
     }
+    unsigned char *buf = (unsigned char *)data;
 
     if (out_size) *out_size = actual_size;
     return buf;
