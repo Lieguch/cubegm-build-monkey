@@ -50,6 +50,7 @@
 
 #include "rkgame.h"
 #include "debug.h"
+#include "font.h"
 
 /* ---- 全局状态 ---- */
 
@@ -399,6 +400,296 @@ void disp_set_colormode(int mode)
 
 /* ---- 像素级操作（DRM 不可用时 no-op） ---- */
 
+/* 获取 framebuffer 尺寸（供 UI 模块使用） */
+int disp_fb_width(void)  { return g_fb_w; }
+int disp_fb_height(void) { return g_fb_h; }
+
+/* Blit RGB565 数据到 framebuffer（不呈现）。
+ * 用于 UI 背景渲染。buf 为 RGB565 像素数据，pitch = width*2。 */
+void disp_blit_rgb565(const uint8_t *buf, int width, int height, int pitch)
+{
+    disp_blit_rgb565_at(buf, 0, 0, width, height, pitch);
+}
+
+/* 带偏移的 blit：用于缩略图、小图 overlay。
+ * 图像超出 fb 边界时自动裁剪（clamp 到 fb 范围）。 */
+void disp_blit_rgb565_at(const uint8_t *buf, int x, int y,
+                         int width, int height, int pitch)
+{
+    if (!g_drm_ready || !g_fb_mem || !buf) return;
+    if (width <= 0 || height <= 0) return;
+
+    size_t src_pitch = (size_t)pitch;
+
+    /* 裁剪到 fb 边界 */
+    int src_x0 = 0, src_y0 = 0;
+    int cols = width, rows = height;
+
+    if (x < 0) { src_x0 = -x; cols += x; x = 0; }
+    if (y < 0) { src_y0 = -y; rows += y; y = 0; }
+    if (x + cols > g_fb_w) cols = g_fb_w - x;
+    if (y + rows > g_fb_h) rows = g_fb_h - y;
+    if (cols <= 0 || rows <= 0) return;
+
+    for (int row = 0; row < rows; row++) {
+        int sy = src_y0 + row;
+        if (sy >= height) break;
+        const uint8_t *srow = buf + (size_t)sy * src_pitch + src_x0 * 2;
+        uint32_t *drow = (uint32_t *)((uint8_t *)g_fb_mem +
+                       (size_t)(y + row) * (size_t)g_fb_pitch + (size_t)x * 4);
+
+        for (int col = 0; col < cols; col++) {
+            uint16_t s = (uint16_t)(srow[col * 2] | (srow[col * 2 + 1] << 8));
+            uint8_t r = (uint8_t)((s >> 11) & 0x1f);
+            uint8_t g = (uint8_t)((s >> 5) & 0x3f);
+            uint8_t b = (uint8_t)(s & 0x1f);
+            r = (uint8_t)((r << 3) | (r >> 2));
+            g = (uint8_t)((g << 2) | (g >> 4));
+            b = (uint8_t)((b << 3) | (b >> 2));
+            drow[col] = (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16);
+        }
+    }
+}
+
+/* ============================================================
+ * 背景缓存（P2.3 — InitScr RGB565 双缓冲优化）
+ * ============================================================
+ *
+ * 工厂对齐：InitScr @ 0x29ce8 使用 RGB565 双缓冲降低内存占用。
+ * 本实现：将 RGB565→XRGB8888 转换一次性完成并缓存，
+ *         后续每帧仅需 memcpy 而非逐像素转换。
+ *
+ * 内存节省：
+ *   XRGB8888 单缓冲:  1280×720×4 = 3.6 MB
+ *   缓存一次转换后:   每帧 blit 从 921K 次 CPU 操作 → 1 次 memcpy
+ *   RGB565 双缓冲（InitScr）: 320×200×2×2 = 256 KB ≈ 260 KB
+ * ============================================================ */
+
+/* 背景缓存（预转换的 XRGB8888 数据） */
+static uint32_t *g_bg_cache      = NULL;
+static int       g_bg_cache_w    = 0;
+static int       g_bg_cache_h    = 0;
+static size_t    g_bg_cache_pitch = 0;   /* 字节数 per row */
+
+/* InitScr RGB565 双缓冲（320×200 小屏幕初始化画面） */
+/* 原厂 InitScr @ 0x29ce8: scr_h_size=0x1e0(480), scr_v_size=0x110(272)
+ * malloc(0x3fc00) = 480*272*2 = 260096 bytes (RGB565) */
+#define INITSCR_W   480
+#define INITSCR_H   272
+static uint16_t  *g_initscr[2]   = { NULL, NULL };
+static int        g_initscr_cur  = 0;   /* 当前 front buffer 索引 */
+
+/* 将 RGB565 数据转换为 XRGB8888 并缓存。
+ * 转换一次，后续 disp_draw_cached_bg() 直接 memcpy。
+ * 返回 0 成功，-1 失败（内存不足）。 */
+int disp_cache_bg(const uint8_t *rgb565, int width, int height, int pitch)
+{
+    if (!rgb565 || width <= 0 || height <= 0) return -1;
+
+    /* 释放旧缓存 */
+    if (g_bg_cache) {
+        free(g_bg_cache);
+        g_bg_cache = NULL;
+    }
+
+    int cache_w = width < g_fb_w ? width : g_fb_w;
+    int cache_h = height < g_fb_h ? height : g_fb_h;
+    g_bg_cache_pitch = (size_t)cache_w * 4;  /* XRGB8888 = 4 bytes/pixel */
+
+    g_bg_cache = (uint32_t *)calloc((size_t)cache_h, g_bg_cache_pitch);
+    if (!g_bg_cache) {
+        ERR("disp_cache_bg: calloc failed (%dx%d)", cache_w, cache_h);
+        return -1;
+    }
+
+    size_t src_pitch = (size_t)pitch;
+    for (int y = 0; y < cache_h; y++) {
+        const uint8_t *srow = rgb565 + (size_t)y * src_pitch;
+        uint32_t *drow = &g_bg_cache[(size_t)y * cache_w];
+
+        for (int x = 0; x < cache_w; x++) {
+            uint16_t s = (uint16_t)(srow[x * 2] | (srow[x * 2 + 1] << 8));
+            uint8_t r = (uint8_t)((s >> 11) & 0x1f);
+            uint8_t g = (uint8_t)((s >> 5) & 0x3f);
+            uint8_t b = (uint8_t)(s & 0x1f);
+            r = (uint8_t)((r << 3) | (r >> 2));
+            g = (uint8_t)((g << 2) | (g >> 4));
+            b = (uint8_t)((b << 3) | (b >> 2));
+            drow[x] = (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16);
+        }
+    }
+
+    g_bg_cache_w = cache_w;
+    g_bg_cache_h = cache_h;
+
+    LOG("disp_cache_bg: cached %dx%d (%zu KB)",
+        cache_w, cache_h, g_bg_cache_pitch * (size_t)cache_h / 1024);
+    return 0;
+}
+
+/* 绘制缓存的背景到 framebuffer（memcpy，零 CPU 转换）。
+ * 在 font_draw_text 之前调用。 */
+void disp_draw_cached_bg(void)
+{
+    if (!g_drm_ready || !g_fb_mem || !g_bg_cache) return;
+
+    for (int y = 0; y < g_bg_cache_h; y++) {
+        uint32_t *drow = (uint32_t *)((uint8_t *)g_fb_mem + (size_t)y * (size_t)g_fb_pitch);
+        memcpy(drow, &g_bg_cache[(size_t)y * g_bg_cache_w],
+               (size_t)g_bg_cache_w * 4);
+    }
+}
+
+/* 释放缓存的背景 */
+void disp_clear_cached_bg(void)
+{
+    if (g_bg_cache) {
+        free(g_bg_cache);
+        g_bg_cache = NULL;
+    }
+    g_bg_cache_w = g_bg_cache_h = 0;
+    g_bg_cache_pitch = 0;
+}
+
+/* 背景是否已缓存 */
+bool disp_bg_cached(void) { return g_bg_cache != NULL; }
+
+/* ============================================================
+ * InitScr RGB565 双缓冲（320×200 初始化画面）
+ * ============================================================
+ *
+ * 工厂 InitScr 使用小型 RGB565 双缓冲渲染初始化画面，
+ * 内存仅 320×200×2×2 = 256 KB（vs 主 framebuffer 3.6 MB）。
+ * 主 framebuffer 仍为 XRGB8888，InitScr 在初始化阶段使用。
+ */
+
+/* 初始化 InitScr RGB565 双缓冲。返回 0 成功。 */
+int disp_initscr_alloc(void)
+{
+    size_t buf_size = (size_t)INITSCR_W * (size_t)INITSCR_H * 2;  /* RGB565 */
+
+    for (int i = 0; i < 2; i++) {
+        if (!g_initscr[i]) {
+            g_initscr[i] = (uint16_t *)calloc(1, buf_size);
+            if (!g_initscr[i]) {
+                ERR("disp_initscr_alloc: calloc failed (buf %d, %zu KB)",
+                    i, buf_size / 1024);
+                /* 清理已分配的 */
+                disp_initscr_free();
+                return -1;
+            }
+        }
+    }
+    g_initscr_cur = 0;
+    LOG("disp_initscr_alloc: %dx%d RGB565 double-buffer (%zu KB)",
+        INITSCR_W, INITSCR_H, buf_size * 2 / 1024);
+    return 0;
+}
+
+/* 释放 InitScr 双缓冲 */
+void disp_initscr_free(void)
+{
+    for (int i = 0; i < 2; i++) {
+        if (g_initscr[i]) {
+            free(g_initscr[i]);
+            g_initscr[i] = NULL;
+        }
+    }
+    g_initscr_cur = 0;
+}
+
+/* 获取当前 InitScr 写入缓冲区。返回 NULL 表示未分配。 */
+uint16_t *disp_initscr_get_buf(void)
+{
+    if (!g_initscr[0] || !g_initscr[1]) return NULL;
+    return g_initscr[g_initscr_cur];
+}
+
+/* 翻转 InitScr 双缓冲（交换前后缓冲） */
+void disp_initscr_flip(void)
+{
+    g_initscr_cur = g_initscr_cur ^ 1;
+}
+
+/* 将 InitScr RGB565 缓冲缩放到主 framebuffer 并呈现。
+ * 用于在初始化阶段显示初始化画面。 */
+void disp_initscr_present(void)
+{
+    if (!g_drm_ready || !g_fb_mem || !g_initscr[g_initscr_cur]) return;
+
+    /* 将 320×200 RGB565 缩放到 g_fb_w×g_fb_h XRGB8888 */
+    float sx = (float)g_fb_w / (float)INITSCR_W;
+    float sy = (float)g_fb_h / (float)INITSCR_H;
+
+    for (int y = 0; y < g_fb_h; y++) {
+        uint32_t *drow = (uint32_t *)((uint8_t *)g_fb_mem + (size_t)y * (size_t)g_fb_pitch);
+        int sy_idx = (int)((float)y * (float)INITSCR_H / (float)g_fb_h);
+        if (sy_idx >= INITSCR_H) sy_idx = INITSCR_H - 1;
+        const uint16_t *srow = &g_initscr[g_initscr_cur][sy_idx * INITSCR_W];
+
+        for (int x = 0; x < g_fb_w; x++) {
+            int sx_idx = (int)((float)x * (float)INITSCR_W / (float)g_fb_w);
+            if (sx_idx >= INITSCR_W) sx_idx = INITSCR_W - 1;
+            uint16_t s = srow[sx_idx];
+            uint8_t r = (uint8_t)((s >> 11) & 0x1f);
+            uint8_t g = (uint8_t)((s >> 5) & 0x3f);
+            uint8_t b = (uint8_t)(s & 0x1f);
+            r = (uint8_t)((r << 3) | (r >> 2));
+            g = (uint8_t)((g << 2) | (g >> 4));
+            b = (uint8_t)((b << 3) | (b >> 2));
+            drow[x] = (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16);
+        }
+    }
+
+#if HAVE_DRM
+    drmModeSetCrtc(g_dri_fd, g_crtc_id, g_fb_id, 0, 0,
+                   &g_connector_id, 1, &g_mode);
+#endif
+}
+
+/* InitScr 双缓冲是否已分配 */
+bool disp_initscr_ready(void) { return g_initscr[0] && g_initscr[1]; }
+
+/* 游戏模式切换：使用 InitScr 480×272 RGB565 而非 1280×720 XRGB8888
+ * 原厂 InitScr @ 0x29ce8: scr_h_size=0x1e0(480), scr_v_size=0x110(272) */
+static int g_game_mode = 0;  /* 0 = menu mode (1280×720), 1 = game mode (480×272) */
+
+void disp_set_game_mode(int enabled)
+{
+    g_game_mode = enabled;
+    if (enabled) {
+        LOG("disp_set_game_mode: switched to game mode 480x272 RGB565");
+        if (!g_initscr[0]) disp_initscr_alloc();
+    } else {
+        LOG("disp_set_game_mode: switched to menu mode 1280x720 XRGB8888");
+    }
+}
+
+int disp_is_game_mode(void) { return g_game_mode; }
+
+/* 呈现 framebuffer 到屏幕（SetCrtc）。
+ * 在 disp_blit / disp_draw_pixel / font_draw_text 之后调用。 */
+void disp_present(void)
+{
+#if HAVE_DRM
+    if (!g_drm_ready) return;
+    drmModeSetCrtc(g_dri_fd, g_crtc_id, g_fb_id, 0, 0,
+                   &g_connector_id, 1, &g_mode);
+#endif
+}
+
+/* 游戏模式下：将 InitScr RGB565 缓冲区缩放到 DRM framebuffer 呈现 */
+void disp_game_present(void)
+{
+    if (!g_game_mode || !g_initscr_ready()) {
+        disp_present();
+        return;
+    }
+
+    /* 将 480×272 RGB565 缩放到 1280×720 XRGB8888 framebuffer */
+    disp_initscr_present();
+}
+
 void disp_clear(uint32_t color)
 {
     if (!g_drm_ready || !g_fb_mem) return;
@@ -429,6 +720,13 @@ void disp_draw_text(int x, int y, const char *text, uint32_t color)
 {
     if (!g_drm_ready || !g_fb_mem) return;
 
+    /* 优先使用 TTF 字体（P1.2，与工厂 stb_truetype 对齐） */
+    if (font_is_ready()) {
+        font_draw_text(x, y, text, color);
+        return;
+    }
+
+    /* 回退：5x7 位图字体（DRM 不可用或字体加载失败时） */
     int scale = 3;  /* 3x 放大，5x7 字体在 1280x720 屏幕上可见 */
 
     for (const char *p = text; *p; p++) {
@@ -460,6 +758,48 @@ void disp_flip(const void *buf, unsigned width, unsigned height, size_t pitch)
 {
     if (!g_drm_ready || !g_fb_mem) return;
 
+    /* 游戏模式：core 输出 → InitScr 480×272 RGB565 双缓冲 → 缩放到 fb 上屏
+     * 对齐原厂 InitScr @ 0x29ce8: scr_h_size=480, scr_v_size=272 */
+    if (g_game_mode && g_initscr_ready()) {
+        if (!buf || width == 0 || height == 0) return;
+
+        uint16_t *dst = g_initscr[g_initscr_cur];
+        const uint8_t *src = (const uint8_t *)buf;
+        unsigned rows = height < (unsigned)INITSCR_H ? height : (unsigned)INITSCR_H;
+        unsigned cols = width  < (unsigned)INITSCR_W ? width : (unsigned)INITSCR_W;
+        size_t bpp = pitch / (width ? width : 1);
+
+        /* 清底黑色，避免残留 */
+        for (unsigned y = 0; y < INITSCR_H; y++)
+            for (unsigned x = 0; x < INITSCR_W; x++)
+                dst[y * INITSCR_W + x] = 0;
+
+        for (unsigned y = 0; y < rows; y++) {
+            const uint8_t *srow = src + y * pitch;
+            for (unsigned x = 0; x < cols; x++) {
+                uint16_t v;
+                if (bpp >= 4) {
+                    /* XRGB8888 → RGB565 */
+                    uint32_t px = *(const uint32_t *)(srow + x * 4);
+                    uint8_t r = (uint8_t)((px >> 16) & 0xff);
+                    uint8_t g = (uint8_t)((px >> 8) & 0xff);
+                    uint8_t b = (uint8_t)(px & 0xff);
+                    v = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                } else if (bpp == 2) {
+                    v = (uint16_t)(srow[x * 2] | ((uint16_t)srow[x * 2 + 1] << 8));
+                } else {
+                    v = 0;
+                }
+                dst[y * INITSCR_W + x] = v;
+            }
+        }
+
+        /* InitScr 480×272 RGB565 → fb 1280×720 XRGB8888 → SetCrtc */
+        disp_game_present();
+        return;
+    }
+
+    /* Menu 模式：直接写主 framebuffer (XRGB8888) */
     const uint8_t *src = (const uint8_t *)buf;
     uint8_t *dst = (uint8_t *)g_fb_mem;
     unsigned rows = height < (unsigned)g_fb_h ? height : (unsigned)g_fb_h;

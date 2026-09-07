@@ -20,6 +20,7 @@
 #include "debug.h"
 #include "font.h"
 #include "ui_zip.h"
+#include "thumbnail.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -684,6 +685,34 @@ void ui_draw_page(int page)
                 int cl_w = font_text_width(core_line);
                 font_draw_text(fw - cl_w - 40, line_y + i * line_h, core_line,
                                0x808080u);
+            }
+        }
+
+        /* ---- 缩略图 overlay（P1 — 接入 thumbnail.c）----
+         * 显示当前选中游戏的缩略图到右侧。
+         * 工厂：mui_DisplayThumbnail @ 0x14f84 从 <NNN>.dat 提取 <base>_NNN.raw。 */
+        {
+            const game_entry_t *sel = game_list_get(selected);
+            if (sel && sel->path[0]) {
+                unsigned char *thumb_data = NULL;
+                size_t thumb_size = 0;
+                int thumb_w = 0, thumb_h = 0;
+                if (thumb_extract(sel->path, &thumb_data, &thumb_size,
+                                  &thumb_w, &thumb_h) == 0 &&
+                    thumb_data && thumb_w > 0 && thumb_h > 0) {
+                    /* 缩略图显示在右侧，居中于列表区域 */
+                    int th_x = fw - thumb_w - 20;
+                    int th_y = fh / 2 - thumb_h / 2;
+                    /* 原始 raw 格式：前 8B header [4B off][2B w][2B h] + RGB565 像素 */
+                    size_t data_off = 8;
+                    if (thumb_size >= 8 + (size_t)thumb_w * thumb_h * 2) {
+                        disp_blit_rgb565_at(thumb_data + data_off, th_x, th_y,
+                                             thumb_w, thumb_h, thumb_w * 2);
+                    }
+                    free(thumb_data);
+                    LOG("ui_draw_page GAME: thumbnail %dx%d at (%d,%d)",
+                        thumb_w, thumb_h, th_x, th_y);
+                }
             }
         }
 
