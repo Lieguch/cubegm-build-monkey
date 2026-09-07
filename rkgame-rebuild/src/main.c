@@ -52,6 +52,7 @@ void *driver_handle = NULL;
 #include "font.h"
 #include "ui.h"
 #include "audio.h"
+#include "stubs.h"
 
 /* ---- 全局变量定义 ---- */
 
@@ -890,27 +891,12 @@ int main(int argc, char **argv)
     LoadMenuLog();
 
     /* dispmeninfo()：诊断 /proc/meminfo + 显示分辨率（对齐原厂 main() 第 4 阶段） */
-    {
-        FILE *fp = fopen("/proc/meminfo", "r");
-        if (fp) {
-            char line[128];
-            unsigned long total = 0, free_kb = 0, avail = 0;
-            while (fgets(line, sizeof(line), fp)) {
-                if (sscanf(line, "MemTotal: %lu kB", &total) == 1) break;
-            }
-            /* 重新读取获取 free 和 available */
-            rewind(fp);
-            while (fgets(line, sizeof(line), fp)) {
-                if (sscanf(line, "MemFree: %lu kB", &free_kb) == 1) {}
-                if (sscanf(line, "MemAvailable: %lu kB", &avail) == 1) break;
-            }
-            fclose(fp);
-            LOG("dispmeninfo: MemTotal=%lu MB, MemFree=%lu MB, MemAvailable=%lu MB",
-                total / 1024, free_kb / 1024, avail / 1024);
-        } else {
-            LOG("dispmeninfo: /proc/meminfo not accessible");
-        }
-    }
+    dispmeninfo();
+
+    /* sfc_init() / spi_driver_init() / InitRFJoystick()：原厂 main() 调用，我方桩实现 */
+    sfc_init();
+    spi_driver_init();
+    InitRFJoystick();
 
     /* 如果有命令行参数，优先用参数指定 autorun */
     if (argc >= 2) {
