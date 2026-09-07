@@ -25,7 +25,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <iconv.h>
+#include "iconv.h"  /* 使用本地 libiconv（支持 GBK/Big5/JIS/UTF-8） */
 #include <ctype.h>
 
 #include "game_list.h"

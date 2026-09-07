@@ -48,6 +48,12 @@ list(FILTER SRC_FILES EXCLUDE REGEX ".*\\.h$")
 # 自定义入口点（替换 crt1.o 的 _start，绕过 __libc_start_main@GLIBC_2.34）
 list(APPEND SRC_FILES "src/entry.c")
 
+# ---- 第三方库源文件 ----
+# mxml: XML 解析库
+list(APPEND SRC_FILES "lib/mxml/mxml.c")
+# libiconv: 字符编码转换库
+list(APPEND SRC_FILES "lib/libiconv/iconv.c")
+
 # ---- 头文件 ----
 include_directories(src)
 
