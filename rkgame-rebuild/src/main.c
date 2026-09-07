@@ -7,7 +7,7 @@
  *   get_executable_path(work_path)
  *   resource_path = work_path + "resource"
  *   GetConfig()        — 读 config.xml
- *   dispmeninfo()      — 输出分辨率信息
+ *   dispmeninfo()      — 输出分辨率信息 + /proc/meminfo 内存诊断
  *   InitDisplay()
  *   InitSound()
  *   InitJoystick()     — GPIO + RF
@@ -33,16 +33,25 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <dlfcn.h>
+
+/* driver.so dlopen handle（供 audio.c dlsym 使用） */
+void *driver_handle = NULL;
 #include <time.h>
+#include <sys/time.h>
 #include <sys/select.h>
 
 #include "rkgame.h"
 #include "debug.h"
 #include "heartbeat.h"
+#include "font.h"
+#include "ui.h"
+#include "audio.h"
 
 /* ---- 全局变量定义 ---- */
 
@@ -68,6 +77,10 @@ sram_state_t sram_state = { 0 };
 joy_device_t joy_devs[MAX_DEVICES] = { 0 };
 int joy_dev_count = 0;
 rkgame_config_t g_cfg = { 0 };
+
+/* 游戏列表导航状态（Task #39 — ui.c 通过 extern 读取） */
+int menu_gl_selected = 0;
+int menu_gl_scroll   = 0;
 
 /* ---- 日志（rklog 实现） ---- */
 
@@ -102,14 +115,7 @@ void rklog(int level, const char *fmt, ...)
 
 /* ---- 显示层（实现见 disp.c） ---- */
 
-/* ---- 音频层占位实现（ALSA 待 Phase 4 实现） ---- */
-
-void audio_init(void)         { LOG("audio_init: placeholder"); }
-void audio_shutdown(void)     { LOG("audio_shutdown"); }
-void audio_play(const void *buf, size_t frames)
-{
-    (void)buf; (void)frames;
-}
+/* ---- 音频层：实现在 audio.c（P2.4） ---- */
 
 /* ---- 配置保存占位 ---- */
 
@@ -167,9 +173,120 @@ static void get_executable_path(char *out, size_t out_size)
 
 /* ---- 配置加载 ---- */
 
+/* ---- setting.xml 完整解析 ----
+ *
+ * 工厂实证（Ghidra 反编译 + 真机 SD 卡 setting.xml）：
+ *   GetConfig() @ 0x9f04 解析 8 项：
+ *     displayfps, displaythread, softrotation, logfile,
+ *     savestatehotkey (default -1), autorestore (default 0),
+ *     gamemenuhotkey (default 9), autorun (file, driver attrs)
+ *   mui_LoadSetting() @ 0x171f8 解析 6 项：
+ *     config (language, volume attrs), defaultlanguage,
+ *     sound > bgm (file attr), sound > effect0 (file),
+ *     sound > effect1 (file), filebrowser
+ *
+ * 总计 14 项（含 autorun/config 的 2+2 子属性）。
+ */
+
+/* 辅助：从 <tag>...</tag> 提取元素文本为整数 */
+static int parse_elem_int(const char *buf, const char *tag, int default_val)
+{
+    char open_tag[64], close_tag[64];
+    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
+    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
+    const char *start = strstr(buf, open_tag);
+    if (!start) return default_val;
+    start += strlen(open_tag);
+    const char *end = strstr(start, close_tag);
+    if (!end) return default_val;
+    char tmp[64];
+    size_t len = (size_t)(end - start);
+    if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
+    memcpy(tmp, start, len);
+    tmp[len] = '\0';
+    return (int)strtol(tmp, NULL, 10);
+}
+
+/* 辅助：从 <tag>...</tag> 提取元素文本为字符串 */
+static void parse_elem_str(const char *buf, const char *tag,
+                           char *out, size_t out_size, const char *default_val)
+{
+    char open_tag[64], close_tag[64];
+    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
+    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
+    const char *start = strstr(buf, open_tag);
+    if (!start) {
+        strncpy(out, default_val, out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+    start += strlen(open_tag);
+    const char *end = strstr(start, close_tag);
+    if (!end) {
+        strncpy(out, default_val, out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+    size_t len = (size_t)(end - start);
+    if (len >= out_size) len = out_size - 1;
+    memcpy(out, start, len);
+    out[len] = '\0';
+}
+
+/* 辅助：从 <tag ... attr="value" .../> 或 <tag ... attr="value" ...> 提取属性值 */
+static void parse_attr_str(const char *buf, const char *tag, const char *attr,
+                           char *out, size_t out_size, const char *default_val)
+{
+    const char *tag_start = strstr(buf, tag);
+    if (!tag_start) {
+        strncpy(out, default_val, out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+    char search[64];
+    snprintf(search, sizeof(search), "%s=\"", attr);
+    const char *f = strstr(tag_start, search);
+    if (!f) {
+        strncpy(out, default_val, out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+    f += strlen(search);
+    const char *end = strchr(f, '"');
+    if (!end) {
+        strncpy(out, default_val, out_size - 1);
+        out[out_size - 1] = '\0';
+        return;
+    }
+    size_t len = (size_t)(end - f);
+    if (len >= out_size) len = out_size - 1;
+    memcpy(out, f, len);
+    out[len] = '\0';
+}
+
+/* 辅助：从属性提取整数 */
+static int parse_attr_int(const char *buf, const char *tag, const char *attr,
+                          int default_val)
+{
+    const char *tag_start = strstr(buf, tag);
+    if (!tag_start) return default_val;
+    char search[64], tmp[64];
+    snprintf(search, sizeof(search), "%s=\"", attr);
+    const char *f = strstr(tag_start, search);
+    if (!f) return default_val;
+    f += strlen(search);
+    const char *end = strchr(f, '"');
+    if (!end) return default_val;
+    size_t len = (size_t)(end - f);
+    if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
+    memcpy(tmp, f, len);
+    tmp[len] = '\0';
+    return (int)strtol(tmp, NULL, 10);
+}
+
 void config_load(void)
 {
-    /* 原厂固件用 setting.xml（非 config.xml），格式为 <autorun file="..." driver="..."/> */
+    /* 原厂用 setting.xml（非 config.xml），格式为 <autorun file="..." driver="..."/> */
     const char *cfg_files[] = { "setting.xml", "config.xml", NULL };
     FILE *fp = NULL;
     char path[600];
@@ -183,6 +300,13 @@ void config_load(void)
     if (!fp) {
         ERR("config_load: no config file in %s", work_path);
         memset(&g_cfg, 0, sizeof(g_cfg));
+        /* 对齐原厂 GetConfig 默认值（反编译 01_main_emurun_joystick.c:180-196）：
+         *   SaveDefaultStateKey = -1（禁用）
+         *   GameMenuHotKey = 9（L1/MODE2）
+         * 真机 setting.xml 实际值可能为 <savestatehotkey>3072</savestatehotkey>（位掩码）。 */
+        g_cfg.savestatehotkey = -1;
+        g_cfg.gamemenuhotkey = 9;
+        g_cfg.volume = 8;
         return;
     }
 
@@ -192,88 +316,89 @@ void config_load(void)
     buf[n] = '\0';
     fclose(fp);
 
-    /* 1) 解析 <autorun file="..." driver="..."/>（属性语法，原厂 setting.xml 格式） */
-    char *tag = strstr(buf, "<autorun");
-    if (tag) {
-        /* file="..." */
-        char *f = strstr(tag, "file=");
-        if (f) {
-            f += 5;
-            if (*f == '"') {
-                f++;
-                char *end = strchr(f, '"');
-                if (end) {
-                    size_t len = (size_t)(end - f);
-                    if (len < sizeof(g_cfg.autorun_path)) {
-                        memcpy(g_cfg.autorun_path, f, len);
-                        g_cfg.autorun_path[len] = '\0';
-                    }
-                }
-            }
-        }
-        /* driver="..." */
-        char *d = strstr(tag, "driver=");
-        if (d) {
-            d += 7;
-            if (*d == '"') {
-                d++;
-                char *end = strchr(d, '"');
-                if (end) {
-                    size_t len = (size_t)(end - d);
-                    if (len < sizeof(g_cfg.autorun_driver)) {
-                        memcpy(g_cfg.autorun_driver, d, len);
-                        g_cfg.autorun_driver[len] = '\0';
-                    }
-                }
-            }
-        }
+    /* ---- GetConfig() @ 0x9f04: 8 项 ---- */
+
+    /* 1) displayfps */
+    g_cfg.displayfps = parse_elem_int(buf, "displayfps", 0);
+
+    /* 2) displaythread */
+    g_cfg.displaythread = parse_elem_int(buf, "displaythread", 0);
+
+    /* 3) softrotation */
+    g_cfg.soft_rotation = parse_elem_int(buf, "softrotation", 0);
+
+    /* 4) logfile */
+    parse_elem_str(buf, "logfile", g_cfg.logfile,
+                   sizeof(g_cfg.logfile), "");
+
+    /* 5) savestatehotkey (原厂默认 -1 禁用，实际 setting.xml 值 3072) */
+    g_cfg.savestatehotkey = parse_elem_int(buf, "savestatehotkey", -1);
+
+    /* 6) autorestore (default 0) */
+    g_cfg.autorestore = parse_elem_int(buf, "autorestore", 0);
+
+    /* 7) gamemenuhotkey (原厂默认 9) */
+    g_cfg.gamemenuhotkey = parse_elem_int(buf, "gamemenuhotkey", 9);
+
+    /* 8) autorun (file, driver attrs) */
+    parse_attr_str(buf, "<autorun", "file", g_cfg.autorun_path,
+                   sizeof(g_cfg.autorun_path), "");
+    parse_attr_str(buf, "<autorun", "driver", g_cfg.autorun_driver,
+                   sizeof(g_cfg.autorun_driver), "");
+
+    /* ---- mui_LoadSetting() @ 0x171f8: 6 项 ---- */
+
+    /* 9) config (language, volume attrs) — 若 <config> 无 language 属性，
+     *    用 <defaultlanguage> 作为 fallback */
+    g_cfg.m_ui = parse_attr_int(buf, "<config", "language", -1);
+    g_cfg.volume = parse_attr_int(buf, "<config", "volume", 8);
+
+    /* 10) defaultlanguage (default 0) */
+    g_cfg.defaultlanguage = parse_elem_int(buf, "defaultlanguage", 0);
+
+    /* 应用 fallback：config language 缺失时用 defaultlanguage */
+    if (g_cfg.m_ui < 0) {
+        g_cfg.m_ui = g_cfg.defaultlanguage;
     }
 
-    /* 2) 回退：<core>name</core>（子元素文本，非原厂格式但保留兼容） */
-    tag = strstr(buf, "<core>");
-    if (tag && !g_cfg.core_name[0]) {
-        tag += 7;
-        char *end = strstr(tag, "</core>");
-        if (end) {
-            size_t len = (size_t)(end - tag);
-            if (len < sizeof(g_cfg.core_name)) {
-                memcpy(g_cfg.core_name, tag, len);
-                g_cfg.core_name[len] = '\0';
-            }
-        }
-    }
+    /* 11-13) sound > bgm, effect0, effect1 (file attrs) */
+    /* 注意：原厂 setting.xml 用 <bgm file="..."/> 而非 <music file="..."/> */
+    parse_attr_str(buf, "<bgm", "file", g_cfg.music_file,
+                   sizeof(g_cfg.music_file), "");
+    parse_attr_str(buf, "<effect0", "file", g_cfg.effect0_file,
+                   sizeof(g_cfg.effect0_file), "");
+    parse_attr_str(buf, "<effect1", "file", g_cfg.effect1_file,
+                   sizeof(g_cfg.effect1_file), "");
 
-    /* 3) device0_type / device1_type */
-    tag = strstr(buf, "<device0_type>");
-    if (tag) {
-        tag += 15;
-        char *end = strstr(tag, "</device0_type>");
-        if (end) {
-            size_t len = (size_t)(end - tag);
-            if (len < sizeof(g_cfg.device0_type)) {
-                memcpy(g_cfg.device0_type, tag, len);
-                g_cfg.device0_type[len] = '\0';
-            }
-        }
-    }
-    tag = strstr(buf, "<device1_type>");
-    if (tag) {
-        tag += 15;
-        char *end = strstr(tag, "</device1_type>");
-        if (end) {
-            size_t len = (size_t)(end - tag);
-            if (len < sizeof(g_cfg.device1_type)) {
-                memcpy(g_cfg.device1_type, tag, len);
-                g_cfg.device1_type[len] = '\0';
-            }
-        }
-    }
+    /* 14) filebrowser (default "/roms") */
+    parse_elem_str(buf, "filebrowser", g_cfg.filebrowser,
+                   sizeof(g_cfg.filebrowser), "/roms");
+
+    /* 兼容：device0_type / device1_type（非原厂但保留） */
+    parse_elem_str(buf, "device0_type", g_cfg.device0_type,
+                   sizeof(g_cfg.device0_type), "");
+    parse_elem_str(buf, "device1_type", g_cfg.device1_type,
+                   sizeof(g_cfg.device1_type), "");
+
+    /* 兼容：<core>name</core>（旧格式） */
+    parse_elem_str(buf, "core", g_cfg.core_name,
+                   sizeof(g_cfg.core_name), "");
 
     free(buf);
-    LOG("config: autorun=%s core=%s driver=%s dev0=%s dev1=%s",
+
+    LOG("config: autorun=%s core=%s driver=%s",
         g_cfg.autorun_path, g_cfg.core_name,
-        g_cfg.autorun_driver,
-        g_cfg.device0_type, g_cfg.device1_type);
+        g_cfg.autorun_driver);
+    LOG("config: displayfps=%d softrotation=%d logfile=%s",
+        g_cfg.displayfps, g_cfg.soft_rotation, g_cfg.logfile);
+    LOG("config: savestatehotkey=%d autorestore=%d gamemenuhotkey=%d",
+        g_cfg.savestatehotkey, g_cfg.autorestore, g_cfg.gamemenuhotkey);
+    LOG("config: language=%d volume=%d defaultlang=%d",
+        g_cfg.m_ui, g_cfg.volume, g_cfg.defaultlanguage);
+    LOG("config: music=%s effect0=%s effect1=%s",
+        g_cfg.music_file, g_cfg.effect0_file, g_cfg.effect1_file);
+    LOG("config: filebrowser=%s dev0=%s dev1=%s",
+        g_cfg.filebrowser, g_cfg.device0_type, g_cfg.device1_type);
 }
 
 /* ---- autorun ---- */
@@ -286,7 +411,38 @@ void autorun(const char *rom, const char *driver)
         LOG("autorun: driver specified, skipping ROM load");
         return;
     }
-    core_load(rom, g_cfg.core_name);
+
+    /* 工厂流程（run_game @ 0x2b7510）：
+     * 1. GetFilenameExt → 大写
+     * 2. GetCoreIndex(ext) → 设置 Filetype, 返回 index
+     * 3. 根据 Filetype 分支派发
+     *
+     * 本 rebuild 简化为：查表得到 core name，传给 core_load。
+     * ZIP 容器 (Filetype >= 0x10000) 和特殊 loader (Gpsp_Load,
+     * DOSBox game.cfg) 暂用通用 Core_Load 路径。
+     */
+    char ext[16];
+    GetFilenameExt(rom, ext, sizeof(ext));
+    int idx = GetCoreIndex(ext);
+
+    if (idx < 0) {
+        ERR("autorun: unknown extension '%s' for %s", ext, rom);
+        return;
+    }
+
+    const char *core_name = core_lookup_by_ext(ext);
+    if (!core_name || !*core_name) {
+        /* 空 core_name: BKP/ZIP (0x10000) — 需要 OpenZipU 处理，
+         * 当前 rebuild 还没有 ZIP 解包路径，尝试直接传给 core_load */
+        ERR("autorun: core name empty for ext '%s' (filetype=0x%x) — "
+            "ZIP container not yet supported", ext, Filetype);
+        return;
+    }
+
+    LOG("autorun: ext=%s filetype=0x%x core=%s", ext, Filetype, core_name);
+    core_load(rom, core_name);
+    /* 记录到 menu.log（菜单恢复） */
+    menu_log_add(rom);
 }
 
 /* ---- 菜单占位 ---- */
@@ -298,7 +454,10 @@ static void main_menu(void)
 
     /* 如果 DRM/KMS 可用，渲染启动画面菜单 */
     if (disp_is_ready()) {
-        disp_draw_menu();
+        if (ui_is_ready())
+            ui_draw_menu();
+        else
+            disp_draw_menu();
     }
 
     /*
@@ -316,6 +475,35 @@ static void main_menu(void)
     time_t last_heartbeat = 0;
     time_t last_redraw    = 0;
     int    redraw_count   = 0;
+
+    /* ---- 游戏列表导航状态（P2.2 + Task #39） ---- */
+    int   gl_prev_keys[26] = {0};          /* 上帧按键状态（边缘检测） */
+    bool  gl_showing     = false;          /* 是否正在显示游戏列表 */
+    bool  gl_searching   = false;          /* 是否正在显示搜索页 */
+    bool  gl_setting     = false;          /* 是否正在显示设置页 */
+    bool  gl_typing      = false;          /* 是否正在显示游戏分类页（type.raw） */
+    bool  gl_browser     = false;          /* 是否正在显示文件浏览器（<filebrowser>） */
+    const int GL_PAGE_SIZE = 8;            /* 每页显示的游戏数 */
+
+    /* 文件浏览器状态（<filebrowser> 配置项） */
+    char  fb_path[512] = {0};              /* 当前浏览路径 */
+    char  fb_files[64][128] = {0};         /* 文件列表（最多 64 项） */
+    int   fb_count = 0;                    /* 文件数 */
+    int   fb_selected = 0;                 /* 当前选中索引 */
+    int   fb_scroll = 0;                   /* 滚动偏移 */
+
+    /* 标准按键映射（基于 joystick.zip 默认 profile） */
+    #define KEY_UP       10   /* 上 */
+    #define KEY_DOWN     11   /* 下 */
+    #define KEY_LEFT     12   /* 左 */
+    #define KEY_RIGHT    13   /* 右 */
+    #define KEY_OK       0    /* A 键 = OK */
+    #define KEY_CANCEL   1    /* B 键 = 取消 */
+    #define KEY_FAVORITE 2    /* X 键 = 收藏 */
+    #define KEY_START    8    /* START = 菜单切换 */
+    #define KEY_SEARCH   9    /* SELECT = 搜索 */
+    #define KEY_TYPE     10   /* L1 = 游戏分类 */
+    #define KEY_BROWSER  11   /* L2 = 文件浏览器 */
 
     while (1) {
         struct timeval tv;
@@ -336,9 +524,245 @@ static void main_menu(void)
          * disp_draw_menu 不会 crash。 */
         time_t now = time(NULL);
         if (disp_is_ready() && now - last_redraw >= 5) {
-            disp_draw_menu();
+            if (ui_is_ready())
+                ui_draw_menu();
+            else
+                disp_draw_menu();
             redraw_count++;
             last_redraw = now;
+        }
+
+        /* ---- 游戏列表导航（Task #39） ---- */
+        if (game_list_is_loaded() && game_list_count() > 0) {
+            int count = game_list_count();
+
+            /* 边界检查 */
+            if (menu_gl_selected < 0) menu_gl_selected = 0;
+            if (menu_gl_selected >= count) menu_gl_selected = count - 1;
+
+            /* 检查按键（边缘检测：上帧未按下 + 本帧按下） */
+            int keys[26];
+            for (i = 0; i < 26; i++) {
+                keys[i] = joy_get_key(0, (uint32_t)i);
+            }
+
+            /* 切换到游戏列表视图（按 START） */
+            if (keys[KEY_START] && !gl_prev_keys[KEY_START] && !gl_showing) {
+                gl_showing = true;
+                gl_searching = false;
+                gl_setting = false;
+                menu_gl_selected = 0;
+                menu_gl_scroll = 0;
+                LOG("main_menu: game list view activated (%d games)", count);
+            }
+
+            /* 搜索页（按 SELECT） */
+            if (keys[KEY_SEARCH] && !gl_prev_keys[KEY_SEARCH]) {
+                gl_searching = !gl_searching;
+                if (gl_searching) { gl_showing = false; gl_setting = false; }
+                LOG("main_menu: search page %s", gl_searching ? "entered" : "exited");
+            }
+
+            /* 设置页（按 L1 = key 8） */
+            if (keys[8] && !gl_prev_keys[8]) {
+                gl_setting = !gl_setting;
+                if (gl_setting) { gl_showing = false; gl_searching = false; gl_typing = false; }
+                LOG("main_menu: setting page %s", gl_setting ? "entered" : "exited");
+            }
+
+            /* 游戏分类页（按 L2 = key 10，进入 type.raw 页面） */
+            if (keys[KEY_TYPE] && !gl_prev_keys[KEY_TYPE]) {
+                gl_typing = !gl_typing;
+                if (gl_typing) { gl_showing = false; gl_searching = false; gl_setting = false; gl_browser = false; }
+                LOG("main_menu: type page %s", gl_typing ? "entered" : "exited");
+            }
+
+            /* 文件浏览器（按 R1 = key 11，<filebrowser> 配置项） */
+            if (keys[KEY_BROWSER] && !gl_prev_keys[KEY_BROWSER]) {
+                gl_browser = !gl_browser;
+                if (gl_browser) {
+                    gl_showing = false; gl_searching = false; gl_setting = false; gl_typing = false;
+                    /* 初始化浏览路径为 filebrowser 配置值 */
+                    snprintf(fb_path, sizeof(fb_path), "%s%s", work_path, g_cfg.filebrowser);
+                    fb_count = 0; fb_selected = 0; fb_scroll = 0;
+                    LOG("main_menu: file browser opened at %s", fb_path);
+                }
+            }
+
+            /* 返回主菜单（按 START 或 CANCEL） */
+            if ((keys[KEY_START] || keys[KEY_CANCEL]) &&
+                !gl_prev_keys[KEY_START] && gl_showing) {
+                gl_showing = false;
+                LOG("main_menu: returning to main menu");
+            }
+
+            /* 文件浏览器按键处理 */
+            if (gl_browser) {
+                /* B 键：返回上一级目录 */
+                if (keys[KEY_CANCEL] && !gl_prev_keys[KEY_CANCEL]) {
+                    char *slash = strrchr(fb_path, '/');
+                    if (slash && slash != fb_path) {
+                        *slash = '\0';
+                        fb_count = 0; fb_selected = 0; fb_scroll = 0;
+                    } else if (slash == fb_path) {
+                        gl_browser = false;
+                    }
+                    LOG("file browser: path=%s", fb_path);
+                }
+                /* A 键：进入目录 */
+                if (keys[KEY_OK] && !gl_prev_keys[KEY_OK] && fb_count > 0) {
+                    char full[600];
+                    snprintf(full, sizeof(full), "%s/%s", fb_path, fb_files[fb_selected]);
+                    struct stat st;
+                    if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        snprintf(fb_path, sizeof(fb_path), "%s", full);
+                        fb_count = 0; fb_selected = 0; fb_scroll = 0;
+                        LOG("file browser: entered %s", fb_path);
+                    }
+                }
+                /* START 键：退出浏览器 */
+                if (keys[KEY_START] && !gl_prev_keys[KEY_START]) {
+                    gl_browser = false;
+                    LOG("file browser: closed");
+                }
+                /* 上下选择 */
+                if (fb_count > 0) {
+                    if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
+                        fb_selected--;
+                        if (fb_selected < 0) fb_selected = fb_count - 1;
+                        if (fb_selected < fb_scroll) fb_scroll = fb_selected;
+                    }
+                    if (keys[KEY_DOWN] && !gl_prev_keys[KEY_DOWN]) {
+                        fb_selected++;
+                        if (fb_selected >= fb_count) fb_selected = 0;
+                        if (fb_selected >= fb_scroll + GL_PAGE_SIZE)
+                            fb_scroll = fb_selected - GL_PAGE_SIZE + 1;
+                    }
+                }
+            }
+
+            /* 上/下选择 */
+            if (gl_showing) {
+                if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
+                    menu_gl_selected--;
+                    if (menu_gl_selected < 0) menu_gl_selected = count - 1;
+                    if (menu_gl_selected < menu_gl_scroll) menu_gl_scroll = menu_gl_selected;
+                    LOG("main_menu: selected %d/%d", menu_gl_selected + 1, count);
+                }
+                if (keys[KEY_DOWN] && !gl_prev_keys[KEY_DOWN]) {
+                    menu_gl_selected++;
+                    if (menu_gl_selected >= count) menu_gl_selected = 0;
+                    if (menu_gl_selected >= menu_gl_scroll + GL_PAGE_SIZE)
+                        menu_gl_scroll = menu_gl_selected - GL_PAGE_SIZE + 1;
+                    LOG("main_menu: selected %d/%d", menu_gl_selected + 1, count);
+                }
+
+                /* 收藏切换（按 X） */
+                if (keys[KEY_FAVORITE] && !gl_prev_keys[KEY_FAVORITE]) {
+                    const game_entry_t *ge = game_list_get(menu_gl_selected);
+                    if (ge) {
+                        if (game_list_is_favorite(ge->path)) {
+                            game_list_remove_favorite(ge->path);
+                            game_list_save_favorites();
+                            LOG("main_menu: removed favorite: %s", ge->path);
+                        } else {
+                            game_list_add_favorite(ge->path);
+                            game_list_save_favorites();
+                            LOG("main_menu: added favorite: %s", ge->path);
+                        }
+                    }
+                }
+
+                /* 启动游戏（按 A/OK） */
+                if (keys[KEY_OK] && !gl_prev_keys[KEY_OK]) {
+                    const game_entry_t *ge = game_list_get(menu_gl_selected);
+                    if (ge) {
+                        LOG("main_menu: launching game %d/%d: %s (%s)",
+                            menu_gl_selected + 1, count, ge->path, ge->core);
+
+                        /* Task #39: 更新最近列表 */
+                        game_list_update_recent(ge->path);
+                        game_list_save_recent();
+
+                        /* 保存游戏列表状态 */
+                        game_list_save_recent();
+                        game_list_save_favorites();
+
+                        /* 启动游戏 */
+                        char rom_path[1024];
+                        snprintf(rom_path, sizeof(rom_path), "%s%s",
+                                 work_path, ge->path);
+
+                        const char *core_name = ge->core[0] ? ge->core
+                                                 : game_list_find_core(ge->path);
+                        if (!core_name) core_name = game_list_core_by_ext(
+                               strrchr(ge->path, '.') ? strrchr(ge->path, '.') + 1 : "");
+
+                        LOG("main_menu: launching %s with core %s",
+                            rom_path, core_name ? core_name : "(auto)");
+
+                        core_load(rom_path, core_name);
+                        menu_log_add(rom_path);
+                        return;  /* core_load 返回后回到菜单 */
+                    }
+                }
+            }
+
+            /* 更新按键状态 */
+            for (i = 0; i < 26; i++) gl_prev_keys[i] = keys[i];
+
+            /* 重绘游戏列表 UI */
+            if (disp_is_ready() && ui_is_ready()) {
+                /* 根据视图切换页面 */
+                if (gl_showing) {
+                    /* 显示游戏列表页面（使用 game.raw 背景） */
+                    ui_draw_page(UI_PAGE_GAME);
+                } else if (gl_searching) {
+                    /* 显示搜索页面（search.raw 背景） */
+                    ui_draw_page(UI_PAGE_SEARCH);
+                } else if (gl_setting) {
+                    /* 显示设置页面（setting.raw 背景） */
+                    ui_draw_page(UI_PAGE_SETTING);
+                } else if (gl_typing) {
+                    /* 显示游戏分类页面（type.raw 背景） */
+                    ui_draw_page(UI_PAGE_TYPE);
+                } else if (gl_browser) {
+                    /* 显示文件浏览器（使用 game.raw 背景，叠加文件列表） */
+                    ui_draw_page(UI_PAGE_GAME);
+                    /* 简化文件列表渲染：用 TTF 文字叠加 */
+                    if (fb_count == 0) {
+                        /* 扫描目录 */
+                        DIR *d = opendir(fb_path);
+                        if (d) {
+                            struct dirent *ent;
+                            while ((ent = readdir(d)) != NULL && fb_count < 64) {
+                                if (ent->d_name[0] == '.') continue;
+                                strncpy(fb_files[fb_count++], ent->d_name, 127);
+                            }
+                            closedir(d);
+                            LOG("file browser: scanned %d files at %s", fb_count, fb_path);
+                        }
+                    }
+                    /* 渲染文件列表文字 */
+                    if (fb_count > 0 && font_is_ready()) {
+                        /* 显示路径 */
+                        int y = 20;
+                        font_draw_text(fb_path, 10, y, 0xffffff);
+                        y += 24;
+                        /* 显示文件列表（从 fb_scroll 开始，每页 GL_PAGE_SIZE 个） */
+                        for (int k = fb_scroll; k < fb_scroll + GL_PAGE_SIZE && k < fb_count; k++) {
+                            const char *prefix = (k == fb_selected) ? " > " : "   ";
+                            char line[140];
+                            snprintf(line, sizeof(line), "%s%s", prefix, fb_files[k]);
+                            font_draw_text(line, 10, y + (k - fb_scroll) * 22,
+                                          (k == fb_selected) ? 0x00ff00 : 0xffffff);
+                        }
+                    }
+                }
+            }
+        } else {
+            /* 无游戏列表时保持主菜单 */
+            for (i = 0; i < 26; i++) gl_prev_keys[i] = 0;
         }
 
         FD_ZERO(&rfds);
@@ -350,13 +774,29 @@ static void main_menu(void)
             }
         }
 
+        /* P0-A: 添加 inotify fd 到 select 监听 */
+        int inotify_fd = joy_inotify_fd();
+        if (inotify_fd >= 0) {
+            FD_SET(inotify_fd, &rfds);
+            if (inotify_fd > maxfd)
+                maxfd = inotify_fd;
+        }
+
         if (maxfd >= 0) {
             /* 缩短超时到 1 秒，确保每 1 秒更新一次 shm[1] 计数器
              * icube 每 7-8 秒检查一次，1 秒间隔足够让 shm[1] 保持"新鲜" */
             tv.tv_sec = 1;
             tv.tv_usec = 0;
             if (select(maxfd + 1, &rfds, NULL, NULL, &tv) > 0) {
-                (void)joy_poll();
+                /* P0-A: 检查手柄即插即用 */
+                if (inotify_fd >= 0 && FD_ISSET(inotify_fd, &rfds)) {
+                    joy_hotplug_check();
+                }
+                if (joy_poll()) {
+                    /* P2.4: 按键触发音效 */
+                    if (audio_is_ready() && g_cfg.effect1_file[0])
+                        audio_play_sfx(g_cfg.effect1_file);
+                }
                 continue;
             }
         } else {
@@ -390,6 +830,18 @@ int main(int argc, char **argv)
     LOG("work_path = %s", work_path);
 
     snprintf(resource_path, sizeof(resource_path), "%sresource/", work_path);
+
+    /* 加载 driver.so（原厂驱动库，供 sound_driver_init/video_driver_init dlsym 使用） */
+    {
+        char driver_path[512];
+        snprintf(driver_path, sizeof(driver_path), "%sdriver.so", work_path);
+        driver_handle = dlopen(driver_path, RTLD_NOW);
+        if (driver_handle) {
+            LOG("driver.so loaded: %s", driver_path);
+        } else {
+            LOG("driver.so not found at %s (audio/display will use fallback)", driver_path);
+        }
+    }
 
     /* 启动心跳文件（work_path/heartbeat）：真机跑一次后可用 stat 判断
      * 进程是否活着、被 kill 的时刻。 */
@@ -429,6 +881,32 @@ int main(int argc, char **argv)
     DBGP(CONFIG_LOAD);
     config_load();
 
+    /* 加载 menu.log（菜单恢复） */
+    LoadMenuLog();
+
+    /* dispmeninfo()：诊断 /proc/meminfo + 显示分辨率（对齐原厂 main() 第 4 阶段） */
+    {
+        FILE *fp = fopen("/proc/meminfo", "r");
+        if (fp) {
+            char line[128];
+            unsigned long total = 0, free_kb = 0, avail = 0;
+            while (fgets(line, sizeof(line), fp)) {
+                if (sscanf(line, "MemTotal: %lu kB", &total) == 1) break;
+            }
+            /* 重新读取获取 free 和 available */
+            rewind(fp);
+            while (fgets(line, sizeof(line), fp)) {
+                if (sscanf(line, "MemFree: %lu kB", &free_kb) == 1) {}
+                if (sscanf(line, "MemAvailable: %lu kB", &avail) == 1) break;
+            }
+            fclose(fp);
+            LOG("dispmeninfo: MemTotal=%lu MB, MemFree=%lu MB, MemAvailable=%lu MB",
+                total / 1024, free_kb / 1024, avail / 1024);
+        } else {
+            LOG("dispmeninfo: /proc/meminfo not accessible");
+        }
+    }
+
     /* 如果有命令行参数，优先用参数指定 autorun */
     if (argc >= 2) {
         strncpy(autorunfile, argv[1], sizeof(autorunfile) - 1);
@@ -452,12 +930,54 @@ int main(int argc, char **argv)
         LOG("disp_init: DRM/KMS ready");
     else
         LOG("disp_init: DRM/KMS unavailable (rc=%d), log-only mode", disp_rc);
+
+    /* P1.2: 加载 TTF 字体（工厂对齐 stb_truetype） */
+    int font_rc = font_init();
+    if (font_rc == 0)
+        LOG("font_init: TTF font ready");
+    else
+        LOG("font_init: font unavailable (rc=%d), using 5x7 bitmap fallback", font_rc);
+
+    /* P1.3: 加载 UI 资源（ui_*.zip → menu.raw 背景） */
+    int ui_rc = ui_init();
+    if (ui_rc == 0)
+        LOG("ui_init: UI resources ready");
+    else
+        LOG("ui_init: UI unavailable (rc=%d), using simple bitmap menu", ui_rc);
+
+    /* P2.3: 显示启动画面（InitScr RGB565 双缓冲） */
+    if (disp_is_ready()) {
+        disp_initscr_alloc();  /* 320×200 双缓冲分配 */
+        if (disp_initscr_ready()) {
+            disp_initscr_present();  /* 将启动画面渲染到帧缓冲 */
+            LOG("InitScr: splash screen displayed");
+            /* 短暂停留让用户看到启动画面 */
+            for (int i = 0; i < 30; i++) {
+                struct timespec ts = { .tv_sec = 0, .tv_nsec = 50000000L }; /* 50ms */
+                nanosleep(&ts, NULL);
+                if (joy_poll()) break;  /* 按键立即跳过 */
+            }
+        }
+    }
+
     DBGP(AUDIO_INIT);
     audio_init();
+    /* P2.4: 设置音量 + 启动 BGM */
+    audio_set_volume(g_cfg.volume * 10);  /* g_cfg.volume 0-10 → 0-100% */
+    if (g_cfg.music_file[0]) {
+        audio_play_bgm(g_cfg.music_file);
+    }
     DBGP(SRAM_INIT);
     sram_init();
     DBGP(JOY_INIT);
     joy_init();
+
+    /* P2.2: 加载游戏列表 */
+    game_list_init();
+    if (game_list_load() == 0)
+        LOG("game_list: loaded %d games", game_list_count());
+    else
+        LOG("game_list: no games found (will scan on demand)");
 
     /* 菜单 / autorun */
     if (autorunfile[0] == '\0') {
@@ -473,11 +993,17 @@ int main(int argc, char **argv)
     }
 
     DBGP(SHUTDOWN);
+    SaveMenuLog();
     sram_unload();
+    joy_inotify_shutdown();
+    game_list_free();
     joy_close_all();
     core_unload();
+    audio_stop_bgm();
     audio_shutdown();
+    ui_shutdown();
     disp_shutdown();
+    font_shutdown();
     hb_stop_heartbeat_thread();  /* 停止心跳线程 */
     hb_shm_detach();
     hb_shutdown();
