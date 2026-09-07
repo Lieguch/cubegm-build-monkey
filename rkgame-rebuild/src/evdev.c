@@ -42,10 +42,114 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <linux/input.h>
+#include <sys/inotify.h>
+#include <sys/select.h>
 
 #include "rkgame.h"
+#include "ui_zip.h"
 
 /* joy_devs / joy_dev_count 定义在 main.c */
+
+/* ---- inotify 即插即用（P0-A） ----
+ *
+ * 工厂验证（网络 + 真机）：
+ *   - inotify_init1(IN_NONBLOCK) 在 Linux 2.6.13+ 可用
+ *   - /dev/input/ 目录监控 IN_CREATE | IN_DELETE | IN_ATTRIB
+ *   - 设备节点在 IN_CREATE 后不能立即 open（权限未设置），
+ *     需等 IN_ATTRIB 事件再尝试
+ *   - 设备拔出时 open 返回 ENOENT，正常忽略
+ *
+ * 本实现：
+ *   - joy_inotify_fd: inotify 文件描述符
+ *   - joy_hotplug_check(): 非阻塞检查 inotify 事件
+ *   - 触发后调用 joy_autodetect() 重新扫描
+ */
+
+static int g_inotify_fd = -1;
+static int g_inotify_wd = -1;   /* watch descriptor */
+
+/* 初始化 inotify 监控 /dev/input/ */
+static void joy_inotify_init(void)
+{
+    g_inotify_fd = inotify_init1(IN_NONBLOCK);
+    if (g_inotify_fd < 0) {
+        ERR("joy_inotify_init: inotify_init1 failed: %s", strerror(errno));
+        return;
+    }
+
+    g_inotify_wd = inotify_add_watch(g_inotify_fd, "/dev/input",
+                                       IN_CREATE | IN_DELETE | IN_ATTRIB);
+    if (g_inotify_wd < 0) {
+        ERR("joy_inotify_init: inotify_add_watch failed: %s", strerror(errno));
+        close(g_inotify_fd);
+        g_inotify_fd = -1;
+        return;
+    }
+
+    LOG("joy_inotify_init: watching /dev/input (wd=%d)", g_inotify_wd);
+}
+
+/* 销毁 inotify 监控 */
+void joy_inotify_shutdown(void)
+{
+    if (g_inotify_wd >= 0 && g_inotify_fd >= 0) {
+        inotify_rm_watch(g_inotify_fd, g_inotify_wd);
+        g_inotify_wd = -1;
+    }
+    if (g_inotify_fd >= 0) {
+        close(g_inotify_fd);
+        g_inotify_fd = -1;
+    }
+}
+
+/* 非阻塞检查 inotify 事件。
+ * 返回 1 = 检测到设备变化（已重新扫描），0 = 无变化。 */
+int joy_hotplug_check(void)
+{
+    if (g_inotify_fd < 0) return 0;
+
+    struct inotify_event *ev;
+    char buf[4096] __attribute__((aligned(8)));
+    ssize_t n = read(g_inotify_fd, buf, sizeof(buf));
+    if (n <= 0) return 0;
+
+    int changed = 0;
+    char *ptr = buf;
+    while (ptr < buf + n) {
+        ev = (struct inotify_event *)ptr;
+        if (ev->len > 0) {
+            /* 设备增删 */
+            const char *name = ev->name;
+            if (strncmp(name, "event", 5) == 0) {
+                LOG("joy_hotplug: /dev/input/%s event 0x%x",
+                    name, ev->mask);
+                if (ev->mask & (IN_CREATE | IN_ATTRIB)) {
+                    /* 设备插入或权限设置完成 */
+                    changed = 1;
+                } else if (ev->mask & IN_DELETE) {
+                    /* 设备拔出 */
+                    changed = 1;
+                }
+            }
+        }
+        ptr += sizeof(struct inotify_event) + ev->len;
+    }
+
+    if (changed) {
+        LOG("joy_hotplug: device change detected, rescan...");
+        /* 短暂延迟确保设备节点就绪 */
+        usleep(100000);  /* 100ms */
+        joy_autodetect();
+    }
+
+    return changed;
+}
+
+/* 获取 inotify fd（供 main loop select 使用） */
+int joy_inotify_fd(void)
+{
+    return g_inotify_fd;
+}
 
 /* ---- 内置手柄映射表（常见设备） ---- */
 
@@ -56,7 +160,7 @@ typedef struct {
     uint16_t vid;
     uint16_t pid;
     const char *name_pattern;  /* NULL = 匹配任意 name */
-    uint32_t button_map[32];   /* btn_code -> key_mask */
+    const uint32_t *button_map;  /* 320 元素数组：btn_code -> key_mask */
     uint8_t  axis_left;
     uint8_t  axis_right;
     uint8_t  hat;              /* HAT0 = 0, HAT1 = 1, ... */
@@ -77,6 +181,25 @@ typedef struct {
 #define KEY_R2      (1 << 11)
 #define KEY_START   (1 << 12)
 #define KEY_SELECT  (1 << 13)
+
+/* 原厂 26 动作词表（joystick.zip 内，对齐 GetJoystickConfig @ 0x29d48）
+ * 索引 = token 编号 (0-25)，值 = 动作名称字符串
+ * 前 17 个 = 按钮，后 3 个 = hat/axis */
+static const char *const joystick_actions[26] = {
+    "A", "B", "X", "Y", "L1", "R1", "L2", "R2",
+    "START", "SELECT", "L3", "R3",
+    "UP", "DOWN", "LEFT", "RIGHT",
+    "AXIS_X_PLUS", "AXIS_X_MINUS", "AXIS_Y_PLUS", "AXIS_Y_MINUS",
+    "HAT_UP", "HAT_DOWN", "HAT_LEFT", "HAT_RIGHT",
+    "TRIGGER_LEFT", "TRIGGER_RIGHT",
+};
+
+int joystick_action_count(void) { return 26; }
+const char *joystick_action_name(int idx)
+{
+    if (idx < 0 || idx >= 26) return NULL;
+    return joystick_actions[idx];
+}
 
 /* 通用手柄映射（匹配大多数 USB 手柄） */
 static const uint32_t generic_button_map[320] = {
@@ -128,6 +251,185 @@ static const joystick_profile_t built_in_profiles[] = {
 };
 
 #define PROFILE_COUNT (sizeof(built_in_profiles) / sizeof(built_in_profiles[0]))
+
+/* ---- joystick.zip 动态加载（P2.5） ----
+ *
+ * 工厂实证（GetJoystickConfig @ 0x29d48）：
+ *   OpenZipU("joystick.zip") → FindZipItemA("VID_PID_REV") → UnzipItem
+ *   20 token 映射（16-bit LE 每 token）：
+ *     token  0..16 → 17 个 evdev BTN_* 按钮码（值=对应的 evdev BTN_* 号）
+ *     token 17      → hat device index (HAT0=0, HAT1=1, ...)
+ *     token 18      → axisX axis code (ABS_X=0, ...)
+ *     token 19      → axisY axis code (ABS_Y=1, ...)
+ *
+ * token 顺序（对应 evdev 标准游戏手柄布局）：
+ *   0:B, 1:Y, 2:SELECT, 3:START, 4:SHOULDER_L(L1), 5:SHOULDER_R(R1),
+ *   6:A, 7:X, 8:UP, 9:DOWN, 10:LEFT, 11:RIGHT,
+ *   12:L3(THUMBL), 13:R3(THUMBR), 14:Z(LEFTSTICK), 15:Z2(RIGHTSTICK),
+ *   16:Y(shoulder_Y/extra)
+ *
+ * 本实现：
+ *   - joy_load_joystick_zip(): 从 joystick.zip 读取实际 profile
+ *   - 将 token 写入 joy_dynamic_profiles[]，替换硬编码 built_in_profiles[]
+ *   - joy_match_profile() 优先使用动态 profile（按 VID/PID 匹配）
+ */
+
+/* 20-token 到 KEY_* 位掩码的映射（顺序与上表一致） */
+static const uint32_t token_to_key[17] = {
+    [0]  = KEY_B,
+    [1]  = KEY_Y,
+    [2]  = KEY_SELECT,
+    [3]  = KEY_START,
+    [4]  = KEY_L1,
+    [5]  = KEY_R1,
+    [6]  = KEY_A,
+    [7]  = KEY_X,
+    [8]  = KEY_UP,
+    [9]  = KEY_DOWN,
+    [10] = KEY_LEFT,
+    [11] = KEY_RIGHT,
+    [12] = KEY_L1,   /* L3 = L1 slot */
+    [13] = KEY_R1,   /* R3 = R1 slot */
+    [14] = 0,        /* Z (leftstick) — 未映射 */
+    [15] = 0,        /* Z2 (rightstick) — 未映射 */
+    [16] = KEY_Y,    /* Y extra */
+};
+
+#define JOY_MAX_DYNAMIC 16
+static joystick_profile_t g_dynamic_profiles[JOY_MAX_DYNAMIC];
+static uint32_t g_dynamic_btn_maps[JOY_MAX_DYNAMIC][320];
+static int g_dynamic_count = 0;
+
+/* 将 token 数组应用到 button_map（可写缓冲区） */
+static void joy_apply_tokens(uint32_t *btn_map,
+                             const unsigned char *tokens, size_t len)
+{
+    memset(btn_map, 0, sizeof(uint32_t) * 320);
+    for (int t = 0; t < 17 && (size_t)(t * 2 + 1) < len; t++) {
+        uint16_t btn_code = (uint16_t)(tokens[t * 2] | (tokens[t * 2 + 1] << 8));
+        uint32_t key = token_to_key[t];
+        if (btn_code == 0 || key == 0) continue;
+        if (btn_code < 320) {
+            btn_map[btn_code] = key;
+        }
+    }
+}
+
+/* 查找最佳匹配的 profile（优先动态 profile，再 fallback 到内置） */
+static const joystick_profile_t *joy_match_profile(uint16_t vid, uint16_t pid)
+{
+    /* 动态 profile（joystick.zip 加载）优先 */
+    for (int i = 0; i < g_dynamic_count; i++) {
+        if (g_dynamic_profiles[i].vid == vid &&
+            g_dynamic_profiles[i].pid == pid) {
+            return &g_dynamic_profiles[i];
+        }
+    }
+    /* 内置 profile */
+    for (int i = 0; i < (int)PROFILE_COUNT; i++) {
+        if (built_in_profiles[i].vid == vid &&
+            built_in_profiles[i].pid == pid) {
+            return &built_in_profiles[i];
+        }
+    }
+    /* 通用 fallback（最后一条：vid=0, pid=0, name_pattern=NULL） */
+    if (PROFILE_COUNT > 0) return &built_in_profiles[PROFILE_COUNT - 1];
+    return NULL;
+}
+
+static int joy_load_joystick_zip(void)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%sjoystick.zip", work_path);
+
+    ui_zip_t *z = NULL;
+    if (ui_zip_open(path, &z) < 0) {
+        LOG("joy_load_joystick_zip: %s not found (using built-in profiles)", path);
+        return -1;
+    }
+
+    char names[256][256];
+    int n = ui_zip_list(z, names, 256);
+    if (n <= 0) {
+        LOG("joy_load_joystick_zip: no entries in %s", path);
+        ui_zip_close(z);
+        return -1;
+    }
+
+    LOG("joy_load_joystick_zip: found %d entries in %s", n, path);
+
+    g_dynamic_count = 0;
+    for (int i = 0; i < n; i++) {
+        /* VID_PID_REV 格式（如 0810_0001_0100） */
+        if (strlen(names[i]) != 14) continue;
+        if (names[i][4] != '_' || names[i][9] != '_') continue;
+
+        int is_hex = 1;
+        for (int j = 0; j < 14 && is_hex; j++) {
+            if (j == 4 || j == 9) continue;
+            char c = names[i][j];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                  (c >= 'A' && c <= 'F'))) is_hex = 0;
+        }
+        if (!is_hex) continue;
+
+        if (g_dynamic_count >= JOY_MAX_DYNAMIC) {
+            LOG("joy_load_joystick_zip: dynamic profile table full");
+            break;
+        }
+
+        unsigned int vid = (unsigned int)strtoul(names[i], NULL, 16);
+        unsigned int pid = (unsigned int)strtoul(names[i] + 5, NULL, 16);
+        (void)strtoul(names[i] + 10, NULL, 16);
+
+        size_t ps;
+        if (ui_zip_find(z, names[i], &ps) < 0 || ps < 40) {
+            LOG("joy_load_joystick_zip: profile %s too small (%zu bytes)",
+                names[i], ps);
+            continue;
+        }
+
+        void *pdata = NULL;
+        size_t pout;
+        if (ui_zip_extract(z, names[i], &pdata, &pout) < 0) continue;
+
+        const unsigned char *tokens = (const unsigned char *)pdata;
+        LOG("joy_load_joystick_zip: profile %s (vid=0x%04x pid=0x%04x) "
+            "first 4 tokens: %02x %02x %02x %02x",
+            names[i], vid, pid,
+            tokens[0], tokens[1], tokens[2], tokens[3]);
+
+        joystick_profile_t *p = &g_dynamic_profiles[g_dynamic_count];
+        memset(p, 0, sizeof(*p));
+        p->vid = (uint16_t)vid;
+        p->pid = (uint16_t)pid;
+        p->name_pattern = NULL;
+        p->button_map = g_dynamic_btn_maps[g_dynamic_count];
+        joy_apply_tokens(p->button_map, tokens, pout);
+
+        /* hat/axis（token 17-19） */
+        if (17 * 2 < (int)pout) p->hat = tokens[17 * 2];
+        if (18 * 2 + 1 < (int)pout) p->axis_left = tokens[18 * 2];
+        if (19 * 2 + 1 < (int)pout) p->axis_right = tokens[19 * 2];
+
+        g_dynamic_count++;
+
+        /* 日志：显示映射摘要 */
+        int mapped = 0;
+        for (int b = 0; b < 320; b++) {
+            if (p->button_map[b]) mapped++;
+        }
+        LOG("joy_load_joystick_zip: profile %s -> %d buttons mapped, "
+            "hat=%u axisL=%u axisR=%u",
+            names[i], mapped, p->hat, p->axis_left, p->axis_right);
+
+        free(pdata);
+    }
+
+    ui_zip_close(z);
+    LOG("joy_load_joystick_zip: loaded %d dynamic profiles", g_dynamic_count);
+    return g_dynamic_count > 0 ? 0 : -1;
+}
 
 /* ---- evdev 探测 ---- */
 
@@ -182,7 +484,15 @@ int joy_open(const char *path)
     dev->is_js = false;
     dev->axis_count = 0;
     dev->button_count = button_count;
-    memcpy(dev->button_map, generic_button_map, sizeof(dev->button_map));
+
+    /* 优先使用 joystick.zip 动态 profile，再 fallback 到内置 */
+    const joystick_profile_t *prof = joy_match_profile(id.vendor, id.product);
+    if (prof) {
+        memcpy(dev->button_map, prof->button_map, sizeof(dev->button_map));
+        LOG("joy: matched profile for %s", name);
+    } else {
+        memcpy(dev->button_map, generic_button_map, sizeof(dev->button_map));
+    }
 
     joy_dev_count++;
 
@@ -259,6 +569,8 @@ void joy_close_all(void)
  * joy_poll：读取所有已连接手柄的事件。
  * 返回 true 如果至少有一个手柄有输入。
  */
+static void joy_update_state(joy_device_t *dev, int dev_idx,
+                             const struct input_event *ev, size_t count);  /* fwd */
 bool joy_poll(void)
 {
     bool any = false;
@@ -282,6 +594,8 @@ bool joy_poll(void)
                 any = true;
             }
         }
+        /* 更新状态 bitmap（供 joy_input_state 查询） */
+        joy_update_state(&joy_devs[i], i, ev, count);
     }
     return any;
 }
@@ -324,6 +638,12 @@ void joy_init(void)
     LOG("joy_init: initializing");
     joy_dev_count = 0;
 
+    /* P0-A: 初始化 inotify 即插即用 */
+    joy_inotify_init();
+
+    /* P2.5: 尝试从 joystick.zip 加载动态 profile */
+    joy_load_joystick_zip();
+
     /* 自动探测 */
     int count = joy_autodetect();
     if (count < 0) {
@@ -358,4 +678,106 @@ void joy_print_diag(void)
             d->is_evdev ? "yes" : "no", d->event_fd, d->button_count);
     }
     LOG("joy_diag: ===");
+}
+
+/* ============================================================
+ * libretro input_state 回调（原厂 retro_set_input_state 绑定目标）
+ *
+ * 签名：int16_t f(unsigned port, unsigned device, unsigned index, unsigned id)
+ *   - port: 0 或 1（对应 joy_devs[0] / joy_devs[1]）
+ *   - device: RETRO_DEVICE_JOYPAD = 1
+ *   - index: 未用（JOYPAD 无 index）
+ *   - id: RETRO_DEVICE_ID_JOYPAD_* (0..17)
+ *
+ * 返回：0 = 未按下，非 0 = 按下（通常返回 1）
+ *
+ * RETRO_DEVICE_ID_JOYPAD_* 常量（libretro.h）：
+ *   0=UP, 1=DOWN, 2=LEFT, 3=RIGHT, 4=A(BUTTON_A), 5=B(BUTTON_B),
+ *   6=SELECT, 7=START, 8=shoulder_left, 9=shoulder_right,
+ *   10=UP_DOWN, 11=LEFT_RIGHT, 12=A_DOWN, 13=B_DOWN,
+ *   14=L3, 15=R3, 16=button_z, 17=button_y
+ * ============================================================ */
+
+/* joy_state 内部使用的键位 bitmap（由 joy_poll 维护） */
+static uint32_t joy_key_state[MAX_DEVICES];  /* per-device key mask */
+
+/* 公开访问函数：返回指定设备的当前按键 bitmask。
+ * 供 sstate_check_hotkey() 等外部模块使用，避免重复 read() evdev fd。 */
+uint32_t joy_key_state_get(int dev_idx)
+{
+    if (dev_idx < 0 || dev_idx >= joy_dev_count) return 0;
+    return joy_key_state[dev_idx];
+}
+
+/* 便捷封装：返回所有设备的按键 bitmask 聚合（供 sstate_check_hotkey 使用） */
+uint32_t joy_all_keys_state(void)
+{
+    uint32_t agg = 0;
+    for (int i = 0; i < joy_dev_count; i++) {
+        agg |= joy_key_state[i];
+    }
+    return agg;
+}
+
+/* 更新单个设备的键位状态（由 joy_poll 调用） */
+static void joy_update_state(joy_device_t *dev, int dev_idx,
+                             const struct input_event *ev, size_t count)
+{
+    for (size_t j = 0; j < count; j++) {
+        const struct input_event *e = &ev[j];
+        if (e->type != EV_KEY || (unsigned int)e->code >= 320) continue;
+        uint32_t key = dev->button_map[(unsigned int)e->code];
+        if (!key) continue;
+        if (e->value > 0) {
+            joy_key_state[dev_idx] |= key;  /* 按下 */
+        } else if (e->value == 0) {
+            joy_key_state[dev_idx] &= ~key; /* 释放 */
+        }
+    }
+}
+
+/* RETRO_DEVICE_ID_JOYPAD_* → rkgame KEY 位掩码映射 */
+#define RJPAD_UP      (1 << 0)
+#define RJPAD_DOWN    (1 << 1)
+#define RJPAD_LEFT    (1 << 2)
+#define RJPAD_RIGHT   (1 << 3)
+#define RJPAD_A       (1 << 4)
+#define RJPAD_B       (1 << 5)
+#define RJPAD_SELECT  (1 << 6)
+#define RJPAD_START   (1 << 7)
+#define RJPAD_L       (1 << 8)
+#define RJPAD_R       (1 << 9)
+#define RJPAD_L3      (1 << 10)
+#define RJPAD_R3      (1 << 11)
+
+int16_t joy_input_state(unsigned port, unsigned device, unsigned index, unsigned id)
+{
+    (void)index;
+    if (device != 1 /* RETRO_DEVICE_JOYPAD */) return 0;
+    if (port >= (unsigned)joy_dev_count) return 0;
+
+    /* 将 libretro JOYPAD id 映射到我们的 KEY 位掩码 */
+    uint32_t mask = 0;
+    switch (id) {
+        case 0:  mask = RJPAD_UP;      break;  /* UP */
+        case 1:  mask = RJPAD_DOWN;    break;  /* DOWN */
+        case 2:  mask = RJPAD_LEFT;    break;  /* LEFT */
+        case 3:  mask = RJPAD_RIGHT;   break;  /* RIGHT */
+        case 4:  mask = RJPAD_A;       break;  /* BUTTON_A */
+        case 5:  mask = RJPAD_B;       break;  /* BUTTON_B */
+        case 6:  mask = RJPAD_SELECT;  break;  /* SELECT */
+        case 7:  mask = RJPAD_START;   break;  /* START */
+        case 8:  mask = RJPAD_L;       break;  /* SHOULDER_L */
+        case 9:  mask = RJPAD_R;       break;  /* SHOULDER_R */
+        case 14: mask = RJPAD_L3;      break;  /* BUTTON_L3 */
+        case 15: mask = RJPAD_R3;      break;  /* BUTTON_R3 */
+        default: return 0;
+    }
+    return (joy_key_state[port] & mask) ? 1 : 0;
+}
+
+/* 重置所有设备的键位状态（卸载 core 时调用） */
+void joy_state_reset(void)
+{
+    for (int i = 0; i < MAX_DEVICES; i++) joy_key_state[i] = 0;
 }

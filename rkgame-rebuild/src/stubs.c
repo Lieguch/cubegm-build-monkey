@@ -151,13 +151,13 @@ int InitRFJoystick(void)
 int resource_cpd_load(const char *path)
 {
     (void)path;
-    LOG("resource_cpd_load: stub (.cpd = ZIP format, same as ui_*.zip)");
+    /* 已由 cpd.c 实现 .cpd 加载（.cpd = ZIP 格式） */
+    LOG("resource_cpd_load: superseded by cpd_load_resource / cpd_load_ui_res");
     LOG("resource_cpd_load: factory resources:");
     LOG("resource_cpd_load:   UI_Res.cpd  = backgrounds + icon sprites");
     LOG("resource_cpd_load:   resource.cpd = game.raw/menu.raw/nodata.raw/ui.cfg");
     LOG("resource_cpd_load:   ui_*.cpd    = 26 language overlays");
     LOG("resource_cpd_load:   joystick.cpd = controller mapping images");
-    LOG("resource_cpd_load: current UI uses ui_*.zip; .cpd not reverse-engineered");
     return 0;
 }
 

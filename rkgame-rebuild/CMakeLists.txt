@@ -66,6 +66,7 @@ target_link_libraries(rkgame
     PRIVATE
         -Wl,--no-as-needed dl
         -Wl,--no-as-needed pthread
+        -Wl,--no-as-needed z
         m
 )
 

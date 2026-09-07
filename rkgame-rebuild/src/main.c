@@ -53,6 +53,7 @@ void *driver_handle = NULL;
 #include "ui.h"
 #include "audio.h"
 #include "stubs.h"
+#include "cpd.h"
 
 /* ---- 全局变量定义 ---- */
 
@@ -936,6 +937,22 @@ int main(int argc, char **argv)
     else
         LOG("ui_init: UI unavailable (rc=%d), using simple bitmap menu", ui_rc);
 
+    /* .cpd 资源加载（resource.cpd + UI_Res.cpd）
+     * 联网搜索确认（R36S Wiki 2026-09-07）：.cpd = ZIP 格式，可直接用 ui_zip_open() 解压
+     * 对齐原厂 mui_menu_ui.c 从 resource.cpd 提取 game.raw/menu.raw/nodata.raw/ui.cfg
+     * 及 UI_Res.cpd 提取平台背景。 */
+    if (cpd_load_resource(work_path) == 0)
+        LOG("cpd_load_resource: resource.cpd ready");
+    else
+        LOG("cpd_load_resource: resource.cpd unavailable, falling back to ui_*.zip");
+
+    if (cpd_load_ui_res(work_path) == 0)
+        LOG("cpd_load_ui_res: UI_Res.cpd ready");
+    else
+        LOG("cpd_load_ui_res: UI_Res.cpd unavailable");
+
+    cpd_report();
+
     /* P2.3: 显示启动画面（InitScr RGB565 双缓冲） */
     if (disp_is_ready()) {
         disp_initscr_alloc();  /* 320×200 双缓冲分配 */
@@ -993,6 +1010,7 @@ int main(int argc, char **argv)
     audio_stop_bgm();
     audio_shutdown();
     ui_shutdown();
+    cpd_free_all();
     disp_shutdown();
     font_shutdown();
     hb_stop_heartbeat_thread();  /* 停止心跳线程 */

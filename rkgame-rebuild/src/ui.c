@@ -21,6 +21,7 @@
 #include "font.h"
 #include "ui_zip.h"
 #include "thumbnail.h"
+#include "cpd.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -184,11 +185,67 @@ static bool select_ui_zip(char *out, size_t out_size)
 unsigned char *ui_load_raw(const char *name, int *out_w, int *out_h,
                            int *out_pixel_offset)
 {
-    if (!g_ui_zip) return NULL;
+    /* .cpd 优先（resource.cpd 内含 menu.raw/game.raw/nodata.raw） */
+    if (g_ui_zip == NULL) {
+        unsigned char *buf = NULL;
+        int w = 0, h = 0;
+        if (strcmp(name, "menu.raw") == 0)
+            buf = cpd_get_menu_raw(&w, &h);
+        else if (strcmp(name, "game.raw") == 0)
+            buf = cpd_get_game_raw(&w, &h);
+        else if (strcmp(name, "nodata.raw") == 0)
+            buf = cpd_get_nodata(&w, &h);
+        if (buf) {
+            /* 复制出来，因为 cpd 缓存由调用方共享不能 free */
+            size_t sz = (size_t)w * (size_t)h * 2 + 8;
+            unsigned char *out = (unsigned char *)malloc(sz);
+            if (out) {
+                /* 写 header：offset=8, w, h */
+                out[0]=8; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=(unsigned char)(w & 0xFF); out[5]=(unsigned char)((w >> 8) & 0xFF);
+                out[6]=(unsigned char)(h & 0xFF); out[7]=(unsigned char)((h >> 8) & 0xFF);
+                /* 复制像素（跳过原 buffer 的 8B header） */
+                if ((size_t)w * (size_t)h * 2 <= sz - 8) {
+                    memcpy(out + 8, buf + 8, (size_t)w * (size_t)h * 2);
+                }
+                if (out_w) *out_w = w;
+                if (out_h) *out_h = h;
+                if (out_pixel_offset) *out_pixel_offset = 8;
+                LOG("ui_load_raw: %s %dx%d from .cpd", name, w, h);
+                return out;
+            }
+        }
+        return NULL;
+    }
 
     size_t size;
     if (ui_zip_find(g_ui_zip, name, &size) < 0) {
-        ERR("ui_load_raw: %s not found in zip", name);
+        /* 尝试 .cpd 回退 */
+        unsigned char *buf = NULL;
+        int w = 0, h = 0;
+        if (strcmp(name, "menu.raw") == 0)
+            buf = cpd_get_menu_raw(&w, &h);
+        else if (strcmp(name, "game.raw") == 0)
+            buf = cpd_get_game_raw(&w, &h);
+        else if (strcmp(name, "nodata.raw") == 0)
+            buf = cpd_get_nodata(&w, &h);
+        if (buf) {
+            size_t sz = (size_t)w * (size_t)h * 2 + 8;
+            unsigned char *out = (unsigned char *)malloc(sz);
+            if (out) {
+                out[0]=8; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=(unsigned char)(w & 0xFF); out[5]=(unsigned char)((w >> 8) & 0xFF);
+                out[6]=(unsigned char)(h & 0xFF); out[7]=(unsigned char)((h >> 8) & 0xFF);
+                if ((size_t)w * (size_t)h * 2 <= sz - 8)
+                    memcpy(out + 8, buf + 8, (size_t)w * (size_t)h * 2);
+                if (out_w) *out_w = w;
+                if (out_h) *out_h = h;
+                if (out_pixel_offset) *out_pixel_offset = 8;
+                LOG("ui_load_raw: %s %dx%d from .cpd fallback", name, w, h);
+                return out;
+            }
+        }
+        ERR("ui_load_raw: %s not found in zip or .cpd", name);
         return NULL;
     }
 
@@ -712,6 +769,18 @@ void ui_draw_page(int page)
                     free(thumb_data);
                     LOG("ui_draw_page GAME: thumbnail %dx%d at (%d,%d)",
                         thumb_w, thumb_h, th_x, th_y);
+                } else {
+                    /* 无封面 → 回退 nodata.raw 占位图（来自 resource.cpd） */
+                    unsigned char *nodata = cpd_get_nodata(&thumb_w, &thumb_h);
+                    if (nodata && thumb_w > 0 && thumb_h > 0) {
+                        int th_x = fw - thumb_w - 20;
+                        int th_y = fh / 2 - thumb_h / 2;
+                        size_t data_off = 8;
+                        disp_blit_rgb565_at(nodata + data_off, th_x, th_y,
+                                             thumb_w, thumb_h, thumb_w * 2);
+                        LOG("ui_draw_page GAME: nodata fallback %dx%d at (%d,%d)",
+                            thumb_w, thumb_h, th_x, th_y);
+                    }
                 }
             }
         }
