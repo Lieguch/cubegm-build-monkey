@@ -462,7 +462,7 @@ void disp_blit_rgb565_at(const uint8_t *buf, int x, int y,
  * 内存节省：
  *   XRGB8888 单缓冲:  1280×720×4 = 3.6 MB
  *   缓存一次转换后:   每帧 blit 从 921K 次 CPU 操作 → 1 次 memcpy
- *   RGB565 双缓冲（InitScr）: 320×200×2×2 = 256 KB ≈ 260 KB
+ *   RGB565 双缓冲（InitScr）: 480×272×2×2 = 512 KB ≈ 260 KB
  * ============================================================ */
 
 /* 背景缓存（预转换的 XRGB8888 数据） */
@@ -471,7 +471,7 @@ static int       g_bg_cache_w    = 0;
 static int       g_bg_cache_h    = 0;
 static size_t    g_bg_cache_pitch = 0;   /* 字节数 per row */
 
-/* InitScr RGB565 双缓冲（320×200 小屏幕初始化画面） */
+/* InitScr RGB565 双缓冲（480×272 初始化画面） */
 /* 原厂 InitScr @ 0x29ce8: scr_h_size=0x1e0(480), scr_v_size=0x110(272)
  * malloc(0x3fc00) = 480*272*2 = 260096 bytes (RGB565) */
 #define INITSCR_W   480
@@ -555,11 +555,11 @@ void disp_clear_cached_bg(void)
 bool disp_bg_cached(void) { return g_bg_cache != NULL; }
 
 /* ============================================================
- * InitScr RGB565 双缓冲（320×200 初始化画面）
+ * InitScr RGB565 双缓冲（480×272 初始化画面）
  * ============================================================
  *
- * 工厂 InitScr 使用小型 RGB565 双缓冲渲染初始化画面，
- * 内存仅 320×200×2×2 = 256 KB（vs 主 framebuffer 3.6 MB）。
+ * 工厂 InitScr 使用480×272 RGB565 双缓冲渲染初始化画面，
+ * 内存仅 480×272×2×2 = 512 KB（vs 主 framebuffer 3.6 MB）。
  * 主 framebuffer 仍为 XRGB8888，InitScr 在初始化阶段使用。
  */
 

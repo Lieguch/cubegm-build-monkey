@@ -26,6 +26,7 @@
 #include "audio.h"
 #include "rkgame.h"
 #include "debug.h"
+#include "stubs.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,8 +100,8 @@ int audio_init(void)
     }
 
     /* 原厂调用：(*sound_driver_init)(USE_HDMI_OUT, UpdateROM, 2) */
-    /* 注意：原厂传 UpdateROM 回调，我方传 NULL（无升级需求） */
-    g_sound_init(g_use_hdmi, NULL, 2);
+    /* 对齐原厂：传 UpdateROM 回调（stub，无升级需求） */
+    g_sound_init(g_use_hdmi, (void *)UpdateROM, 2);
 
     /* 原厂调用：dlsym(handle, "sound_driver_playframe") */
     g_sound_playframe = (sound_driver_playframe_t)dlsym(driver_handle, "sound_driver_playframe");

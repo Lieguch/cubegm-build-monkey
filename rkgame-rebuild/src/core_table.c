@@ -97,7 +97,38 @@ static const core_entry_t core_table[] = {
     /* DOS (libemu_dosbox.so) — filetype 0x800，走 game.cfg */
     { "CONF", "libemu_dosbox.so",   0x800 },
 
-    /* 结束标记（NULL 终止） */
+    /* ---- 27 项零初始化条目（对齐原厂 DAT_003b0278 共 60 项）----
+     * 原厂表共 60 项，33 项有效 + 27 项零初始化（预留扩展）。
+     * 零初始化条目 ext=NULL，不会被 lookup 匹配。 */
+    { NULL, NULL, 0 },  /* 34 */
+    { NULL, NULL, 0 },  /* 35 */
+    { NULL, NULL, 0 },  /* 36 */
+    { NULL, NULL, 0 },  /* 37 */
+    { NULL, NULL, 0 },  /* 38 */
+    { NULL, NULL, 0 },  /* 39 */
+    { NULL, NULL, 0 },  /* 40 */
+    { NULL, NULL, 0 },  /* 41 */
+    { NULL, NULL, 0 },  /* 42 */
+    { NULL, NULL, 0 },  /* 43 */
+    { NULL, NULL, 0 },  /* 44 */
+    { NULL, NULL, 0 },  /* 45 */
+    { NULL, NULL, 0 },  /* 46 */
+    { NULL, NULL, 0 },  /* 47 */
+    { NULL, NULL, 0 },  /* 48 */
+    { NULL, NULL, 0 },  /* 49 */
+    { NULL, NULL, 0 },  /* 50 */
+    { NULL, NULL, 0 },  /* 51 */
+    { NULL, NULL, 0 },  /* 52 */
+    { NULL, NULL, 0 },  /* 53 */
+    { NULL, NULL, 0 },  /* 54 */
+    { NULL, NULL, 0 },  /* 55 */
+    { NULL, NULL, 0 },  /* 56 */
+    { NULL, NULL, 0 },  /* 57 */
+    { NULL, NULL, 0 },  /* 58 */
+    { NULL, NULL, 0 },  /* 59 */
+    { NULL, NULL, 0 },  /* 60 (last) */
+
+    /* 结束标记（NULL 终止，超出 60 项范围） */
     { NULL,   NULL,                 0 },
 };
 

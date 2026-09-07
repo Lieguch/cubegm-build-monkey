@@ -302,12 +302,18 @@ int  sstate_load(int slot);
 int  sstate_check_hotkey(void);
 int  sstate_has_slot(int slot);
 
-/* menu_log.c — LoadMenuLog / SaveMenuLog */
+/* menu_log.c — LoadMenuLog / SaveMenuLog（二进制 444B 格式，对齐原厂 0x211f8/0x21388） */
 int     LoadMenuLog(void);
 int     SaveMenuLog(void);
-const char *menu_log_get(int idx);
-int     menu_log_count(void);
-void    menu_log_add(const char *path);
+void    menu_log_set_selected(int idx);
+int     menu_log_get_selected(void);
+void    menu_log_set_scroll(int offset);
+int     menu_log_get_scroll(void);
+void    menu_log_set_page(int page);
+int     menu_log_get_page(void);
+void    menu_log_mark_dirty(void);
+int     menu_log_is_dirty(void);
+void    menu_log_reset(void);
 
 /* wqw.c — WQW\x03 容器解析（ZIP 变体，filename XOR 0xE5） */
 #define WQW_MAX_FILES   256

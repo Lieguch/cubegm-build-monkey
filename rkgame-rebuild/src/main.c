@@ -443,8 +443,8 @@ void autorun(const char *rom, const char *driver)
 
     LOG("autorun: ext=%s filetype=0x%x core=%s", ext, Filetype, core_name);
     core_load(rom, core_name);
-    /* 记录到 menu.log（菜单恢复） */
-    menu_log_add(rom);
+    /* 标记 menu.log 状态为脏（下次 SaveMenuLog 时写入 UI 状态） */
+    menu_log_mark_dirty();
 }
 
 /* ---- 菜单占位 ---- */
@@ -704,7 +704,7 @@ static void main_menu(void)
                             rom_path, core_name ? core_name : "(auto)");
 
                         core_load(rom_path, core_name);
-                        menu_log_add(rom_path);
+                        menu_log_mark_dirty();
                         return;  /* core_load 返回后回到菜单 */
                     }
                 }
@@ -843,6 +843,23 @@ int main(int argc, char **argv)
         } else {
             LOG("driver.so not found at %s (audio/display will use fallback)", driver_path);
         }
+    }
+
+    /* 设置 LD_LIBRARY_PATH：加入 cubegm/lib/ 供 core .so 依赖查找
+     * 对齐原厂 rkgame 行为：core .so 可能依赖 libgcc_s.so.1 等系统库，
+     * 原厂 lib/ 目录包含这些库的本地副本。 */
+    {
+        char lib_dir[576];
+        char ld_path[1200];
+        snprintf(lib_dir, sizeof(lib_dir), "%slib/", work_path);
+        const char *existing = getenv("LD_LIBRARY_PATH");
+        if (existing && existing[0]) {
+            snprintf(ld_path, sizeof(ld_path), "%s:%s", lib_dir, existing);
+        } else {
+            snprintf(ld_path, sizeof(ld_path), "%s", lib_dir);
+        }
+        setenv("LD_LIBRARY_PATH", ld_path, 1);
+        LOG("LD_LIBRARY_PATH = %s", ld_path);
     }
 
     /* 启动心跳文件（work_path/heartbeat）：真机跑一次后可用 stat 判断
