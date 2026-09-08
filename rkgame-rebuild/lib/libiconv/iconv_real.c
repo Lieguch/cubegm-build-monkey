@@ -43,43 +43,6 @@
  * 原厂 2.1 KB，支持 Unicode 字符转写
  * 简化：常见字符映射 + 回退到原字符
  * ============================================================ */
-    if (ret > 0 && pwc) {
-        *(unsigned int *)pwc = wc;
-    }
-    return ret;
-}
-
-int jisx0208_wctomb(char *s, unsigned int wc, size_t n)
-{
-    unsigned char buf[4];
-    int ret = jisx0208_wctomb(NULL, buf, wc, n);
-    if (ret > 0 && s) {
-        memcpy(s, buf, ret);
-    }
-    return ret;
-}
-
-/* ---- CNS 11643 适配 ---- */
-int cns11643_mbtowc(void *pwc, const char *s, size_t n)
-{
-    ucs4_t wc;
-    int ret = cns11643_mbtowc(NULL, &wc, (const unsigned char *)s, n);
-    if (ret > 0 && pwc) {
-        *(unsigned int *)pwc = wc;
-    }
-    return ret;
-}
-
-int cns11643_wctomb(char *s, unsigned int wc, size_t n)
-{
-    unsigned char buf[4];
-    int ret = cns11643_wctomb(NULL, buf, wc, n);
-    if (ret > 0 && s) {
-        memcpy(s, buf, ret);
-    }
-    return ret;
-}
-
 /* ============================================================
  * 第三部分：unicode_transliterate 完整实现
  * ============================================================
