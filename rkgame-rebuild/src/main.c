@@ -41,7 +41,7 @@
 #include <dlfcn.h>
 
 /* driver.so dlopen handle（供 audio.c dlsym 使用） */
-void *driver_handle = NULL;
+extern void *driver_handle;
 #include <time.h>
 #include <sys/time.h>
 #include <sys/select.h>
