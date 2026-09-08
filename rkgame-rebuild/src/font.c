@@ -17,6 +17,9 @@
 #include "rkgame.h"
 #include "debug.h"
 
+#include <stdio.h>
+#include <sys/types.h>
+
 /* stb_truetype.h 单次 include（header-only 实现） */
 #include "stb_truetype.h"
 
