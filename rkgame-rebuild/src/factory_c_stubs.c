@@ -303,7 +303,6 @@ int libiconv_close(void) { return 0; }
 
 int libiconv_open(void) { return 0; }
 
-int libiconv_open_into(void) { return 0; }
 
 void libiconvctl(void) { /* no-op */ }
 
@@ -801,7 +800,6 @@ int unicode_loop_reset(void) { return 0; }
 
 int utf7_reset(void) { return 0; }
 
-
 void video_driver_set_colormode(void) { /* no-op */ }
 
 void video_driver_set_rotation(void) { /* no-op */ }
@@ -860,3 +858,7 @@ int factory_c_stubs_count(void)
 
 /* GCC optimization artifact symbols (compiler-generated clones)
  */
+
+/* Stack protector stub (libz.a needs __stack_chk_guard) */
+int __stack_chk_guard = 0;
+
