@@ -1,11 +1,5 @@
 /* ============================================================
- * ui_setting.c — 设置界面实现（对齐原厂 mui_setting）
- * ============================================================
- *
- * 关键逻辑：
- *   - 打开时读取当前 g_cfg
- *   - 每次修改调用 mui_LoadSetting 写回 setting.xml
- *   - 按 OK 关闭
+ * ui_setting.c — 设置界面实现（对齐原厂 mui_setting @ 0x18d78）
  * ============================================================ */
 
 #include "ui_setting.h"
@@ -39,15 +33,67 @@ bool ui_setting_is_open(void) { return s_setting.open; }
 
 void ui_setting_tick(int keycode)
 {
-    (void)keycode;
-    /* 简化：无实际按键映射；后续接线到 keymap.c */
+    if (!s_setting.open) return;
+    #define KEY_UP 10
+    #define KEY_DOWN 11
+    #define KEY_OK 0
+    #define KEY_CANCEL 1
+    #define KEY_LEFT 12
+    #define KEY_RIGHT 13
+
+    int items = 5; /* volume, language, defaultlanguage, displayfps, save_dir */
+
+    if (keycode == KEY_UP) {
+        s_setting.cursor = (s_setting.cursor - 1 + items) % items;
+    } else if (keycode == KEY_DOWN) {
+        s_setting.cursor = (s_setting.cursor + 1) % items;
+    } else if (keycode == KEY_LEFT) {
+        if (s_setting.cursor == 0 && s_setting.volume > 0) s_setting.volume--;
+        else if (s_setting.cursor == 1 && s_setting.language > 0) s_setting.language--;
+        else if (s_setting.cursor == 2 && s_setting.defaultlanguage > 0) s_setting.defaultlanguage--;
+        else if (s_setting.cursor == 3 && s_setting.displayfps > 0) s_setting.displayfps--;
+    } else if (keycode == KEY_RIGHT) {
+        if (s_setting.cursor == 0 && s_setting.volume < 100) s_setting.volume++;
+        else if (s_setting.cursor == 1) s_setting.language++;
+        else if (s_setting.cursor == 2) s_setting.defaultlanguage++;
+        else if (s_setting.cursor == 3) s_setting.displayfps++;
+    } else if (keycode == KEY_CANCEL) {
+        s_setting.open = false;
+    } else if (keycode == KEY_OK) {
+        /* 保存设置 */
+        g_cfg.volume = s_setting.volume;
+        g_cfg.m_ui = s_setting.language;
+        g_cfg.defaultlanguage = s_setting.defaultlanguage;
+        g_cfg.displayfps = s_setting.displayfps;
+        RKLOG_I("ui_setting: saved vol=%d lang=%d fps=%d",
+                s_setting.volume, s_setting.language, s_setting.displayfps);
+        s_setting.open = false;
+    }
 }
 
 void ui_setting_draw(void)
 {
     if (!s_setting.open) return;
-    /* 简化：先绘制 setting.raw 页面（若已加载） */
-    if (ui_is_ready()) {
-        ui_draw_page(UI_PAGE_SETTING);
+    if (ui_is_ready()) ui_draw_page(UI_PAGE_SETTING);
+
+    if (font_is_ready()) {
+        int y = 50;
+        font_draw_text("Settings", 20, y, 0x00ff00);
+        y += 30;
+
+        const char *labels[] = { "Volume", "Language", "Default Lang", "Display FPS", "Save Dir" };
+        for (int i = 0; i < 5; i++) {
+            const char *prefix = (i == s_setting.cursor) ? " > " : "   ";
+            char line[80];
+            if (i == 0) snprintf(line, sizeof(line), "%s%s: %d", prefix, labels[i], s_setting.volume);
+            else if (i == 1) snprintf(line, sizeof(line), "%s%s: %d", prefix, labels[i], s_setting.language);
+            else if (i == 2) snprintf(line, sizeof(line), "%s%s: %d", prefix, labels[i], s_setting.defaultlanguage);
+            else if (i == 3) snprintf(line, sizeof(line), "%s%s: %d", prefix, labels[i], s_setting.displayfps);
+            else snprintf(line, sizeof(line), "%s%s: %s", prefix, labels[i], s_setting.save_dir);
+            font_draw_text(line, 20, y + i * 28,
+                           (i == s_setting.cursor) ? 0x00ff00 : 0xffffff);
+        }
+        font_draw_text("A=Save  B=Cancel  L/R=Adjust  U/D=Select",
+                       20, y + 5 * 28 + 10, 0x888888);
     }
 }

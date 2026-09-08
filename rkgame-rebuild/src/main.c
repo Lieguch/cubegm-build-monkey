@@ -51,6 +51,7 @@ void *driver_handle = NULL;
 #include "heartbeat.h"
 #include "font.h"
 #include "ui.h"
+#include "ui_dispatcher.h"
 #include "audio.h"
 #include "stubs.h"
 #include "cpd.h"
@@ -713,6 +714,11 @@ static void main_menu(void)
             /* 更新按键状态 */
             for (i = 0; i < 26; i++) gl_prev_keys[i] = keys[i];
 
+            /* P0-1: 调度 UI 模块 tick（接线 13 个 mui_* 模块） */
+            ui_page_state_t cur_page = m_ui_current_page(
+                gl_showing, gl_searching, gl_setting, gl_typing, gl_browser);
+            m_ui_dispatch(keys[KEY_OK], cur_page);
+
             /* 重绘游戏列表 UI */
             if (disp_is_ready() && ui_is_ready()) {
                 /* 根据视图切换页面 */
@@ -953,6 +959,9 @@ int main(int argc, char **argv)
         LOG("ui_init: UI resources ready");
     else
         LOG("ui_init: UI unavailable (rc=%d), using simple bitmap menu", ui_rc);
+
+    /* P0-1: 初始化 UI 调度器（接线 13 个 mui_* 模块） */
+    m_ui_init();
 
     /* .cpd 资源加载（resource.cpd + UI_Res.cpd）
      * 联网搜索确认（R36S Wiki 2026-09-07）：.cpd = ZIP 格式，可直接用 ui_zip_open() 解压

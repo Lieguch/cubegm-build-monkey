@@ -158,6 +158,178 @@ static size_t big5_encode(unsigned int codepoint, unsigned char *buf)
     return 2;
 }
 
+/* ---- SJIS (Shift-JIS) 解码/编码 — 日文 ---- */
+
+/* SJIS 解码：Shift-JIS → Unicode */
+static size_t sjis_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+{
+    if (len < 1) return 0;
+    
+    /* 单字节 ASCII */
+    if (buf[0] < 0x80) {
+        *codepoint = buf[0];
+        return 1;
+    }
+    
+    /* 双字节 Shift-JIS */
+    if (len < 2) return 0;
+    
+    unsigned char b1 = buf[0];
+    unsigned char b2 = buf[1];
+    
+    /* 片假名区域 (0xA1-0xDF) */
+    if (b1 >= 0xA1 && b1 <= 0xDF) {
+        unsigned int offset;
+        if (b1 <= 0xA4)
+            offset = (b1 - 0xA1) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
+        else if (b1 <= 0xA9)
+            offset = 4 * 94 + (b1 - 0xA5) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
+        else
+            offset = 4 * 94 + 5 * 94 + (b1 - 0xAA) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
+        *codepoint = 0x3000 + offset; /* 平假名片假名区域 */
+        return 2;
+    }
+    
+    /* 汉字区域 (0xE0-0xFC) */
+    if (b1 >= 0xE0 && b1 <= 0xFC) {
+        unsigned int offset;
+        if (b1 < 0xE0) {
+            offset = 0x1F40 + (b1 - 0xE0) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
+        }
+        else {
+            offset = 0x4E00 + (b1 - 0xE0) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
+        }
+        *codepoint = offset;
+        return 2;
+    }
+    
+    /* 默认：直接映射 */
+    *codepoint = ((b1 & 0xFF) << 8) | (b2 & 0xFF);
+    return 2;
+}
+
+/* SJIS 编码：Unicode → Shift-JIS */
+static size_t sjis_encode(unsigned int codepoint, unsigned char *buf)
+{
+    if (codepoint < 0x80) {
+        buf[0] = codepoint;
+        return 1;
+    }
+    
+    /* 平假名/片假名区域 */
+    if (codepoint >= 0x3000 && codepoint < 0x3000 + 800) {
+        unsigned int offset = codepoint - 0x3000;
+        unsigned int row = offset / 94;
+        unsigned int col = offset % 94;
+        buf[0] = 0xA1 + row;
+        buf[1] = (col < 94) ? 0xA1 + col : 0xE1 + (col - 94);
+        return 2;
+    }
+    
+    /* 汉字区域 */
+    if (codepoint >= 0x4E00) {
+        unsigned int offset = codepoint - 0x4E00;
+        unsigned int row = offset / 94;
+        unsigned int col = offset % 94;
+        if (row <= 54) {
+            buf[0] = 0xE0 + row;
+            buf[1] = (col < 94) ? 0xA1 + col : 0xE1 + (col - 94);
+            return 2;
+        }
+    }
+    
+    /* 默认：截取 */
+    buf[0] = (codepoint >> 8) & 0xFF;
+    buf[1] = codepoint & 0xFF;
+    return 2;
+}
+
+/* ---- KSC5601 (韩文) 解码/编码 ---- */
+
+/* KSC5601 解码 */
+static size_t ksc5601_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+{
+    if (len < 1) return 0;
+    
+    if (buf[0] < 0x80) {
+        *codepoint = buf[0];
+        return 1;
+    }
+    
+    if (len < 2) return 0;
+    
+    /* KSC5601 双字节：Jamo 区域映射到 Hangul Unicode */
+    unsigned char b1 = buf[0];
+    unsigned char b2 = buf[1];
+    
+    if (b1 >= 0x21 && b1 <= 0x7E && b2 >= 0x21 && b2 <= 0x7E) {
+        /* Hangul Jamo 区域 */
+        unsigned int idx = (b1 - 0x21) * 94 + (b2 - 0x21);
+        *codepoint = 0xAC00 + idx; /* Hangul Syllables */
+        return 2;
+    }
+    
+    *codepoint = ((b1 & 0xFF) << 8) | (b2 & 0xFF);
+    return 2;
+}
+
+/* KSC5601 编码 */
+static size_t ksc5601_encode(unsigned int codepoint, unsigned char *buf)
+{
+    if (codepoint < 0x80) {
+        buf[0] = codepoint;
+        return 1;
+    }
+    
+    if (codepoint >= 0xAC00 && codepoint < 0xD7A4) {
+        unsigned int idx = codepoint - 0xAC00;
+        buf[0] = 0x21 + idx / 94;
+        buf[1] = 0x21 + idx % 94;
+        return 2;
+    }
+    
+    buf[0] = (codepoint >> 8) & 0xFF;
+    buf[1] = codepoint & 0xFF;
+    return 2;
+}
+
+/* ---- EUC-KR / KS_C_5601 别名处理 ---- */
+
+/* ---- CP932 (Windows 日文) — 与 SJIS 兼容 ---- */
+
+/* ---- UTF-16/UCS-2 支持 ---- */
+
+/* UTF-16 解码 (LE) */
+static size_t utf16le_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+{
+    if (len < 2) return 0;
+    unsigned int cp = buf[0] | (buf[1] << 8);
+    if (cp >= 0xD800 && cp <= 0xDBFF && len >= 4) {
+        /* Surrogate pair */
+        unsigned int low = buf[2] | (buf[3] << 8);
+        *codepoint = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+        return 4;
+    }
+    *codepoint = cp;
+    return 2;
+}
+
+/* UTF-16 编码 (LE) */
+static size_t utf16le_encode(unsigned int codepoint, unsigned char *buf)
+{
+    if (codepoint <= 0xFFFF) {
+        buf[0] = codepoint & 0xFF;
+        buf[1] = (codepoint >> 8) & 0xFF;
+        return 2;
+    }
+    codepoint -= 0x10000;
+    buf[0] = (0xD800 + (codepoint >> 10)) & 0xFF;
+    buf[1] = (0xD800 + (codepoint >> 10)) >> 8;
+    buf[2] = (0xDC00 + (codepoint & 0x3FF)) & 0xFF;
+    buf[3] = (0xDC00 + (codepoint & 0x3FF)) >> 8;
+    return 4;
+}
+
 /* ---- 核心转换函数 ---- */
 
 /* 执行转换 */
@@ -188,10 +360,65 @@ static size_t do_iconv(iconv_t cd,
                     starts_with_nocase(icd->fromcode, "BIG-5");
     int to_big5 = starts_with_nocase(icd->tocode, "BIG5") || 
                  starts_with_nocase(icd->tocode, "BIG-5");
-    
-    /* 如果编码相同或都是 ASCII，直接复制 */
+
+    /* 日文编码：SJIS, CP932, JIS, JISX0208, JISX0212 */
+    int from_sjis = starts_with_nocase(icd->fromcode, "SJIS") ||
+                    starts_with_nocase(icd->fromcode, "SHIFT") ||
+                    starts_with_nocase(icd->fromcode, "CP932") ||
+                    starts_with_nocase(icd->fromcode, "MS932") ||
+                    starts_with_nocase(icd->fromcode, "CP932");
+    int to_sjis = starts_with_nocase(icd->tocode, "SJIS") ||
+                  starts_with_nocase(icd->tocode, "SHIFT") ||
+                  starts_with_nocase(icd->tocode, "CP932") ||
+                  starts_with_nocase(icd->tocode, "MS932") ||
+                  starts_with_nocase(icd->tocode, "CP932");
+
+    /* 韩文编码：KSC5601, EUC-KR, KS_C_5601 */
+    int from_ksc = starts_with_nocase(icd->fromcode, "KSC") ||
+                   starts_with_nocase(icd->fromcode, "EUC-KR") ||
+                   starts_with_nocase(icd->fromcode, "KS_C_5601") ||
+                   starts_with_nocase(icd->fromcode, "KS_C_5601-1987");
+    int to_ksc = starts_with_nocase(icd->tocode, "KSC") ||
+                 starts_with_nocase(icd->tocode, "EUC-KR") ||
+                 starts_with_nocase(icd->tocode, "KS_C_5601") ||
+                 starts_with_nocase(icd->tocode, "KS_C_5601-1987");
+
+    /* 繁体中文变体：CNS11643, BIG5-HKSCS, HKSCS */
+    int from_cns = starts_with_nocase(icd->fromcode, "CNS") ||
+                   starts_with_nocase(icd->fromcode, "BIG5-HKSCS") ||
+                   starts_with_nocase(icd->fromcode, "HKSCS");
+    int to_cns = starts_with_nocase(icd->tocode, "CNS") ||
+                 starts_with_nocase(icd->tocode, "BIG5-HKSCS") ||
+                 starts_with_nocase(icd->tocode, "HKSCS");
+
+    /* UTF-16 */
+    int from_utf16 = starts_with_nocase(icd->fromcode, "UTF-16") ||
+                     starts_with_nocase(icd->fromcode, "UCS-2") ||
+                     starts_with_nocase(icd->fromcode, "UTF16") ||
+                     starts_with_nocase(icd->fromcode, "UTF-16LE") ||
+                     starts_with_nocase(icd->fromcode, "UTF16LE");
+    int to_utf16 = starts_with_nocase(icd->tocode, "UTF-16") ||
+                   starts_with_nocase(icd->tocode, "UCS-2") ||
+                   starts_with_nocase(icd->tocode, "UTF16") ||
+                   starts_with_nocase(icd->tocode, "UTF-16LE") ||
+                   starts_with_nocase(icd->tocode, "UTF16LE");
+
+    /* Translit / ASCII / ISO-8859 */
+    int from_translit = starts_with_nocase(icd->fromcode, "TRANSLIT") ||
+                        starts_with_nocase(icd->fromcode, "ISO-8859") ||
+                        starts_with_nocase(icd->fromcode, "LATIN") ||
+                        starts_with_nocase(icd->fromcode, "ISO8859") ||
+                        starts_with_nocase(icd->fromcode, "LATIN1");
+    int to_translit = starts_with_nocase(icd->tocode, "TRANSLIT") ||
+                      starts_with_nocase(icd->tocode, "ISO-8859") ||
+                      starts_with_nocase(icd->tocode, "LATIN") ||
+                      starts_with_nocase(icd->tocode, "ISO8859") ||
+                      starts_with_nocase(icd->tocode, "LATIN1");
+
+    /* 如果编码相同或都是 ASCII/UTF8/Translit，直接复制 */
     if (strcmp(icd->fromcode, icd->tocode) == 0 || 
         (from_utf8 && to_utf8) ||
+        (from_translit && to_translit) ||
         (starts_with_nocase(icd->fromcode, "ASCII") && 
          starts_with_nocase(icd->tocode, "ASCII"))) {
         if (*inbytesleft > *outbytesleft) {
@@ -215,10 +442,19 @@ static size_t do_iconv(iconv_t cd,
         /* 解码输入 */
         if (from_utf8) {
             in_len = utf8_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
+        } else if (from_utf16) {
+            in_len = utf16le_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
         } else if (from_gbk) {
             in_len = gbk_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_big5) {
+        } else if (from_big5 || from_cns) {
             in_len = big5_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
+        } else if (from_sjis) {
+            in_len = sjis_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
+        } else if (from_ksc) {
+            in_len = ksc5601_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
+        } else if (from_translit) {
+            in_len = 1;
+            codepoint = (unsigned char)*(*inbuf);
         } else {
             /* 未知编码，跳过 */
             in_len = 1;
@@ -232,10 +468,19 @@ static size_t do_iconv(iconv_t cd,
         /* 编码输出 */
         if (to_utf8) {
             out_len = utf8_encode(codepoint, out_buf);
+        } else if (to_utf16) {
+            out_len = utf16le_encode(codepoint, out_buf);
         } else if (to_gbk) {
             out_len = gbk_encode(codepoint, out_buf);
-        } else if (to_big5) {
+        } else if (to_big5 || to_cns) {
             out_len = big5_encode(codepoint, out_buf);
+        } else if (to_sjis) {
+            out_len = sjis_encode(codepoint, out_buf);
+        } else if (to_ksc) {
+            out_len = ksc5601_encode(codepoint, out_buf);
+        } else if (to_translit) {
+            out_len = 1;
+            out_buf[0] = (codepoint < 0x100) ? codepoint : '?';
         } else {
             /* 未知编码，跳过 */
             out_len = 1;

@@ -28,6 +28,12 @@ typedef struct {
 /* 初始化主菜单状态。返回 0 成功 */
 int  ui_menu_init(void);
 
+/* 主菜单 tick（处理按键） */
+void ui_menu_tick(int keycode);
+
+/* 主菜单 draw（渲染） */
+void ui_menu_draw(void);
+
 /* 主菜单主循环（每次返回 0 = 需要继续, 1 = 请求退出, -1 = 请求运行游戏） */
 int  ui_menu_run(void);
 
