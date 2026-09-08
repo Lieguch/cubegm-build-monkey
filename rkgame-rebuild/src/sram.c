@@ -379,7 +379,7 @@ void *sram_get_data_from_core(size_t *out_size)
 #define SSTATE_MAX_SLOTS  64
 #define SSTATE_MAX_SIZE   (16 * 1024 * 1024)
 
-static int g_sstate_slot = 0;
+int g_sstate_slot = 0;
 
 static void sstate_build_path(const char *rom_path, const char *core_name,
                               int slot, char *out, size_t out_size)

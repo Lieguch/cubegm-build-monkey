@@ -1,3 +1,4 @@
+#include <stdint.h>
 /* ============================================================
  * rkgame-rebuild — core_table.h
  *
@@ -32,6 +33,7 @@
 #define CORE_TABLE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /* 扩展名 → core 映射（与原厂 DAT_003b0278 表结构一致） */
 typedef struct {
@@ -56,5 +58,21 @@ char *GetFilenameExt(const char *path, char *out, size_t out_size);
  * work_path 为工作目录（如 "/sdcard/cubegm/"）。
  * 返回加载的 ext→core 条目数；0 = 未找到或解析失败（使用硬编码表）。 */
 int load_cores_config_xml(const char *work_path);
+
+/* 原厂符号名（Ghidra）：SeletEmuCore() 加载 core_info_list (40×512B) */
+int SeletEmuCore(const char *work_path);
+
+/* core_info_list (原厂 40×512B) 条目 */
+typedef struct {
+    char core_name[128];
+    char file_path[256];
+    char desc[128];
+} core_info_t;
+
+extern core_info_t core_info_list[40];
+extern int         core_info_count;
+
+/* 通过 core_info_list 找 core 文件路径（按 core_name） */
+const char *core_info_find(const char *core_name);
 
 #endif /* CORE_TABLE_H */

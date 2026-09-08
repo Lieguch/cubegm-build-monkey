@@ -1,3 +1,4 @@
+#include <stdint.h>
 /* ============================================================
  * rkgame-rebuild — core_table.c
  *
@@ -30,8 +31,25 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include "core_table.h"
+#include "debug.h"
 
 uint32_t Filetype = 0;
+
+/* ============================================================
+ * config.xml 加载状态（前置声明，供 core_lookup_by_ext 使用）
+ * ============================================================ */
+#define CFG_XML_MAX_CORES  40
+#define CFG_XML_MAX_EXTS   16
+
+typedef struct {
+    char ext[16];
+    char core_name[96];
+} cfg_xml_entry_t;
+
+static cfg_xml_entry_t g_cfg_xml[CFG_XML_MAX_CORES * CFG_XML_MAX_EXTS];
+static int             g_cfg_xml_count  = 0;
+static bool            g_cfg_xml_loaded = false;
+static int             g_cfg_xml_core_count = 0;
 
 /*
  * 原厂 33 项硬编码表（顺序敏感，先匹配的先中）。
@@ -185,9 +203,6 @@ int GetCoreIndex(const char *ext)
  * 用途：扩展名 → core .so 文件名映射（作为硬编码表的补充）。
  */
 
-#define CFG_XML_MAX_CORES  40
-#define CFG_XML_MAX_EXTS   16
-
 typedef struct {
     char core_name[96];
     char exts[CFG_XML_MAX_EXTS][16];
@@ -195,17 +210,6 @@ typedef struct {
 } cfg_xml_core_t;
 
 static cfg_xml_core_t g_cfg_xml_cores[CFG_XML_MAX_CORES];
-static int            g_cfg_xml_core_count = 0;
-
-/* 扁平化的 ext → core_name 映射（供 core_lookup_by_ext 快速查找） */
-typedef struct {
-    char ext[16];
-    char core_name[96];
-} cfg_xml_entry_t;
-
-static cfg_xml_entry_t g_cfg_xml[CFG_XML_MAX_CORES * CFG_XML_MAX_EXTS];
-static int             g_cfg_xml_count = 0;
-static bool            g_cfg_xml_loaded = false;
 
 int load_cores_config_xml(const char *work_path)
 {
@@ -327,4 +331,45 @@ char *GetFilenameExt(const char *path, char *out, size_t out_size)
     }
     out[len] = '\0';
     return out;
+}
+
+/* ============================================================
+ * 原厂符号名映射：SeletEmuCore + core_info_list
+ * ============================================================ */
+
+core_info_t core_info_list[40];
+int         core_info_count = 0;
+
+/* SeletEmuCore @ 0x3c9aec — 加载 cores/config.xml 填充 core_info_list */
+int SeletEmuCore(const char *work_path)
+{
+    int n = load_cores_config_xml(work_path);
+    /* 将扁平表填到 core_info_list */
+    core_info_count = 0;
+    memset(core_info_list, 0, sizeof(core_info_list));
+    for (int i = 0; i < g_cfg_xml_core_count && core_info_count < 40; i++) {
+        strncpy(core_info_list[core_info_count].core_name,
+                g_cfg_xml_cores[i].core_name,
+                sizeof(core_info_list[0].core_name) - 1);
+        /* 提取目录（去掉 .so） */
+        const char *bn = strrchr(g_cfg_xml_cores[i].core_name, '/');
+        bn = bn ? bn + 1 : g_cfg_xml_cores[i].core_name;
+        if (work_path) {
+            snprintf(core_info_list[core_info_count].file_path,
+                     sizeof(core_info_list[0].file_path),
+                     "%s/cores/%s", work_path, bn);
+        }
+        core_info_count++;
+    }
+    return n;
+}
+
+const char *core_info_find(const char *core_name)
+{
+    if (!core_name) return NULL;
+    for (int i = 0; i < core_info_count; i++) {
+        if (strcmp(core_info_list[i].core_name, core_name) == 0)
+            return core_info_list[i].file_path;
+    }
+    return NULL;
 }

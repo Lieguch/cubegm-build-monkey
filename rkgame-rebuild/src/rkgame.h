@@ -301,6 +301,7 @@ int  sstate_save(int slot);
 int  sstate_load(int slot);
 int  sstate_check_hotkey(void);
 int  sstate_has_slot(int slot);
+extern int g_sstate_slot;
 
 /* menu_log.c — LoadMenuLog / SaveMenuLog（二进制 444B 格式，对齐原厂 0x211f8/0x21388） */
 int     LoadMenuLog(void);
