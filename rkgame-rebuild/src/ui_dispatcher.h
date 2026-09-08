@@ -25,13 +25,13 @@
 
 /* UI 页面状态（与 gl_* 布尔值对应） */
 typedef enum {
-    UI_PAGE_MAIN = 0,
-    UI_PAGE_LIST,
-    UI_PAGE_SEARCH,
-    UI_PAGE_TYPE,
-    UI_PAGE_SETTING,
-    UI_PAGE_BROWSER,
-    UI_PAGE_COUNT
+    UIP_MAIN = 0,
+    UIP_LIST,
+    UIP_SEARCH,
+    UIP_TYPE,
+    UIP_SETTING,
+    UIP_BROWSER,
+    UIP_COUNT
 } ui_page_state_t;
 
 /* 按键状态结构（供 dispatcher 使用） */

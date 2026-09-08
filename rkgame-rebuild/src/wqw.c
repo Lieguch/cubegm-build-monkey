@@ -57,27 +57,9 @@
 #define WQW_MAX_FILES   256
 #define WQW_MAX_NAME    256
 
-typedef struct {
-    uint16_t  method;         /* 8 = deflate */
-    uint16_t  time;
-    uint16_t  date;
-    uint32_t  crc;
-    uint32_t  csize;          /* compressed size */
-    uint32_t  usize;          /* uncompressed size */
-    uint16_t  namelen;
-    char      name[WQW_MAX_NAME];
-    uint32_t  lfh_offset;     /* absolute file offset of LFH */
-    uint32_t  data_offset;    /* absolute file offset of compressed data */
-} wqw_entry_t;
+/* WQW entry and container types defined in rkgame.h */
 
-typedef struct {
-    wqw_entry_t entries[WQW_MAX_FILES];
-    int         count;
-} wqw_container_t;
-
-/* ============================================================
- * Helpers
- * ============================================================ */
+/* Helpers */
 
 static uint16_t rd16(const unsigned char *p)
 {

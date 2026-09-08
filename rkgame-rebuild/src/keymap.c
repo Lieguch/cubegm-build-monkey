@@ -63,10 +63,10 @@ int InitKeyMapping0fEmuType(const char *core_name)
     while (fgets(line, sizeof(line), fp)) {
         /* 解析 <bind from="KEY_X" to="N"/> */
         char from[64], to_str[32];
-        if (sscanf(line, "%*[^\"\"\""] "\"%63[^\"]\" to=\"%31[^\"]",
+        if (sscanf(line, "from=\"%63[^\"]\" to=\"%31[^\"]",
                    from, to_str) == 2 ||
-            sscanf(line, "from=\"%63[^\"]\" to=\"%31[^\"]",
-                   from, to_str) == 2) {
+            sscanf(line, "to=\"%31[^\"]\" from=\"%63[^\"]",
+                   to_str, from) == 2) {
             uint32_t from_key = 0;
             int to_slot = 0;
 

@@ -8,12 +8,12 @@
  *   m_ui_init()                  → 初始化所有 mui_* 模块
  *
  * 页面状态映射（对齐原厂 m_ui 的 current_page 枚举）：
- *   UI_PAGE_MAIN    → mui_menu
- *   UI_PAGE_LIST    → mui_menu (game list view)
- *   UI_PAGE_SEARCH  → mui_search + mui_search_file_list
- *   UI_PAGE_TYPE    → mui_type (待实现)
- *   UI_PAGE_SETTING → mui_setting
- *   UI_PAGE_BROWSER → mui_setting (file browser mode)
+ *   UIP_MAIN    → mui_menu
+ *   UIP_LIST    → mui_menu (game list view)
+ *   UIP_SEARCH  → mui_search + mui_search_file_list
+ *   UIP_TYPE    → mui_type (待实现)
+ *   UIP_SETTING → mui_setting
+ *   UIP_BROWSER → mui_setting (file browser mode)
  * ============================================================ */
 
 #include "ui_dispatcher.h"
@@ -59,35 +59,35 @@ int m_ui_init(void)
 ui_page_state_t m_ui_current_page(bool showing, bool searching,
                                    bool setting, bool typing, bool browser)
 {
-    if (searching) return UI_PAGE_SEARCH;
-    if (typing)    return UI_PAGE_TYPE;
-    if (setting)   return UI_PAGE_SETTING;
-    if (browser)   return UI_PAGE_BROWSER;
-    if (showing)   return UI_PAGE_LIST;
-    return UI_PAGE_MAIN;
+    if (searching) return UIP_SEARCH;
+    if (typing)    return UIP_TYPE;
+    if (setting)   return UIP_SETTING;
+    if (browser)   return UIP_BROWSER;
+    if (showing)   return UIP_LIST;
+    return UIP_MAIN;
 }
 
 void m_ui_dispatch(int keycode, ui_page_state_t page)
 {
     switch (page) {
-    case UI_PAGE_MAIN:
-    case UI_PAGE_LIST:
+    case UIP_MAIN:
+    case UIP_LIST:
         /* mui_menu tick — 游戏列表导航 */
         ui_menu_tick(keycode);
         break;
-    case UI_PAGE_SEARCH:
+    case UIP_SEARCH:
         ui_search_tick(keycode);
         ui_search_file_list_tick(keycode);
         break;
-    case UI_PAGE_TYPE:
+    case UIP_TYPE:
         ui_type_tick(keycode);
         break;
-    case UI_PAGE_SETTING:
+    case UIP_SETTING:
         ui_setting_tick(keycode);
         ui_video_setting_tick(keycode);
         ui_joystick_setting_tick(keycode);
         break;
-    case UI_PAGE_BROWSER:
+    case UIP_BROWSER:
         ui_setting_tick(keycode);
         break;
     default:
@@ -98,21 +98,21 @@ void m_ui_dispatch(int keycode, ui_page_state_t page)
 void m_ui_draw(ui_page_state_t page)
 {
     switch (page) {
-    case UI_PAGE_MAIN:
-    case UI_PAGE_LIST:
+    case UIP_MAIN:
+    case UIP_LIST:
         if (ui_is_ready())
             ui_draw_page(UI_PAGE_MENU);
         break;
-    case UI_PAGE_SEARCH:
+    case UIP_SEARCH:
         ui_search_draw();
         break;
-    case UI_PAGE_TYPE:
+    case UIP_TYPE:
         ui_type_draw();
         break;
-    case UI_PAGE_SETTING:
+    case UIP_SETTING:
         ui_setting_draw();
         break;
-    case UI_PAGE_BROWSER:
+    case UIP_BROWSER:
         ui_setting_draw();
         break;
     default:

@@ -17,6 +17,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+
+/* 从内存 buffer 加载 .raw（供 WQW 提取后使用） */
+unsigned char *ui_load_raw_from_buffer(unsigned char *buf, size_t buf_size,
+                                        const char *name, int *out_w, int *out_h,
+                                        int *out_pixel_offset);
 
 /* 前向声明（完整定义在 ui_zip.h） */
 typedef struct ui_zip ui_zip_t;

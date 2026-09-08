@@ -287,11 +287,11 @@ void disp_initscr_present(void);
 bool disp_initscr_ready(void);
 
 /* audio.c */
-void audio_init(void);
+int audio_init(void);
 void audio_shutdown(void);
 void audio_play(const void *buf, size_t frames);
-void audio_play_sfx(const char *path);
-void audio_play_bgm(const char *path);
+int audio_play_sfx(const char *path);
+int audio_play_bgm(const char *path);
 void audio_stop_bgm(void);
 void audio_set_volume(int percent);
 bool audio_is_ready(void);
@@ -336,7 +336,7 @@ typedef struct {
 } wqw_container_t;
 
 bool    wqw_is_container(const char *path);
-int     wqw_parse(const char *path, void *out);
+int     wqw_parse(const char *path, wqw_container_t *out);
 int     wqw_extract(const char *path, const char *filename,
                     unsigned char **out_data, size_t *out_size);
 int     wqw_list(const char *path);

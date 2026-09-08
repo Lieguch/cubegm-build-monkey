@@ -493,7 +493,7 @@ static int try_load_from_root_dat(game_entry_t *entries, int max_entries)
             LOG("try_load_from_root_dat: extracted fileinfo.txt (%zu B) from WQW",
                 info_size);
             info_data[info_size] = '\0';
-            int count = game_list_parse_csv((char *)info_data, entries, max_entries);
+            int count = game_list_parse_csv((const char *)info_data, info_size, entries, max_entries);
             free(info_data);
             LOG("try_load_from_root_dat: parsed %d entries from WQW fileinfo.txt", count);
             return count;

@@ -90,6 +90,10 @@ jobs:
               echo "  downloading libdrm-dev..."
               wget -q --progress=dot:mega --timeout=60 "$BASE/libd/libdrm/libdrm-dev_2.4.97-1_armhf.deb"
             fi
+            echo "  downloading zlib1g..."
+            wget -q --progress=dot:mega --timeout=60 "$BASE/z/zlib/zlib1g_1.2.8.dfsg-5_armhf.deb"
+            echo "  downloading zlib1g-dev..."
+            wget -q --progress=dot:mega --timeout=60 "$BASE/z/zlib/zlib1g-dev_1.2.8.dfsg-5_armhf.deb"
             for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root/; done
             cp -a /tmp/arm-root/. "$SYSROOT"/
             echo "SYSROOT packages downloaded (base + $([ $LIBDRM_OK -eq 0 ] && echo 'drm' || echo 'none'))"
@@ -107,6 +111,18 @@ jobs:
               for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root-drm/; done
               cp -a /tmp/arm-root-drm/. "$SYSROOT"/
               echo "DRM add-on packages added to sysroot"
+            fi
+            # Add zlib if not already present
+            if [ ! -f "$SYSROOT/usr/include/zlib.h" ]; then
+              mkdir -p /tmp/arm-pkgs-zlib /tmp/arm-root-zlib
+              cd /tmp/arm-pkgs-zlib
+              echo "  downloading zlib1g (add-on)..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/z/zlib/zlib1g_1.2.8.dfsg-5_armhf.deb"
+              echo "  downloading zlib1g-dev (add-on)..."
+              wget -q --progress=dot:mega --timeout=60 "$BASE/z/zlib/zlib1g-dev_1.2.8.dfsg-5_armhf.deb"
+              for deb in *.deb; do dpkg-deb -x "$deb" /tmp/arm-root-zlib/; done
+              cp -a /tmp/arm-root-zlib/. "$SYSROOT"/
+              echo "zlib add-on packages added to sysroot"
             fi
           fi
 

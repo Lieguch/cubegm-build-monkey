@@ -32,6 +32,7 @@
 #include "rkgame.h"
 #include "debug.h"
 #include "thumbnail.h"
+#include "game_list.h"
 
 /* 缩略图缓存 */
 #define THUMB_CACHE_MAX   32

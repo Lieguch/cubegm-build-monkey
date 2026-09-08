@@ -41,9 +41,11 @@ typedef struct {
     char     path[GL_PATH_LEN];       /* "000/sengoku3.zip" */
     char     name_en[GL_NAME_LEN];    /* 英文显示名（拼接 en1/en2） */
     char     name_zh[GL_NAME_LEN];    /* 中文显示名（拼接 zh1/zh2） */
+    char     name[GL_NAME_LEN];       /* 通用显示名（name_en 或 name_zh 的别名） */
     char     core[128];               /* 核心名（从 filelist.xml 查得） */
     char     dir[16];                 /* 目录编号 "000"-"008" */
     bool     is_favorite;             /* 是否在收藏中 */
+    bool     favorite;                /* is_favorite 的别名 */
     bool     has_thumbnail;           /* <NNN>.dat 中是否有缩略图 */
 } game_entry_t;
 

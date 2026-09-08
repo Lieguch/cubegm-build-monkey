@@ -22,6 +22,7 @@
 #include "ui_zip.h"
 #include "thumbnail.h"
 #include "cpd.h"
+#include "game_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
