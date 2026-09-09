@@ -31,6 +31,17 @@ static void skip_whitespace(mxml_parser_t *parser)
 /* 读取字符串直到分隔符 */
 static char *read_string(mxml_parser_t *parser, const char *delim)
 {
+    if (!delim || !delim[0]) {
+        /* 空分隔符：读到底部 */
+        unsigned int len = parser->len - parser->pos;
+        char *str = malloc(len + 1);
+        if (!str) return NULL;
+        memcpy(str, parser->data + parser->pos, len);
+        str[len] = '\0';
+        parser->pos = parser->len;
+        return str;
+    }
+
     unsigned int start = parser->pos;
     
     while (parser->pos < parser->len) {
@@ -101,11 +112,9 @@ static void parse_attrs(mxml_parser_t *parser, mxml_node_t *node)
         /* 读取属性名 */
         char *attr_name = read_string(parser, "=");
         if (!attr_name) {
-            free(attr_name);
             parser->pos++;
             continue;
         }
-        
         /* 跳过空白 */
         skip_whitespace(parser);
         
@@ -125,10 +134,9 @@ static void parse_attrs(mxml_parser_t *parser, mxml_node_t *node)
             parser->pos++;
         }
         
-        char *attr_value = read_string(parser, quote ? &quote : "\0");
+        char *attr_value = read_string(parser, quote ? &quote : NULL);
         if (!attr_value) {
-            attr_value = malloc(1);
-            if (attr_value) attr_value[0] = '\0';
+            attr_value = (char *)calloc(1, 1);
         }
         
         if (quote && parser->pos < parser->len && parser->data[parser->pos] == quote) {
@@ -324,19 +332,20 @@ mxml_node_t *mxml_load_file(const char *filename)
     
     fseek(fp, 0, SEEK_END);
     long size = ftell(fp);
+    if (size <= 0) { fclose(fp); return NULL; }  /* 空文件或错误 */
     fseek(fp, 0, SEEK_SET);
     
-    char *data = malloc(size + 1);
+    char *data = malloc((size_t)size + 1);
     if (!data) {
         fclose(fp);
         return NULL;
     }
     
-    fread(data, 1, size, fp);
-    data[size] = '\0';
+    size_t nread = fread(data, 1, (size_t)size, fp);
+    data[nread] = '\0';
     fclose(fp);
     
-    mxml_node_t *root = mxml_load_data(data, size);
+    mxml_node_t *root = mxml_load_data(data, (unsigned int)nread);
     free(data);
     
     return root;

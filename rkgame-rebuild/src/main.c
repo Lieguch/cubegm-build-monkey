@@ -902,8 +902,11 @@ int main(int argc, char **argv)
     hb_start_heartbeat_thread();  /* 每 20ms 更新一次 shm[1]，不受主循环阻塞 */
 
     DBGP(CONFIG_LOAD);
-    GetConfig();          /* config.c: mxml 解析 22 项配置 */
-    legacy_config_parse(); /* main.c: 字符串解析 autorun 路径 */
+    RKLOG_D("[main] calling GetConfig()");
+    int cfg_rc = GetConfig();
+    RKLOG_D("[main] GetConfig returned rc=%d", cfg_rc);
+    legacy_config_parse();
+    RKLOG_D("[main] legacy_config_parse done");
 
     /* 加载 cores/config.xml（SeletEmuCore @ 0x3c9aec）
      * 动态扩展 ext→core 映射，作为硬编码 core_table 的补充。

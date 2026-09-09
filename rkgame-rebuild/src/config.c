@@ -34,7 +34,8 @@ typedef struct {
     char desc[256];
 } cfg_item_t;
 
-#define MAX_CONFIG_ITEMS 64
+#define MAX_CONFIG_ITEMS 64   /* 数组容量（预留扩展） */
+#define CONFIG_ITEM_COUNT 22   /* 实际初始化的配置项数量 */
 #define CONFIG_NAME_LEN 64
 #define CONFIG_VAL_LEN  256
 
@@ -64,8 +65,6 @@ static cfg_item_t s_config_items[MAX_CONFIG_ITEMS] = {
     { "autorestore",    2, "1",         "Auto restore last game" },
 };
 
-#define CONFIG_ITEM_COUNT (sizeof(s_config_items) / sizeof(s_config_items[0]))
-
 /* 配置值存储 */
 typedef struct {
     char value[CONFIG_VAL_LEN];
@@ -77,6 +76,9 @@ static int s_config_loaded = 0;
 
 /* ---- 全局配置结构体（引用 main.c 的 g_cfg） ---- */
 extern rkgame_config_t g_cfg;
+
+/* ---- 工作路径（main.c 定义，GetConfig 用它拼接 setting.xml 完整路径） ---- */
+extern char work_path[512];
 
 /* ============================================================
  * config_init — 初始化配置系统（加载默认值）
@@ -104,7 +106,8 @@ int config_find(const char *name)
 {
     if (!name) return -1;
     for (int i = 0; i < CONFIG_ITEM_COUNT; i++) {
-        if (strcmp(s_config_items[i].name, name) == 0) return i;
+        if (s_config_items[i].name && strcmp(s_config_items[i].name, name) == 0)
+            return i;
     }
     return -1;
 }
@@ -239,11 +242,16 @@ int config_load(const char *path)
         config_init();
     }
 
+    RKLOG_D("config_load: trying %s", path);
+
     mxml_node_t *root = mxml_load_file(path);
     if (!root) {
         RKLOG_W("config_load: cannot open %s, using defaults", path);
         return -1;
     }
+
+    RKLOG_D("config_load: mxml_load_file OK, root->value=%s",
+            root->value ? root->value : "(null)");
 
     /* BFS 遍历所有节点 */
     mxml_node_t *queue[256];
@@ -287,6 +295,7 @@ int config_save(const char *path)
     fprintf(fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
     fprintf(fp, "<rkgame>\n");
     for (int i = 0; i < CONFIG_ITEM_COUNT; i++) {
+        if (!s_config_items[i].name) continue;
         fprintf(fp, "  <item name=\"%s\" value=\"%s\"/>\n",
                 s_config_items[i].name,
                 s_config_values[i].value);
@@ -356,11 +365,13 @@ void config_update_struct(void)
 
 int GetConfig(void)
 {
-    const char *path = "/sdcard/cubegm/setting.xml";
+    char path[600];
+    /* 用 work_path 拼接完整路径（main.c 已初始化为真实设备路径） */
+    snprintf(path, sizeof(path), "%ssetting.xml", work_path);
     int rc = config_load(path);
     if (rc != 0) {
-        path = "setting.xml";
-        rc = config_load(path);
+        /* 回退到相对路径（兼容旧部署） */
+        rc = config_load("setting.xml");
     }
     if (rc != 0) {
         RKLOG_W("GetConfig: no setting.xml found, using defaults");
