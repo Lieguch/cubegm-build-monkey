@@ -496,20 +496,21 @@ static void main_menu(void)
     int   fb_selected = 0;                 /* 当前选中索引 */
     int   fb_scroll = 0;                   /* 滚动偏移 */
 
-    /* 标准按键位掩码（2026-09-08 修复：改用位掩码，非数字索引）
-     * 与 evdev.c 中 KEY_* 定义一致，与 libretro JOYPAD id 对应。
+    /* 菜单导航按键位掩码（2026-09-08 修复）
+     * 使用 MENU_ 前缀避免与 evdev.c 中 KEY_* 定义冲突。
+     * 位掩码值与 evdev.c KEY_* 保持一致。
      * 之前用数字 0-25 作为 key_id 导致 joy_get_key 位掩码比较全失败。 */
-    #define KEY_UP       (1u << 0)   /* 上    */
-    #define KEY_DOWN     (1u << 1)   /* 下    */
-    #define KEY_LEFT     (1u << 2)   /* 左    */
-    #define KEY_RIGHT    (1u << 3)   /* 右    */
-    #define KEY_OK       (1u << 4)   /* A 键 = OK */
-    #define KEY_CANCEL   (1u << 5)   /* B 键 = 取消 */
-    #define KEY_FAVORITE (1u << 6)   /* X 键 = 收藏（临时用 SELECT 位） */
-    #define KEY_START    (1u << 7)   /* START = 菜单切换 */
-    #define KEY_SEARCH   (1u << 6)   /* SELECT = 搜索 */
-    #define KEY_TYPE     (1u << 8)   /* L1 = 游戏分类 */
-    #define KEY_BROWSER  (1u << 9)   /* R1 = 文件浏览器 */
+    #define MENU_UP       (1u << 0)   /* 上    = MENU_UP */
+    #define MENU_DOWN     (1u << 1)   /* 下    = MENU_DOWN */
+    #define MENU_LEFT     (1u << 2)   /* 左    = MENU_LEFT */
+    #define MENU_RIGHT    (1u << 3)   /* 右    = MENU_RIGHT */
+    #define MENU_OK       (1u << 4)   /* A 键 = OK = KEY_A */
+    #define MENU_CANCEL   (1u << 5)   /* B 键 = 取消 = KEY_B */
+    #define MENU_FAVORITE (1u << 6)   /* X 键 = 收藏 = KEY_X */
+    #define MENU_START    (1u << 12)  /* START 键 = MENU_START */
+    #define MENU_SEARCH   (1u << 13)  /* SELECT 键 = KEY_SELECT */
+    #define MENU_TYPE     (1u << 8)   /* L1 = KEY_L1 = 设置页 */
+    #define MENU_BROWSER  (1u << 10)  /* L2 = KEY_L2 = 文件浏览器 */
 
     /* 上帧按键状态 bitmask（用于边缘检测） */
     uint32_t gl_prev_state = 0;
@@ -540,7 +541,7 @@ static void main_menu(void)
 
         /* ---- 基础菜单导航（无游戏也生效） ---- */
         /* START: 进入游戏列表（需有游戏）或切换视图 */
-        if (pressed & KEY_START) {
+        if (pressed & MENU_START) {
             if (gl_showing) {
                 gl_showing = false;
                 LOG("main_menu: returning to main menu");
@@ -556,21 +557,21 @@ static void main_menu(void)
         }
 
         /* SELECT: 搜索页 */
-        if (pressed & KEY_SEARCH) {
+        if (pressed & MENU_SEARCH) {
             gl_searching = !gl_searching;
             if (gl_searching) { gl_showing = false; gl_setting = false; gl_typing = false; gl_browser = false; }
             LOG("main_menu: search page %s", gl_searching ? "entered" : "exited");
         }
 
         /* L1: 设置页 */
-        if (pressed & KEY_TYPE) {
+        if (pressed & MENU_TYPE) {
             gl_setting = !gl_setting;
             if (gl_setting) { gl_showing = false; gl_searching = false; gl_typing = false; gl_browser = false; }
             LOG("main_menu: setting page %s", gl_setting ? "entered" : "exited");
         }
 
         /* R1: 文件浏览器 */
-        if (pressed & KEY_BROWSER) {
+        if (pressed & MENU_BROWSER) {
             gl_browser = !gl_browser;
             if (gl_browser) {
                 gl_showing = false; gl_searching = false; gl_setting = false; gl_typing = false;
@@ -581,7 +582,7 @@ static void main_menu(void)
         }
 
         /* B/CANCEL: 退出当前子视图返回主菜单 */
-        if ((pressed & KEY_CANCEL) &&
+        if ((pressed & MENU_CANCEL) &&
             (gl_showing || gl_searching || gl_setting || gl_typing)) {
             gl_showing = false; gl_searching = false;
             gl_setting = false; gl_typing = false;
@@ -598,7 +599,7 @@ static void main_menu(void)
 
             /* 文件浏览器按键处理 */
             if (gl_browser) {
-                if (pressed & KEY_CANCEL) {
+                if (pressed & MENU_CANCEL) {
                     char *slash = strrchr(fb_path, '/');
                     if (slash && slash != fb_path) {
                         *slash = '\0';
@@ -608,7 +609,7 @@ static void main_menu(void)
                     }
                     LOG("file browser: path=%s", fb_path);
                 }
-                if ((pressed & KEY_OK) && fb_count > 0) {
+                if ((pressed & MENU_OK) && fb_count > 0) {
                     char full[600];
                     snprintf(full, sizeof(full), "%s/%s", fb_path, fb_files[fb_selected]);
                     struct stat st;
@@ -618,17 +619,17 @@ static void main_menu(void)
                         LOG("file browser: entered %s", fb_path);
                     }
                 }
-                if (pressed & KEY_START) {
+                if (pressed & MENU_START) {
                     gl_browser = false;
                     LOG("file browser: closed");
                 }
                 if (fb_count > 0) {
-                    if (pressed & KEY_UP) {
+                    if (pressed & MENU_UP) {
                         fb_selected--;
                         if (fb_selected < 0) fb_selected = fb_count - 1;
                         if (fb_selected < fb_scroll) fb_scroll = fb_selected;
                     }
-                    if (pressed & KEY_DOWN) {
+                    if (pressed & MENU_DOWN) {
                         fb_selected++;
                         if (fb_selected >= fb_count) fb_selected = 0;
                         if (fb_selected >= fb_scroll + GL_PAGE_SIZE)
@@ -639,13 +640,13 @@ static void main_menu(void)
 
             /* 上/下选择 + OK 启动（仅游戏列表视图） */
             if (gl_showing) {
-                if (pressed & KEY_UP) {
+                if (pressed & MENU_UP) {
                     menu_gl_selected--;
                     if (menu_gl_selected < 0) menu_gl_selected = count - 1;
                     if (menu_gl_selected < menu_gl_scroll) menu_gl_scroll = menu_gl_selected;
                     LOG("main_menu: selected %d/%d", menu_gl_selected + 1, count);
                 }
-                if (pressed & KEY_DOWN) {
+                if (pressed & MENU_DOWN) {
                     menu_gl_selected++;
                     if (menu_gl_selected >= count) menu_gl_selected = 0;
                     if (menu_gl_selected >= menu_gl_scroll + GL_PAGE_SIZE)
@@ -654,7 +655,7 @@ static void main_menu(void)
                 }
 
                 /* 收藏切换（按 X） */
-                if (pressed & KEY_FAVORITE) {
+                if (pressed & MENU_FAVORITE) {
                     const game_entry_t *ge = game_list_get(menu_gl_selected);
                     if (ge) {
                         if (game_list_is_favorite(ge->path)) {
@@ -670,7 +671,7 @@ static void main_menu(void)
                 }
 
                 /* 启动游戏（按 A/OK） */
-                if (pressed & KEY_OK) {
+                if (pressed & MENU_OK) {
                     const game_entry_t *ge = game_list_get(menu_gl_selected);
                     if (ge) {
                         LOG("main_menu: launching game %d/%d: %s (%s)",
@@ -700,7 +701,7 @@ static void main_menu(void)
         /* ---- 调度 UI 模块 tick ---- */
         ui_page_state_t cur_page = m_ui_current_page(
             gl_showing, gl_searching, gl_setting, gl_typing, gl_browser);
-        int key_ok_pressed = (pressed & KEY_OK) ? 1 : 0;
+        int key_ok_pressed = (pressed & MENU_OK) ? 1 : 0;
         m_ui_dispatch(key_ok_pressed, cur_page);
 
         /* ---- 重绘当前页面（每次按键或每 5 秒自动重绘） ---- */
@@ -729,13 +730,13 @@ static void main_menu(void)
                 }
                 if (fb_count > 0 && font_is_ready()) {
                     int y = 20;
-                    font_draw_text(fb_path, 10, y, 0xffffff);
+                    font_draw_text(10, y, fb_path, 0xffffff);
                     y += 24;
                     for (int k = fb_scroll; k < fb_scroll + GL_PAGE_SIZE && k < fb_count; k++) {
                         const char *prefix = (k == fb_selected) ? " > " : "   ";
                         char line[140];
                         snprintf(line, sizeof(line), "%s%s", prefix, fb_files[k]);
-                        font_draw_text(line, 10, y + (k - fb_scroll) * 22,
+                        font_draw_text(10, y + (k - fb_scroll) * 22, line,
                                       (k == fb_selected) ? 0x00ff00 : 0xffffff);
                     }
                 }
