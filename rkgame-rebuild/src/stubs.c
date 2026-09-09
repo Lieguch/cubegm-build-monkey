@@ -11,10 +11,10 @@
  *     video_driver_init();
  *     sound_driver_init(USE_HDMI_OUT, UpdateROM, 2);
  *     InitJoystick();
- *     InitRFJoystick();     /* ← stub: 无 RF 硬件 */
- *     sfc_init();           /* ← stub: 无 SPI 硬件 */
- *     spi_driver_init();    /* ← stub: 无触摸屏 SPI */
- *     UpdateROM("update/firmware.upk");  /* ← stub: 无升级需求 */
+ *     InitRFJoystick();     // stub: 无 RF 硬件
+ *     sfc_init();           // stub: 无 SPI 硬件
+ *     spi_driver_init();    // stub: 无触摸屏 SPI
+ *     UpdateROM("update/firmware.upk");  // stub: 无升级需求
  *     ShareMemCreat();
  *     pthread_create(XintiaoThread);
  *     main_Menu() / autorun();
