@@ -83,6 +83,69 @@ static void wqw_decrypt_name(const unsigned char *src, int len, char *dst)
 }
 
 /* ============================================================
+ * wqw_inflate_raw — raw deflate 解压（wbits=-15）
+ *
+ * 根因（本地真 root.dat 实测 2026-09-09）：
+ *   WQW\x03 容器的压缩数据是 RAW DEFLATE（无 2 字节 zlib 头），
+ *   zlib 格式 uncompress() 认头 → 报 "incorrect header check"。
+ *   全部 10 条目（000.raw~008.raw + fileinfo.txt）本地实证：
+ *     uncompress(zlib) 全 FAIL，inflateInit2(-15) 全 OK。
+ *   故工厂 OpenZipU/UnzipItem 走的是 raw inflate，本实现须一致。
+ *
+ * 返回 0 成功（*out_data 指向 malloc 缓冲，调用者 free），-1 失败。
+ * ============================================================ */
+static int wqw_inflate_raw(const unsigned char *comp, uLong comp_len,
+                           unsigned char **out_data, size_t *out_size,
+                           uLong expected_usize)
+{
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    zs.next_in = (unsigned char *)comp;
+    zs.avail_in = (uInt)comp_len;
+
+    /* 先按 expected_usize 分配；raw 流可能略小于/等于它 */
+    size_t cap = (expected_usize > 0) ? (size_t)expected_usize : (size_t)comp_len + 64;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    if (!buf) return -1;
+
+    zs.next_out = buf;
+    zs.avail_out = (uInt)cap;
+
+    /* -15 = raw deflate */
+    if (inflateInit2(&zs, -15) != Z_OK) {
+        free(buf);
+        return -1;
+    }
+
+    int ret = inflate(&zs, Z_FINISH);
+    if (ret != Z_STREAM_END && ret != Z_OK) {
+        /* 数据比 expected 大？再给一次机会：扩大缓冲重试 */
+        inflateEnd(&zs);
+        free(buf);
+        cap = comp_len * 4 + 256;
+        buf = (unsigned char *)malloc(cap);
+        if (!buf) return -1;
+        memset(&zs, 0, sizeof(zs));
+        zs.next_in = (unsigned char *)comp;
+        zs.avail_in = (uInt)comp_len;
+        zs.next_out = buf;
+        zs.avail_out = (uInt)cap;
+        if (inflateInit2(&zs, -15) != Z_OK) { inflateEnd(&zs); free(buf); return -1; }
+        ret = inflate(&zs, Z_FINISH);
+        if (ret != Z_STREAM_END && ret != Z_OK) {
+            inflateEnd(&zs);
+            free(buf);
+            return -1;
+        }
+    }
+    inflateEnd(&zs);
+
+    *out_data = buf;
+    *out_size = (size_t)(zs.total_out);
+    return 0;
+}
+
+/* ============================================================
  * wqw_is_container — 检查文件是否以 "WQW\x03" 开头
  * ============================================================ */
 
@@ -272,39 +335,32 @@ int wqw_extract(const char *path, const char *filename,
     }
     fclose(fp);
 
-    /* 解压 */
-    unsigned char *decomp = (unsigned char *)malloc(e->usize ? e->usize : 64);
-    if (!decomp) { free(comp); return -1; }
-
-    uLongf destlen = (uLongf)e->usize;
-    int ret;
+    /* 解压
+     * method==0：stored（未压缩），直接拷贝 csize 字节
+     * method==8：RAW DEFLATE（wbits=-15；本地真 root.dat 实证 2026-09-09，
+     *            全部条目均为 raw deflate，zlib 格式 uncompress 报 header check） */
+    unsigned char *decomp = NULL;
+    size_t decomp_size = 0;
     if (e->method == 0) {
-        /* method 0 = stored (未压缩)，直接拷贝 */
-        if (e->csize > e->usize) { free(comp); free(decomp); return -1; }
+        if (e->csize > e->usize) { free(comp); return -1; }
+        decomp = (unsigned char *)malloc(e->csize ? e->csize : 1);
+        if (!decomp) { free(comp); return -1; }
         memcpy(decomp, comp, e->csize);
-        *out_data = decomp;
-        *out_size = e->csize;
-        free(comp);
+        decomp_size = e->csize;
         LOG("wqw_extract: %s -> stored %u B (method=0)", filename, e->csize);
-        return 0;
-    }
-
-    ret = uncompress(decomp, &destlen, comp, (uLong)e->csize);
-    free(comp);
-
-    if (ret != Z_OK) {
-        free(decomp);
-        ERR("wqw_extract: uncompress failed for %s (%s)",
-            filename, zError(ret));
+    } else if (wqw_inflate_raw(comp, (uLong)e->csize, &decomp, &decomp_size, e->usize) != 0) {
+        free(comp);
+        ERR("wqw_extract: raw-inflate failed for %s", filename);
         return -1;
     }
+    free(comp);
 
     *out_data = decomp;
-    *out_size = (size_t)destlen;
+    *out_size = decomp_size;
 
     /* CRC 校验 */
     uint32_t crc = crc32(0L, Z_NULL, 0);
-    crc = crc32(crc, decomp, destlen);
+    crc = crc32(crc, decomp, decomp_size);
     if (crc != e->crc) {
         LOG("wqw_extract: CRC mismatch for %s (expected 0x%08x, got 0x%08x)",
             filename, e->crc, crc);
@@ -367,28 +423,21 @@ int wqw_extract_index(const char *path, int index,
     }
     fclose(fp);
 
-    unsigned char *decomp = (unsigned char *)malloc(e->usize ? e->usize : 64);
-    if (!decomp) { free(comp); return -1; }
-
-    uLongf destlen = (uLongf)e->usize;
-    int ret;
+    unsigned char *decomp = NULL;
+    size_t decomp_size = 0;
     if (e->method == 0) {
-        if (e->csize > e->usize) { free(comp); free(decomp); return -1; }
+        if (e->csize > e->usize) { free(comp); return -1; }
+        decomp = (unsigned char *)malloc(e->csize ? e->csize : 1);
+        if (!decomp) { free(comp); return -1; }
         memcpy(decomp, comp, e->csize);
-        *out_data = decomp;
-        *out_size = e->csize;
+        decomp_size = e->csize;
+    } else if (wqw_inflate_raw(comp, (uLong)e->csize, &decomp, &decomp_size, e->usize) != 0) {
         free(comp);
-        return 0;
-    }
-
-    ret = uncompress(decomp, &destlen, comp, (uLong)e->csize);
-    free(comp);
-    if (ret != Z_OK) {
-        free(decomp);
         return -1;
     }
+    free(comp);
 
     *out_data = decomp;
-    *out_size = (size_t)destlen;
+    *out_size = decomp_size;
     return 0;
 }
