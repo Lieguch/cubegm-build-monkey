@@ -84,14 +84,6 @@ int _Z14inflate_blocks(void) { return 0; }
 int _Z13inflate_codes(void) { return 0; }
 int _Z10huft_build(void) { return 0; }
 
-/* 固定时序库 */
-static void _fixed_tl_stub(void) { /* no-op */ }
-void _ZL8fixed_tl(void) { /* no-op */ }
-
-/* CRC 表 */
-static unsigned int g_crc_table[256] = {0};
-unsigned int *const _ZL9crc_table = g_crc_table;
-
 /* STL 常用符号 */
 void _ZSt4cout(void) { /* no-op */ }
 void _ZSt4cerr(void) { /* no-op */ }
