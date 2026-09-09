@@ -47,12 +47,14 @@ void ui_menu_tick(int keycode)
     #define KEY_DOWN     11
     #define KEY_LEFT     12
     #define KEY_RIGHT    13
-    #define KEY_OK       0
+    #define KEY_OK       1     /* 修正：main.c 传入的 keycode 语义是 1=OK按下，0=无按键。
+                                   原 KEY_OK=0 与"无按键"冲突 → launch game 每帧狂刷。 */
     #define KEY_CANCEL   1
     #define KEY_START    8
     #define KEY_SEARCH   9
 
     if (!s_menu.active) return;
+    if (keycode == 0) return;   /* 0 = 本帧无有效按键（main.c 每帧都调，须跳过，否则误触发） */
 
     int count = game_list_is_loaded() ? game_list_count() : 0;
 

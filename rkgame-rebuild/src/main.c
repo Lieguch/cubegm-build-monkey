@@ -516,6 +516,21 @@ static void main_menu(void)
     /* 上帧按键状态 bitmask（用于边缘检测） */
     uint32_t gl_prev_state = 0;
 
+    /* ---- 1:1 对齐原厂 mui_menu：文件列表就是主菜单 ----
+     * 原厂 mui_menu@0x23204 直接在主菜单框内逐行画 file_info_list（+高亮+缩略图），
+     * ↑↓ 直接导航、A 直接启动，无需先按 START 进子页。我们的列表渲染在 UIP_LIST
+     * (ui.c:688) 已实现完整 8 行+高亮+core+缩略图，故进菜单时若有游戏就默认落在
+     * 列表页；START 仍可用于 列表<->菜单 切换（保留，不破坏现有行为）。 */
+    if (game_list_is_loaded() && game_list_count() > 0) {
+        gl_showing = true;
+        menu_gl_selected = menu_log_get_selected();   /* 恢复上次选中（对齐 autorestore） */
+        if (menu_gl_selected < 0 || menu_gl_selected >= game_list_count())
+            menu_gl_selected = 0;
+        menu_gl_scroll = (menu_gl_selected / GL_PAGE_SIZE) * GL_PAGE_SIZE;
+        LOG("main_menu: starting in list view (factory mui_menu model, %d games)",
+            game_list_count());
+    }
+
     while (1) {
         struct timeval tv;
         fd_set rfds;

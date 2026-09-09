@@ -133,23 +133,6 @@ static void get_ext(const char *path, char *out, size_t out_size)
     out[len] = '\0';
 }
 
-/* 拼接两个名称字段（如 "name_en1/name_en2"） */
-static void concat_name(char *out, size_t out_size,
-                        const char *part1, const char *part2)
-{
-    if (!part1 || !part1[0]) {
-        if (part2 && part2[0]) {
-            snprintf(out, out_size, "%s", part2);
-        } else {
-            out[0] = '\0';
-        }
-    } else if (!part2 || !part2[0]) {
-        snprintf(out, out_size, "%s", part1);
-    } else {
-        snprintf(out, out_size, "%s/%s", part1, part2);
-    }
-}
-
 /* ---- CSV 解析 ---- */
 
 int game_list_parse_csv(const char *csv_data, size_t csv_size,
@@ -192,13 +175,14 @@ int game_list_parse_csv(const char *csv_data, size_t csv_size,
         char *copy = strdup(line);
         if (!copy) { line_start = line_end + 1; continue; }
 
+        /* 1:1 对齐工厂 mui_do_file_list：分隔符为 ','(0x2c) 与 ';'(0x3b) 双分隔 */
         int fi = 0;
         char *saveptr;
-        tokens[fi] = strtok_r(copy, ";", &saveptr);
+        tokens[fi] = strtok_r(copy, ";,", &saveptr);
         while (tokens[fi] != NULL && fi < 5) {
             fields[fi] = trim_str(tokens[fi]);
             fi++;
-            tokens[fi] = strtok_r(NULL, ";", &saveptr);
+            tokens[fi] = strtok_r(NULL, ";,", &saveptr);
         }
         free(copy);
 
@@ -213,12 +197,9 @@ int game_list_parse_csv(const char *csv_data, size_t csv_size,
         strncpy(e->path, fields[0], GL_PATH_LEN - 1);
         extract_dir(e->path, e->dir, sizeof(e->dir));
 
-        /* 英文显示名 */
-        if (fi >= 3) {
-            concat_name(e->name_en, GL_NAME_LEN,
-                       fields[1] ? fields[1] : "",
-                       fields[2] ? fields[2] : "");
-        } else if (fi >= 2 && fields[1]) {
+        /* 英文显示名 = f1（工厂 DAT_003b2324 主显示名；f2 仅大写备用，f1 空才用）
+         * 1:1 对齐 mui_do_file_list：不再把 f1+f2 拼接（避免 "KOF 97KOF 97"） */
+        if (fi >= 2 && fields[1] && fields[1][0]) {
             strncpy(e->name_en, fields[1], GL_NAME_LEN - 1);
         } else {
             /* 从文件名生成默认英文名 */
@@ -229,14 +210,15 @@ int game_list_parse_csv(const char *csv_data, size_t csv_size,
             if (dot) *dot = '\0';
         }
 
-        /* 中文显示名（GB2312→UTF8） */
+        /* 中文显示名 = f3（工厂 DAT_003b23a4，GB2312→UTF8）
+         * 真数据实证：000/kof97.zip;KOF 97;KOF 97;拳皇97;QH97
+         *   f0=path  f1=KOF 97(英)  f2=KOF 97(大写)  f3=拳皇97(中文)  f4=QH97(代号)
+         * 注意：中文字段是 f3，不合并 f4（f4 是代号，工厂 DAT_003b24a4 不参与主显示） */
         char zh_tmp[GL_NAME_LEN * 2];
         zh_tmp[0] = '\0';
-        if (fi >= 5 && fields[3] && fields[3][0]) {
-            snprintf(zh_tmp, sizeof(zh_tmp), "%s/%s",
-                     fields[3], fields[4] ? fields[4] : "");
-        } else if (fi >= 4 && fields[3] && fields[3][0]) {
-            snprintf(zh_tmp, sizeof(zh_tmp), "%s", fields[3]);
+        if (fi >= 4 && fields[3] && fields[3][0]) {
+            strncpy(zh_tmp, fields[3], sizeof(zh_tmp) - 1);
+            zh_tmp[sizeof(zh_tmp) - 1] = '\0';
         }
 
         if (zh_tmp[0]) {
@@ -540,11 +522,24 @@ static int scan_directory(const char *dir_path, int *out_count)
  */
 static int try_load_from_root_dat(game_entry_t *entries, int max_entries)
 {
+    /* 1:1 对齐工厂：mui_menu@0x23204 用 sprintf(acStack_490,"%s/root.dat",root_path)，
+     * root_path=SD 根（work_path 去掉 /cubegm/）。真机 root.dat 在 /sdcard/root.dat，
+     * 不在 cubegm/ 下。先试 SD 根，回退 work_path（兼容 root.dat 拷进 cubegm/ 的情况）。 */
+    const char *bases[] = { rom_base_path, work_path };
+    FILE *fp = NULL;
     char path[512];
-    snprintf(path, sizeof(path), "%sroot.dat", work_path);
-
-    FILE *fp = fopen(path, "rb");
-    if (!fp) return 0;
+    int used_base = -1;
+    for (int b = 0; b < 2; b++) {
+        snprintf(path, sizeof(path), "%sroot.dat", bases[b]);
+        fp = fopen(path, "rb");
+        if (fp) { used_base = b; break; }
+    }
+    if (!fp) {
+        LOG("try_load_from_root_dat: root.dat not found (tried %sroot.dat and %sroot.dat)",
+            rom_base_path, work_path);
+        return 0;
+    }
+    (void)used_base;
 
     unsigned char sig[4];
     if (fread(sig, 1, 4, fp) != 4) { fclose(fp); return 0; }

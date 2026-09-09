@@ -84,11 +84,39 @@ static void thumb_extract_basename(const char *src, char *dst, int dst_size)
 }
 
 /* ============================================================
+ * thumb_build_dat_path — 构造 <NNN>/<NNN>.dat 的绝对路径
+ *
+ * 工厂实证（FUN_00014f84 mui_DisplayThumbnail L37）：
+ *   sprintf("%s/%s/%s.dat", root_path, basepath, basepath)
+ *   root_path = work_path 去掉 "/cubegm" 段（main_Menu L13-14），
+ *   即 SD 根。本实现 rom_base_path 等价于工厂 root_path。
+ *
+ * 优先级：rom_base_path（SD 根，工厂一致）先 stat，命中即用；
+ * 未命中则回落 work_path（cubegm/，兼容旧布局）。
+ * 返回：true = stat 命中（在 base），false = 仅按 rom_base_path 拼出。
+ * ============================================================ */
+static bool thumb_build_dat_path(const char *basepath,
+                                 char *out, size_t out_size)
+{
+    const char *bases[] = { rom_base_path, work_path };
+    for (int i = 0; i < 2; i++) {
+        if (!bases[i] || !bases[i][0]) continue;
+        snprintf(out, out_size, "%s%s/%s.dat", bases[i], basepath, basepath);
+        struct stat st;
+        if (stat(out, &st) == 0) return true;
+    }
+    /* 兜底：按工厂 root_path（=rom_base_path）拼出，交由调用方判断容器 */
+    snprintf(out, out_size, "%s%s/%s.dat",
+             rom_base_path, basepath, basepath);
+    return false;
+}
+
+/* ============================================================
  * thumb_has — 检查游戏是否有缩略图
  *
  * 逻辑：
  *   1. 从 game_path 提取 basepath（如 "000"）
- *   2. 检查 <work_path>/<basepath>/<basepath>.dat 是否存在
+ *   2. 检查 <root_path>/<basepath>/<basepath>.dat 是否存在（SD 根优先）
  *   3. 若是 WQW 容器，检查是否含 <basename>_*.raw
  * ============================================================ */
 
@@ -102,10 +130,9 @@ bool thumb_has(const char *game_path)
 
     if (!basepath[0]) return false;
 
-    /* 构造 .dat 路径 */
+    /* 构造 .dat 路径（工厂 root_path=SD 根优先, 次 work_path） */
     char dat_path[512];
-    snprintf(dat_path, sizeof(dat_path), "%s%s/%s.dat",
-             work_path, basepath, basepath);
+    thumb_build_dat_path(basepath, dat_path, sizeof(dat_path));
 
     if (!wqw_is_container(dat_path)) return false;
 
@@ -168,8 +195,7 @@ int thumb_extract_nth(const char *game_path, int index,
     if (!basepath[0]) return -1;
 
     char dat_path[512];
-    snprintf(dat_path, sizeof(dat_path), "%s%s/%s.dat",
-             work_path, basepath, basepath);
+    thumb_build_dat_path(basepath, dat_path, sizeof(dat_path));
 
     char thumb_name[200];
     snprintf(thumb_name, sizeof(thumb_name), "%s_%03d.raw", basename, index);
@@ -241,8 +267,7 @@ int thumb_count(const char *game_path)
     if (!basepath[0]) return 0;
 
     char dat_path[512];
-    snprintf(dat_path, sizeof(dat_path), "%s%s/%s.dat",
-             work_path, basepath, basepath);
+    thumb_build_dat_path(basepath, dat_path, sizeof(dat_path));
 
     if (!wqw_is_container(dat_path)) return 0;
 
