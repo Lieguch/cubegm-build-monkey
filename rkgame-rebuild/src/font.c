@@ -20,7 +20,11 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-/* stb_truetype.h 单次 include（header-only 实现） */
+/* stb_truetype.h 单次 include（header-only 实现）。
+ * 单头文件库必须恰好在一个 .c 里 #define STB_TRUETYPE_IMPLEMENTATION
+ * 再 #include，否则只有函数声明（会链接到 factory_c_stubs 的空桩 → 字体失败）。
+ * 已核实：全工程仅 font.c 包含 stb_truetype.h，宏开在此唯一文件即正确。 */
+#define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
 /* ---- 全局状态 ---- */

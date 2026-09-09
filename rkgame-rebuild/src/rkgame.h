@@ -36,6 +36,7 @@ typedef struct {
 /* ---- 全局状态 ---- */
 
 extern char     work_path[512];    /* /sdcard/cubegm/ */
+extern char     rom_base_path[512]; /* /sdcard/ (work_path 的父目录, ROM 000-008 所在) */
 extern char     resource_path[512]; /* /sdcard/cubegm/resource/ */
 extern char     autorunfile[1024]; /* 启动时传入的 ROM 路径 */
 extern char     autorundriver[128];

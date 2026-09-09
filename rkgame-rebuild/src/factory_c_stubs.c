@@ -17,7 +17,6 @@
 
 #include <stddef.h>
 
-
 void AudioProcess(void) { /* no-op */ }
 
 int ClearBuffer(void) { return 0; }
@@ -220,7 +219,6 @@ void blockcopy(void) { /* no-op */ }
 
 void buttontoi(void) { /* no-op */ }
 
-
 void compare_by_index(void) { /* no-op */ }
 
 void compare_by_name(void) { /* no-op */ }
@@ -259,8 +257,6 @@ void gpsp_unzip(void) { /* no-op */ }
 
 int hz_reset(void) { return 0; }
 
-
-
 void index_sort(void) { /* no-op */ }
 
 int init_user_joy_key_mask(void) { return 0; }
@@ -270,7 +266,6 @@ void johab_hangul_decompose(void) { /* no-op */ }
 void joystick_input(void) { /* no-op */ }
 
 void joystick_poll(void) { /* no-op */ }
-
 
 void libiconvctl(void) { /* no-op */ }
 
@@ -330,7 +325,6 @@ int mui_load_state(void) { return 0; }
 
 void mui_menu(void) { /* no-op */ }
 
-
 void mui_outputxy_t(void) { /* no-op */ }
 
 void mui_recent(void) { /* no-op */ }
@@ -373,8 +367,6 @@ int mxmlEntityGetValue(void) { return 0; }
 
 int mxmlEntityRemoveCallback(void) { return 0; }
 
-
-
 int mxmlGetCDATA(void) { return 0; }
 
 int mxmlGetCustom(void) { return 0; }
@@ -407,9 +399,7 @@ int mxmlGetUserData(void) { return 0; }
 
 void mxmlIndexEnum(void) { /* no-op */ }
 
-
 int mxmlIndexGetCount(void) { return 0; }
-
 
 int mxmlIndexReset(void) { return 0; }
 
@@ -485,22 +475,17 @@ void mxmlWalkNext(void) { /* no-op */ }
 
 void mxmlWalkPrev(void) { /* no-op */ }
 
-
 void mxml_error(void) { /* no-op */ }
 
 void mxml_fd_putc(void) { /* no-op */ }
-
 
 void mxml_fd_write(void) { /* no-op */ }
 
 const char *mxml_file_putc(void) { return NULL; }
 
-
 void mxml_ignore_cb(void) { /* no-op */ }
 
 void mxml_integer_cb(void) { /* no-op */ }
-
-
 
 void mxml_new(void) { /* no-op */ }
 
@@ -546,7 +531,6 @@ void run_game(void) { /* no-op */ }
 
 void run_process(void) { /* no-op */ }
 
-
 void save_state(void) { /* no-op */ }
 
 void sfc_request(void) { /* no-op */ }
@@ -570,165 +554,6 @@ void spi_printf(void) { /* no-op */ }
 int spi_read(void) { return 0; }
 
 void spi_write(void) { /* no-op */ }
-
-void stbtt_BakeFontBitmap(void) { /* no-op */ }
-
-void stbtt_CompareUTF8toUTF16_bigendian(void) { /* no-op */ }
-
-int stbtt_FindGlyphIndex(void) { return 0; }
-
-int stbtt_FindMatchingFont(void) { return 0; }
-
-int stbtt_FreeBitmap(void) { return 0; }
-
-int stbtt_FreeSDF(void) { return 0; }
-
-int stbtt_FreeShape(void) { return 0; }
-
-int stbtt_GetBakedQuad(void) { return 0; }
-
-int stbtt_GetCodepointBitmap(void) { return 0; }
-
-int stbtt_GetCodepointBitmapBox(void) { return 0; }
-
-int stbtt_GetCodepointBitmapBoxSubpixel(void) { return 0; }
-
-int stbtt_GetCodepointBitmapSubpixel(void) { return 0; }
-
-int stbtt_GetCodepointBox(void) { return 0; }
-
-int stbtt_GetCodepointHMetrics(void) { return 0; }
-
-int stbtt_GetCodepointKernAdvance(void) { return 0; }
-
-int stbtt_GetCodepointSDF(void) { return 0; }
-
-int stbtt_GetCodepointShape(void) { return 0; }
-
-int stbtt_GetFontBoundingBox(void) { return 0; }
-
-int stbtt_GetFontNameString(void) { return 0; }
-
-int stbtt_GetFontOffsetForIndex(void) { return 0; }
-
-int stbtt_GetFontVMetrics(void) { return 0; }
-
-int stbtt_GetFontVMetricsOS2(void) { return 0; }
-
-int stbtt_GetGlyphBitmap(void) { return 0; }
-
-int stbtt_GetGlyphBitmapBox(void) { return 0; }
-
-int stbtt_GetGlyphBitmapBoxSubpixel(void) { return 0; }
-
-int stbtt_GetGlyphBitmapSubpixel(void) { return 0; }
-
-int stbtt_GetGlyphBox(void) { return 0; }
-
-int stbtt_GetGlyphHMetrics(void) { return 0; }
-
-int stbtt_GetGlyphKernAdvance(void) { return 0; }
-
-int stbtt_GetGlyphSDF(void) { return 0; }
-
-int stbtt_GetGlyphShape(void) { return 0; }
-
-int stbtt_GetNumberOfFonts(void) { return 0; }
-
-int stbtt_GetPackedQuad(void) { return 0; }
-
-int stbtt_GetScaledFontVMetrics(void) { return 0; }
-
-int stbtt_InitFont(void) { return 0; }
-
-void stbtt_IsGlyphEmpty(void) { /* no-op */ }
-
-void stbtt_MakeCodepointBitmap(void) { /* no-op */ }
-
-void stbtt_MakeCodepointBitmapSubpixel(void) { /* no-op */ }
-
-void stbtt_MakeCodepointBitmapSubpixelPrefilter(void) { /* no-op */ }
-
-void stbtt_MakeGlyphBitmap(void) { /* no-op */ }
-
-void stbtt_MakeGlyphBitmapSubpixel(void) { /* no-op */ }
-
-void stbtt_MakeGlyphBitmapSubpixelPrefilter(void) { /* no-op */ }
-
-void stbtt_PackBegin(void) { /* no-op */ }
-
-void stbtt_PackEnd(void) { /* no-op */ }
-
-void stbtt_PackFontRange(void) { /* no-op */ }
-
-void stbtt_PackFontRanges(void) { /* no-op */ }
-
-void stbtt_PackFontRangesGatherRects(void) { /* no-op */ }
-
-void stbtt_PackFontRangesPackRects(void) { /* no-op */ }
-
-void stbtt_PackFontRangesRenderIntoRects(void) { /* no-op */ }
-
-void stbtt_PackSetOversampling(void) { /* no-op */ }
-
-void stbtt_PackSetSkipMissingCodepoints(void) { /* no-op */ }
-
-void stbtt_Rasterize(void) { /* no-op */ }
-
-void stbtt_ScaleForMappingEmToPixels(void) { /* no-op */ }
-
-void stbtt_ScaleForPixelHeight(void) { /* no-op */ }
-
-void stbtt__CompareUTF8toUTF16_bigendian_prefix(void) { /* no-op */ }
-
-int stbtt__GetGlyfOffset(void) { return 0; }
-
-int stbtt__GetGlyphClass(void) { return 0; }
-
-int stbtt__cff_get_index(void) { return 0; }
-
-
-void stbtt__cff_int(void) { /* no-op */ }
-
-int stbtt__close_shape(void) { return 0; }
-
-int stbtt__csctx_close_shape(void) { return 0; }
-
-void stbtt__csctx_rccurve_to(void) { /* no-op */ }
-
-void stbtt__csctx_rline_to(void) { /* no-op */ }
-
-void stbtt__csctx_rmove_to(void) { /* no-op */ }
-
-void stbtt__csctx_v(void) { /* no-op */ }
-
-void stbtt__cuberoot(void) { /* no-op */ }
-
-int stbtt__dict_get_ints(void) { return 0; }
-
-int stbtt__find_table(void) { return 0; }
-
-int stbtt__get_subrs(void) { return 0; }
-
-void stbtt__h_prefilter(void) { /* no-op */ }
-
-
-void stbtt__isfont(void) { /* no-op */ }
-
-void stbtt__matchpair(void) { /* no-op */ }
-
-
-void stbtt__run_charstring(void) { /* no-op */ }
-
-void stbtt__sort_edges_quicksort(void) { /* no-op */ }
-
-void stbtt__tesselate_cubic(void) { /* no-op */ }
-
-void stbtt__tesselate_curve(void) { /* no-op */ }
-
-void stbtt__track_vertex(void) { /* no-op */ }
-
-void stbtt__v_prefilter(void) { /* no-op */ }
 
 int stella_Load(void) { return 0; }
 
@@ -820,7 +645,6 @@ int factory_c_stubs_count(void)
 {
     return 424;
 }
-
 
 /* GCC optimization artifact symbols (compiler-generated clones)
  */

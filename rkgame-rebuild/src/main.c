@@ -59,6 +59,7 @@ extern void *driver_handle;
 /* ---- 全局变量定义 ---- */
 
 char     work_path[512] = "/sdcard/cubegm/";
+char     rom_base_path[512] = "/sdcard/";
 char     resource_path[512];
 char     autorunfile[1024];
 char     autorundriver[128];
@@ -680,7 +681,16 @@ static void main_menu(void)
                         game_list_save_recent();
                         game_list_save_favorites();
                         char rom_path[1024];
-                        snprintf(rom_path, sizeof(rom_path), "%s%s", work_path, ge->path);
+                        /* ROM 实际在 SD 根（/sdcard/000/...），非 work_path 下。
+                         * ge->path 来自 filelist.xml，是相对 SD 根的（如 "002/Targa.zip"）。
+                         * 先试 rom_base，再回退 work_path（兼容 ROM 拷进 cubegm/ 的情况）。 */
+                        snprintf(rom_path, sizeof(rom_path), "%s%s", rom_base_path, ge->path);
+                        {
+                            struct stat st;
+                            if (stat(rom_path, &st) != 0) {
+                                snprintf(rom_path, sizeof(rom_path), "%s%s", work_path, ge->path);
+                            }
+                        }
                         const char *core_name = ge->core[0] ? ge->core
                                                  : game_list_find_core(ge->path);
                         if (!core_name) core_name = game_list_core_by_ext(
@@ -808,6 +818,25 @@ int main(int argc, char **argv)
     get_executable_path(work_path, sizeof(work_path));
     DBGP(GET_PATH);
     LOG("work_path = %s", work_path);
+
+    /* ROM 基目录 = work_path 的父目录。
+     * 真机布局：work_path=/sdcard/cubegm/，但 000-008 ROM 目录在 SD 根 /sdcard/，
+     * filelist.xml 里 name 是相对 SD 根的相对路径（如 "002/Targa.zip"）。
+     * 原厂 mui_run_game@0x229f8 用 root_path + "/" + path（root_path=SD 根）。 */
+    {
+        char tmp[512];
+        snprintf(tmp, sizeof(tmp), "%s", work_path);
+        size_t wl = strlen(tmp);
+        if (wl > 0 && tmp[wl - 1] == '/') tmp[wl - 1] = '\0'; /* /sdcard/cubegm */
+        char *ls = strrchr(tmp, '/');
+        if (ls) {
+            ls[1] = '\0';
+            snprintf(rom_base_path, sizeof(rom_base_path), "%s", tmp);
+        } else {
+            snprintf(rom_base_path, sizeof(rom_base_path), "/sdcard/");
+        }
+    }
+    LOG("rom_base_path = %s", rom_base_path);
 
     snprintf(resource_path, sizeof(resource_path), "%sresource/", work_path);
 

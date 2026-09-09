@@ -377,6 +377,65 @@ const char *game_list_core_by_ext(const char *ext)
     return core_lookup_by_ext(ext);
 }
 
+/* ---- RC-3: 以 filelist.xml 为权威来源填充游戏列表 ----
+ *
+ * 工厂行为：cores/filelist.xml（135 条 <file name core=>）是游戏清单 + 核心映射的
+ * 权威来源。原版 mui 直接据此列出。原实现只把 g_filelist[] 用于 get_core 查询，
+ * 从不作为游戏列表，导致真机上目录扫描全失败时菜单恒空。
+ *
+ * 本函数把每条 <file> 注入 g_gl.entries：
+ *   - path  = g_filelist[i].name（相对 SD 根，如 "002/Targa.zip"）
+ *   - core  = g_filelist[i].core
+ *   - name  = 文件名（去扩展）
+ *   - 仅保留文件真实存在者（rom_base_path 下 stat 命中；否则仍保留以不丢清单，
+ *     由 main.c 启动时再决定是否可用） */
+static int game_list_populate_from_filelist(void)
+{
+    if (g_filelist_count == 0) return 0;
+    if (!g_gl.entries || g_gl.capacity == 0) return 0;
+
+    int count = 0;
+    for (int i = 0; i < g_filelist_count && g_gl.count < g_gl.capacity; i++) {
+        game_entry_t *e = &g_gl.entries[g_gl.count];
+        memset(e, 0, sizeof(*e));
+
+        const char *name = g_filelist[i].name;   /* "002/Targa.zip" */
+        const char *core = g_filelist[i].core;
+
+        strncpy(e->path, name, GL_PATH_LEN - 1);
+        extract_dir(name, e->dir, sizeof(e->dir));
+
+        /* 显示名 = 文件名（去扩展） */
+        const char *base = strrchr(name, '/');
+        base = base ? base + 1 : name;
+        strncpy(e->name_en, base, GL_NAME_LEN - 1);
+        {
+            char *dot = strrchr(e->name_en, '.');
+            if (dot) *dot = '\0';
+        }
+        strncpy(e->name_zh, e->name_en, GL_NAME_LEN - 1);
+        strncpy(e->name, e->name_en, GL_NAME_LEN - 1);
+
+        if (core && core[0])
+            strncpy(e->core, core, 127);
+
+        /* 存在性检查（不强制，仅记录 has_thumbnail/可用性标记） */
+        {
+            char full[512];
+            snprintf(full, sizeof(full), "%s%s", rom_base_path, name);
+            struct stat st;
+            e->has_thumbnail = (stat(full, &st) == 0);
+        }
+
+        g_gl.count++;
+        count++;
+    }
+
+    LOG("game_list_populate_from_filelist: injected %d entries from %s",
+        count, "cores/filelist.xml");
+    return count;
+}
+
 /* ---- 目录扫描回退 ---- */
 
 static const char *known_exts[] = {
@@ -408,6 +467,18 @@ static int scan_directory(const char *dir_path, int *out_count)
     DIR *d = opendir(dir_path);
     if (!d) return 0;
 
+    /* dir_name = "000"（目录基名，用于拼相对路径，与 filelist.xml 一致） */
+    char dir_name[32];
+    {
+        char tmp[512];
+        snprintf(tmp, sizeof(tmp), "%s", dir_path);
+        while (tmp[0] == '/') memmove(tmp, tmp + 1, strlen(tmp));
+        char *sl = strrchr(tmp, '/');
+        if (sl) { size_t n = strlen(sl + 1); if (n >= sizeof(dir_name)) n = sizeof(dir_name) - 1;
+                  memcpy(dir_name, sl + 1, n); dir_name[n] = '\0'; }
+        else { snprintf(dir_name, sizeof(dir_name), "%s", tmp); }
+    }
+
     struct dirent *ent;
     int count = 0;
     while ((ent = readdir(d)) != NULL) {
@@ -418,10 +489,10 @@ static int scan_directory(const char *dir_path, int *out_count)
         game_entry_t *e = &g_gl.entries[g_gl.count];
         memset(e, 0, sizeof(*e));
 
-        /* 构造完整路径 */
-        snprintf(e->path, GL_PATH_LEN, "%s%s",
-                 dir_path[strlen(dir_path)-1] == '/' ? "" : "/",
-                 ent->d_name);
+        /* 存相对路径 "dir/filename"（与 filelist.xml 的 name 字段一致），
+         * 由 main.c 在启动时结合 rom_base_path/work_path 解析为绝对路径。 */
+        snprintf(e->path, GL_PATH_LEN, "%s/%s",
+                 dir_name[0] ? dir_name : "", ent->d_name);
 
         /* 提取目录名 */
         extract_dir(e->path, e->dir, sizeof(e->dir));
@@ -628,24 +699,42 @@ int game_list_load(void)
         }
     }
 
-    /* 回退：目录扫描 000-008 */
+    /* RC-3: 以 cores/filelist.xml 为权威游戏清单填充（135 条 + 核心映射） */
     if (count == 0) {
+        count = game_list_populate_from_filelist();
+    }
+
+    /* 回退：目录扫描 000-008。
+     * 修复两处根因：
+     *  (RC-2a) 原用 work_path=/sdcard/cubegm/ 拼 "000"，但 ROM 目录实际在 SD 根
+     *          /sdcard/（rom_base_path），原路径根本不存在 → 恒 0。
+     *  (RC-2b) 原 `g_gl.count = count`（count 仍为 0）会把 scan_directory 刚递增
+     *          进 g_gl.count 的条目全部清零 → 即使扫到也丢。现用前后差值累加。 */
+    if (count == 0) {
+        int before = g_gl.count;  /* 扫描前（此时应恒为 0） */
         const char *dirs[] = { "000", "001", "002", "003",
                                "004", "005", "006", "007", "008" };
-        for (int i = 0; i < 9; i++) {
-            if (g_gl.count >= g_gl.capacity) break;
-            char dir_path[512];
-            snprintf(dir_path, sizeof(dir_path), "%s%s",
-                     work_path, dirs[i]);
-            scan_directory(dir_path, NULL);
+        const char *bases[] = { rom_base_path, work_path };  /* SD 根优先, 次 cubegm/ */
+        for (int b = 0; b < 2 && count == 0; b++) {
+            struct stat sb;
+            for (int i = 0; i < 9; i++) {
+                if (g_gl.count >= g_gl.capacity) break;
+                char dir_path[512];
+                snprintf(dir_path, sizeof(dir_path), "%s%s",
+                         bases[b], dirs[i]);
+                if (stat(dir_path, &sb) != 0) continue;  /* 目录不存在则跳过 */
+                if (!S_ISDIR(sb.st_mode)) continue;
+                scan_directory(dir_path, NULL);
+            }
         }
+        count = g_gl.count - before;  /* 累加扫描到的条目，而非清零 */
     }
 
     g_gl.count = count;
     g_gl.loaded = count > 0;
 
     LOG("game_list_load: total %d games (root.dat=%d, dirs=%d)",
-        count, 0, g_gl.count - count);
+        count, 0, count);
 
     return g_gl.loaded ? 0 : -1;
 }
