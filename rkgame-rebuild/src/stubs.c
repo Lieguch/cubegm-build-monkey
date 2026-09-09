@@ -162,6 +162,42 @@ int resource_cpd_load(const char *path)
 }
 
 /* ============================================================
+ * 音频就绪检查 / 音频播放 — 由 audio.c 实现，此处提供 fallback 桩
+ * 若 audio.c 被裁剪，主循环仍可继续（不崩溃）
+ * ============================================================ */
+
+bool audio_is_ready(void)
+{
+    return false;
+}
+
+void audio_play(const void *buf, size_t frames)
+{
+    (void)buf; (void)frames;
+}
+
+/* ============================================================
+ * build_sstate_path() — 构造 Save State 文件路径
+ * 实际实现由 sram.c 提供，此处为 fallback 桩
+ * ============================================================ */
+
+void build_sstate_path(char *out, size_t out_sz, int slot)
+{
+    if (!out || out_sz == 0) return;
+    snprintf(out, out_sz, "/sdcard/cubegm/saves/sstate_%02d.sstate", slot);
+}
+
+/* ============================================================
+ * g_initscr_ready() — 检查初始化屏幕是否就绪
+ * 实际实现由 disp.c 提供，此处为 fallback 桩
+ * ============================================================ */
+
+int g_initscr_ready(void)
+{
+    return 1;
+}
+
+/* ============================================================
  * 诊断输出
  * ============================================================ */
 

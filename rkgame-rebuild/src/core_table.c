@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "rkgame.h"
 /* ============================================================
  * rkgame-rebuild — core_table.c
  *

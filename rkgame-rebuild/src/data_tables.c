@@ -7,6 +7,7 @@
 
 #include "data_tables.h"
 #include "debug.h"
+#include "rkgame.h"
 #include <string.h>
 #include <strings.h>
 

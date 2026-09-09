@@ -9,6 +9,7 @@
 #include "joystick_zip.h"
 #include "ui_zip.h"
 #include "debug.h"
+#include "rkgame.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

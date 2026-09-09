@@ -14,6 +14,7 @@
 
 #include "ui_zip.h"
 #include "debug.h"
+#include "rkgame.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

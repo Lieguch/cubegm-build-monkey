@@ -230,6 +230,10 @@ void config_save(void);
 void rklog(int level, const char *fmt, ...);
 #define LOG(fmt, ...) rklog(RKLOG_INFO, fmt, ##__VA_ARGS__)
 #define ERR(fmt, ...) rklog(RKLOG_ERROR, fmt, ##__VA_ARGS__)
+#define RKLOG_I(fmt, ...) rklog(RKLOG_INFO, fmt, ##__VA_ARGS__)
+#define RKLOG_W(fmt, ...) rklog(RKLOG_WARN, fmt, ##__VA_ARGS__)
+#define RKLOG_E(fmt, ...) rklog(RKLOG_ERROR, fmt, ##__VA_ARGS__)
+#define RKLOG_D(fmt, ...) rklog(RKLOG_DEBUG, fmt, ##__VA_ARGS__)
 
 /* ---- 模块导出 ---- */
 

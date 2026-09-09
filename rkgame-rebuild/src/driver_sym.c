@@ -4,6 +4,7 @@
 
 #include "driver_sym.h"
 #include "debug.h"
+#include "rkgame.h"
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>

@@ -38,6 +38,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 
 #include "rkgame.h"      /* disp_draw_text, disp_draw_rect, disp_present, joy_all_keys_state */
 
