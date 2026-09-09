@@ -274,7 +274,9 @@ static const joystick_profile_t built_in_profiles[] = {
  *   - joy_match_profile() 优先使用动态 profile（按 VID/PID 匹配）
  */
 
-/* 20-token 到 KEY_* 位掩码的映射（顺序与上表一致） */
+/* 20-token 到 KEY_* 位掩码的映射（顺序与上表一致）
+ * 说明：实际 profile 只有 12 个按钮名（不是 17 个），
+ * 后 8 个 token 是数字（hat/axisX/axisY 相关）。 */
 static const uint32_t token_to_key[17] = {
     [0]  = KEY_B,
     [1]  = KEY_Y,
@@ -295,24 +297,105 @@ static const uint32_t token_to_key[17] = {
     [16] = KEY_Y,    /* Y extra */
 };
 
+/* 按钮名字符串 → KEY_* 位掩码映射（2026-09-08 修复）
+ *
+ * 原厂 joystick.zip profile 的 token 0..11 是按钮名字符串
+ * （如 "A", "B", "TL1", "SELECT" 等），对应 rkgame 26 动作词表。
+ * 通过查表把按钮名映射到 KEY_* 位掩码，再写入 button_map[BTN_i]。 */
+static uint32_t button_name_to_key(const char *name)
+{
+    if (!name || !*name) return 0;
+    if (strcmp(name, "A") == 0) return KEY_A;
+    if (strcmp(name, "B") == 0) return KEY_B;
+    if (strcmp(name, "X") == 0) return KEY_X;
+    if (strcmp(name, "Y") == 0) return KEY_Y;
+    if (strcmp(name, "TL1") == 0) return KEY_L1;
+    if (strcmp(name, "TR1") == 0) return KEY_R1;
+    if (strcmp(name, "TL2") == 0) return KEY_L2;
+    if (strcmp(name, "TR2") == 0) return KEY_R2;
+    if (strcmp(name, "SELECT") == 0) return KEY_SELECT;
+    if (strcmp(name, "START") == 0) return KEY_START;
+    if (strcmp(name, "UP") == 0) return KEY_UP;
+    if (strcmp(name, "DOWN") == 0) return KEY_DOWN;
+    if (strcmp(name, "LEFT") == 0) return KEY_LEFT;
+    if (strcmp(name, "RIGHT") == 0) return KEY_RIGHT;
+    if (strcmp(name, "L1") == 0) return KEY_L1;
+    if (strcmp(name, "R1") == 0) return KEY_R1;
+    if (strcmp(name, "L2") == 0) return KEY_L2;
+    if (strcmp(name, "R2") == 0) return KEY_R2;
+    if (strcmp(name, "RESET") == 0) return KEY_START;
+    return 0;
+}
+
+/* 解析 profile CSV 文本（20 个逗号分隔的 token）
+ * 返回按钮映射数量。 */
+static int joy_parse_profile_csv(uint32_t *btn_map, char *buf, size_t size)
+{
+    memset(btn_map, 0, sizeof(uint32_t) * 320);
+    if (!buf || size == 0) return 0;
+
+    char tokens[20][32];
+    int count = 0;
+
+    char *p = buf;
+    char *end = buf + size;
+    while (p < end && count < 20) {
+        /* 跳过空白 */
+        while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+        if (p >= end) break;
+        /* 读取到逗号或结尾 */
+        char *tok_end = p;
+        while (tok_end < end && *tok_end != ',' && *tok_end != '\r' && *tok_end != '\n') tok_end++;
+        size_t n = (size_t)(tok_end - p);
+        if (n >= sizeof(tokens[0])) n = sizeof(tokens[0]) - 1;
+        memcpy(tokens[count], p, n);
+        tokens[count][n] = '\0';
+        count++;
+        p = tok_end;
+        if (p < end && *p == ',') p++;
+    }
+
+    int mapped = 0;
+    for (int i = 0; i < count && i < 12; i++) {
+        uint32_t key = button_name_to_key(tokens[i]);
+        if (key) {
+            int btn_code = BTN_0 + i;  /* 标准 evdev 按钮 0..11 */
+            if (btn_code < 320) {
+                btn_map[btn_code] = key;
+                mapped++;
+            }
+        }
+    }
+    return mapped;
+}
+
 #define JOY_MAX_DYNAMIC 16
 static joystick_profile_t g_dynamic_profiles[JOY_MAX_DYNAMIC];
 static uint32_t g_dynamic_btn_maps[JOY_MAX_DYNAMIC][320];
 static int g_dynamic_count = 0;
 
-/* 将 token 数组应用到 button_map（可写缓冲区） */
+/* 手动实现的 atoi（GCC 14 会把 atoi/strtol 优化成 __isoc23_strtol@GLIBC_2.38，
+ * 设备 glibc 2.29 不支持。见 rkgame-rebuild 铁律）。 */
+static int my_atoi(const char *s)
+{
+    int v = 0;
+    if (!s) return 0;
+    while (*s) {
+        if (*s >= '0' && *s <= '9') v = v * 10 + (*s - '0');
+        else if (*s == '-' || *s == '+' || *s == ' ' || *s == '\t' ||
+                 *s == '\r' || *s == '\n' || *s == ',') { }
+        else break;
+        s++;
+    }
+    return v;
+}
+
+/* 将 token 数组应用到 button_map（CSV 文本格式，2026-09-08 修复）
+ * 旧实现把 ASCII CSV 文本当成 16-bit LE 二进制 token 处理，导致全部错位。 */
 static void joy_apply_tokens(uint32_t *btn_map,
                              const unsigned char *tokens, size_t len)
 {
-    memset(btn_map, 0, sizeof(uint32_t) * 320);
-    for (int t = 0; t < 17 && (size_t)(t * 2 + 1) < len; t++) {
-        uint16_t btn_code = (uint16_t)(tokens[t * 2] | (tokens[t * 2 + 1] << 8));
-        uint32_t key = token_to_key[t];
-        if (btn_code == 0 || key == 0) continue;
-        if (btn_code < 320) {
-            btn_map[btn_code] = key;
-        }
-    }
+    joy_parse_profile_csv(btn_map, (char *)tokens, len);
 }
 
 /* 查找最佳匹配的 profile（优先动态 profile，再 fallback 到内置） */
@@ -383,7 +466,7 @@ static int joy_load_joystick_zip(void)
         (void)strtoul(names[i] + 10, NULL, 16);
 
         size_t ps;
-        if (ui_zip_find(z, names[i], &ps) < 0 || ps < 40) {
+        if (ui_zip_find(z, names[i], &ps) < 0 || ps < 10) {
             LOG("joy_load_joystick_zip: profile %s too small (%zu bytes)",
                 names[i], ps);
             continue;
@@ -407,10 +490,30 @@ static int joy_load_joystick_zip(void)
         p->button_map = g_dynamic_btn_maps[g_dynamic_count];
         joy_apply_tokens(p->button_map, tokens, pout);
 
-        /* hat/axis（token 17-19） */
-        if (17 * 2 < (int)pout) p->hat = tokens[17 * 2];
-        if (18 * 2 + 1 < (int)pout) p->axis_left = tokens[18 * 2];
-        if (19 * 2 + 1 < (int)pout) p->axis_right = tokens[19 * 2];
+        /* hat/axis（token 17-19，CSV 数字字符串）
+         * 解析 tokens[17..19] 的数字值 */
+        {
+            char tok_buf[20][32];
+            int tok_n = 0;
+            char *pp = (char *)tokens;
+            char *pend = pp + pout;
+            while (pp < pend && tok_n < 20) {
+                while (pp < pend && (*pp == ' ' || *pp == '\t' || *pp == '\r' || *pp == '\n')) pp++;
+                if (pp >= pend) break;
+                char *te = pp;
+                while (te < pend && *te != ',' && *te != '\r' && *te != '\n') te++;
+                size_t n = (size_t)(te - pp);
+                if (n >= sizeof(tok_buf[0])) n = sizeof(tok_buf[0]) - 1;
+                memcpy(tok_buf[tok_n], pp, n);
+                tok_buf[tok_n][n] = '\0';
+                tok_n++;
+                pp = te;
+                if (pp < pend && *pp == ',') pp++;
+            }
+            if (tok_n > 17) p->hat = (uint8_t)my_atoi(tok_buf[17]);
+            if (tok_n > 18) p->axis_left = (uint8_t)my_atoi(tok_buf[18]);
+            if (tok_n > 19) p->axis_right = (uint8_t)my_atoi(tok_buf[19]);
+        }
 
         g_dynamic_count++;
 
@@ -601,33 +704,31 @@ bool joy_poll(void)
 }
 
 /*
- * joy_get_key：查询手柄按键状态。
- * player: 0-1 (对应 rkgame 的两个 player 槽位)
- * key_id: 按键位掩码（如 KEY_A = 0x10）
+ * joy_get_key：查询手柄按键状态（状态机查询，不 read evdev）。
+ *
+ * 设计要点（2026-09-08 修复）：
+ *   旧实现每调用一次就 read evdev fd，导致 main_menu 一次循环调 26 次
+ *   事件被立即消耗，第二次开始永远读空 → 按键完全无效。
+ *
+ * 新实现：
+ *   - joy_poll() 是唯一的 evdev read 入口，更新 joy_key_state[] bitmap
+ *   - joy_get_key(player, mask) 只查询 bitmap（O(1)，不消耗事件）
+ *   - 传入 mask 是位掩码（如 KEY_A=0x10），非数字索引
+ *
+ * player: 0-1（对应 joy_devs[] 索引）
+ * key_id: 位掩码（如 KEY_A = (1<<4)）
  * 返回 1 = 按下，0 = 未按下
  */
+
+/* joy_key_state 定义在这里（前移），供 joy_get_key 使用。
+ * 原文件下部还有 static uint32_t joy_key_state[MAX_DEVICES]; 需要删除。 */
+static uint32_t joy_key_state[MAX_DEVICES];  /* per-device key mask */
+
 int joy_get_key(uint8_t player, uint32_t key_id)
 {
     if (player >= (uint8_t)joy_dev_count) return 0;
-
-    joy_device_t *dev = &joy_devs[player];
-    if (dev->event_fd < 0) return 0;
-
-    /* 读取所有待处理事件（非阻塞） */
-    struct input_event ev[32];
-    ssize_t n = read(dev->event_fd, ev, sizeof(ev));
-    if (n <= 0) return 0;
-
-    size_t count = n / sizeof(struct input_event);
-    for (size_t j = 0; j < count; j++) {
-        struct input_event *e = &ev[j];
-        if (e->type == EV_KEY && e->value > 0) {
-            unsigned int code = (unsigned int)e->code;
-            if (code < 320 && dev->button_map[code] == key_id)
-                return 1;
-        }
-    }
-    return 0;
+    if (!key_id) return 0;
+    return (joy_key_state[player] & key_id) ? 1 : 0;
 }
 
 /*
@@ -699,7 +800,7 @@ void joy_print_diag(void)
  * ============================================================ */
 
 /* joy_state 内部使用的键位 bitmap（由 joy_poll 维护） */
-static uint32_t joy_key_state[MAX_DEVICES];  /* per-device key mask */
+/* static uint32_t joy_key_state[MAX_DEVICES]; 已前移到 joy_get_key 之前定义 */
 
 /* 公开访问函数：返回指定设备的当前按键 bitmask。
  * 供 sstate_check_hotkey() 等外部模块使用，避免重复 read() evdev fd。 */

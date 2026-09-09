@@ -451,7 +451,10 @@ void autorun(const char *rom, const char *driver)
 static void main_menu(void)
 {
     LOG("main_menu: entering menu (DRM ready=%d)", disp_is_ready() ? 1 : 0);
-    ERR("main_menu: full UI not supported yet, need autorun to start ROM");
+    /* 说明：主菜单本身可导航（搜索/设置/文件浏览器/游戏列表），
+     * 只有启动 ROM 时才走 core_load → autorun 路径。这里不再输出
+     * "full UI not supported yet" 误导性日志（2026-09-08 修复）。 */
+    LOG("main_menu: entering interactive menu loop");
 
     /* 如果 DRM/KMS 可用，渲染启动画面菜单 */
     if (disp_is_ready()) {
@@ -478,7 +481,7 @@ static void main_menu(void)
     int    redraw_count   = 0;
 
     /* ---- 游戏列表导航状态（P2.2 + Task #39） ---- */
-    int   gl_prev_keys[26] = {0};          /* 上帧按键状态（边缘检测） */
+    /* int gl_prev_keys[26] 已删除（改用 gl_prev_state bitmask，见下方定义） */
     bool  gl_showing     = false;          /* 是否正在显示游戏列表 */
     bool  gl_searching   = false;          /* 是否正在显示搜索页 */
     bool  gl_setting     = false;          /* 是否正在显示设置页 */
@@ -493,18 +496,23 @@ static void main_menu(void)
     int   fb_selected = 0;                 /* 当前选中索引 */
     int   fb_scroll = 0;                   /* 滚动偏移 */
 
-    /* 标准按键映射（基于 joystick.zip 默认 profile） */
-    #define KEY_UP       10   /* 上 */
-    #define KEY_DOWN     11   /* 下 */
-    #define KEY_LEFT     12   /* 左 */
-    #define KEY_RIGHT    13   /* 右 */
-    #define KEY_OK       0    /* A 键 = OK */
-    #define KEY_CANCEL   1    /* B 键 = 取消 */
-    #define KEY_FAVORITE 2    /* X 键 = 收藏 */
-    #define KEY_START    8    /* START = 菜单切换 */
-    #define KEY_SEARCH   9    /* SELECT = 搜索 */
-    #define KEY_TYPE     10   /* L1 = 游戏分类 */
-    #define KEY_BROWSER  11   /* L2 = 文件浏览器 */
+    /* 标准按键位掩码（2026-09-08 修复：改用位掩码，非数字索引）
+     * 与 evdev.c 中 KEY_* 定义一致，与 libretro JOYPAD id 对应。
+     * 之前用数字 0-25 作为 key_id 导致 joy_get_key 位掩码比较全失败。 */
+    #define KEY_UP       (1u << 0)   /* 上    */
+    #define KEY_DOWN     (1u << 1)   /* 下    */
+    #define KEY_LEFT     (1u << 2)   /* 左    */
+    #define KEY_RIGHT    (1u << 3)   /* 右    */
+    #define KEY_OK       (1u << 4)   /* A 键 = OK */
+    #define KEY_CANCEL   (1u << 5)   /* B 键 = 取消 */
+    #define KEY_FAVORITE (1u << 6)   /* X 键 = 收藏（临时用 SELECT 位） */
+    #define KEY_START    (1u << 7)   /* START = 菜单切换 */
+    #define KEY_SEARCH   (1u << 6)   /* SELECT = 搜索 */
+    #define KEY_TYPE     (1u << 8)   /* L1 = 游戏分类 */
+    #define KEY_BROWSER  (1u << 9)   /* R1 = 文件浏览器 */
+
+    /* 上帧按键状态 bitmask（用于边缘检测） */
+    uint32_t gl_prev_state = 0;
 
     while (1) {
         struct timeval tv;
@@ -521,19 +529,18 @@ static void main_menu(void)
                 "SA_RESTART will resume the wait below)", sig);
         }
 
-        /* 周期性重绘菜单（每 5 秒），让 DRM 显示不褪色，并验证
-         * disp_draw_menu 不会 crash。 */
         time_t now = time(NULL);
 
-        /* ---- 读取手柄按键状态（每帧都读，不限于有游戏时） ---- */
-        int keys[26];
-        for (i = 0; i < 26; i++) {
-            keys[i] = joy_get_key(0, (uint32_t)i);
-        }
+        /* ---- 读取手柄当前按键状态（一次性获取，非阻塞查询） ----
+         * joy_key_state_get 从 state bitmap 读取，不消耗 evdev 事件。
+         * 事件消费由后面的 joy_poll() 在 select 返回后执行。 */
+        uint32_t state   = joy_key_state_get(0);
+        uint32_t pressed = state & ~gl_prev_state;   /* 本帧新按下 */
+        /* uint32_t released = gl_prev_state & ~state; 本帧新释放（暂未使用） */
 
         /* ---- 基础菜单导航（无游戏也生效） ---- */
         /* START: 进入游戏列表（需有游戏）或切换视图 */
-        if (keys[KEY_START] && !gl_prev_keys[KEY_START]) {
+        if (pressed & KEY_START) {
             if (gl_showing) {
                 gl_showing = false;
                 LOG("main_menu: returning to main menu");
@@ -549,28 +556,21 @@ static void main_menu(void)
         }
 
         /* SELECT: 搜索页 */
-        if (keys[KEY_SEARCH] && !gl_prev_keys[KEY_SEARCH]) {
+        if (pressed & KEY_SEARCH) {
             gl_searching = !gl_searching;
             if (gl_searching) { gl_showing = false; gl_setting = false; gl_typing = false; gl_browser = false; }
             LOG("main_menu: search page %s", gl_searching ? "entered" : "exited");
         }
 
-        /* L1 (key 8): 设置页 */
-        if (keys[8] && !gl_prev_keys[8]) {
+        /* L1: 设置页 */
+        if (pressed & KEY_TYPE) {
             gl_setting = !gl_setting;
             if (gl_setting) { gl_showing = false; gl_searching = false; gl_typing = false; gl_browser = false; }
             LOG("main_menu: setting page %s", gl_setting ? "entered" : "exited");
         }
 
-        /* L2 (key 10): 游戏分类页 */
-        if (keys[KEY_TYPE] && !gl_prev_keys[KEY_TYPE]) {
-            gl_typing = !gl_typing;
-            if (gl_typing) { gl_showing = false; gl_searching = false; gl_setting = false; gl_browser = false; }
-            LOG("main_menu: type page %s", gl_typing ? "entered" : "exited");
-        }
-
-        /* R1 (key 11): 文件浏览器 */
-        if (keys[KEY_BROWSER] && !gl_prev_keys[KEY_BROWSER]) {
+        /* R1: 文件浏览器 */
+        if (pressed & KEY_BROWSER) {
             gl_browser = !gl_browser;
             if (gl_browser) {
                 gl_showing = false; gl_searching = false; gl_setting = false; gl_typing = false;
@@ -581,7 +581,7 @@ static void main_menu(void)
         }
 
         /* B/CANCEL: 退出当前子视图返回主菜单 */
-        if (keys[KEY_CANCEL] && !gl_prev_keys[KEY_CANCEL] &&
+        if ((pressed & KEY_CANCEL) &&
             (gl_showing || gl_searching || gl_setting || gl_typing)) {
             gl_showing = false; gl_searching = false;
             gl_setting = false; gl_typing = false;
@@ -598,7 +598,7 @@ static void main_menu(void)
 
             /* 文件浏览器按键处理 */
             if (gl_browser) {
-                if (keys[KEY_CANCEL] && !gl_prev_keys[KEY_CANCEL]) {
+                if (pressed & KEY_CANCEL) {
                     char *slash = strrchr(fb_path, '/');
                     if (slash && slash != fb_path) {
                         *slash = '\0';
@@ -608,7 +608,7 @@ static void main_menu(void)
                     }
                     LOG("file browser: path=%s", fb_path);
                 }
-                if (keys[KEY_OK] && !gl_prev_keys[KEY_OK] && fb_count > 0) {
+                if ((pressed & KEY_OK) && fb_count > 0) {
                     char full[600];
                     snprintf(full, sizeof(full), "%s/%s", fb_path, fb_files[fb_selected]);
                     struct stat st;
@@ -618,17 +618,17 @@ static void main_menu(void)
                         LOG("file browser: entered %s", fb_path);
                     }
                 }
-                if (keys[KEY_START] && !gl_prev_keys[KEY_START]) {
+                if (pressed & KEY_START) {
                     gl_browser = false;
                     LOG("file browser: closed");
                 }
                 if (fb_count > 0) {
-                    if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
+                    if (pressed & KEY_UP) {
                         fb_selected--;
                         if (fb_selected < 0) fb_selected = fb_count - 1;
                         if (fb_selected < fb_scroll) fb_scroll = fb_selected;
                     }
-                    if (keys[KEY_DOWN] && !gl_prev_keys[KEY_DOWN]) {
+                    if (pressed & KEY_DOWN) {
                         fb_selected++;
                         if (fb_selected >= fb_count) fb_selected = 0;
                         if (fb_selected >= fb_scroll + GL_PAGE_SIZE)
@@ -639,13 +639,13 @@ static void main_menu(void)
 
             /* 上/下选择 + OK 启动（仅游戏列表视图） */
             if (gl_showing) {
-                if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
+                if (pressed & KEY_UP) {
                     menu_gl_selected--;
                     if (menu_gl_selected < 0) menu_gl_selected = count - 1;
                     if (menu_gl_selected < menu_gl_scroll) menu_gl_scroll = menu_gl_selected;
                     LOG("main_menu: selected %d/%d", menu_gl_selected + 1, count);
                 }
-                if (keys[KEY_DOWN] && !gl_prev_keys[KEY_DOWN]) {
+                if (pressed & KEY_DOWN) {
                     menu_gl_selected++;
                     if (menu_gl_selected >= count) menu_gl_selected = 0;
                     if (menu_gl_selected >= menu_gl_scroll + GL_PAGE_SIZE)
@@ -654,7 +654,7 @@ static void main_menu(void)
                 }
 
                 /* 收藏切换（按 X） */
-                if (keys[KEY_FAVORITE] && !gl_prev_keys[KEY_FAVORITE]) {
+                if (pressed & KEY_FAVORITE) {
                     const game_entry_t *ge = game_list_get(menu_gl_selected);
                     if (ge) {
                         if (game_list_is_favorite(ge->path)) {
@@ -670,7 +670,7 @@ static void main_menu(void)
                 }
 
                 /* 启动游戏（按 A/OK） */
-                if (keys[KEY_OK] && !gl_prev_keys[KEY_OK]) {
+                if (pressed & KEY_OK) {
                     const game_entry_t *ge = game_list_get(menu_gl_selected);
                     if (ge) {
                         LOG("main_menu: launching game %d/%d: %s (%s)",
@@ -695,12 +695,13 @@ static void main_menu(void)
         }
 
         /* ---- 更新按键状态（边缘检测） ---- */
-        for (i = 0; i < 26; i++) gl_prev_keys[i] = keys[i];
+        gl_prev_state = state;
 
         /* ---- 调度 UI 模块 tick ---- */
         ui_page_state_t cur_page = m_ui_current_page(
             gl_showing, gl_searching, gl_setting, gl_typing, gl_browser);
-        m_ui_dispatch(keys[KEY_OK], cur_page);
+        int key_ok_pressed = (pressed & KEY_OK) ? 1 : 0;
+        m_ui_dispatch(key_ok_pressed, cur_page);
 
         /* ---- 重绘当前页面（每次按键或每 5 秒自动重绘） ---- */
         if (disp_is_ready() && ui_is_ready()) {
