@@ -521,19 +521,70 @@ static void main_menu(void)
                 "SA_RESTART will resume the wait below)", sig);
         }
 
-        /* 周期性重绘菜单（每 5 秒），让 DRM 显示不褪色，并验证
-         * disp_draw_menu 不会 crash。 */
-        time_t now = time(NULL);
-        if (disp_is_ready() && now - last_redraw >= 5) {
-            if (ui_is_ready())
-                ui_draw_menu();
-            else
-                disp_draw_menu();
-            redraw_count++;
-            last_redraw = now;
+        /* ---- 读取手柄按键状态（每帧都读，不限于有游戏时） ---- */
+        int keys[26];
+        for (i = 0; i < 26; i++) {
+            keys[i] = joy_get_key(0, (uint32_t)i);
         }
 
-        /* ---- 游戏列表导航（Task #39） ---- */
+        /* ---- 基础菜单导航（无游戏也生效） ---- */
+        /* START: 进入游戏列表（需有游戏）或切换视图 */
+        if (keys[KEY_START] && !gl_prev_keys[KEY_START]) {
+            if (gl_showing) {
+                gl_showing = false;
+                LOG("main_menu: returning to main menu");
+            } else if (!gl_searching && !gl_setting && !gl_typing && !gl_browser) {
+                if (game_list_is_loaded() && game_list_count() > 0) {
+                    gl_showing = true;
+                    menu_gl_selected = 0;
+                    menu_gl_scroll = 0;
+                    LOG("main_menu: game list view activated (%d games)",
+                        game_list_count());
+                }
+            }
+        }
+
+        /* SELECT: 搜索页 */
+        if (keys[KEY_SEARCH] && !gl_prev_keys[KEY_SEARCH]) {
+            gl_searching = !gl_searching;
+            if (gl_searching) { gl_showing = false; gl_setting = false; gl_typing = false; gl_browser = false; }
+            LOG("main_menu: search page %s", gl_searching ? "entered" : "exited");
+        }
+
+        /* L1 (key 8): 设置页 */
+        if (keys[8] && !gl_prev_keys[8]) {
+            gl_setting = !gl_setting;
+            if (gl_setting) { gl_showing = false; gl_searching = false; gl_typing = false; gl_browser = false; }
+            LOG("main_menu: setting page %s", gl_setting ? "entered" : "exited");
+        }
+
+        /* L2 (key 10): 游戏分类页 */
+        if (keys[KEY_TYPE] && !gl_prev_keys[KEY_TYPE]) {
+            gl_typing = !gl_typing;
+            if (gl_typing) { gl_showing = false; gl_searching = false; gl_setting = false; gl_browser = false; }
+            LOG("main_menu: type page %s", gl_typing ? "entered" : "exited");
+        }
+
+        /* R1 (key 11): 文件浏览器 */
+        if (keys[KEY_BROWSER] && !gl_prev_keys[KEY_BROWSER]) {
+            gl_browser = !gl_browser;
+            if (gl_browser) {
+                gl_showing = false; gl_searching = false; gl_setting = false; gl_typing = false;
+                snprintf(fb_path, sizeof(fb_path), "%s%s", work_path, g_cfg.filebrowser);
+                fb_count = 0; fb_selected = 0; fb_scroll = 0;
+                LOG("main_menu: file browser opened at %s", fb_path);
+            }
+        }
+
+        /* B/CANCEL: 退出当前子视图返回主菜单 */
+        if (keys[KEY_CANCEL] && !gl_prev_keys[KEY_CANCEL] &&
+            (gl_showing || gl_searching || gl_setting || gl_typing)) {
+            gl_showing = false; gl_searching = false;
+            gl_setting = false; gl_typing = false;
+            LOG("main_menu: back to main menu");
+        }
+
+        /* ---- 游戏列表导航（仅有游戏时生效） ---- */
         if (game_list_is_loaded() && game_list_count() > 0) {
             int count = game_list_count();
 
@@ -541,65 +592,8 @@ static void main_menu(void)
             if (menu_gl_selected < 0) menu_gl_selected = 0;
             if (menu_gl_selected >= count) menu_gl_selected = count - 1;
 
-            /* 检查按键（边缘检测：上帧未按下 + 本帧按下） */
-            int keys[26];
-            for (i = 0; i < 26; i++) {
-                keys[i] = joy_get_key(0, (uint32_t)i);
-            }
-
-            /* 切换到游戏列表视图（按 START） */
-            if (keys[KEY_START] && !gl_prev_keys[KEY_START] && !gl_showing) {
-                gl_showing = true;
-                gl_searching = false;
-                gl_setting = false;
-                menu_gl_selected = 0;
-                menu_gl_scroll = 0;
-                LOG("main_menu: game list view activated (%d games)", count);
-            }
-
-            /* 搜索页（按 SELECT） */
-            if (keys[KEY_SEARCH] && !gl_prev_keys[KEY_SEARCH]) {
-                gl_searching = !gl_searching;
-                if (gl_searching) { gl_showing = false; gl_setting = false; }
-                LOG("main_menu: search page %s", gl_searching ? "entered" : "exited");
-            }
-
-            /* 设置页（按 L1 = key 8） */
-            if (keys[8] && !gl_prev_keys[8]) {
-                gl_setting = !gl_setting;
-                if (gl_setting) { gl_showing = false; gl_searching = false; gl_typing = false; }
-                LOG("main_menu: setting page %s", gl_setting ? "entered" : "exited");
-            }
-
-            /* 游戏分类页（按 L2 = key 10，进入 type.raw 页面） */
-            if (keys[KEY_TYPE] && !gl_prev_keys[KEY_TYPE]) {
-                gl_typing = !gl_typing;
-                if (gl_typing) { gl_showing = false; gl_searching = false; gl_setting = false; gl_browser = false; }
-                LOG("main_menu: type page %s", gl_typing ? "entered" : "exited");
-            }
-
-            /* 文件浏览器（按 R1 = key 11，<filebrowser> 配置项） */
-            if (keys[KEY_BROWSER] && !gl_prev_keys[KEY_BROWSER]) {
-                gl_browser = !gl_browser;
-                if (gl_browser) {
-                    gl_showing = false; gl_searching = false; gl_setting = false; gl_typing = false;
-                    /* 初始化浏览路径为 filebrowser 配置值 */
-                    snprintf(fb_path, sizeof(fb_path), "%s%s", work_path, g_cfg.filebrowser);
-                    fb_count = 0; fb_selected = 0; fb_scroll = 0;
-                    LOG("main_menu: file browser opened at %s", fb_path);
-                }
-            }
-
-            /* 返回主菜单（按 START 或 CANCEL） */
-            if ((keys[KEY_START] || keys[KEY_CANCEL]) &&
-                !gl_prev_keys[KEY_START] && gl_showing) {
-                gl_showing = false;
-                LOG("main_menu: returning to main menu");
-            }
-
             /* 文件浏览器按键处理 */
             if (gl_browser) {
-                /* B 键：返回上一级目录 */
                 if (keys[KEY_CANCEL] && !gl_prev_keys[KEY_CANCEL]) {
                     char *slash = strrchr(fb_path, '/');
                     if (slash && slash != fb_path) {
@@ -610,7 +604,6 @@ static void main_menu(void)
                     }
                     LOG("file browser: path=%s", fb_path);
                 }
-                /* A 键：进入目录 */
                 if (keys[KEY_OK] && !gl_prev_keys[KEY_OK] && fb_count > 0) {
                     char full[600];
                     snprintf(full, sizeof(full), "%s/%s", fb_path, fb_files[fb_selected]);
@@ -621,12 +614,10 @@ static void main_menu(void)
                         LOG("file browser: entered %s", fb_path);
                     }
                 }
-                /* START 键：退出浏览器 */
                 if (keys[KEY_START] && !gl_prev_keys[KEY_START]) {
                     gl_browser = false;
                     LOG("file browser: closed");
                 }
-                /* 上下选择 */
                 if (fb_count > 0) {
                     if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
                         fb_selected--;
@@ -642,7 +633,7 @@ static void main_menu(void)
                 }
             }
 
-            /* 上/下选择 */
+            /* 上/下选择 + OK 启动（仅游戏列表视图） */
             if (gl_showing) {
                 if (keys[KEY_UP] && !gl_prev_keys[KEY_UP]) {
                     menu_gl_selected--;
@@ -680,95 +671,72 @@ static void main_menu(void)
                     if (ge) {
                         LOG("main_menu: launching game %d/%d: %s (%s)",
                             menu_gl_selected + 1, count, ge->path, ge->core);
-
-                        /* Task #39: 更新最近列表 */
                         game_list_update_recent(ge->path);
                         game_list_save_recent();
-
-                        /* 保存游戏列表状态 */
-                        game_list_save_recent();
                         game_list_save_favorites();
-
-                        /* 启动游戏 */
                         char rom_path[1024];
-                        snprintf(rom_path, sizeof(rom_path), "%s%s",
-                                 work_path, ge->path);
-
+                        snprintf(rom_path, sizeof(rom_path), "%s%s", work_path, ge->path);
                         const char *core_name = ge->core[0] ? ge->core
                                                  : game_list_find_core(ge->path);
                         if (!core_name) core_name = game_list_core_by_ext(
                                strrchr(ge->path, '.') ? strrchr(ge->path, '.') + 1 : "");
-
                         LOG("main_menu: launching %s with core %s",
                             rom_path, core_name ? core_name : "(auto)");
-
                         core_load(rom_path, core_name);
                         menu_log_mark_dirty();
-                        return;  /* core_load 返回后回到菜单 */
+                        return;
                     }
                 }
             }
+        }
 
-            /* 更新按键状态 */
-            for (i = 0; i < 26; i++) gl_prev_keys[i] = keys[i];
+        /* ---- 更新按键状态（边缘检测） ---- */
+        for (i = 0; i < 26; i++) gl_prev_keys[i] = keys[i];
 
-            /* P0-1: 调度 UI 模块 tick（接线 13 个 mui_* 模块） */
-            ui_page_state_t cur_page = m_ui_current_page(
-                gl_showing, gl_searching, gl_setting, gl_typing, gl_browser);
-            m_ui_dispatch(keys[KEY_OK], cur_page);
+        /* ---- 调度 UI 模块 tick ---- */
+        ui_page_state_t cur_page = m_ui_current_page(
+            gl_showing, gl_searching, gl_setting, gl_typing, gl_browser);
+        m_ui_dispatch(keys[KEY_OK], cur_page);
 
-            /* 重绘游戏列表 UI */
-            if (disp_is_ready() && ui_is_ready()) {
-                /* 根据视图切换页面 */
-                if (gl_showing) {
-                    /* 显示游戏列表页面（使用 game.raw 背景） */
-                    ui_draw_page(UI_PAGE_GAME);
-                } else if (gl_searching) {
-                    /* 显示搜索页面（search.raw 背景） */
-                    ui_draw_page(UI_PAGE_SEARCH);
-                } else if (gl_setting) {
-                    /* 显示设置页面（setting.raw 背景） */
-                    ui_draw_page(UI_PAGE_SETTING);
-                } else if (gl_typing) {
-                    /* 显示游戏分类页面（type.raw 背景） */
-                    ui_draw_page(UI_PAGE_TYPE);
-                } else if (gl_browser) {
-                    /* 显示文件浏览器（使用 game.raw 背景，叠加文件列表） */
-                    ui_draw_page(UI_PAGE_GAME);
-                    /* 简化文件列表渲染：用 TTF 文字叠加 */
-                    if (fb_count == 0) {
-                        /* 扫描目录 */
-                        DIR *d = opendir(fb_path);
-                        if (d) {
-                            struct dirent *ent;
-                            while ((ent = readdir(d)) != NULL && fb_count < 64) {
-                                if (ent->d_name[0] == '.') continue;
-                                strncpy(fb_files[fb_count++], ent->d_name, 127);
-                            }
-                            closedir(d);
-                            LOG("file browser: scanned %d files at %s", fb_count, fb_path);
+        /* ---- 重绘当前页面（每次按键或每 5 秒自动重绘） ---- */
+        if (disp_is_ready() && ui_is_ready()) {
+            if (gl_showing) {
+                ui_draw_page(UI_PAGE_GAME);
+            } else if (gl_searching) {
+                ui_draw_page(UI_PAGE_SEARCH);
+            } else if (gl_setting) {
+                ui_draw_page(UI_PAGE_SETTING);
+            } else if (gl_typing) {
+                ui_draw_page(UI_PAGE_TYPE);
+            } else if (gl_browser) {
+                ui_draw_page(UI_PAGE_GAME);
+                if (fb_count == 0) {
+                    DIR *d = opendir(fb_path);
+                    if (d) {
+                        struct dirent *ent;
+                        while ((ent = readdir(d)) != NULL && fb_count < 64) {
+                            if (ent->d_name[0] == '.') continue;
+                            strncpy(fb_files[fb_count++], ent->d_name, 127);
                         }
-                    }
-                    /* 渲染文件列表文字 */
-                    if (fb_count > 0 && font_is_ready()) {
-                        /* 显示路径 */
-                        int y = 20;
-                        font_draw_text(fb_path, 10, y, 0xffffff);
-                        y += 24;
-                        /* 显示文件列表（从 fb_scroll 开始，每页 GL_PAGE_SIZE 个） */
-                        for (int k = fb_scroll; k < fb_scroll + GL_PAGE_SIZE && k < fb_count; k++) {
-                            const char *prefix = (k == fb_selected) ? " > " : "   ";
-                            char line[140];
-                            snprintf(line, sizeof(line), "%s%s", prefix, fb_files[k]);
-                            font_draw_text(line, 10, y + (k - fb_scroll) * 22,
-                                          (k == fb_selected) ? 0x00ff00 : 0xffffff);
-                        }
+                        closedir(d);
+                        LOG("file browser: scanned %d files at %s", fb_count, fb_path);
                     }
                 }
+                if (fb_count > 0 && font_is_ready()) {
+                    int y = 20;
+                    font_draw_text(fb_path, 10, y, 0xffffff);
+                    y += 24;
+                    for (int k = fb_scroll; k < fb_scroll + GL_PAGE_SIZE && k < fb_count; k++) {
+                        const char *prefix = (k == fb_selected) ? " > " : "   ";
+                        char line[140];
+                        snprintf(line, sizeof(line), "%s%s", prefix, fb_files[k]);
+                        font_draw_text(line, 10, y + (k - fb_scroll) * 22,
+                                      (k == fb_selected) ? 0x00ff00 : 0xffffff);
+                    }
+                }
+            } else {
+                ui_draw_page(UI_PAGE_MENU);
             }
-        } else {
-            /* 无游戏列表时保持主菜单 */
-            for (i = 0; i < 26; i++) gl_prev_keys[i] = 0;
         }
 
         FD_ZERO(&rfds);

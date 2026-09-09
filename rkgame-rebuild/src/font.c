@@ -79,9 +79,21 @@ int font_init(void)
         return -1;
     }
 
+    /* 诊断：输出文件头 8 字节（帮助定位格式问题） */
+    LOG("font_init: header hex: %02x %02x %02x %02x %02x %02x %02x %02x (size=%ld)",
+        g_font_data[0], g_font_data[1], g_font_data[2], g_font_data[3],
+        g_font_data[4], g_font_data[5], g_font_data[6], g_font_data[7],
+        fsize);
+
     /* 3. stbtt_InitFont（工厂一致：offset=0） */
     if (!stbtt_InitFont(&g_font, g_font_data, 0)) {
-        ERR("font_init: stbtt_InitFont failed (not a valid TTF?)");
+        ERR("font_init: stbtt_InitFont failed (not a valid TTF?) — "
+            "header=%08lx, size=%ld. File may be .fnt/.bdf or corrupted.",
+            ((unsigned long)g_font_data[0] << 24) |
+            ((unsigned long)g_font_data[1] << 16) |
+            ((unsigned long)g_font_data[2] << 8) |
+            (unsigned long)g_font_data[3],
+            fsize);
         free(g_font_data);
         g_font_data = NULL;
         return -1;
