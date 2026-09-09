@@ -3,6 +3,7 @@
 #include "ui_joystick_setting.h"
 #include "font.h"
 #include "debug.h"
+#include "rkgame.h"
 
 #include <string.h>
 

@@ -15,6 +15,7 @@
 #include "game_list.h"
 #include "font.h"
 #include "debug.h"
+#include "rkgame.h"
 
 #include <stdio.h>
 #include <string.h>

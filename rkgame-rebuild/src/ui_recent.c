@@ -5,6 +5,7 @@
 #include "font.h"
 #include "game_list.h"
 #include "debug.h"
+#include "rkgame.h"
 
 #include <string.h>
 

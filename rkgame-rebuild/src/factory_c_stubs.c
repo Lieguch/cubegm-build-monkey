@@ -301,8 +301,6 @@ void libiconv(void) { /* no-op */ }
 
 int libiconv_close(void) { return 0; }
 
-int libiconv_open(void) { return 0; }
-
 
 void libiconvctl(void) { /* no-op */ }
 
@@ -797,8 +795,6 @@ int ui_deinit(void) { return 0; }
 void unicode_loop_convert(void) { /* no-op */ }
 
 int unicode_loop_reset(void) { return 0; }
-
-int utf7_reset(void) { return 0; }
 
 void video_driver_set_colormode(void) { /* no-op */ }
 
