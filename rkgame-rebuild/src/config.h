@@ -36,6 +36,9 @@ int config_get_bool(const char *name, int default_val);
 /* 同步配置值到全局结构体 */
 void config_update_struct(void);
 
+/* 原厂兼容入口：加载 setting.xml 并同步到 g_cfg */
+int GetConfig(void);
+
 #ifdef __cplusplus
 }
 #endif
