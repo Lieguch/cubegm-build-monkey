@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "config.h"
 
 /* libretro 核心所需结构体（不链接 libretro，本地定义） */
 typedef struct {
@@ -209,6 +210,16 @@ typedef struct {
     char  effect1_file[128];   /* <sound><effect1 file="..."> 音效 1 */
     char  filebrowser[256];    /* <filebrowser> 文件浏览器根目录 */
 
+    /* 渲染/显示扩展（config.c 22 项配置同步） */
+    int   brightness;          /* <brightness> 亮度 (0-100, default 70) */
+    int   contrast;            /* <contrast> 对比度 (0-100, default 50) */
+    int   gamma;               /* <gamma> 伽马 (-100~100, default 0) */
+    int   screen_type;         /* <screen_type> 0=portrait, 1=landscape */
+    int   vsync;               /* <vsync> 垂直同步 (default 1) */
+    int   filter;              /* <filter> 0=nearest, 1=bilinear */
+    int   scanline;            /* <scanline> 扫描线过滤 (default 0) */
+    int   pixel_perfect;       /* <pixel_perfect> 像素精确 (default 0) */
+
     /* 兼容字段（非原厂，rebuild 内部用） */
     char  core_name[128];      /* <core>name</core> 兼容旧格式 */
     char  device0_type[32];    /* <device0_type> */
@@ -217,8 +228,7 @@ typedef struct {
 
 extern rkgame_config_t g_cfg;
 
-void config_load(void);
-void config_save(void);
+/* config API 见 config.h（已 #include 于文件头） */
 
 /* ---- 日志 ---- */
 

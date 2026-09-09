@@ -9,7 +9,8 @@
  *   4. 填充 rkgame_config_t 结构体
  *
  * 本实现：
- *   - mxml 解析 setting.xml
+ *   - mxml 解析 setting.xml（Part 1 API：mxml_load_file / mxml_get_attr）
+ *   - BFS 遍历所有节点（参照 ui_config.c 模式，兼容本 mxml 版本）
  *   - 22 个配置项（对齐 data_tables.c configitems 数组）
  *   - 提供 get/set/save 接口
  *   - 与 ui_config.c 兼容（ui_config.c 负责 UI 显示）
@@ -18,28 +19,27 @@
 #include "config.h"
 #include "rkgame.h"
 #include "debug.h"
-#include "data_tables.h"
+#include "mxml.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mxml.h>
 
-/* ---- 配置项定义（对齐 data_tables.c configitems） ---- */
+/* ---- 配置项定义（cfg_item_t 命名避免与 data_tables.h 冲突） ---- */
 
 typedef struct {
     const char *name;
     int type;             /* 0=enum, 1=int, 2=bool, 3=string */
     char default_val[64];
     char desc[256];
-} config_item_def_t;
+} cfg_item_t;
 
 #define MAX_CONFIG_ITEMS 64
 #define CONFIG_NAME_LEN 64
 #define CONFIG_VAL_LEN  256
 
 /* 配置表（对齐原厂 configitems @ 50 KB） */
-static config_item_def_t s_config_items[MAX_CONFIG_ITEMS] = {
+static cfg_item_t s_config_items[MAX_CONFIG_ITEMS] = {
     { "displayfps",     0, "60",        "Display refresh rate" },
     { "displaythread",  1, "1",         "Display thread flag" },
     { "brightness",     1, "70",        "Brightness (0-100)" },
@@ -59,8 +59,8 @@ static config_item_def_t s_config_items[MAX_CONFIG_ITEMS] = {
     { "music_file",     3, "music.mp3", "BGM file" },
     { "effect0_file",   3, "sfx0.wav",  "SFX 0 file" },
     { "effect1_file",   3, "sfx1.wav",  "SFX 1 file" },
-    { "savestatehotkey",3, "F5",        "Save state hotkey" },
-    { "gamemenuhotkey", 3, "F6",        "Game menu hotkey" },
+    { "savestatehotkey",1, "-1",        "Save state hotkey (-1=disabled)" },
+    { "gamemenuhotkey", 1, "9",         "Game menu hotkey" },
     { "autorestore",    2, "1",         "Auto restore last game" },
 };
 
@@ -79,7 +79,7 @@ static int s_config_loaded = 0;
 extern rkgame_config_t g_cfg;
 
 /* ============================================================
- * config_init — 初始化配置系统
+ * config_init — 初始化配置系统（加载默认值）
  * ============================================================ */
 
 int config_init(void)
@@ -93,107 +93,6 @@ int config_init(void)
     }
     s_config_loaded = 1;
     RKLOG_I("config_init: %d items initialized", CONFIG_ITEM_COUNT);
-    return 0;
-}
-
-/* ============================================================
- * config_load — 从 setting.xml 加载配置
- * ============================================================ */
-
-int config_load(const char *path)
-{
-    if (!path || !path[0]) {
-        RKLOG_E("config_load: invalid path");
-        return -1;
-    }
-
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        RKLOG_W("config_load: cannot open %s, using defaults", path);
-        return -1;
-    }
-
-    /* 读取文件内容 */
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    if (fsize <= 0 || fsize > 65536) {
-        fclose(fp);
-        RKLOG_E("config_load: invalid file size %ld", fsize);
-        return -1;
-    }
-
-    char *content = (char *)malloc(fsize + 1);
-    if (!content) {
-        fclose(fp);
-        return -1;
-    }
-
-    size_t nread = fread(content, 1, fsize, fp);
-    content[nread] = '\0';
-    fclose(fp);
-
-    /* mxml 解析 */
-    mxml_node_t *root = mxmlParseData(content, nread);
-    if (!root) {
-        free(content);
-        RKLOG_E("config_load: mxml parse failed");
-        return -1;
-    }
-
-    free(content);
-
-    /* 遍历配置项 */
-    mxml_node_t *node = mxmlWalkNext(root, root, MXML_DESCEND);
-    while (node) {
-        const char *name = mxmlElementGetAttr(node, "name");
-        const char *val = mxmlElementGetAttr(node, "value");
-        if (name && val) {
-            int idx = config_find(name);
-            if (idx >= 0) {
-                strncpy(s_config_values[idx].value, val, CONFIG_VAL_LEN - 1);
-                s_config_values[idx].value[CONFIG_VAL_LEN - 1] = '\0';
-                s_config_values[idx].modified = 1;
-                RKLOG_D("config_load: %s = %s", name, val);
-            }
-        }
-        node = mxmlWalkNext(node, root, MXML_DESCEND);
-    }
-
-    mxmlDelete(root);
-
-    /* 更新全局配置结构体 */
-    config_update_struct();
-
-    RKLOG_I("config_load: loaded %s (%ld bytes)", path, fsize);
-    return 0;
-}
-
-/* ============================================================
- * config_save — 保存配置到 setting.xml
- * ============================================================ */
-
-int config_save(const char *path)
-{
-    if (!path || !path[0]) return -1;
-
-    FILE *fp = fopen(path, "w");
-    if (!fp) {
-        RKLOG_E("config_save: cannot open %s", path);
-        return -1;
-    }
-
-    fprintf(fp, "<rkgame>\n");
-    for (int i = 0; i < CONFIG_ITEM_COUNT; i++) {
-        fprintf(fp, "  <item name=\"%s\" value=\"%s\"/>\n",
-                s_config_items[i].name,
-                s_config_values[i].value);
-    }
-    fprintf(fp, "</rkgame>\n");
-
-    fclose(fp);
-    RKLOG_I("config_save: saved %s (%d items)", path, CONFIG_ITEM_COUNT);
     return 0;
 }
 
@@ -256,34 +155,198 @@ int config_get_bool(const char *name, int default_val)
 }
 
 /* ============================================================
- * config_update_struct — 同步配置值到全局结构体
+ * apply_config_node — BFS 遍历时的单节点处理
+ * 支持两种 XML 格式：
+ *   <item name="key" value="val"/>
+ *   <key>value</key>
+ *   <key val="value"/>
+ * ============================================================ */
+
+static void apply_config_node(mxml_node_t *node)
+{
+    if (!node || node->type != MXML_ELEMENT || !node->value)
+        return;
+
+    const char *tag = node->value;
+
+    /* 格式 1: <item name="xxx" value="yyy"/> */
+    if (strcmp(tag, "item") == 0) {
+        const char *nm = mxml_get_attr(node, "name");
+        const char *vl = mxml_get_attr(node, "value");
+        if (nm && vl) {
+            int idx = config_find(nm);
+            if (idx >= 0) {
+                strncpy(s_config_values[idx].value, vl, CONFIG_VAL_LEN - 1);
+                s_config_values[idx].value[CONFIG_VAL_LEN - 1] = '\0';
+                s_config_values[idx].modified = 1;
+                RKLOG_D("config: %s = %s (item)", nm, vl);
+            }
+        }
+        return;
+    }
+
+    /* 格式 2: <tagname>text_content</tagname> */
+    /* 格式 3: <tagname value="xxx"/> */
+    if (config_find(tag) >= 0) {
+        const char *val = mxml_get_attr(node, "value");
+        if (!val) val = mxml_get_content(node);
+        if (!val) {
+            /* 尝试 file/directory 属性（兼容原厂 <autorun file="..."> 格式） */
+            val = mxml_get_attr(node, "file");
+            if (!val) val = mxml_get_attr(node, "directory");
+        }
+        if (val) {
+            int idx = config_find(tag);
+            strncpy(s_config_values[idx].value, val, CONFIG_VAL_LEN - 1);
+            s_config_values[idx].value[CONFIG_VAL_LEN - 1] = '\0';
+            s_config_values[idx].modified = 1;
+            RKLOG_D("config: %s = %s", tag, val);
+        }
+    }
+
+    /* 特殊标签映射（原厂 XML 标签名 ≠ 配置项名） */
+    if (strcmp(tag, "softrotation") == 0) {
+        const char *v = mxml_get_attr(node, "value");
+        if (!v) v = mxml_get_content(node);
+        if (v) config_set("soft_rotation", v);
+    } else if (strcmp(tag, "bgm") == 0) {
+        const char *f = mxml_get_attr(node, "file");
+        if (f) config_set("music_file", f);
+    } else if (strcmp(tag, "effect0") == 0) {
+        const char *f = mxml_get_attr(node, "file");
+        if (f) config_set("effect0_file", f);
+    } else if (strcmp(tag, "effect1") == 0) {
+        const char *f = mxml_get_attr(node, "file");
+        if (f) config_set("effect1_file", f);
+    } else if (strcmp(tag, "save_directory") == 0) {
+        /* save_directory 不映射到配置项，由 ui_config.c 处理 */
+    }
+}
+
+/* ============================================================
+ * config_load — 从 setting.xml 加载配置
+ * ============================================================ */
+
+int config_load(const char *path)
+{
+    if (!path || !path[0]) {
+        RKLOG_E("config_load: invalid path");
+        return -1;
+    }
+
+    /* 确保默认值已加载 */
+    if (!s_config_loaded) {
+        config_init();
+    }
+
+    mxml_node_t *root = mxml_load_file(path);
+    if (!root) {
+        RKLOG_W("config_load: cannot open %s, using defaults", path);
+        return -1;
+    }
+
+    /* BFS 遍历所有节点 */
+    mxml_node_t *queue[256];
+    int qh = 0, qt = 0;
+    queue[qt++] = root;
+    int count = 0;
+
+    while (qh < qt) {
+        mxml_node_t *n = queue[qh++];
+        apply_config_node(n);
+        count++;
+        for (mxml_node_t *c = n->child; c && qt < 256; c = c->next) {
+            queue[qt++] = c;
+        }
+    }
+
+    mxml_delete(root);
+
+    /* 同步配置值到全局结构体 */
+    config_update_struct();
+
+    RKLOG_I("config_load: %s (%d nodes, %d items)",
+            path, count, CONFIG_ITEM_COUNT);
+    return 0;
+}
+
+/* ============================================================
+ * config_save — 保存配置到 setting.xml
+ * ============================================================ */
+
+int config_save(const char *path)
+{
+    if (!path || !path[0]) return -1;
+
+    FILE *fp = fopen(path, "w");
+    if (!fp) {
+        RKLOG_E("config_save: cannot open %s", path);
+        return -1;
+    }
+
+    fprintf(fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    fprintf(fp, "<rkgame>\n");
+    for (int i = 0; i < CONFIG_ITEM_COUNT; i++) {
+        fprintf(fp, "  <item name=\"%s\" value=\"%s\"/>\n",
+                s_config_items[i].name,
+                s_config_values[i].value);
+    }
+    fprintf(fp, "</rkgame>\n");
+
+    fclose(fp);
+    RKLOG_I("config_save: saved %s (%d items)", path, CONFIG_ITEM_COUNT);
+    return 0;
+}
+
+/* ============================================================
+ * config_update_struct — 同步配置值到全局 rkgame_config_t
+ * 只映射 rkgame_config_t 中实际存在的字段。
  * ============================================================ */
 
 void config_update_struct(void)
 {
-    g_cfg.displayfps      = config_get_int("displayfps", 60);
-    g_cfg.displaythread   = config_get_int("displaythread", 1);
-    g_cfg.brightness      = config_get_int("brightness", 70);
-    g_cfg.contrast        = config_get_int("contrast", 50);
-    g_cfg.gamma           = config_get_int("gamma", 0);
-    g_cfg.soft_rotation   = config_get_int("soft_rotation", 0);
-    g_cfg.screen_type     = strcmp(config_get("screen_type"), "landscape") == 0 ? 1 : 0;
-    g_cfg.use_rgb_8888    = config_get_int("use_rgb_8888", 0);
-    g_cfg.vsync           = config_get_int("vsync", 1);
-    g_cfg.filter          = strcmp(config_get("filter"), "bilinear") == 0 ? 1 : 0;
-    g_cfg.scanline        = config_get_int("scanline", 0);
-    g_cfg.pixel_perfect   = config_get_int("pixel_perfect", 0);
-    g_cfg.volume          = config_get_int("volume", 80);
-    g_cfg.autorestore     = config_get_int("autorestore", 1);
-    g_cfg.filebrowser     = config_get_int("filebrowser", 1);
+    /* ---- GetConfig 字段 ---- */
+    g_cfg.displayfps    = config_get_int("displayfps", 60);
+    g_cfg.displaythread = config_get_int("displaythread", 1);
+    g_cfg.soft_rotation = config_get_int("soft_rotation", 0);
+    g_cfg.autorestore   = config_get_int("autorestore", 1);
+    g_cfg.savestatehotkey = config_get_int("savestatehotkey", -1);
+    g_cfg.gamemenuhotkey  = config_get_int("gamemenuhotkey", 9);
 
-    strncpy(g_cfg.defaultlanguage, config_get("defaultlanguage"), sizeof(g_cfg.defaultlanguage) - 1);
-    strncpy(g_cfg.logfile, config_get("logfile"), sizeof(g_cfg.logfile) - 1);
-    strncpy(g_cfg.music_file, config_get("music_file"), sizeof(g_cfg.music_file) - 1);
-    strncpy(g_cfg.effect0_file, config_get("effect0_file"), sizeof(g_cfg.effect0_file) - 1);
-    strncpy(g_cfg.effect1_file, config_get("effect1_file"), sizeof(g_cfg.effect1_file) - 1);
-    strncpy(g_cfg.savestatehotkey, config_get("savestatehotkey"), sizeof(g_cfg.savestatehotkey) - 1);
-    strncpy(g_cfg.gamemenuhotkey, config_get("gamemenuhotkey"), sizeof(g_cfg.gamemenuhotkey) - 1);
+    const char *lf = config_get("logfile");
+    if (lf && lf[0])
+        strncpy(g_cfg.logfile, lf, sizeof(g_cfg.logfile) - 1);
+
+    /* ---- mui_LoadSetting 字段 ---- */
+    g_cfg.volume          = config_get_int("volume", 80);
+    g_cfg.defaultlanguage = config_get_int("defaultlanguage", 0);
+
+    const char *music = config_get("music_file");
+    if (music && music[0])
+        strncpy(g_cfg.music_file, music, sizeof(g_cfg.music_file) - 1);
+
+    const char *ef0 = config_get("effect0_file");
+    if (ef0 && ef0[0])
+        strncpy(g_cfg.effect0_file, ef0, sizeof(g_cfg.effect0_file) - 1);
+
+    const char *ef1 = config_get("effect1_file");
+    if (ef1 && ef1[0])
+        strncpy(g_cfg.effect1_file, ef1, sizeof(g_cfg.effect1_file) - 1);
+
+    /* filebrowser 在 rkgame_config_t 中是 char[256]，但配置项存的是 "1"/"0" */
+    /* 实际目录路径由 ui_config.c 的 save_directory 处理 */
+    g_cfg.filebrowser[0] = '\0';  /* 保留给 ui_config.c */
+
+    /* ---- 渲染扩展字段 ---- */
+    g_cfg.brightness    = config_get_int("brightness", 70);
+    g_cfg.contrast      = config_get_int("contrast", 50);
+    g_cfg.gamma         = config_get_int("gamma", 0);
+    g_cfg.screen_type   = strcmp(config_get("screen_type"), "landscape") == 0 ? 1 : 0;
+    g_cfg.use_rgb_8888  = config_get_int("use_rgb_8888", 0);
+    g_cfg.vsync         = config_get_int("vsync", 1);
+    g_cfg.filter        = strcmp(config_get("filter"), "bilinear") == 0 ? 1 : 0;
+    g_cfg.scanline      = config_get_int("scanline", 0);
+    g_cfg.pixel_perfect = config_get_int("pixel_perfect", 0);
 }
 
 /* ============================================================
@@ -295,12 +358,12 @@ int GetConfig(void)
     const char *path = "/sdcard/cubegm/setting.xml";
     int rc = config_load(path);
     if (rc != 0) {
-        /* 尝试默认路径 */
         path = "setting.xml";
         rc = config_load(path);
     }
     if (rc != 0) {
         RKLOG_W("GetConfig: no setting.xml found, using defaults");
+        if (!s_config_loaded) config_init();
         config_update_struct();
     }
     return rc;
