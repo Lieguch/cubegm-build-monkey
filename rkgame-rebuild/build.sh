@@ -30,7 +30,7 @@ CFLAGS="-march=armv7-a -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -D
 SRC="src/main.c src/core.c src/evdev.c src/sram.c src/debug.c src/dbg_overlay.c src/disp.c src/heartbeat.c src/core_table.c src/font.c src/ui_zip.c src/ui.c src/audio.c src/game_list.c src/menu_log.c src/wqw.c src/keymap.c src/thumbnail.c \
      src/ui_menu.c src/ui_setting.c src/ui_search.c src/ui_recent.c src/ui_shoucang.c src/ui_save_state.c src/ui_load_state.c src/ui_run_game.c src/ui_config.c src/ui_config_save.c src/ui_video_setting.c src/ui_joystick_setting.c src/ui_search_file_list.c src/ui_pause.c src/ui_joystick_test.c src/ui_type.c src/ui_dispatcher.c \
      src/stringpool.c src/hi.c src/shoucang.c src/joystick_zip.c src/data_tables.c src/driver_sym.c src/factory_stubs.c \
-     src/cpd.c src/resources.c src/stubs.c src/config.c \
+     src/cpd.c src/resources.c src/stubs.c \
      lib/mxml/mxml.c lib/libiconv/iconv_real.c lib/libiconv/iconv_engine.c \
      src/factory_z_stubs.c src/factory_c_stubs.c \
      src/factory_c_stubs.s"
