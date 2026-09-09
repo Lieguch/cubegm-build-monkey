@@ -108,6 +108,7 @@ $CC $CFLAGS \
     -Wl,--dynamic-linker,/lib/ld-linux-armhf.so.3 \
     -lc -ldl -lpthread -lm -lz \
     $DRM_LIB \
+    -lgcc \
     "$DEV_DIR/crtn.o"
 
 echo "Built: $OUT ($(stat -c%s "$OUT") bytes)"
