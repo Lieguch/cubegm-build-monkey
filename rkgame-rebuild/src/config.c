@@ -342,7 +342,8 @@ void config_update_struct(void)
     g_cfg.contrast      = config_get_int("contrast", 50);
     g_cfg.gamma         = config_get_int("gamma", 0);
     g_cfg.screen_type   = strcmp(config_get("screen_type"), "landscape") == 0 ? 1 : 0;
-    g_cfg.use_rgb_8888  = config_get_int("use_rgb_8888", 0);
+    /* use_rgb_8888 是全局变量（rkgame.h:49），非结构体字段 */
+    use_rgb_8888 = config_get_int("use_rgb_8888", 0);
     g_cfg.vsync         = config_get_int("vsync", 1);
     g_cfg.filter        = strcmp(config_get("filter"), "bilinear") == 0 ? 1 : 0;
     g_cfg.scanline      = config_get_int("scanline", 0);

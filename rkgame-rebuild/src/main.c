@@ -120,9 +120,7 @@ void rklog(int level, const char *fmt, ...)
 
 /* ---- 音频层：实现在 audio.c（P2.4） ---- */
 
-/* ---- 配置保存占位 ---- */
-
-void config_save(void) { LOG("config_save: not implemented"); }
+/* ---- 配置保存（实现在 config.c） ---- */
 
 /* ---- 工具函数 ---- */
 
@@ -287,7 +285,7 @@ static int parse_attr_int(const char *buf, const char *tag, const char *attr,
     return (int)strtol(tmp, NULL, 10);
 }
 
-void config_load(void)
+void legacy_config_parse(void)
 {
     /* 原厂用 setting.xml（非 config.xml），格式为 <autorun file="..." driver="..."/> */
     const char *cfg_files[] = { "setting.xml", "config.xml", NULL };
@@ -904,7 +902,8 @@ int main(int argc, char **argv)
     hb_start_heartbeat_thread();  /* 每 20ms 更新一次 shm[1]，不受主循环阻塞 */
 
     DBGP(CONFIG_LOAD);
-    config_load();
+    GetConfig();          /* config.c: mxml 解析 22 项配置 */
+    legacy_config_parse(); /* main.c: 字符串解析 autorun 路径 */
 
     /* 加载 cores/config.xml（SeletEmuCore @ 0x3c9aec）
      * 动态扩展 ext→core 映射，作为硬编码 core_table 的补充。
