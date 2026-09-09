@@ -161,8 +161,6 @@ void xmp3_set_loop(int) { /* no-op */ }
 void SoundplayThread(void) { /* no-op */ }
 
 /* 显示辅助 */
-void UpdateROM(void) { /* no-op */ }
-
 /* 存档辅助 */
 void SaveGame(void) { /* no-op */ }
 void LoadGame(void) { /* no-op */ }

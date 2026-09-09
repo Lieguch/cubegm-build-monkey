@@ -70,8 +70,6 @@ int GetDecodeData(void) { return 0; }
 
 int GetFileCore(void) { return 0; }
 
-int GetFilenameExt(void) { return 0; }
-
 int GetInputInfo(void) { return 0; }
 
 int GetJoystickConfig(void) { return 0; }
@@ -216,14 +214,6 @@ void aliases_hash(void) { /* no-op */ }
 
 void aliases_lookup(void) { /* no-op */ }
 
-int big5hkscs1999_reset(void) { return 0; }
-
-int big5hkscs2001_reset(void) { return 0; }
-
-int big5hkscs2004_reset(void) { return 0; }
-
-int big5hkscs2008_reset(void) { return 0; }
-
 void blockadaptive(void) { /* no-op */ }
 
 void blockcopy(void) { /* no-op */ }
@@ -269,37 +259,17 @@ void gpsp_unzip(void) { /* no-op */ }
 
 int hz_reset(void) { return 0; }
 
-void iconv_canonicalize(void) { /* no-op */ }
-
 
 
 void index_sort(void) { /* no-op */ }
 
 int init_user_joy_key_mask(void) { return 0; }
 
-int iso2022_cn_ext_reset(void) { return 0; }
-
-int iso2022_cn_reset(void) { return 0; }
-
-int iso2022_jp1_reset(void) { return 0; }
-
-int iso2022_jp2_reset(void) { return 0; }
-
-int iso2022_jp_reset(void) { return 0; }
-
-int iso2022_jpms_reset(void) { return 0; }
-
-int iso2022_kr_reset(void) { return 0; }
-
 void johab_hangul_decompose(void) { /* no-op */ }
 
 void joystick_input(void) { /* no-op */ }
 
 void joystick_poll(void) { /* no-op */ }
-
-void libiconv(void) { /* no-op */ }
-
-int libiconv_close(void) { return 0; }
 
 
 void libiconvctl(void) { /* no-op */ }
