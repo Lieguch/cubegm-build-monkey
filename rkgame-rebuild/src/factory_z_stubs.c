@@ -40,7 +40,14 @@ static void _init_factory_crc(void)
 }
 
 
-int _Z10huft_buildPjjjPKjS1_PP14inflate_huft_sS_S3_S_S_(void) { return 0; }
+/* zlib inflate 系列 — 委托系统 zlib (-lz) 实现 */
+#include <zlib.h>
+
+int _Z10huft_buildPjjjPKjS1_PP14inflate_huft_sS_S3_S_S_(void)
+{
+    /* zlib 内部 Huffman 构建，由 inflate() 内部调用 */
+    return 0;
+}
 
 int _Z10inflateEndP10z_stream_s(void) { return 0; }
 
@@ -63,13 +70,21 @@ int _Z12inflate_fastjjPK14inflate_huft_sS1_P20inflate_blocks_stateP10z_stream_s(
 unsigned int * _Z13get_crc_tablev(void)
 { return g_factory_crc_table; }
 
-int _Z13inflate_codesP20inflate_blocks_stateP10z_stream_si(void) { return 0; }
+int _Z13inflate_codesP20inflate_blocks_stateP10z_stream_si(void)
+{
+    /* zlib inflate_codes — 由 inflate() 内部调用 */
+    return 0;
+}
 
 int _Z13inflate_flushP20inflate_blocks_stateP10z_stream_si(void) { return 0; }
 
 int _Z13unzLocateFileP5unz_sPKci(void) { return 0; }
 
-int _Z14inflate_blocksP20inflate_blocks_stateP10z_stream_si(void) { return 0; }
+int _Z14inflate_blocksP20inflate_blocks_stateP10z_stream_si(void)
+{
+    /* zlib inflate_blocks — 由 inflate() 内部调用，此处不直接调用 */
+    return 0;
+}
 
 long _Z14timet2filetimel(void)
 { return 0; }
@@ -133,13 +148,28 @@ int _Z40unzlocal_CheckCurrentFileCoherencyHeaderP5unz_sPjPmS1_(void) { return 0;
 
 int _Z6unzeofP5unz_s(void) { return 0; }
 
-int _Z6zErrori(void) { return 0; }
+int _Z6zErrori(int code)
+{
+    (void)code;
+    return -1;
+}
 
-int _Z6zcfreePvS_(void) { return 0; }
+int _Z6zcfreePvS_(void *ptr, void *opaque)
+{
+    (void)opaque;
+    free(ptr);
+    return 0;
+}
 
-int _Z7adler32mPKhj(void) { return 0; }
+int _Z7adler32mPKhj(unsigned long adler, unsigned char *buf, unsigned int len)
+{
+    return (int)adler32(adler, buf, len);
+}
 
-int _Z7inflateP10z_stream_si(void) { return 0; }
+int _Z7inflateP10z_stream_si(void *stream, int flush)
+{
+    return inflate((z_streamp)stream, flush);
+}
 
 int _Z7lufopenPvjjPj(void) { return 0; }
 
@@ -151,7 +181,12 @@ int _Z7luftellP6LUFILE(void) { return 0; }
 
 int _Z7unztellP5unz_s(void) { return 0; }
 
-int _Z7zcallocPvjj(void) { return 0; }
+int _Z7zcallocPvjj(void *opaque, unsigned int items, unsigned int size)
+{
+    (void)opaque;
+    void *p = calloc(items, size);
+    return p ? 0 : -1;
+}
 
 int _Z8lufcloseP6LUFILE(void) { return 0; }
 
@@ -184,8 +219,17 @@ void _Z10huft_buildvP7inflateSPPPhP12inflate_blockS_PP12inflate_blockS_vPPhP12in
 /* CRC 表 */
 const unsigned int _ZL9crc_table[256] = {0};
 
-/* fixed table */
-const unsigned int _ZL8fixed_tl[288] = {0};
+/* fixed table — zlib 标准固定 Huffman 码表（288 个符号） */
+const unsigned int _ZL8fixed_tl[288] = {
+    /* 0-143: 8-bit codes (code length 8) */
+    [0 ... 143] = 8,
+    /* 144-255: 9-bit codes (code length 9) */
+    [144 ... 255] = 9,
+    /* 256-279: 7-bit codes (code length 7) */
+    [256 ... 279] = 7,
+    /* 280-287: 8-bit codes (code length 8) */
+    [280 ... 287] = 8,
+};
 
 /* 内存分配器 */
 void *_Z9malloc_usm(unsigned int size) { return malloc(size); }

@@ -64,7 +64,7 @@ void FreqInvertRescale(void) { /* no-op */ }
 
 int GBC_Load(void) { return 0; }
 
-int GetConfig(void) { return 0; }
+/* GetConfig moved to config.c (real implementation) */
 
 int GetDecodeData(void) { return 0; }
 

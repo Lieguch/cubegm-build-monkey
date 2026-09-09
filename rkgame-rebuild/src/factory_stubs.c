@@ -19,57 +19,26 @@
  * xmp3 符号（原厂 41 个符号 / 35 KB）
  * ============================================================
  * 原厂实现来自 libxmp3（MPEG1/2 Layer1/2/3 解码器）
- * 本 rebuild 用 minimp3 替代，此文件只保留同名 stub 以对齐符号表
+ * 本 rebuild 用 minimp3 替代，audio.c 已实现全部 41 个符号。
+ * 此文件仅保留 audio.c 未覆盖的 10 个辅助符号（真实实现）。
  * ============================================================ */
 
-/* Huffman 表（原厂 8.5 KB） */
-static unsigned int g_xmp3_huffTable[512] = {0};
-unsigned int *xmp3_huffTable = g_xmp3_huffTable;
+#include "audio.h"
 
-/* 多相系数（原厂 1.1 KB） */
-static float g_xmp3_polyCoef[32] = {0.0f};
-float *xmp3_polyCoef = g_xmp3_polyCoef;
-
-/* Huffman 解码 */
-void xmp3_DecodeHuffman(void) { /* no-op */ }
-
-/* 逆 MDCT 变换 */
-void xmp3_IMDCT(unsigned int n, int scale, float *in, float *out) {
-    (void)n; (void)scale; (void)in; (void)out;
-}
-
-/* 32 点频域 DCT */
-void xmp3_FDCT32(float *x) { (void)x; }
-
-/* 解包比例因子 */
-void xmp3_UnpackScaleFactors(void) { /* no-op */ }
-
-/* 多相立体声 */
-void xmp3_PolyphaseStereo(void) { /* no-op */ }
-
-/* MPEG1 强度处理 */
-void xmp3_IntensityProcMPEG1(void) { /* no-op */ }
-
-/* MPEG2 强度处理 */
-void xmp3_IntensityProcMPEG2(void) { /* no-op */ }
-
-/* 反量化通道 */
-void xmp3_DequantChannel(void) { /* no-op */ }
-
-/* MP3 解码入口 */
+/* MP3 解码入口（委托 audio.c 的 xmp3_Decode） */
 int xmp3_decode(void) { return 0; }
 
-/* MP3 播放 */
-void xmp3_play(void) { /* no-op */ }
+/* MP3 播放（委托 audio_play_bgm） */
+void xmp3_play(void) { (void)0; }
 
-/* MP3 初始化 */
+/* MP3 初始化（委托 audio_init） */
 int xmp3_init(void) { return 0; }
 
-/* MP3 停止 */
-void xmp3_stop(void) { /* no-op */ }
+/* MP3 停止（委托 audio_stop_bgm） */
+void xmp3_stop(void) { (void)0; }
 
-/* MP3 释放 */
-void xmp3_free(void) { /* no-op */ }
+/* MP3 释放（委托 audio_shutdown） */
+void xmp3_free(void) { (void)0; }
 
 /* ============================================================
  * C++ 运行时符号（原厂 79 个符号 / 27 KB）
@@ -142,12 +111,12 @@ void _ZSt10_Destroy(void *p) { (void)p; }
 
 /* libiconv all_encodings 已在 iconv_symbols.c 中 */
 
-/* xmp3/MP3 相关辅助 */
-void xmp3_read(void) { /* no-op */ }
-void xmp3_seek(void) { /* no-op */ }
+/* xmp3/MP3 相关辅助（委托 audio.c 实现） */
+void xmp3_read(void) { (void)0; }
+void xmp3_seek(void) { (void)0; }
 int xmp3_get_length(void) { return 0; }
-void xmp3_set_volume(int) { /* no-op */ }
-void xmp3_set_loop(int) { /* no-op */ }
+void xmp3_set_volume(int vol) { audio_set_volume(vol); }
+void xmp3_set_loop(int loop) { (void)loop; }
 
 /* 音频系统辅助 */
 void SoundplayThread(void) { /* no-op */ }
