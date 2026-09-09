@@ -521,6 +521,10 @@ static void main_menu(void)
                 "SA_RESTART will resume the wait below)", sig);
         }
 
+        /* 周期性重绘菜单（每 5 秒），让 DRM 显示不褪色，并验证
+         * disp_draw_menu 不会 crash。 */
+        time_t now = time(NULL);
+
         /* ---- 读取手柄按键状态（每帧都读，不限于有游戏时） ---- */
         int keys[26];
         for (i = 0; i < 26; i++) {
