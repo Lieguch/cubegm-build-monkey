@@ -214,8 +214,9 @@ if _pairs:
         _l.append('        unsigned int _%d_4_;' % _b)
         _l.append('    };')
     _l.append('} gh_blob_t;')
-    glines += _l
-    print('gh_blob_t: slots=%d, 覆盖 %d 个字段引用, 涉及 %d 个对象'
+    # ★ 必须插在**全局声明之前**（否则使用点在定义之前 -> unknown type name）
+    glines[4:4] = _l
+    print('gh_blob_t: 定义已插入第 4 行前; slots=%d, 覆盖 %d 个字段引用, 涉及 %d 个对象'
           % (_slots, len(_pairs), len(_owners)))
 
     # 被以上述方式访问的全局/对象，改用 gh_blob_t 声明
