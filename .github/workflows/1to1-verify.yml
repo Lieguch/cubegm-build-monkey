@@ -45,6 +45,17 @@ jobs:
           cd 1to1
           python3 tools/structsig.py golden/factory.funcs.json golden/factory.funcs.json
 
+      - name: N3 ABI 门禁（验证可用工具链能产出工厂 ABI 的 ELF）
+        run: |
+          cd 1to1
+          printf 'int main(void){return 0;}\n' > /tmp/tu.c
+          arm-linux-gnueabihf-gcc -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon \
+            -no-pie /tmp/tu.c -o /tmp/tu
+          echo '--- 产出 ELF 规格 ---'
+          readelf -h /tmp/tu | grep -E 'Type|Machine|Flags'
+          echo '--- 对比原厂规格 ---'
+          python3 tools/abi_check.py /tmp/tu
+
       - name: P2-A stb_truetype 版本指纹锁定
         run: |
           cd 1to1
