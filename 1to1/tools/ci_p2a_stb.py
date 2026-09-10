@@ -61,12 +61,15 @@ def compile_and_sizes(header_bytes, workdir):
         return None, r.stderr[:300]
     r = subprocess.run([OBJDUMP, '-t', op], capture_output=True, text=True)
     sizes = {}
+    # objdump -t 行格式: addr  bind  type  section  size  name
+    #   例: "00000000 l     F .text\t00000086 stbtt__isfont"
+    #   split 后 -> ['00000000','l','F','.text','00000086','stbtt__isfont']
+    #   ★ 尺寸在 p[4]（p[1] 是绑定属性 l/g）
     for ln in r.stdout.splitlines():
         p = ln.split()
-        if len(p) >= 6 and p[2] in ('F', '.text') and p[3] == '.text':
-            name = p[-1]
+        if len(p) >= 6 and p[2] == 'F' and p[3] != '*ABS*':
             try:
-                sizes[name] = int(p[1], 16)
+                sizes[p[5]] = int(p[4], 16)
             except ValueError:
                 pass
     if not sizes:
