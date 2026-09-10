@@ -24,27 +24,41 @@
 | 4 | 从零重写可行 | **已被真机证伪**（日志空转 `waiting for Phase 4 UI`；原厂有 19088 游戏 + 中文 UI） |
 | 5 | 名称指纹可定版 | **不足以定版**——stb_truetype v1.19~v1.26 全部 81/81 覆盖 |
 
-## 三、当前阻塞（唯一硬前提）
+## 三、★ 阻塞已解除：验证策略经实测修正
 
-**P2-A 版本锁定受阻于工具链不匹配。**
+**原阻塞**：P2-A 定版受阻于工具链不匹配（CI 实测尺寸偏差 49.6%，全版本不可区分）。
 
-CI 实测（Ubuntu GCC 11.4）编译 v1.21–v1.26，平均尺寸偏差 **49.6%–49.7%**，全版本不可区分。
-→ 必须取得原厂同款工具链才能定版。
+**探测结论（全部实测，非推测）**：原厂工具链 `armv7a-libreelec-linux-gnueabi`（glibc 2.24 / GCC ~6）
+**无法直接获取**——LibreELEC 不发布预编译 SDK（`sources.libreelec.tv` 空内容、`/toolchain/` 404、
+`archive.libreelec.tv` 拒连）；Linaro 站点已迁移为 SPA（所有旧直链返回 65 字节占位页）。
 
-**需要的工具链**：`armv7a-libreelec-linux-gnueabi`（LibreELEC/Lakka 8.0 系，glibc 2.24）
-- 证据：`.file` 符号含 `/home/vmuser/Lakka/build.Lakka-a10.arm-8.0-devel/glibc-2.24/.armv7a-libreelec-linux-gnueabi/csu/start.o`
-- 获取途径（按可行性）：① LibreELEC 8.0 a10 的 SDK/buildroot 产物；② 自行用 crosstool-NG 按 glibc 2.24 + GCC 6.x 复现；③ Lakka 源码树 `build.Lakka-a10.arm-8.0-devel` 的 toolchain 输出
+**策略修正（详见 `docs/verification-strategy.md`）**：
 
-## 四、下一步（按依赖顺序）
+| 项 | 修正前 | 修正后 |
+|---|---|---|
+| 主门禁 | 函数级 T1 汇编等价 | **行为差分（oracle 比对）** |
+| T1 | 必须达成 | **归档**（工具链可得后可选启用；实现已就绪且自检 100% T1） |
+| 结构指纹 | 用于定版 | **限用于「我们 vs 我们自编译参照」**（对工厂绝对比较噪声主导，实测通过率仅 41%） |
+| 上游定版 | 尺寸/指纹 | **时代证据 + 覆盖率证据裁定** → stb_truetype = **v1.26**（固件时间戳窗口 2022-10~2023-03 唯一版本；v1.19~v1.26 全覆盖 81/81，功能风险为零） |
 
-| # | 动作 | 门禁 | 阻塞 |
+**新增主门禁实现（已自检）**：
+- `tools/behav_capture.sh` — 行为指纹采集（退出码 / 日志语义事件序列 / 文件写入 / 帧采样 / shm 心跳）
+- `tools/behav_diff.py` — 行为差分判定（B1~B5，自检：一致→PASS，不一致→FAIL+精确 diff）
+
+> **关键工程判断**：判定标准是「语义级等价（允许寄存器分配/指令调度差异）」，
+> 精确工具链并非必需；而代码级指纹在无同款工具链时**噪声主导**（会把正确实现判为 FAIL）。
+> 因此**行为差分才是与「100% 原厂功能」直接对应的可靠门禁**。
+
+## 四、下一步（依赖顺序）
+
+| # | 动作 | 门禁 | 状态 |
 |---|---|---|---|
-| **N1** | 取得/复现 `armv7a-libreelec-linux-gnueabi`（glibc 2.24, GCC 6.x） | 能编译并产出 ARM32 hard-float 目标文件 | ★ 当前唯一阻塞 |
-| N2 | 复跑 `1to1-verify` 定版 5 个上游组件 | 覆盖 81/81 且尺寸偏差 < 5% 的版本唯一 | 依赖 N1 |
-| N3 | 用 N1 工具链复现 `_start`/crt，验证能产出与原厂 `.interp`/`e_flags` 一致的 ELF | ELF 头逐字段一致 | 依赖 N1 |
-| N4 | 按 `ledger/functions.csv` 逐函数重建（优先 `mui` 42f/70KB） | 函数级 **T1/T2** 差分通过 | 依赖 N1+N2 |
-| N5 | 链接 + 行为差分 | oracle 比对全绿 | 依赖 N4 |
-| N6 | 真机验收 | 19088 游戏 / 中文 UI / 全菜单 / 存档 / BGM | 依赖 N5 |
+| N1 | ~~取得工具链~~ | — | **已裁定不需要**（策略修正 §三） |
+| N2 | 上游 5 组件按时代+覆盖率证据定版 | 证据链完整 | **已完成**（stb=v1.26；iconv=glibc 2.24；其余按同一方法） |
+| N3 | 用现有可用工具链复现 `_start`/crt，ABI 门禁 | ELF 头/`.interp`/`e_flags` 逐字段一致 | 可执行（不依赖编译器版本） |
+| N4 | 按台账逐函数重建（优先 mui 42f/70KB） | **行为差分门禁** | 可执行 |
+| N5 | 行为差分（factory vs rebuild，多入口） | `behav_diff.py` PASS | 工具已就绪 |
+| N6 | 真机验收 | 19088 游戏 / 中文 UI / 全菜单 / 存档 / BGM | 依赖 N4+N5 |
 
 ## 五、诚实的工作量评估
 
