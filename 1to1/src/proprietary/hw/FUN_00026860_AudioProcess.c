@@ -59,7 +59,7 @@ void AudioProcess(void)
         in_fpscr = in_fpscr & 0xfffffff | (gh_uint)(fVar17 == fVar18) << 0x1e |
                    (gh_uint)(fVar18 <= fVar17) << 0x1d;
         bVar1 = (gh_byte)(in_fpscr >> 0x18);
-        if (!(bool)(bVar1 >> 5 & 1) || (bool)(bVar1 >> 6)) {
+        if (!(gh_bool)(bVar1 >> 5 & 1) || (gh_bool)(bVar1 >> 6)) {
           iVar13 = piVar15[3];
           iVar12 = piVar15[7];
           iVar14 = piVar15[2];
@@ -114,7 +114,7 @@ void AudioProcess(void)
                        (gh_uint)(fVar18 <= fVar17) << 0x1d;
             piVar15[8] = (int)fVar17;
             bVar1 = (gh_byte)(in_fpscr >> 0x18);
-          } while (!(bool)(bVar1 >> 5 & 1) || (bool)(bVar1 >> 6));
+          } while (!(gh_bool)(bVar1 >> 5 & 1) || (gh_bool)(bVar1 >> 6));
         }
         sVar5 = *(short *)((int)local_60 + iVar11 + 2);
         *(short *)(local_70 + -2) = *(short *)(local_70 + -2) + *(short *)((int)local_60 + iVar11);

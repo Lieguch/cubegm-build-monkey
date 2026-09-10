@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-bool joystick_input(gh_uint param_1,gh_u4 param_2,gh_u4 param_3,int param_4)
+gh_bool joystick_input(gh_uint param_1,gh_u4 param_2,gh_u4 param_3,int param_4)
 
 {
   if (3 < param_1) {

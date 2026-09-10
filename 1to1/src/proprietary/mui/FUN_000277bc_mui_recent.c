@@ -11,7 +11,7 @@
 void mui_recent(void)
 
 {
-  bool bVar1;
+  gh_bool bVar1;
   char cVar2;
   gh_u4 uVar3;
   FILE *pFVar4;

@@ -11,7 +11,7 @@
 void mui_menu(void)
 
 {
-  bool bVar1;
+  gh_bool bVar1;
   int iVar2;
   gh_uint uVar3;
   char *pcVar4;

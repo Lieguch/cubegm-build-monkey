@@ -12,7 +12,7 @@ void JoystickTest(int param_1)
 
 {
   gh_byte bVar1;
-  bool bVar2;
+  gh_bool bVar2;
   gh_u4 uVar3;
   int *__ptr;
   gh_byte *__ptr_00;

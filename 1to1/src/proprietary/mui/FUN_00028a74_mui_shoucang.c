@@ -11,7 +11,7 @@
 void mui_shoucang(void)
 
 {
-  bool bVar1;
+  gh_bool bVar1;
   gh_uint uVar2;
   gh_uint uVar3;
   char *pcVar4;

@@ -24,7 +24,7 @@ int SeletEmuCore(gh_u4 param_1)
   int iVar8;
   gh_ushort *puVar9;
   gh_ushort *puVar10;
-  bool bVar11;
+  gh_bool bVar11;
   int local_158 [6];
   void *local_140;
   gh_u4 local_13c;

@@ -18,7 +18,7 @@ gh_u4 mui_load_state(void)
   void *__ptr;
   void *__ptr_00;
   gh_uint uVar4;
-  bool bVar5;
+  gh_bool bVar5;
   size_t __size;
   int iVar6;
   int local_dc;

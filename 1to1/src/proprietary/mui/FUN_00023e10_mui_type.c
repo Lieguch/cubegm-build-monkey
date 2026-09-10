@@ -11,7 +11,7 @@
 void mui_type(void)
 
 {
-  bool bVar1;
+  gh_bool bVar1;
   gh_uint uVar2;
   char *pcVar3;
   gh_uint uVar4;

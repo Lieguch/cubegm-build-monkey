@@ -29,7 +29,7 @@ RENAME = [
     ('ulonglong', 'gh_ulonglong'), ('longlong', 'gh_longlong'),
     ('ushort', 'gh_ushort'), ('uchar', 'gh_uchar'),
     ('ulong', 'gh_ulong'), ('uint', 'gh_uint'),
-    ('byte', 'gh_byte'), ('code', 'gh_code'),
+    ('byte', 'gh_byte'), ('code', 'gh_code'), ('bool', 'gh_bool'),
 ]
 # 不动的：int char long short float double void size_t ssize_t
 

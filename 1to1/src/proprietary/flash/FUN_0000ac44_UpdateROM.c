@@ -18,7 +18,7 @@ void UpdateROM(char *param_1)
   void *__s;
   gh_u4 uVar3;
   size_t unaff_r7;
-  bool bVar4;
+  gh_bool bVar4;
   char local_15c;
   char local_15b;
   char local_15a;

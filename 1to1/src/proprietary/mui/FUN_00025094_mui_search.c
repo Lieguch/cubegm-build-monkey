@@ -33,7 +33,7 @@ void mui_search(void)
   int iVar20;
   int unaff_r11;
   int iVar21;
-  bool bVar22;
+  gh_bool bVar22;
   gh_uint local_474;
   gh_uint local_470;
   gh_uint local_46c;

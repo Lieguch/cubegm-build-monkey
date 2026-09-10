@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-bool Load_Proc1(char *param_1)
+gh_bool Load_Proc1(char *param_1)
 
 {
   int iVar1;

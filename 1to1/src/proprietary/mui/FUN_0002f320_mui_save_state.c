@@ -18,7 +18,7 @@ gh_u4 mui_save_state(void)
   void *pvVar5;
   void *__ptr;
   gh_uint uVar6;
-  bool bVar7;
+  gh_bool bVar7;
   int *piVar8;
   size_t __size;
   int iVar9;

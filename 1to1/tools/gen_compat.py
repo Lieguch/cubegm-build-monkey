@@ -47,6 +47,7 @@ typedef unsigned int        ulong;          /* ARM32：long=4 字节 */
 typedef unsigned long long  ulonglong;
 typedef long long           longlong;
 typedef void                code;           /* code* -> void* */
+typedef unsigned char       bool;           /* Ghidra bool -> 1 字节（改名后为 gh_bool） */
 
 /* ---- Ghidra 伪算子 ---- */
 #define CONCAT11(a,b)  ((undefined2)((((undefined2)(a) << 8)  | (undefined1)(b))))

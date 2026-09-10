@@ -12,7 +12,7 @@ void Load_Proc2(void)
 
 {
   gh_uint uVar1;
-  bool bVar2;
+  gh_bool bVar2;
   gh_u4 uVar3;
   gh_code *pcVar4;
   int iVar5;

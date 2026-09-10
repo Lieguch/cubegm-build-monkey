@@ -11,7 +11,7 @@
 gh_u4 GetJoystickConfig(int param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
-  bool bVar1;
+  gh_bool bVar1;
   gh_u4 uVar2;
   gh_u1 *__ptr;
   gh_u1 *puVar3;
