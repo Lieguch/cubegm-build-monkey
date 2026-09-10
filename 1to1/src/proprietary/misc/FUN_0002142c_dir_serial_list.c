@@ -67,7 +67,7 @@ LAB_0002150c:
         iVar3 = iVar11 * 0x404;
         iVar11 = iVar11 + 1;
         pcVar4 = strcpy(&file_info_list + iVar3,pdVar8->d_name);
-        *(uint *)(pcVar4 + 0x100) = (uint)(*ppdVar7)->d_type;
+        *(gh_uint *)(pcVar4 + 0x100) = (gh_uint)(*ppdVar7)->d_type;
         iVar3 = iVar5 + 1;
         ppdVar7 = ppdVar7 + 1;
         iVar9 = iVar10;
@@ -84,7 +84,7 @@ LAB_0002155c:
           iVar11 = iVar11 + 1;
           pcVar4 = strcpy(&file_info_list + iVar3,pdVar8->d_name);
           pdVar8 = *ppdVar6;
-          *(uint *)(pcVar4 + 0x100) = (uint)pdVar8->d_type;
+          *(gh_uint *)(pcVar4 + 0x100) = (gh_uint)pdVar8->d_type;
         }
         free(pdVar8);
         ppdVar6 = local_2c[0];

@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-uint SPI_RR(void)
+gh_uint SPI_RR(void)
 
 {
   int iVar1;
   char cVar2;
-  uint uVar3;
+  gh_uint uVar3;
   
   cVar2 = '\b';
   uVar3 = 0;

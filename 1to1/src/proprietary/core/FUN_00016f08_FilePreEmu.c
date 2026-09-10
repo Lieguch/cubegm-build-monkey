@@ -8,17 +8,17 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 FilePreEmu(char *param_1)
+gh_u4 FilePreEmu(char *param_1)
 
 {
   char *pcVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   FILE *__stream;
   int iVar3;
   int iVar4;
-  uint uVar5;
+  gh_uint uVar5;
   int local_158;
-  undefined1 auStack_154 [292];
+  gh_u1 auStack_154 [292];
   int local_30;
   
   pcVar1 = (char *)GetFilenameExt();

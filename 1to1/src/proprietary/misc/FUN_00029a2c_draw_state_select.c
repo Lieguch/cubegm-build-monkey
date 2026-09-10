@@ -13,28 +13,28 @@ void draw_state_select(int param_1,int param_2,int param_3)
 {
   int iVar1;
   int iVar2;
-  undefined2 *puVar3;
+  gh_u2 *puVar3;
   int iVar4;
-  uint uVar5;
-  uint uVar6;
+  gh_uint uVar5;
+  gh_uint uVar6;
   int iVar7;
-  undefined2 *puVar8;
-  uint uVar9;
+  gh_u2 *puVar8;
+  gh_uint uVar9;
   
   iVar2 = DAT_003af2b8;
   iVar1 = DAT_003af2a0;
   if (param_3 == 0) {
-    puVar8 = (undefined2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1) * 2);
+    puVar8 = (gh_u2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1) * 2);
     iVar7 = 0;
     do {
       iVar4 = 0;
       puVar3 = puVar8;
       do {
         if ((0x9f < iVar4 - 4U) || (0x9f < iVar7 - 4U)) {
-          *puVar3 = *(undefined2 *)
-                     (iVar2 + (((uint)*(ushort *)(iVar2 + 0x7c) - (uint)*(ushort *)(iVar2 + 0x78)) *
-                               ((param_2 - (uint)*(ushort *)(iVar2 + 0x7a)) + iVar7) +
-                              (param_1 - (uint)*(ushort *)(iVar2 + 0x78)) + iVar4) * 2 +
+          *puVar3 = *(gh_u2 *)
+                     (iVar2 + (((gh_uint)*(gh_ushort *)(iVar2 + 0x7c) - (gh_uint)*(gh_ushort *)(iVar2 + 0x78)) *
+                               ((param_2 - (gh_uint)*(gh_ushort *)(iVar2 + 0x7a)) + iVar7) +
+                              (param_1 - (gh_uint)*(gh_ushort *)(iVar2 + 0x78)) + iVar4) * 2 +
                      *(int *)(iVar2 + 0x70));
         }
         iVar4 = iVar4 + 1;
@@ -46,7 +46,7 @@ void draw_state_select(int param_1,int param_2,int param_3)
     return;
   }
   uVar9 = 0xfffffffc;
-  puVar8 = (undefined2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1) * 2);
+  puVar8 = (gh_u2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1) * 2);
   do {
     puVar3 = puVar8;
     uVar5 = 0xfffffffc;

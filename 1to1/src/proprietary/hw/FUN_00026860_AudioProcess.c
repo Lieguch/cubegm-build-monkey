@@ -11,26 +11,26 @@
 void AudioProcess(void)
 
 {
-  byte bVar1;
-  byte bVar2;
-  undefined2 uVar3;
-  undefined2 uVar4;
+  gh_byte bVar1;
+  gh_byte bVar2;
+  gh_u2 uVar3;
+  gh_u2 uVar4;
   short sVar5;
-  undefined4 uVar6;
-  byte *pbVar7;
+  gh_u4 uVar6;
+  gh_byte *pbVar7;
   short *psVar8;
-  byte *pbVar9;
+  gh_byte *pbVar9;
   int iVar10;
   int iVar11;
   int iVar12;
   int iVar13;
   int iVar14;
   int *piVar15;
-  uint in_fpscr;
+  gh_uint in_fpscr;
   float fVar16;
   float fVar17;
   float fVar18;
-  undefined1 *local_74;
+  gh_u1 *local_74;
   int local_70;
   short local_60 [4];
   timeval local_58;
@@ -49,16 +49,16 @@ void AudioProcess(void)
   local_70 = 0x3ceaf2;
   do {
     iVar11 = 0;
-    *(undefined2 *)(local_70 + -2) = 0;
-    *(undefined2 *)(local_74 + 2) = 0;
+    *(gh_u2 *)(local_70 + -2) = 0;
+    *(gh_u2 *)(local_74 + 2) = 0;
     piVar15 = (int *)SoundPlayer;
     do {
       iVar10 = *piVar15;
       if (iVar10 != 0) {
         fVar17 = (float)piVar15[8];
-        in_fpscr = in_fpscr & 0xfffffff | (uint)(fVar17 == fVar18) << 0x1e |
-                   (uint)(fVar18 <= fVar17) << 0x1d;
-        bVar1 = (byte)(in_fpscr >> 0x18);
+        in_fpscr = in_fpscr & 0xfffffff | (gh_uint)(fVar17 == fVar18) << 0x1e |
+                   (gh_uint)(fVar18 <= fVar17) << 0x1d;
+        bVar1 = (gh_byte)(in_fpscr >> 0x18);
         if (!(bool)(bVar1 >> 5 & 1) || (bool)(bVar1 >> 6)) {
           iVar13 = piVar15[3];
           iVar12 = piVar15[7];
@@ -67,13 +67,13 @@ void AudioProcess(void)
             if (iVar13 == 0) {
               psVar8 = (short *)piVar15[6];
               if (iVar14 == 0) {
-                pbVar9 = (byte *)((int)psVar8 + 1);
+                pbVar9 = (gh_byte *)((int)psVar8 + 1);
                 sVar5 = (short)(char)*psVar8 << 8;
                 piVar15[6] = (int)pbVar9;
                 *(short *)((int)local_60 + iVar11) = sVar5;
               }
               else {
-                pbVar9 = (byte *)(psVar8 + 1);
+                pbVar9 = (gh_byte *)(psVar8 + 1);
                 sVar5 = *psVar8;
                 *(short *)((int)local_60 + iVar11) = sVar5;
                 piVar15[6] = (int)pbVar9;
@@ -81,23 +81,23 @@ void AudioProcess(void)
               *(short *)((int)local_60 + iVar11 + 2) = sVar5;
             }
             else {
-              pbVar7 = (byte *)piVar15[6];
+              pbVar7 = (gh_byte *)piVar15[6];
               if (iVar14 == 0) {
                 pbVar9 = pbVar7 + 2;
                 bVar1 = *pbVar7;
                 piVar15[6] = (int)(pbVar7 + 1);
                 bVar2 = pbVar7[1];
-                *(ushort *)((int)local_60 + iVar11) = (ushort)bVar1 << 8;
+                *(gh_ushort *)((int)local_60 + iVar11) = (gh_ushort)bVar1 << 8;
                 piVar15[6] = (int)pbVar9;
-                *(ushort *)((int)local_60 + iVar11 + 2) = (ushort)bVar2 << 8;
+                *(gh_ushort *)((int)local_60 + iVar11 + 2) = (gh_ushort)bVar2 << 8;
               }
               else {
-                uVar3 = *(undefined2 *)pbVar7;
+                uVar3 = *(gh_u2 *)pbVar7;
                 pbVar9 = pbVar7 + 4;
-                uVar4 = *(undefined2 *)(pbVar7 + 2);
+                uVar4 = *(gh_u2 *)(pbVar7 + 2);
                 piVar15[6] = (int)pbVar9;
-                *(undefined2 *)((int)local_60 + iVar11) = uVar3;
-                *(undefined2 *)((int)local_60 + iVar11 + 2) = uVar4;
+                *(gh_u2 *)((int)local_60 + iVar11) = uVar3;
+                *(gh_u2 *)((int)local_60 + iVar11 + 2) = uVar4;
               }
             }
             if (iVar12 <= (int)pbVar9) {
@@ -108,12 +108,12 @@ void AudioProcess(void)
               piVar15[6] = iVar10;
             }
             uVar6 = __aeabi_idiv(&DAT_000f4240,piVar15[4]);
-            fVar16 = (float)VectorSignedToFloat(uVar6,(byte)(in_fpscr >> 0x16) & 3);
+            fVar16 = (float)VectorSignedToFloat(uVar6,(gh_byte)(in_fpscr >> 0x16) & 3);
             fVar17 = fVar16 + fVar17;
-            in_fpscr = in_fpscr & 0xfffffff | (uint)(fVar17 == fVar18) << 0x1e |
-                       (uint)(fVar18 <= fVar17) << 0x1d;
+            in_fpscr = in_fpscr & 0xfffffff | (gh_uint)(fVar17 == fVar18) << 0x1e |
+                       (gh_uint)(fVar18 <= fVar17) << 0x1d;
             piVar15[8] = (int)fVar17;
-            bVar1 = (byte)(in_fpscr >> 0x18);
+            bVar1 = (gh_byte)(in_fpscr >> 0x18);
           } while (!(bool)(bVar1 >> 5 & 1) || (bool)(bVar1 >> 6));
         }
         sVar5 = *(short *)((int)local_60 + iVar11 + 2);
@@ -128,7 +128,7 @@ void AudioProcess(void)
     *(short *)(local_74 + 2) = *(short *)(local_74 + 2) / 2;
     local_74 = local_74 + 4;
     local_70 = local_70 + 4;
-    if (local_74 == (undefined1 *)0x3cf66c) {
+    if (local_74 == (gh_u1 *)0x3cf66c) {
       gettimeofday(&local_58,&tStack_48);
       PlaySound(SoundBuffer,0x2df);
       gettimeofday(&local_50,&tStack_40);

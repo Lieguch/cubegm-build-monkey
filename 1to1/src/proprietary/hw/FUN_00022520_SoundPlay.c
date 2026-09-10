@@ -44,7 +44,7 @@ void SoundPlay(int param_1,int *param_2)
   iVar6 = param_2[1];
   iVar5 = param_2[2];
   iVar7 = param_2[3];
-  *(undefined1 *)(piVar1 + 4) = 0;
+  *(gh_u1 *)(piVar1 + 4) = 0;
   *(int *)(SoundPlayer + iVar3) = iVar4;
   *(int *)(SoundPlayer + iVar3 + 4) = iVar6;
   *(int *)(SoundPlayer + iVar3 + 8) = iVar5;
@@ -89,8 +89,8 @@ void SoundPlay(int param_1,int *param_2)
   piVar1[7] = iVar3 + iVar4;
   piVar1[6] = iVar6 - iVar4;
   *(int **)(SoundPlayer + param_1) = piVar1;
-  *(undefined4 *)(SoundPlayer + param_1 + 0x18) = 0;
-  *(undefined4 *)(SoundPlayer + param_1 + 0x1c) = 0;
+  *(gh_u4 *)(SoundPlayer + param_1 + 0x18) = 0;
+  *(gh_u4 *)(SoundPlayer + param_1 + 0x1c) = 0;
   piVar1[8] = iVar6 - iVar4;
   return;
 }

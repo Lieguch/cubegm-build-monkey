@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 FindZipItemA(int *param_1,char *param_2,uchar param_3,int *param_4,ZIPENTRY *param_5)
+gh_u4 FindZipItemA(int *param_1,char *param_2,gh_uchar param_3,int *param_4,ZIPENTRY *param_5)
 
 {
   if (param_1 != (int *)0x0) {

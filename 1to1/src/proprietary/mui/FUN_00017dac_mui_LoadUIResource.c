@@ -8,13 +8,13 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_LoadUIResource(undefined4 *param_1,undefined4 param_2)
+gh_u4 mui_LoadUIResource(gh_u4 *param_1,gh_u4 param_2)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   void *pvVar3;
-  undefined4 local_9c;
+  gh_u4 local_9c;
   char acStack_98 [128];
   
   uVar2 = GetWorkPath();

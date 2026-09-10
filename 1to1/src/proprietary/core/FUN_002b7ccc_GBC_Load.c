@@ -8,14 +8,14 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GBC_Load(char *param_1,int param_2)
+gh_u4 GBC_Load(char *param_1,int param_2)
 
 {
   int iVar1;
-  code *pcVar2;
+  gh_code *pcVar2;
   long lVar3;
   void *__ptr;
-  uint __n;
+  gh_uint __n;
   char acStack_120 [260];
   
   n_input_width = 0x100;
@@ -53,8 +53,8 @@ undefined4 GBC_Load(char *param_1,int param_2)
     game._0_4_ = fileName;
     game._4_4_ = __ptr;
     game._8_4_ = __n;
-    pcVar2 = (code *)dlsym(handle,"retro_load_game");
-    if (pcVar2 == (code *)0x0) {
+    pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
+    if (pcVar2 == (gh_code *)0x0) {
       RARCH_LOG("find retro_load_game process fail \n");
       return 0;
     }

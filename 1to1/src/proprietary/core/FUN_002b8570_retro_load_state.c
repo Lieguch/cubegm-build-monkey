@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 retro_load_state(char *param_1)
+gh_u4 retro_load_state(char *param_1)
 
 {
   void *__ptr;
@@ -17,8 +17,8 @@ undefined4 retro_load_state(char *param_1)
   int local_20;
   size_t local_1c [2];
   
-  _retro_serialize_size = (code *)dlsym(handle,"retro_serialize_size");
-  if (_retro_serialize_size == (code *)0x0) {
+  _retro_serialize_size = (gh_code *)dlsym(handle,"retro_serialize_size");
+  if (_retro_serialize_size == (gh_code *)0x0) {
     RARCH_LOG("find retro_serialize_size process fail \n");
     return 0;
   }
@@ -35,8 +35,8 @@ undefined4 retro_load_state(char *param_1)
       uncompress(__ptr,&local_20,__ptr_00,local_1c[0]);
       free(__ptr_00);
     }
-    _retro_unserialize = (code *)dlsym(handle,"retro_unserialize");
-    if (_retro_unserialize == (code *)0x0) {
+    _retro_unserialize = (gh_code *)dlsym(handle,"retro_unserialize");
+    if (_retro_unserialize == (gh_code *)0x0) {
       RARCH_LOG("find retro_unserialize process fail \n");
       return 0;
     }

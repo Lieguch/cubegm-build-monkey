@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 PlayFrame(undefined4 param_1,undefined4 param_2)
+gh_u4 PlayFrame(gh_u4 param_1,gh_u4 param_2)
 
 {
   int iVar1;

@@ -8,15 +8,15 @@
 #include "globals.h"
 #include "proto.h"
 
-void progress(char *param_1,undefined4 param_2)
+void progress(char *param_1,gh_u4 param_2)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   double in_d0;
   char acStack_120 [260];
   
   progress_stepcount = in_d0 + progress_stepcount;
-  uVar1 = (undefined4)((ulonglong)progress_stepcount >> 0x20);
+  uVar1 = (gh_u4)((gh_ulonglong)progress_stepcount >> 0x20);
   if (*param_1 == '\0') {
     RARCH_LOG("    %2.2f%%\n",param_2,SUB84(progress_stepcount,0),uVar1);
     sprintf(acStack_120,"    %2.2f%%",progress_stepcount._0_4_,progress_stepcount._4_4_);

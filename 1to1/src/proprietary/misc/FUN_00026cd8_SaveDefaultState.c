@@ -11,8 +11,8 @@
 void SaveDefaultState(void)
 
 {
-  undefined4 uVar1;
-  undefined4 uVar2;
+  gh_u4 uVar1;
+  gh_u4 uVar2;
   char acStack_1008 [4096];
   
   uVar1 = GetWorkPath();

@@ -10,11 +10,11 @@
 
 /* WARNING: Type propagation algorithm not settling */
 
-undefined4 InitDisplay(void)
+gh_u4 InitDisplay(void)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   int iVar3;
   pthread_t apStack_428 [4];
   char acStack_418 [1028];
@@ -27,8 +27,8 @@ undefined4 InitDisplay(void)
     return 0;
   }
   puts("open driver.so sucess");
-  video_driver_setting = (code *)dlsym(handle,"video_driver_setting");
-  if (video_driver_setting == (code *)0x0) {
+  video_driver_setting = (gh_code *)dlsym(handle,"video_driver_setting");
+  if (video_driver_setting == (gh_code *)0x0) {
     puts("can\'t find video_driver_setting proc");
   }
   else {

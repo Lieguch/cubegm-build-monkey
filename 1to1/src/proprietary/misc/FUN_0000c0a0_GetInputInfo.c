@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GetInputInfo(char *param_1,undefined4 param_2)
+gh_u4 GetInputInfo(char *param_1,gh_u4 param_2)
 
 {
   FILE *__stream;

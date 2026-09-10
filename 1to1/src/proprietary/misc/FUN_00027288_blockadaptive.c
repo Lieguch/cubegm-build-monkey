@@ -24,8 +24,8 @@ void blockadaptive(int *param_1,int *param_2)
   int iVar11;
   int iVar12;
   int iVar13;
-  undefined2 *puVar14;
-  undefined2 *puVar15;
+  gh_u2 *puVar14;
+  gh_u2 *puVar15;
   int iVar16;
   int iVar17;
   int iVar18;
@@ -50,14 +50,14 @@ void blockadaptive(int *param_1,int *param_2)
         iVar17 = param_2[5];
         iVar10 = *param_2;
         iVar13 = 0;
-        puVar14 = (undefined2 *)(iVar7 + iVar5 * 2 + iVar8 * iVar12);
+        puVar14 = (gh_u2 *)(iVar7 + iVar5 * 2 + iVar8 * iVar12);
         do {
           iVar2 = __aeabi_idiv(iVar13,iVar9);
           puVar15 = puVar14 + 1;
-          *puVar14 = *(undefined2 *)(iVar10 + iVar2 * 2 + iVar17 * iVar1);
+          *puVar14 = *(gh_u2 *)(iVar10 + iVar2 * 2 + iVar17 * iVar1);
           iVar13 = iVar13 + (iVar11 - iVar18);
           puVar14 = puVar15;
-        } while (puVar15 != (undefined2 *)(iVar7 + (iVar9 + iVar5) * 2 + iVar8 * iVar12));
+        } while (puVar15 != (gh_u2 *)(iVar7 + (iVar9 + iVar5) * 2 + iVar8 * iVar12));
       }
       iVar12 = iVar12 + 1;
       local_48 = (iVar16 - iVar4) + local_48;

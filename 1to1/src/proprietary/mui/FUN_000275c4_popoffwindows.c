@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void popoffwindows(undefined4 *param_1)
+void popoffwindows(gh_u4 *param_1)
 
 {
   void *pvVar1;
@@ -20,9 +20,9 @@ void popoffwindows(undefined4 *param_1)
   int iVar7;
   int iVar8;
   int iVar9;
-  undefined4 local_58;
-  undefined4 local_54;
-  undefined4 local_50;
+  gh_u4 local_58;
+  gh_u4 local_54;
+  gh_u4 local_50;
   int local_4c;
   int local_48;
   int local_44;

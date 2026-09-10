@@ -14,10 +14,10 @@ void mui_SoundplayThread(void)
   int iVar1;
   int iVar2;
   pthread_t __th;
-  undefined *puVar3;
+  gh_undef *puVar3;
   
   iVar1 = GetTicks();
-  puVar3 = (undefined *)0x0;
+  puVar3 = (gh_undef *)0x0;
   while ((Soundplayflag & 1) != 0) {
     while( true ) {
       puVar3 = puVar3 + 1;
@@ -29,7 +29,7 @@ void mui_SoundplayThread(void)
       if ((Soundplayflag & 2) == 0) break;
       AudioProcess();
       if (&UNK_000d2f00 < puVar3) {
-        puVar3 = (undefined *)0x0;
+        puVar3 = (gh_undef *)0x0;
         SoundClose();
         SoundPlayer._0_4_ = 0;
         SoundPlayer._36_4_ = 0;

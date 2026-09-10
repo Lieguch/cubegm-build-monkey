@@ -13,23 +13,23 @@ void mui_menu(void)
 {
   bool bVar1;
   int iVar2;
-  uint uVar3;
+  gh_uint uVar3;
   char *pcVar4;
   int iVar5;
   int iVar6;
   int iVar7;
   int iVar8;
   int iVar9;
-  uint uVar10;
+  gh_uint uVar10;
   int iVar11;
-  uint uVar12;
-  uint local_4c0;
+  gh_uint uVar12;
+  gh_uint local_4c0;
   int local_4bc;
-  undefined4 local_498;
+  gh_u4 local_498;
   pthread_t pStack_494;
   char acStack_490 [100];
   char acStack_42c [256];
-  undefined4 local_32c;
+  gh_u4 local_32c;
   char acStack_128 [260];
   
   local_4bc = 0;
@@ -69,11 +69,11 @@ joined_r0x0002331c:
     else {
       DAT_003af2ac = malloc(ze._296_4_ + 1);
       zr = UnzipItem(hz,local_498,DAT_003af2ac,0,3);
-      *(undefined1 *)((int)DAT_003af2ac + ze._296_4_) = 0;
+      *(gh_u1 *)((int)DAT_003af2ac + ze._296_4_) = 0;
     }
   }
   memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-         (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af27c + 1);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
   mui_fast_lsit = 0;

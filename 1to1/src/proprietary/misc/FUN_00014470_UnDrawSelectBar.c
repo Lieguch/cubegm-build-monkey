@@ -30,14 +30,14 @@ void UnDrawSelectBar(int *param_1,int param_2,int param_3)
   iVar8 = iVar7 * iVar1;
   do {
     iVar3 = *param_1;
-    iVar5 = iVar7 - (uint)*(ushort *)((int)piVar6 + 10);
+    iVar5 = iVar7 - (gh_uint)*(gh_ushort *)((int)piVar6 + 10);
     iVar4 = iVar8 + iVar3 * 2;
     iVar7 = iVar7 + 1;
     iVar8 = iVar8 + iVar1;
     memcpy((void *)(iVar2 + iVar4),
            (void *)(param_2 +
-                   *piVar6 + (((uint)*(ushort *)(piVar6 + 3) - (uint)*(ushort *)(piVar6 + 2)) *
-                              iVar5 + (iVar3 - (uint)*(ushort *)(piVar6 + 2))) * 2),
+                   *piVar6 + (((gh_uint)*(gh_ushort *)(piVar6 + 3) - (gh_uint)*(gh_ushort *)(piVar6 + 2)) *
+                              iVar5 + (iVar3 - (gh_uint)*(gh_ushort *)(piVar6 + 2))) * 2),
            (param_1[2] - iVar3) * 2);
   } while (iVar7 < param_1[3]);
   return;

@@ -8,27 +8,27 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 PauseMenu(void)
+gh_u4 PauseMenu(void)
 
 {
-  undefined4 uVar1;
-  undefined4 uVar2;
+  gh_u4 uVar1;
+  gh_u4 uVar2;
   int iVar3;
-  undefined2 *puVar4;
-  undefined2 *puVar5;
-  undefined2 *puVar6;
-  undefined2 *puVar7;
-  undefined2 *puVar8;
-  undefined2 *__ptr;
-  undefined2 *puVar9;
+  gh_u2 *puVar4;
+  gh_u2 *puVar5;
+  gh_u2 *puVar6;
+  gh_u2 *puVar7;
+  gh_u2 *puVar8;
+  gh_u2 *__ptr;
+  gh_u2 *puVar9;
   void *local_70;
-  undefined2 *local_58;
-  undefined4 local_54;
-  undefined4 local_50;
+  gh_u2 *local_58;
+  gh_u4 local_54;
+  gh_u4 local_50;
   int local_4c;
   int local_48;
   int local_44;
-  undefined2 *local_40;
+  gh_u2 *local_40;
   int local_3c;
   int local_38;
   int local_34;
@@ -44,24 +44,24 @@ undefined4 PauseMenu(void)
     iVar3 = this_frame._8_4_ * this_frame._4_4_;
     local_70 = malloc(iVar3 * 2);
     rgb8888_to_rgb565(local_70,this_frame._0_4_,iVar3 * 4);
-    this_frame._12_4_ = (uint)this_frame._12_4_ >> 1;
+    this_frame._12_4_ = (gh_uint)this_frame._12_4_ >> 1;
     this_frame._0_4_ = local_70;
   }
-  __ptr = (undefined2 *)0x0;
+  __ptr = (gh_u2 *)0x0;
   video_driver_set_rotation(0x1ff);
   usleep(20000);
   video_driver_set_rotation(0xff00);
   do {
-    if (bimapFilebuffer == (undefined2 *)0x0) {
+    if (bimapFilebuffer == (gh_u2 *)0x0) {
       bimapFilebuffer = malloc(DAT_003af828 * DAT_003af828 * 2);
     }
     if (DAT_003af2b8 == (int *)0x0) {
       mui_LoadUIResource(&DAT_003af2b8,"game.raw");
     }
     memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-           (uint)*(ushort *)((int)DAT_003af2b8 + 6) * (uint)*(ushort *)(DAT_003af2b8 + 1) * 2);
+           (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8);
-    if (__ptr == (undefined2 *)0x0) {
+    if (__ptr == (gh_u2 *)0x0) {
       __ptr = malloc(0x96000);
     }
     uVar2 = this_frame._8_4_;
@@ -78,7 +78,7 @@ undefined4 PauseMenu(void)
       local_4c = this_frame._4_4_;
       local_48 = this_frame._8_4_;
       local_44 = this_frame._12_4_;
-      local_58 = (undefined2 *)this_frame._0_4_;
+      local_58 = (gh_u2 *)this_frame._0_4_;
     }
     else if (rotation == 1) {
       local_48 = this_frame._4_4_;
@@ -89,8 +89,8 @@ undefined4 PauseMenu(void)
       }
       else {
         local_44 = this_frame._8_4_ * 2;
-        puVar5 = (undefined2 *)(this_frame._0_4_ + this_frame._4_4_ * 2 + -2);
-        puVar9 = (undefined2 *)(this_frame._0_4_ + -2);
+        puVar5 = (gh_u2 *)(this_frame._0_4_ + this_frame._4_4_ * 2 + -2);
+        puVar9 = (gh_u2 *)(this_frame._0_4_ + -2);
         puVar7 = __ptr;
         do {
           if (uVar2 != 0) {
@@ -119,8 +119,8 @@ undefined4 PauseMenu(void)
       else {
         local_44 = this_frame._8_4_ * 2;
         iVar3 = this_frame._4_4_ * (this_frame._8_4_ + 0x7fffffff);
-        puVar9 = (undefined2 *)(this_frame._0_4_ + iVar3 * 2);
-        puVar5 = (undefined2 *)(this_frame._0_4_ + (this_frame._4_4_ + iVar3) * 2);
+        puVar9 = (gh_u2 *)(this_frame._0_4_ + iVar3 * 2);
+        puVar5 = (gh_u2 *)(this_frame._0_4_ + (this_frame._4_4_ + iVar3) * 2);
         puVar7 = __ptr;
         do {
           if (uVar2 != 0) {
@@ -144,7 +144,7 @@ undefined4 PauseMenu(void)
       local_48 = this_frame._8_4_;
       iVar3 = this_frame._8_4_ * this_frame._4_4_;
       if (iVar3 != 0) {
-        puVar5 = (undefined2 *)(this_frame._0_4_ + (iVar3 + 0x7fffffff) * 2 + 2);
+        puVar5 = (gh_u2 *)(this_frame._0_4_ + (iVar3 + 0x7fffffff) * 2 + 2);
         puVar7 = __ptr;
         do {
           puVar5 = puVar5 + -1;
@@ -178,11 +178,11 @@ undefined4 PauseMenu(void)
     iVar3 = mui_ReadJoystick();
     while (iVar3 != 0x40) {
       if (iVar3 == 0x2000) {
-        if (bimapFilebuffer != (undefined2 *)0x0) {
+        if (bimapFilebuffer != (gh_u2 *)0x0) {
           free(bimapFilebuffer);
-          bimapFilebuffer = (undefined2 *)0x0;
+          bimapFilebuffer = (gh_u2 *)0x0;
         }
-        if (__ptr != (undefined2 *)0x0) {
+        if (__ptr != (gh_u2 *)0x0) {
           free(__ptr);
         }
         if (DAT_003af2b8 != (int *)0x0) {
@@ -212,11 +212,11 @@ undefined4 PauseMenu(void)
     }
     iVar3 = mui_game_exit();
     if (iVar3 == 0) {
-      if (bimapFilebuffer != (undefined2 *)0x0) {
+      if (bimapFilebuffer != (gh_u2 *)0x0) {
         free(bimapFilebuffer);
-        bimapFilebuffer = (undefined2 *)0x0;
+        bimapFilebuffer = (gh_u2 *)0x0;
       }
-      if (__ptr != (undefined2 *)0x0) {
+      if (__ptr != (gh_u2 *)0x0) {
         free(__ptr);
       }
       if (DAT_003af2b8 != (int *)0x0) {

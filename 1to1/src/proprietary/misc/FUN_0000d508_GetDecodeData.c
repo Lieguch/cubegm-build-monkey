@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GetDecodeData(void)
+gh_u4 GetDecodeData(void)
 
 {
   return 0;

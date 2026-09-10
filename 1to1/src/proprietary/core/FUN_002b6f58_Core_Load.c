@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 Core_Load(char *param_1,undefined4 param_2)
+gh_u4 Core_Load(char *param_1,gh_u4 param_2)
 
 {
   int iVar1;
-  code *pcVar2;
+  gh_code *pcVar2;
   long lVar3;
   char local_184 [100];
   char acStack_120 [256];
@@ -33,8 +33,8 @@ undefined4 Core_Load(char *param_1,undefined4 param_2)
     RARCH_LOG("open %s fail\n",acStack_120);
     return 0;
   }
-  _retro_is_support = (code *)dlsym(handle,"retro_is_support");
-  if (_retro_is_support != (code *)0x0) {
+  _retro_is_support = (gh_code *)dlsym(handle,"retro_is_support");
+  if (_retro_is_support != (gh_code *)0x0) {
     iVar1 = (*_retro_is_support)(param_1);
     if (iVar1 < 0) {
       RARCH_LOG("unsupport this game rom\n");
@@ -50,8 +50,8 @@ undefined4 Core_Load(char *param_1,undefined4 param_2)
   run_process("retro_set_progress_callback",progress);
   strcpy(fileName,param_1);
   if ((short)Filetype == 0x800) {
-    _retro_set_device = (code *)dlsym(handle,"retro_set_controller_port_device");
-    if (_retro_set_device == (code *)0x0) {
+    _retro_set_device = (gh_code *)dlsym(handle,"retro_set_controller_port_device");
+    if (_retro_set_device == (gh_code *)0x0) {
       RARCH_LOG("find retro_set_controller_port_device process fail \n");
     }
     else {
@@ -72,8 +72,8 @@ undefined4 Core_Load(char *param_1,undefined4 param_2)
   game._0_4_ = fileName;
   game._4_4_ = ZIP_BUF;
   game._8_4_ = ZIP_BUF_SIZE;
-  pcVar2 = (code *)dlsym(handle,"retro_load_game");
-  if (pcVar2 == (code *)0x0) {
+  pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
+  if (pcVar2 == (gh_code *)0x0) {
     RARCH_LOG("find retro_load_game process fail \n");
   }
   else {

@@ -12,11 +12,11 @@ bool Load_Proc1(char *param_1)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   
-  fpsbuf._4_4_ = *(undefined4 *)((undefined1  [16])0x0 + (undefined1  [16])0x4);
-  fpsbuf._8_4_ = *(undefined4 *)((undefined1  [16])0x0 + (undefined1  [16])0x8);
-  fpsbuf._12_4_ = *(undefined4 *)((undefined1  [16])0x0 + (undefined1  [16])0xc);
+  fpsbuf._4_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0x4);
+  fpsbuf._8_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0x8);
+  fpsbuf._12_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0xc);
   fpsbuf._0_4_ = 0;
   fps_ptr = 0;
   overtime = 0;

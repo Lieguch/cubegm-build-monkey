@@ -8,13 +8,13 @@
 #include "globals.h"
 #include "proto.h"
 
-void spi_printf(char *param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+void spi_printf(char *param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
   int iVar1;
-  undefined4 uStack_c;
-  undefined4 uStack_8;
-  undefined4 uStack_4;
+  gh_u4 uStack_c;
+  gh_u4 uStack_8;
+  gh_u4 uStack_4;
   
   uStack_c = param_2;
   uStack_8 = param_3;

@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 ShareMemClose(void)
+gh_u4 ShareMemClose(void)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   
   iVar1 = shmdt(shm);
   if (iVar1 == -1) {

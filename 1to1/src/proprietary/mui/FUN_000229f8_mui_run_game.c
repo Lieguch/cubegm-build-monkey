@@ -8,19 +8,19 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_run_game(char *param_1)
+gh_u4 mui_run_game(char *param_1)
 
 {
   char cVar1;
   FILE *pFVar2;
-  undefined4 uVar3;
+  gh_u4 uVar3;
   size_t __n;
   char *__dest;
-  byte bVar4;
+  gh_byte bVar4;
   pthread_t *ppVar5;
-  byte *pbVar7;
+  gh_byte *pbVar7;
   int iVar8;
-  byte *local_6c8;
+  gh_byte *local_6c8;
   pthread_t apStack_6ac [32];
   char acStack_62c [256];
   char acStack_52c [256];
@@ -61,7 +61,7 @@ undefined4 mui_run_game(char *param_1)
   if (pFVar2 == (FILE *)0x0) {
     pFVar2 = fopen(acStack_62c,"wt");
     if (pFVar2 != (FILE *)0x0) {
-      local_6c8 = (byte *)0x0;
+      local_6c8 = (gh_byte *)0x0;
       goto LAB_00022bec;
     }
   }
@@ -82,7 +82,7 @@ LAB_00022bec:
       fprintf(pFVar2,"%s;%s;%s;%s;%s\n",local_42c,local_328,param_1 + 0x204,local_2a8,
               param_1 + 0x284);
     }
-    if (local_6c8 != (byte *)0x0) {
+    if (local_6c8 != (gh_byte *)0x0) {
       iVar8 = 0;
       ppVar5 = apStack_6ac;
       pbVar7 = local_6c8;
@@ -94,7 +94,7 @@ LAB_00022c94:
         while ((bVar4 != 0 && (ppVar6 = ppVar5, bVar4 != 10))) {
           while( true ) {
             ppVar5 = (pthread_t *)((int)ppVar6 + 1);
-            *(byte *)ppVar6 = bVar4;
+            *(gh_byte *)ppVar6 = bVar4;
 LAB_00022cb8:
             do {
               pbVar7 = pbVar7 + 1;
@@ -109,7 +109,7 @@ LAB_00022cdc:
         if (iVar8 == 0) {
           cVar1 = '\0';
           if (apStack_6ac < ppVar5) {
-            *(byte *)ppVar5 = 0;
+            *(gh_byte *)ppVar5 = 0;
             strcpy(local_42c,(char *)apStack_6ac);
             cVar1 = local_42c[0];
           }
@@ -187,7 +187,7 @@ LAB_0002303c:
           if (apStack_6ac < ppVar5) {
             __dest = local_328;
 LAB_00023074:
-            *(byte *)ppVar5 = 0;
+            *(gh_byte *)ppVar5 = 0;
             strcpy(__dest,(char *)apStack_6ac);
             cVar1 = local_42c[0];
             goto LAB_00022cf0;

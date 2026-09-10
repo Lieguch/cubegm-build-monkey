@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-bool joystick_input(uint param_1,undefined4 param_2,undefined4 param_3,int param_4)
+bool joystick_input(gh_uint param_1,gh_u4 param_2,gh_u4 param_3,int param_4)
 
 {
   if (3 < param_1) {
     return false;
   }
-  return (*(uint *)(game_joy_key + param_1 * 4) &
-         *(uint *)(user_joy_key_mask + (param_4 + param_1 * 0x10) * 4)) != 0;
+  return (*(gh_uint *)(game_joy_key + param_1 * 4) &
+         *(gh_uint *)(user_joy_key_mask + (param_4 + param_1 * 0x10) * 4)) != 0;
 }

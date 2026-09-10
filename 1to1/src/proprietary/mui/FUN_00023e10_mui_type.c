@@ -12,24 +12,24 @@ void mui_type(void)
 
 {
   bool bVar1;
-  uint uVar2;
+  gh_uint uVar2;
   char *pcVar3;
-  uint uVar4;
+  gh_uint uVar4;
   int iVar5;
   int iVar6;
-  uint uVar7;
+  gh_uint uVar7;
   int iVar8;
-  uint uVar9;
+  gh_uint uVar9;
   int iVar10;
   int local_474;
   int local_468;
-  uint local_464;
+  gh_uint local_464;
   int local_45c;
-  uint local_450;
-  undefined4 local_434;
+  gh_uint local_450;
+  gh_u4 local_434;
   pthread_t pStack_430;
   char acStack_42c [256];
-  undefined4 local_32c;
+  gh_u4 local_32c;
   char acStack_128 [260];
   
   DAT_003af278 = m_menulog._300_4_;
@@ -57,7 +57,7 @@ LAB_00023eb8:
     mui_LoadUIResource(&DAT_003af298,"type.raw");
   }
   if (DAT_003af2a8 == (void *)0x0) {
-    uVar9 = (uint)(byte)m_Typetab[local_45c * 0x14];
+    uVar9 = (gh_uint)(gh_byte)m_Typetab[local_45c * 0x14];
     sprintf(acStack_42c,"%s/%03d/%03d.dat",root_path,uVar9,uVar9);
     DAT_003af270 = uVar9;
     hz = OpenZipU(acStack_42c,0,2);
@@ -71,7 +71,7 @@ LAB_00023eb8:
       if (zr == 0) {
         DAT_003af2a8 = malloc(ze._296_4_ + 1);
         zr = UnzipItem(hz,local_434,DAT_003af2a8,0,3);
-        *(undefined1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
+        *(gh_u1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
       }
       CloseZipU(hz);
     }
@@ -79,7 +79,7 @@ LAB_00023eb8:
   DAT_003af288 = 0;
   if (local_474 == 0) {
     memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-           (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+           (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
     mui_fast_lsit = local_474;
     iVar5 = mui_type_file_list(iVar10,DAT_003af2a8);
@@ -87,14 +87,14 @@ LAB_00023eb8:
     if (iVar5 != 0) {
       bVar1 = true;
       memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-             (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+             (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
       mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
       mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 6);
     }
   }
   else {
     memcpy(DAT_003af29c,(void *)((int)DAT_003af298 + *DAT_003af298),
-           (uint)*(ushort *)((int)DAT_003af298 + 6) * (uint)*(ushort *)(DAT_003af298 + 1) * 2);
+           (gh_uint)*(gh_ushort *)((int)DAT_003af298 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af298 + 1) * 2);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af298,local_45c + 1);
   }
@@ -227,7 +227,7 @@ LAB_0002475c:
         DAT_003af27c = uVar4;
         goto LAB_00023eb8;
       }
-      uVar7 = (uint)(byte)m_Typetab[local_45c * 0x14];
+      uVar7 = (gh_uint)(gh_byte)m_Typetab[local_45c * 0x14];
       sprintf(acStack_42c,"%s/%03d/%03d.dat",root_path,uVar7,uVar7);
       DAT_003af270 = uVar7;
       hz = OpenZipU(acStack_42c,0,2);
@@ -244,7 +244,7 @@ LAB_0002475c:
           }
           DAT_003af2a8 = malloc(ze._296_4_ + 1);
           zr = UnzipItem(hz,local_434,DAT_003af2a8,0,3);
-          *(undefined1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
+          *(gh_u1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
         }
         CloseZipU(hz);
       }
@@ -256,7 +256,7 @@ LAB_0002475c:
         local_474 = 0;
         bVar1 = true;
         memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-               (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+               (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
         mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
         mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 6);
         DAT_003af27c = -1;

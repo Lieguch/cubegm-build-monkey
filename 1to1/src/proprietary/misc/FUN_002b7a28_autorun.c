@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void autorun(undefined4 param_1,char *param_2)
+void autorun(gh_u4 param_1,char *param_2)
 
 {
   RARCH_LOG("autorun %s %s\n",param_1,param_2);

@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GetZipItemA(int *param_1,int param_2,ZIPENTRY *param_3)
+gh_u4 GetZipItemA(int *param_1,int param_2,ZIPENTRY *param_3)
 
 {
   if (param_1 == (int *)0x0) {

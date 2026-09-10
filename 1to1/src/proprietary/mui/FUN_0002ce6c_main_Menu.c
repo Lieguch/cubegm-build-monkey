@@ -12,7 +12,7 @@ void main_Menu(void)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   pthread_t apStack_1c [2];
   
   strcpy(root_path,work_path);

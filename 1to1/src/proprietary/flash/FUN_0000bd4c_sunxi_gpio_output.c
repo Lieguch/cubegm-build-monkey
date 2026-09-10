@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 sunxi_gpio_output(int param_1,int param_2)
+gh_u4 sunxi_gpio_output(int param_1,int param_2)
 
 {
   if (param_1 != 0) {

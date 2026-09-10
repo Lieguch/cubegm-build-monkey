@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-void sflash_read_security_data(undefined4 param_1,undefined4 param_2)
+void sflash_read_security_data(gh_u4 param_1,gh_u4 param_2)
 
 {
-  undefined4 local_10;
-  undefined4 local_c;
+  gh_u4 local_10;
+  gh_u4 local_c;
   
   local_c = 0;
   local_10 = 0x4848;

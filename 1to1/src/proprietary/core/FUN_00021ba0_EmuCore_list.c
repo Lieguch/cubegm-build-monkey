@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void EmuCore_list(int param_1,undefined4 param_2,int param_3)
+void EmuCore_list(int param_1,gh_u4 param_2,int param_3)
 
 {
   int iVar1;

@@ -8,15 +8,15 @@
 #include "globals.h"
 #include "proto.h"
 
-int ConvertCode(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+int ConvertCode(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4,
                void *param_5,size_t param_6)
 
 {
   int iVar1;
   int iVar2;
   int *piVar3;
-  undefined4 local_18;
-  undefined4 local_14 [2];
+  gh_u4 local_18;
+  gh_u4 local_14 [2];
   
   local_18 = param_4;
   local_14[0] = param_3;

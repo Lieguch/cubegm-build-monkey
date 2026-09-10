@@ -12,10 +12,10 @@ void mui_InitFont(void)
 
 {
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   FILE *__stream;
   size_t __size;
-  undefined4 local_11c;
+  gh_u4 local_11c;
   char acStack_118 [260];
   
   iVar1 = strcmp(fontname,(char *)((&m_ui)[m_ui + 0x16] + 0x20));

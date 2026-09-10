@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 * ShareMemCreat(void)
+gh_u4 * ShareMemCreat(void)
 
 {
-  undefined4 *puVar1;
+  gh_u4 *puVar1;
   
   shmid = shmget(0x4d2,8,0x3b6);
   if (shmid == -1) {
@@ -20,12 +20,12 @@ undefined4 * ShareMemCreat(void)
   else {
     puVar1 = shmat(shmid,(void *)0x0,0);
     shm = puVar1;
-    if (puVar1 != (undefined4 *)0xffffffff) {
+    if (puVar1 != (gh_u4 *)0xffffffff) {
       *puVar1 = 1;
       puVar1[1] = 0;
       return puVar1;
     }
     puts("shmat failed");
   }
-  return (undefined4 *)0xffffffff;
+  return (gh_u4 *)0xffffffff;
 }

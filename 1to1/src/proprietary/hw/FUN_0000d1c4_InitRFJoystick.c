@@ -59,7 +59,7 @@ void InitRFJoystick(void)
   SPI_Write_BUF(0x2b,5,&RX_ADDRESS1);
   RxMode();
   osDelay(0x28);
-  SPI_Write(0x25,(undefined1)CHANNEL_TBL);
+  SPI_Write(0x25,(gh_u1)CHANNEL_TBL);
   RF_joy_key._0_4_ = 0;
   RF_joy_key._4_4_ = 0;
   pthread_create(&pStack_14,(pthread_attr_t *)0x0,RF_Joystick_timer_isr,(void *)0x0);

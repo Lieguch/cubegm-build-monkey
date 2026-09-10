@@ -8,20 +8,20 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 TestLibz0(void)
+gh_u4 TestLibz0(void)
 
 {
   FILE *__stream;
   void *__ptr;
-  undefined4 uVar1;
-  byte *pbVar2;
+  gh_u4 uVar1;
+  gh_byte *pbVar2;
   size_t sVar3;
-  uint uVar4;
-  uint uVar5;
-  byte *pbVar6;
-  byte *unaff_r6;
+  gh_uint uVar4;
+  gh_uint uVar5;
+  gh_byte *pbVar6;
+  gh_byte *unaff_r6;
   size_t unaff_r9;
-  byte *pbVar7;
+  gh_byte *pbVar7;
   size_t sVar8;
   size_t local_8c;
   size_t local_88;
@@ -44,13 +44,13 @@ undefined4 TestLibz0(void)
   local_8c = unaff_r9;
   __ptr = malloc(unaff_r9);
   printf("compress %x %x %x %x\n",__ptr,unaff_r9,unaff_r6,unaff_r9);
-  pbVar6 = (byte *)((int)__ptr + -1);
+  pbVar6 = (gh_byte *)((int)__ptr + -1);
   uVar1 = compress(__ptr,&local_8c,unaff_r6,unaff_r9);
   printf("compress finished %x %d\n",local_8c,uVar1);
   do {
     pbVar6 = pbVar6 + 1;
-    printf("%02x ",(uint)*pbVar6);
-  } while (pbVar6 != (byte *)((int)__ptr + 0xf));
+    printf("%02x ",(gh_uint)*pbVar6);
+  } while (pbVar6 != (gh_byte *)((int)__ptr + 0xf));
   putchar(10);
   local_88 = unaff_r9 << 1;
   pbVar6 = malloc(local_88);
@@ -61,8 +61,8 @@ undefined4 TestLibz0(void)
   uVar1 = uncompress(pbVar6,&local_88,__ptr,local_8c);
   printf("uncompress finished %x %d\n",local_88,uVar1);
   if (0 < (int)local_88) {
-    uVar4 = (uint)*unaff_r6;
-    uVar5 = (uint)*pbVar6;
+    uVar4 = (gh_uint)*unaff_r6;
+    uVar5 = (gh_uint)*pbVar6;
     if (uVar5 == uVar4) {
       sVar3 = 0;
       pbVar2 = pbVar6;
@@ -71,9 +71,9 @@ undefined4 TestLibz0(void)
         sVar3 = sVar3 + 1;
         if (sVar3 == local_88) goto LAB_0000b888;
         pbVar7 = pbVar7 + 1;
-        uVar4 = (uint)*pbVar7;
+        uVar4 = (gh_uint)*pbVar7;
         pbVar2 = pbVar2 + 1;
-        uVar5 = (uint)*pbVar2;
+        uVar5 = (gh_uint)*pbVar2;
       } while (uVar4 == uVar5);
     }
     else {

@@ -8,14 +8,14 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 environment(int param_1,uint *param_2)
+gh_u4 environment(int param_1,gh_uint *param_2)
 
 {
-  undefined2 uVar1;
+  gh_u2 uVar1;
   char *pcVar2;
   char *pcVar3;
-  undefined4 uVar4;
-  undefined1 *puVar5;
+  gh_u4 uVar4;
+  gh_u1 *puVar5;
   
   if (param_1 == 10) {
     use_rgb_8888 = 0;
@@ -33,7 +33,7 @@ LAB_002b4fe0:
   }
   else {
     if (param_1 == 0x1b) {
-      *param_2 = (uint)log_dummy;
+      *param_2 = (gh_uint)log_dummy;
       return 1;
     }
     if (param_1 == 1) {
@@ -63,7 +63,7 @@ LAB_002b4fe0:
         if (((param_1 == 0xf) && (corecfg[0] != '\0')) &&
            (get_value_from_items(*param_2,environment_str,corecfg,0x40), environment_str[0] != '\0')
            ) {
-          param_2[1] = (uint)environment_str;
+          param_2[1] = (gh_uint)environment_str;
           return 1;
         }
         goto LAB_002b4fe0;
@@ -73,10 +73,10 @@ LAB_002b4fe0:
       pcVar3 = "saves";
     }
     uVar4 = 1;
-    uVar1 = *(undefined2 *)(pcVar3 + 4);
-    *(undefined4 *)pcVar2 = *(undefined4 *)pcVar3;
-    *(undefined2 *)(pcVar2 + 4) = uVar1;
-    *param_2 = (uint)puVar5;
+    uVar1 = *(gh_u2 *)(pcVar3 + 4);
+    *(gh_u4 *)pcVar2 = *(gh_u4 *)pcVar3;
+    *(gh_u2 *)(pcVar2 + 4) = uVar1;
+    *param_2 = (gh_uint)puVar5;
   }
   return uVar4;
 }

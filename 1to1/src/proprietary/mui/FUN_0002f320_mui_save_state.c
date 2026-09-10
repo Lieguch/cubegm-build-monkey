@@ -8,16 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_save_state(void)
+gh_u4 mui_save_state(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   FILE *pFVar3;
   long lVar4;
   void *pvVar5;
   void *__ptr;
-  uint uVar6;
+  gh_uint uVar6;
   bool bVar7;
   int *piVar8;
   size_t __size;
@@ -32,15 +32,15 @@ undefined4 mui_save_state(void)
   int local_ac;
   int local_a8;
   void *local_a4;
-  uint local_a0;
-  uint local_9c;
-  uint local_98;
-  uint local_94;
+  gh_uint local_a0;
+  gh_uint local_9c;
+  gh_uint local_98;
+  gh_uint local_94;
   int local_90;
   char acStack_8c [104];
   
   DAT_003af27c = 0;
-  if (*(ushort *)(DAT_003af2b8 + 0x1e) < *(ushort *)(DAT_003af2b8 + 0xe)) {
+  if (*(gh_ushort *)(DAT_003af2b8 + 0x1e) < *(gh_ushort *)(DAT_003af2b8 + 0xe)) {
     m_statetab._16_4_ = 0;
     m_statetab._88_4_ = 3;
     m_statetab._68_4_ = 0xffffffff;
@@ -63,7 +63,7 @@ joined_r0x0002f3e8:
   }
   iVar9 = 0;
   memcpy(DAT_003af29c,(void *)((int)piVar8 + *piVar8),
-         (uint)*(ushort *)((int)piVar8 + 6) * (uint)*(ushort *)(piVar8 + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)piVar8 + 6) * (gh_uint)*(gh_ushort *)(piVar8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,3);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,7);
   local_b0 = DAT_003af828;
@@ -83,7 +83,7 @@ joined_r0x0002f3e8:
     while( true ) {
       uVar1 = GetWorkPath();
       iVar2 = gameType();
-      sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4),
+      sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
               RomName,iVar9);
       iVar2 = access(acStack_8c,0);
       if (iVar2 == 0) break;
@@ -108,9 +108,9 @@ LAB_0002f4e0:
     fclose(pFVar3);
     uncompress(__ptr,&local_d8,pvVar5,__size);
     local_b0 = DAT_003af828;
-    local_9c = (iVar9 / 3) * 0xa8 + *(ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
+    local_9c = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
     local_a4 = DAT_003af29c;
-    local_a0 = (iVar9 % 3) * 0xa8 + *(ushort *)(DAT_003af2b8 + 0x1e) + 4;
+    local_a0 = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;
     local_ac = DAT_003af82c;
     local_a8 = DAT_003af828 << 1;
     local_90 = DAT_003af2a0 << 1;
@@ -142,13 +142,13 @@ LAB_0002f6cc:
     if (uVar6 == 0x40) {
       if (!bVar7) break;
       iVar9 = iVar9 * 0x18;
-      draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
-                        (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+      draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
+                        (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                         *(int *)(m_statetab + iVar9 + 4),0);
       iVar9 = *(int *)(m_statetab + iVar9 + 0xc);
 LAB_0002fb44:
-      draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9 * 0x18)
-                        ,(uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+      draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9 * 0x18)
+                        ,(gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                          *(int *)(m_statetab + iVar9 * 0x18 + 4),0xffff);
       SoundPlay(1,mui_Effect0);
 LAB_0002fad8:
@@ -165,19 +165,19 @@ LAB_0002fae0:
             return 1;
           }
           iVar9 = iVar9 * 0x18;
-          draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
-                            (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+          draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
+                            (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                             *(int *)(m_statetab + iVar9 + 4),0);
           iVar9 = *(int *)(m_statetab + iVar9 + 8);
           goto LAB_0002fb44;
         }
         if (uVar6 == 0x20) {
           if (!bVar7) {
-            if ((uint)*(ushort *)(DAT_003af2b8 + 0x1e) <= (uint)*(ushort *)(DAT_003af2b8 + 0xe))
+            if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe))
             goto LAB_0002f780;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._0_4_,
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._4_4_,0xffff)
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._0_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._4_4_,0xffff)
             ;
             bVar7 = true;
             SoundPlay(1,mui_Effect1);
@@ -185,8 +185,8 @@ LAB_0002fae0:
             goto LAB_0002fad8;
           }
           iVar9 = iVar9 * 0x18;
-          draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
-                            (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+          draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
+                            (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                             *(int *)(m_statetab + iVar9 + 4),0);
           iVar9 = *(int *)(m_statetab + iVar9 + 0x14);
           goto joined_r0x0002fcd4;
@@ -196,8 +196,8 @@ LAB_0002fae0:
         if (uVar6 == 0x80) {
           if (bVar7) {
             iVar9 = iVar9 * 0x18;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar9),
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                               *(int *)(m_statetab + iVar9 + 4),0);
             iVar9 = *(int *)(m_statetab + iVar9 + 0x10);
 joined_r0x0002fcd4:
@@ -206,15 +206,15 @@ joined_r0x0002fcd4:
               SoundPlay(1,mui_Effect1);
             }
             else {
-              draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) +
+              draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) +
                                 *(int *)(m_statetab + iVar9 * 0x18),
-                                (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+                                (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                                 *(int *)(m_statetab + iVar9 * 0x18 + 4),0xffff);
               SoundPlay(1,mui_Effect1);
             }
           }
           else {
-            if ((uint)*(ushort *)(DAT_003af2b8 + 0xe) <= (uint)*(ushort *)(DAT_003af2b8 + 0x1e)) {
+            if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e)) {
 LAB_0002f780:
               bVar7 = false;
               SoundPlay(1,mui_Effect1);
@@ -222,8 +222,8 @@ LAB_0002f780:
             }
             iVar9 = 2;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._48_4_,
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._52_4_,0xffff
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._48_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._52_4_,0xffff
                              );
             bVar7 = true;
             SoundPlay(1,mui_Effect1);
@@ -232,12 +232,12 @@ LAB_0002f780:
         }
         if ((uVar6 == 0x2000) && (bVar7)) {
           if (local_d4[iVar9] != 0) {
-            local_a0 = (uint)*(ushort *)(DAT_003af2b8 + 0x26);
+            local_a0 = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x26);
             local_90 = DAT_003af2a0 << 1;
             local_a4 = (void *)((int)DAT_003af2b8 + DAT_003af2b8[0x24]);
-            local_9c = (uint)*(ushort *)((int)DAT_003af2b8 + 0x9a);
-            local_98 = (uint)*(ushort *)(DAT_003af2b8 + 0x27);
-            local_94 = (uint)*(ushort *)((int)DAT_003af2b8 + 0x9e);
+            local_9c = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9a);
+            local_98 = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x27);
+            local_94 = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9e);
             popwindows(&local_a4);
             mui_ReadJoystick();
             diff_prev = 0;
@@ -259,14 +259,14 @@ LAB_0002f780:
           }
           uVar1 = GetWorkPath();
           iVar2 = gameType();
-          sprintf(acStack_8c,"%sstates/%s",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4));
+          sprintf(acStack_8c,"%sstates/%s",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4));
           iVar2 = access(acStack_8c,0);
           if (iVar2 != 0) {
             mkdir(acStack_8c,0x1ed);
           }
           uVar1 = GetWorkPath();
           iVar2 = gameType();
-          sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4),
+          sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
                   RomName,iVar9);
           iVar2 = retro_save_state(acStack_8c);
           if (iVar2 != 0) {
@@ -285,8 +285,8 @@ LAB_0002f780:
               local_bc = bimapFilebuffer;
               local_b0 = DAT_003af828;
               local_a4 = DAT_003af29c;
-              local_a0 = (iVar9 % 3) * 0xa8 + *(ushort *)(DAT_003af2b8 + 0x1e) + 4;
-              local_9c = (iVar9 / 3) * 0xa8 + *(ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
+              local_a0 = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;
+              local_9c = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
               local_ac = DAT_003af82c;
               local_90 = DAT_003af2a0 << 1;
               local_98 = local_a0 + 0xa0;

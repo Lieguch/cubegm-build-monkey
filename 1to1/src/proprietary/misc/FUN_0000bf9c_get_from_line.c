@@ -15,7 +15,7 @@ char * get_from_line(char *param_1,int param_2)
   char *pcVar2;
   int iVar3;
   char *pcVar4;
-  undefined1 auStack_1c [4];
+  gh_u1 auStack_1c [4];
   
   sVar1 = strlen(param_1);
   if ((0 < (int)sVar1) && (pcVar2 = strchr(param_1,0x3d), pcVar2 != (char *)0x0)) {

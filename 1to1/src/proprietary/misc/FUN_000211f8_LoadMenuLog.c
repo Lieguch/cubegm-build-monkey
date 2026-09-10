@@ -12,7 +12,7 @@ void LoadMenuLog(void)
 
 {
   FILE *__stream;
-  uint __c;
+  gh_uint __c;
   char acStack_110 [256];
   
   sprintf(acStack_110,"%s/menu.log",work_path);

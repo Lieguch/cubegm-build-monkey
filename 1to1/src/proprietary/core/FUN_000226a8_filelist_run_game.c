@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 filelist_run_game(char *param_1)
+gh_u4 filelist_run_game(char *param_1)
 
 {
   FILE *__stream;
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   pthread_t pStack_124;
   char acStack_120 [260];

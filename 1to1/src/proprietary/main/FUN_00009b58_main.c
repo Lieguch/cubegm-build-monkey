@@ -8,14 +8,14 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 main(void)
+gh_u4 main(void)
 
 {
   char *pcVar1;
   int iVar2;
   pthread_t pStack_51c;
   char acStack_518 [256];
-  undefined1 auStack_418 [1024];
+  gh_u1 auStack_418 [1024];
   
   puts("rkgame v1.42");
   get_executable_path(work_path,auStack_418,0x1000);

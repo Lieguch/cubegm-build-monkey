@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined1 * GetWorkPath(void)
+gh_u1 * GetWorkPath(void)
 
 {
   return work_path;

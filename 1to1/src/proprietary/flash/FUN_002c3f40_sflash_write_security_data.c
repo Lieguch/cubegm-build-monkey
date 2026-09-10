@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void sflash_write_security_data(undefined4 param_1,undefined4 param_2)
+void sflash_write_security_data(gh_u4 param_1,gh_u4 param_2)
 
 {
   int iVar1;
-  undefined4 local_18;
-  undefined4 local_14;
+  gh_u4 local_18;
+  gh_u4 local_14;
   
   local_14 = 0;
   local_18 = 0x5042;

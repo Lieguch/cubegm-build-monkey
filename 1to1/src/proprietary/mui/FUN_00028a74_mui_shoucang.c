@@ -12,30 +12,30 @@ void mui_shoucang(void)
 
 {
   bool bVar1;
-  uint uVar2;
-  uint uVar3;
+  gh_uint uVar2;
+  gh_uint uVar3;
   char *pcVar4;
-  undefined4 uVar5;
+  gh_u4 uVar5;
   FILE *pFVar6;
   size_t __n;
   int iVar7;
-  uint uVar8;
+  gh_uint uVar8;
   int iVar9;
-  uint uVar10;
-  uint uVar11;
-  uint uVar12;
-  uint local_4cc;
+  gh_uint uVar10;
+  gh_uint uVar11;
+  gh_uint uVar12;
+  gh_uint local_4cc;
   int local_4c0;
   pthread_t pStack_4ac;
   int local_4a8;
-  uint local_4a4;
-  uint local_4a0;
-  uint local_49c;
-  uint local_498;
+  gh_uint local_4a4;
+  gh_uint local_4a0;
+  gh_uint local_49c;
+  gh_uint local_498;
   int local_494;
   char acStack_490 [100];
   char acStack_42c [256];
-  undefined4 local_32c;
+  gh_u4 local_32c;
   char acStack_128 [260];
   
   local_4c0 = 0;
@@ -48,7 +48,7 @@ void mui_shoucang(void)
   DAT_003af27c = m_menulog._320_4_;
   m_menulog._0_4_ = DAT_003af26c;
 joined_r0x00028b18:
-  if (DAT_003af2b4 == (undefined1 *)0x0) {
+  if (DAT_003af2b4 == (gh_u1 *)0x0) {
     uVar5 = GetWorkPath();
     sprintf(acStack_490,"%s/favorites.lst",uVar5);
     pFVar6 = fopen(acStack_490,"rb");
@@ -76,7 +76,7 @@ joined_r0x00028b18:
     mui_LoadUIResource(&DAT_003af28c,"menu.raw");
   }
   memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-         (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 8);
   mui_fast_lsit = 0;
@@ -196,11 +196,11 @@ LAB_00028c34:
     DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
     iVar7 = DAT_003af394 + 0xb;
     local_4a8 = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];
-    local_4a4 = (uint)*(ushort *)(DAT_003af28c + iVar7 * 4 + 2);
+    local_4a4 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);
     local_494 = DAT_003af2a0 << 1;
-    local_4a0 = (uint)*(ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
-    local_49c = (uint)*(ushort *)(DAT_003af28c + iVar7 * 4 + 3);
-    local_498 = (uint)*(ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
+    local_4a0 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
+    local_49c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);
+    local_498 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
     popwindows(&local_4a8);
     mui_ReadJoystick();
     diff_prev = 0;
@@ -218,9 +218,9 @@ LAB_00028c34:
           fsync(iVar7);
           fclose(pFVar6);
         }
-        if (DAT_003af2b4 != (undefined1 *)0x0) {
+        if (DAT_003af2b4 != (gh_u1 *)0x0) {
           free(DAT_003af2b4);
-          DAT_003af2b4 = (undefined1 *)0x0;
+          DAT_003af2b4 = (gh_u1 *)0x0;
         }
         uVar11 = 0;
         popoffwindows(&local_4a8);
@@ -308,11 +308,11 @@ LAB_00028eac:
       DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
       iVar7 = DAT_003af394 + 10;
       local_4a8 = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];
-      local_4a4 = (uint)*(ushort *)(DAT_003af28c + iVar7 * 4 + 2);
+      local_4a4 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);
       local_494 = DAT_003af2a0 << 1;
-      local_4a0 = (uint)*(ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
-      local_49c = (uint)*(ushort *)(DAT_003af28c + iVar7 * 4 + 3);
-      local_498 = (uint)*(ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
+      local_4a0 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
+      local_49c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);
+      local_498 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
       popwindows(&local_4a8);
       mui_ReadJoystick();
       diff_prev = 0;

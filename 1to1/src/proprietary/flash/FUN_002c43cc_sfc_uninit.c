@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 sfc_uninit(void)
+gh_u4 sfc_uninit(void)
 
 {
   munmap(g_sfc_reg,0x400);

@@ -8,32 +8,32 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 sunxi_gpio_set_cfgpin(int param_1,int param_2)
+gh_u4 sunxi_gpio_set_cfgpin(int param_1,int param_2)
 
 {
   if (param_1 != 0) {
     if (param_1 == 1) {
       if (param_2 == 0) {
-        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) & 0xfffffffe;
+        *(gh_uint *)(GPIO0 + 4) = *(gh_uint *)(GPIO0 + 4) & 0xfffffffe;
       }
       else {
-        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) | 1;
+        *(gh_uint *)(GPIO0 + 4) = *(gh_uint *)(GPIO0 + 4) | 1;
       }
     }
     else if (param_1 == 2) {
       if (param_2 == 0) {
-        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) & 0xfffffffd;
+        *(gh_uint *)(GPIO0 + 4) = *(gh_uint *)(GPIO0 + 4) & 0xfffffffd;
       }
       else {
-        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) | 2;
+        *(gh_uint *)(GPIO0 + 4) = *(gh_uint *)(GPIO0 + 4) | 2;
       }
     }
     return 0;
   }
   if (param_2 != 0) {
-    *(uint *)(GPIO2 + 4) = *(uint *)(GPIO2 + 4) | 8;
+    *(gh_uint *)(GPIO2 + 4) = *(gh_uint *)(GPIO2 + 4) | 8;
     return 0;
   }
-  *(uint *)(GPIO2 + 4) = *(uint *)(GPIO2 + 4) & 0xfffffff7;
+  *(gh_uint *)(GPIO2 + 4) = *(gh_uint *)(GPIO2 + 4) & 0xfffffff7;
   return 0;
 }

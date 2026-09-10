@@ -11,7 +11,7 @@
 void SaveKeyMappingConfigFile(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   FILE *__s;
   char acStack_90 [128];
@@ -24,14 +24,14 @@ void SaveKeyMappingConfigFile(void)
   }
   uVar1 = GetWorkPath();
   iVar2 = gameType();
-  sprintf(acStack_90,"%ssaves/%s",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4));
+  sprintf(acStack_90,"%ssaves/%s",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4));
   iVar2 = access(acStack_90,0);
   if (iVar2 != 0) {
     mkdir(acStack_90,0x1ed);
   }
   uVar1 = GetWorkPath();
   iVar2 = gameType();
-  sprintf(acStack_90,"%ssaves/%s/%s.scf",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4),RomName);
+  sprintf(acStack_90,"%ssaves/%s/%s.scf",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),RomName);
   RARCH_LOG("Save %s\n",acStack_90);
   __s = fopen(acStack_90,"wb");
   if (__s != (FILE *)0x0) {

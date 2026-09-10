@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_game_exit(void)
+gh_u4 mui_game_exit(void)
 
 {
   int iVar1;
@@ -18,7 +18,7 @@ undefined4 mui_game_exit(void)
       mui_LoadUIResource(&DAT_003af2b8,"game.raw");
     }
     memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-           (uint)*(ushort *)((int)DAT_003af2b8 + 6) * (uint)*(ushort *)(DAT_003af2b8 + 1) * 2);
+           (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,2);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);

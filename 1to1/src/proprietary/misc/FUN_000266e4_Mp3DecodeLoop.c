@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 Mp3DecodeLoop(int param_1)
+gh_u4 Mp3DecodeLoop(int param_1)
 
 {
   void *__src;
@@ -16,7 +16,7 @@ undefined4 Mp3DecodeLoop(int param_1)
   int iVar2;
   int iVar3;
   int *piVar4;
-  uint uVar5;
+  gh_uint uVar5;
   
   iVar2 = param_1 * 0x24;
   piVar4 = *(int **)(SoundPlayer + iVar2);
@@ -41,7 +41,7 @@ undefined4 Mp3DecodeLoop(int param_1)
       }
       iVar2 = piVar4[7];
       iVar1 = piVar4[8];
-      *(undefined1 *)(piVar4 + 4) = 0;
+      *(gh_u1 *)(piVar4 + 4) = 0;
       piVar4[5] = 0;
       piVar4[1] = iVar2;
       piVar4[6] = iVar1;
@@ -49,9 +49,9 @@ undefined4 Mp3DecodeLoop(int param_1)
     uVar5 = piVar4[9];
     piVar4[1] = piVar4[1] + iVar2;
     piVar4[6] = piVar4[6] - iVar2;
-    if ((uint)(piVar4[3] + piVar4[2]) <= uVar5) {
+    if ((gh_uint)(piVar4[3] + piVar4[2]) <= uVar5) {
       *(int *)(SoundPlayer + param_1 * 0x24 + 0x18) = piVar4[3];
-      *(uint *)(SoundPlayer + param_1 * 0x24 + 0x1c) = uVar5;
+      *(gh_uint *)(SoundPlayer + param_1 * 0x24 + 0x1c) = uVar5;
       return 1;
     }
     iVar2 = MP3Decode(*piVar4,piVar4 + 1,piVar4 + 6,uVar5,0);

@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GetFileCore(char *param_1)
+gh_u4 GetFileCore(char *param_1)
 
 {
   int iVar1;
   char *pcVar2;
-  undefined4 uVar3;
+  gh_u4 uVar3;
   
   iVar1 = filelist_tree;
   if (filelist_tree != 0) {

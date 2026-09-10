@@ -12,7 +12,7 @@ void GetConfig(void)
 
 {
   FILE *__stream;
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   char *pcVar3;
   char local_1020 [4100];

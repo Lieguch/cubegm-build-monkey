@@ -28,14 +28,14 @@ void * sunxi_gpio_init(void)
           (GPIO1 = mmap((void *)0x0,0x4000,3,1,__fd,0x20080000), GPIO1 != (void *)0xffffffff)) &&
          (GPIO2 = mmap((void *)0x0,0x4000,3,1,__fd,0x20084000), GPIO2 != (void *)0xffffffff)) {
         close(__fd);
-        printf("CRU_CLKGATE8_CON:%x\n",*(undefined4 *)((int)CRU + 0xf0));
+        printf("CRU_CLKGATE8_CON:%x\n",*(gh_u4 *)((int)CRU + 0xf0));
         pvVar1 = CRU;
-        *(uint *)((int)CRU + 0xf0) = *(uint *)((int)CRU + 0xf0) & 0xf1fff1ff | 0xe000000;
-        printf("CRU_CLKGATE8_CON:%x\n",*(undefined4 *)((int)pvVar1 + 0xf0));
-        printf("GRF_GPIO0A_IOMUX:%X\n",*(undefined4 *)((int)GRF + 0xa8));
+        *(gh_uint *)((int)CRU + 0xf0) = *(gh_uint *)((int)CRU + 0xf0) & 0xf1fff1ff | 0xe000000;
+        printf("CRU_CLKGATE8_CON:%x\n",*(gh_u4 *)((int)pvVar1 + 0xf0));
+        printf("GRF_GPIO0A_IOMUX:%X\n",*(gh_u4 *)((int)GRF + 0xa8));
         pvVar1 = GRF;
-        *(uint *)((int)GRF + 200) = *(uint *)((int)GRF + 200) & 0xff3fff3f | 0xc00000;
-        printf("GRF_GPIO2A_IOMUX:%X\n",*(undefined4 *)((int)pvVar1 + 200));
+        *(gh_uint *)((int)GRF + 200) = *(gh_uint *)((int)GRF + 200) & 0xff3fff3f | 0xc00000;
+        printf("GRF_GPIO2A_IOMUX:%X\n",*(gh_u4 *)((int)pvVar1 + 200));
         return (void *)0x0;
       }
       pvVar1 = (void *)0x3;

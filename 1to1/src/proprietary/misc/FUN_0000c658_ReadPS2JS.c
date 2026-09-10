@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-void ReadPS2JS(uint param_1,byte *param_2,byte *param_3)
+void ReadPS2JS(gh_uint param_1,gh_byte *param_2,gh_byte *param_3)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   int iVar2;
   int iVar3;
   int iVar4;
@@ -45,12 +45,12 @@ void ReadPS2JS(uint param_1,byte *param_2,byte *param_3)
     } while (iVar4 != 0);
     iVar4 = sunxi_gpio_input(200);
     if (iVar4 != 0) {
-      *param_2 = ~((byte)~(byte)(((uint)*param_2 << 0x19) >> 0x18) >> 1);
+      *param_2 = ~((gh_byte)~(gh_byte)(((gh_uint)*param_2 << 0x19) >> 0x18) >> 1);
     }
     iVar4 = sunxi_gpio_input(0xc5);
     iVar2 = 5;
     if (iVar4 != 0) {
-      *param_3 = ~((byte)~(byte)(((uint)*param_3 << 0x19) >> 0x18) >> 1);
+      *param_3 = ~((gh_byte)~(gh_byte)(((gh_uint)*param_3 << 0x19) >> 0x18) >> 1);
     }
     do {
       local_28 = 0;

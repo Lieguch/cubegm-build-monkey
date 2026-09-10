@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 UpdateROMProc(int param_1,int param_2)
+gh_u4 UpdateROMProc(int param_1,int param_2)
 
 {
   void *__ptr;
   int iVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   int iVar3;
   char *pcVar4;
   char *pcVar5;

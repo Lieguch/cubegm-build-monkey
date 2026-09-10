@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void Convert_Stereo(undefined2 *param_1)
+void Convert_Stereo(gh_u2 *param_1)
 
 {
-  undefined2 *puVar1;
-  undefined2 *puVar2;
-  undefined2 *puVar3;
+  gh_u2 *puVar1;
+  gh_u2 *puVar2;
+  gh_u2 *puVar3;
   
   puVar3 = param_1 + 0x900;
   do {

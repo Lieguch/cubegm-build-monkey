@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void RARCH_LOG(undefined4 param_1)
+void RARCH_LOG(gh_u4 param_1)
 
 {
   RARCH_LOG_V(param_1);

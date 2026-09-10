@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-char * get_item_from_line(undefined4 param_1,char *param_2)
+char * get_item_from_line(gh_u4 param_1,char *param_2)
 
 {
   char *pcVar1;

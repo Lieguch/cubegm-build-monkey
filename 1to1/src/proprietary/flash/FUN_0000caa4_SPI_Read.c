@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 SPI_Read(undefined4 param_1)
+gh_u4 SPI_Read(gh_u4 param_1)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   
   sunxi_gpio_set_cfgpin(2,1);
   sunxi_gpio_output(0);

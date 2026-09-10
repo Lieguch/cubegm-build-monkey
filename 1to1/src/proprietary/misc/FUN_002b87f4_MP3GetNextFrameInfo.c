@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 MP3GetNextFrameInfo(int param_1,undefined4 param_2,undefined4 param_3)
+gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 param_2,gh_u4 param_3)
 
 {
   int iVar1;

@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-int get_items_from_zipfile(undefined4 param_1,int param_2)
+int get_items_from_zipfile(gh_u4 param_1,int param_2)
 
 {
   char cVar1;
@@ -17,7 +17,7 @@ int get_items_from_zipfile(undefined4 param_1,int param_2)
   char *pcVar3;
   int iVar4;
   char *pcVar5;
-  undefined4 local_424;
+  gh_u4 local_424;
   char acStack_420 [1024];
   
   res_hz = OpenZipU(param_1,0,2);

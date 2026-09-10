@@ -8,16 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 * OpenZipU(void *param_1,uint param_2,uint param_3)
+gh_u4 * OpenZipU(void *param_1,gh_uint param_2,gh_uint param_3)
 
 {
   TUnzip *this;
-  undefined4 *puVar1;
+  gh_u4 *puVar1;
   
   this = operator_new(0x240);
-  *(undefined4 *)(this + 0x138) = 0xffffffff;
-  *(undefined4 *)this = 0;
-  *(undefined4 *)(this + 4) = 0xffffffff;
+  *(gh_u4 *)(this + 0x138) = 0xffffffff;
+  *(gh_u4 *)this = 0;
+  *(gh_u4 *)(this + 4) = 0xffffffff;
   lasterrorU = TUnzip::Open(this,param_1,param_2,param_3);
   if (lasterrorU == 0) {
     puVar1 = operator_new(8);
@@ -26,5 +26,5 @@ undefined4 * OpenZipU(void *param_1,uint param_2,uint param_3)
     return puVar1;
   }
   operator_delete(this);
-  return (undefined4 *)0x0;
+  return (gh_u4 *)0x0;
 }

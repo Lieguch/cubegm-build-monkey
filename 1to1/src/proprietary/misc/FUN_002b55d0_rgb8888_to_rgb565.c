@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void rgb8888_to_rgb565(ushort *param_1,int param_2,int param_3)
+void rgb8888_to_rgb565(gh_ushort *param_1,int param_2,int param_3)
 
 {
   int iVar1;
@@ -20,8 +20,8 @@ void rgb8888_to_rgb565(ushort *param_1,int param_2,int param_3)
   iVar2 = param_2 + 4;
   do {
     iVar1 = iVar2 + 4;
-    *param_1 = (*(byte *)(iVar2 + -3) & 0xfc) << 3 | (*(byte *)(iVar2 + -2) & 0xf8) << 8 |
-               (ushort)(*(byte *)(iVar2 + -4) >> 3);
+    *param_1 = (*(gh_byte *)(iVar2 + -3) & 0xfc) << 3 | (*(gh_byte *)(iVar2 + -2) & 0xf8) << 8 |
+               (gh_ushort)(*(gh_byte *)(iVar2 + -4) >> 3);
     param_1 = param_1 + 1;
     iVar2 = iVar1;
   } while (param_2 + (param_3 - 4U & 0xfffffffc) + 8 != iVar1);

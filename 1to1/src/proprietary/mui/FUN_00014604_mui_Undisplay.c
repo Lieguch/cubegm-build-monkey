@@ -21,7 +21,7 @@ void mui_Undisplay(int param_1,int param_2,int param_3,int param_4)
   iVar3 = (param_4 - param_2) + param_2;
   do {
     iVar1 = param_2 * DAT_003af2a0 * 2;
-    iVar2 = param_2 * (uint)*(ushort *)(DAT_003af28c + 1) * 2;
+    iVar2 = param_2 * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2;
     param_2 = param_2 + 1;
     memcpy((void *)(DAT_003af29c + iVar1 + param_1 * 2),
            (void *)((int)DAT_003af28c + iVar2 + param_1 * 2 + *DAT_003af28c),(param_3 - param_1) * 2

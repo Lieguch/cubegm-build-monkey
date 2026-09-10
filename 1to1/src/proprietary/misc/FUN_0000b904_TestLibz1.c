@@ -12,9 +12,9 @@ void TestLibz1(void)
 
 {
   int iVar1;
-  undefined4 local_1b0;
-  undefined4 local_1ac;
-  undefined1 auStack_1a8 [200];
+  gh_u4 local_1b0;
+  gh_u4 local_1ac;
+  gh_u1 auStack_1a8 [200];
   char local_e0 [4];
   char acStack_dc [200];
   

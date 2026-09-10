@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 CloseZipU(int *param_1)
+gh_u4 CloseZipU(int *param_1)
 
 {
   TUnzip *this;

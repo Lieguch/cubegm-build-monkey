@@ -12,11 +12,11 @@ void RF_Joystick_timer_isr(void)
 
 {
   int iVar1;
-  uint uVar2;
+  gh_uint uVar2;
   int iVar3;
-  uint uVar4;
-  byte local_2c;
-  byte local_2b;
+  gh_uint uVar4;
+  gh_byte local_2c;
+  gh_byte local_2b;
   
   do {
     while( true ) {
@@ -29,68 +29,68 @@ void RF_Joystick_timer_isr(void)
       local_2b = ~local_2b;
       uVar2 = local_2b & 0x20;
       if ((local_2b & 0x20) != 0) {
-        uVar2 = *(uint *)(RF_JOYTable + iVar3 * -0x3c);
+        uVar2 = *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c);
       }
       if ((local_2b & 0x10) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 4);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 4);
       }
       if ((local_2b & 8) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 8);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 8);
       }
       if ((local_2b & 4) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0xc);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0xc);
       }
       if ((local_2b & 2) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x10);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x10);
       }
       if ((local_2b & 1) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x14);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x14);
       }
       if ((local_2b & 0x80) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x18);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x18);
       }
       if ((local_2b & 0x40) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x1c);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x1c);
       }
       if ((local_2c & 8) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x20);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x20);
       }
       if ((local_2c & 0x40) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x24);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x24);
       }
       if ((local_2c & 0x20) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x28);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x28);
       }
       if ((local_2c & 0x10) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x2c);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x2c);
       }
       if ((local_2c & 2) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x30);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x30);
       }
       if ((local_2c & 4) != 0) {
-        uVar2 = uVar2 | *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x34);
+        uVar2 = uVar2 | *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x34);
       }
-      *(uint *)((int)&RF_joy_key + iVar3 * -4) = uVar2;
-      *(undefined2 *)((int)&TimeCountReg + iVar3 * -2) = 0;
+      *(gh_uint *)((int)&RF_joy_key + iVar3 * -4) = uVar2;
+      *(gh_u2 *)((int)&TimeCountReg + iVar3 * -2) = 0;
       if ((local_2c & 1) != 0) {
-        *(uint *)((int)&RF_joy_key + iVar3 * -4) =
-             *(uint *)(RF_JOYTable + iVar3 * -0x3c + 0x38) | uVar2;
+        *(gh_uint *)((int)&RF_joy_key + iVar3 * -4) =
+             *(gh_uint *)(RF_JOYTable + iVar3 * -0x3c + 0x38) | uVar2;
       }
       SPI_Write(0xe2,0);
       SPI_Write(0x27,0x70);
       SPI_Write(0xfd,0);
       iVar3 = getticks();
-      if (300 < (uint)(iVar3 - iVar1)) goto LAB_0000cfd4;
+      if (300 < (gh_uint)(iVar3 - iVar1)) goto LAB_0000cfd4;
 LAB_0000cddc:
-      uVar2 = (uint)ChannelIndex;
+      uVar2 = (gh_uint)ChannelIndex;
       uVar4 = uVar2 + 1 & 7;
-      ChannelIndex = (byte)uVar4;
+      ChannelIndex = (gh_byte)uVar4;
       if ((uVar2 + 1 & 1) == 0) {
-        SPI_Write(0x25,*(undefined1 *)((int)&CHANNEL_TBL + (uVar4 >> 1)));
+        SPI_Write(0x25,*(gh_u1 *)((int)&CHANNEL_TBL + (uVar4 >> 1)));
       }
-      TimeCountReg._0_2_ = (ushort)TimeCountReg + 1;
+      TimeCountReg._0_2_ = (gh_ushort)TimeCountReg + 1;
       TimeCountReg._2_2_ = TimeCountReg._2_2_ + 1;
-      if (0x100 < (ushort)TimeCountReg) {
+      if (0x100 < (gh_ushort)TimeCountReg) {
         RF_joy_key._0_4_ = 0;
       }
       if (0x100 < TimeCountReg._2_2_) {
@@ -99,7 +99,7 @@ LAB_0000cddc:
       usleep(4000);
     }
     iVar3 = getticks();
-    if ((uint)(iVar3 - iVar1) < 0x12d) goto LAB_0000cddc;
+    if ((gh_uint)(iVar3 - iVar1) < 0x12d) goto LAB_0000cddc;
 LAB_0000cfd4:
     SPI_Write(0x53,0x5a);
     usleep(2000);
@@ -127,15 +127,15 @@ LAB_0000cfd4:
     SPI_Write(0xe2,0);
     SPI_Write(0x20,0x8f);
     SPI_Write(0xfd,0);
-    uVar2 = (uint)ChannelIndex;
+    uVar2 = (gh_uint)ChannelIndex;
     uVar4 = uVar2 + 1 & 7;
-    ChannelIndex = (byte)uVar4;
+    ChannelIndex = (gh_byte)uVar4;
     if ((uVar2 + 1 & 1) == 0) {
-      SPI_Write(0x25,*(undefined1 *)((int)&CHANNEL_TBL + (uVar4 >> 1)));
+      SPI_Write(0x25,*(gh_u1 *)((int)&CHANNEL_TBL + (uVar4 >> 1)));
     }
-    TimeCountReg._0_2_ = (ushort)TimeCountReg + 1;
+    TimeCountReg._0_2_ = (gh_ushort)TimeCountReg + 1;
     TimeCountReg._2_2_ = TimeCountReg._2_2_ + 1;
-    if (0x100 < (ushort)TimeCountReg) {
+    if (0x100 < (gh_ushort)TimeCountReg) {
       RF_joy_key._0_4_ = 0;
     }
     if (0x100 < TimeCountReg._2_2_) {

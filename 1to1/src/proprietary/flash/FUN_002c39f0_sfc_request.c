@@ -8,19 +8,19 @@
 #include "globals.h"
 #include "proto.h"
 
-uint sfc_request(uint *param_1,uint param_2,uint *param_3,uint param_4)
+gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint param_4)
 
 {
-  uint uVar1;
-  uint uVar2;
-  uint *puVar3;
-  uint uVar4;
-  uint *puVar5;
-  uint *puVar6;
+  gh_uint uVar1;
+  gh_uint uVar2;
+  gh_uint *puVar3;
+  gh_uint uVar4;
+  gh_uint *puVar5;
+  gh_uint *puVar6;
   int iVar7;
-  uint *puVar8;
+  gh_uint *puVar8;
   int iVar9;
-  uint uVar10;
+  gh_uint uVar10;
   
   puVar3 = g_sfc_reg;
   if (((g_sfc_reg[8] & 6) != 6) || ((g_sfc_reg[9] & 1) != 0)) {
@@ -117,11 +117,11 @@ LAB_002c3d08:
         uVar10 = 0;
         puVar5 = param_3;
         do {
-          puVar6 = (uint *)((int)puVar5 + 1);
+          puVar6 = (gh_uint *)((int)puVar5 + 1);
           *(char *)puVar5 = (char)(uVar4 >> (uVar10 & 0xff));
           uVar10 = uVar10 + 8;
           puVar5 = puVar6;
-        } while ((uint *)((int)param_3 + (param_4 & 3)) != puVar6);
+        } while ((gh_uint *)((int)param_3 + (param_4 & 3)) != puVar6);
       }
     }
   }

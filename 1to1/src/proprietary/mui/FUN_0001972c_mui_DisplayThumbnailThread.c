@@ -11,12 +11,12 @@
 void mui_DisplayThumbnailThread(void)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   int iVar2;
   int iVar3;
   pthread_t __th;
-  uint uVar4;
-  uint unaff_r4;
+  gh_uint uVar4;
+  gh_uint unaff_r4;
   int iVar5;
   
   iVar2 = GetTicks();

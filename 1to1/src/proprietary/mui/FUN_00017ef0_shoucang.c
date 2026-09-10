@@ -12,22 +12,22 @@ void shoucang(char *param_1)
 
 {
   char cVar1;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   FILE *pFVar3;
   size_t sVar4;
-  byte *__ptr;
-  byte bVar5;
-  byte *pbVar6;
+  gh_byte *__ptr;
+  gh_byte bVar5;
+  gh_byte *pbVar6;
   int iVar7;
-  byte *pbVar8;
-  byte abStack_5ac [128];
+  gh_byte *pbVar8;
+  gh_byte abStack_5ac [128];
   char acStack_52c [256];
   char local_42c [260];
   char local_328 [128];
   char local_2a8 [128];
   char local_228 [128];
   char local_1a8 [388];
-  byte *pbVar9;
+  gh_byte *pbVar9;
   
   uVar2 = GetWorkPath();
   sprintf(acStack_52c,"%s/favorites.lst",uVar2);
@@ -35,7 +35,7 @@ void shoucang(char *param_1)
   if (pFVar3 == (FILE *)0x0) {
     pFVar3 = fopen(acStack_52c,"wt");
     if (pFVar3 != (FILE *)0x0) {
-      __ptr = (byte *)0x0;
+      __ptr = (gh_byte *)0x0;
       goto LAB_00017fa4;
     }
   }
@@ -53,12 +53,12 @@ LAB_00017fa4:
       code_convert_constprop_22(param_1,0x100,local_42c);
       code_convert_constprop_22(param_1 + 0x104,0x80,local_328);
       code_convert_constprop_22(param_1 + 0x184,0x80,local_2a8);
-      if ((*(uint *)(param_1 + 0x100) & 0x80) == 0) {
+      if ((*(gh_uint *)(param_1 + 0x100) & 0x80) == 0) {
         fprintf(pFVar3,"%s;%s;%s;%s;%s\n",local_42c,local_328,param_1 + 0x204,local_2a8,
                 param_1 + 0x284);
       }
     }
-    if (__ptr != (byte *)0x0) {
+    if (__ptr != (gh_byte *)0x0) {
       iVar7 = 0;
       pbVar6 = __ptr;
       pbVar8 = abStack_5ac;
@@ -199,7 +199,7 @@ LAB_0001811c:
     DAT_003af2b4 = malloc(sVar4 + 1);
     fseek(pFVar3,0,0);
     fread(DAT_003af2b4,1,sVar4,pFVar3);
-    *(undefined1 *)((int)DAT_003af2b4 + sVar4) = 0;
+    *(gh_u1 *)((int)DAT_003af2b4 + sVar4) = 0;
     fclose(pFVar3);
     return;
   }

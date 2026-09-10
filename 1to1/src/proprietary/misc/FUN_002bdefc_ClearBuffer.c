@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-void ClearBuffer(undefined1 *param_1,int param_2)
+void ClearBuffer(gh_u1 *param_1,int param_2)
 
 {
-  undefined1 *puVar1;
-  undefined1 *puVar2;
+  gh_u1 *puVar1;
+  gh_u1 *puVar2;
   
   if (param_2 < 1) {
     return;

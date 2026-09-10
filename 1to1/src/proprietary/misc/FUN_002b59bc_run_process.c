@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 run_process(undefined4 param_1,int param_2)
+gh_u4 run_process(gh_u4 param_1,int param_2)
 
 {
-  pf = (code *)dlsym(handle,param_1);
-  if (pf == (code *)0x0) {
+  pf = (gh_code *)dlsym(handle,param_1);
+  if (pf == (gh_code *)0x0) {
     RARCH_LOG("find %s process fail \n",param_1);
     return 0;
   }

@@ -8,24 +8,24 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_video_setting(void)
+gh_u4 mui_video_setting(void)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   int iVar2;
-  undefined4 uVar3;
-  undefined4 uVar4;
-  undefined4 uVar5;
-  uint uVar6;
-  undefined4 *puVar7;
-  uint uVar8;
-  uint uVar9;
-  uint uVar10;
+  gh_u4 uVar3;
+  gh_u4 uVar4;
+  gh_u4 uVar5;
+  gh_uint uVar6;
+  gh_u4 *puVar7;
+  gh_uint uVar8;
+  gh_uint uVar9;
+  gh_uint uVar10;
   char *pcVar11;
   char *pcVar12;
-  undefined4 local_b8;
-  undefined4 local_b4;
-  undefined4 local_b0;
+  gh_u4 local_b8;
+  gh_u4 local_b4;
+  gh_u4 local_b0;
   int local_ac;
   int local_a8;
   int local_a4;
@@ -40,17 +40,17 @@ undefined4 mui_video_setting(void)
   int local_74;
   int local_70;
   int local_6c;
-  undefined4 local_68 [8];
-  undefined1 auStack_48 [36];
+  gh_u4 local_68 [8];
+  gh_u1 auStack_48 [36];
   
   puVar7 = local_68;
   pcVar11 = "FULL SCREEN";
   do {
     pcVar12 = pcVar11 + 0x10;
-    uVar3 = *(undefined4 *)(pcVar11 + 4);
-    uVar4 = *(undefined4 *)(pcVar11 + 8);
-    uVar5 = *(undefined4 *)(pcVar11 + 0xc);
-    *puVar7 = *(undefined4 *)pcVar11;
+    uVar3 = *(gh_u4 *)(pcVar11 + 4);
+    uVar4 = *(gh_u4 *)(pcVar11 + 8);
+    uVar5 = *(gh_u4 *)(pcVar11 + 0xc);
+    *puVar7 = *(gh_u4 *)pcVar11;
     puVar7[1] = uVar3;
     puVar7[2] = uVar4;
     puVar7[3] = uVar5;
@@ -76,7 +76,7 @@ LAB_0002e19c:
     mui_LoadUIResource(&DAT_003af2b8,"game.raw");
   }
   memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-         (uint)*(ushort *)((int)DAT_003af2b8 + 6) * (uint)*(ushort *)(DAT_003af2b8 + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,5);
   local_a8 = DAT_003af82c;
   local_9c = DAT_003af820;
@@ -95,22 +95,22 @@ LAB_0002e19c:
   OutRect._16_4_ = 0x500;
   OutRect._12_4_ = 0;
   OutRect._20_4_ = 0x2d0;
-  mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(undefined1)DAT_003af840,DAT_003af844,
+  mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(gh_u1)DAT_003af840,DAT_003af844,
                  local_68);
   if (uVar10 == 0) {
-    mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(undefined1)DAT_003af71c,
+    mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(gh_u1)DAT_003af71c,
                    DAT_003af718,&DAT_003af70f);
-    mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(undefined1)DAT_003af840,DAT_003af844,
+    mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,DAT_003af844,
                    auStack_48);
-    mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(undefined1)DAT_003af71c,DAT_003af718
+    mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(gh_u1)DAT_003af71c,DAT_003af718
                    ,&DAT_003af708);
   }
   else {
-    mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(undefined1)DAT_003af71c,
+    mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(gh_u1)DAT_003af71c,
                    DAT_003af718,&DAT_003af708);
-    mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(undefined1)DAT_003af840,DAT_003af844,
+    mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,DAT_003af844,
                    auStack_48);
-    mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(undefined1)DAT_003af71c,
+    mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(gh_u1)DAT_003af71c,
                    DAT_003af718,&DAT_003af70f);
   }
   uVar8 = 0;
@@ -135,15 +135,15 @@ LAB_0002e400:
       if (-1 < (int)DAT_003af27c) {
         UnDrawSelectBar(local_88 + DAT_003af27c * 4,DAT_003af2b8,0);
         mui_outputxy_t(DAT_003af29c,local_88[DAT_003af27c * 4] + 8,
-                       local_88[DAT_003af27c * 4 + 1] + 6,(undefined1)DAT_003af840,DAT_003af844,
+                       local_88[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af840,DAT_003af844,
                        local_68 + DAT_003af27c * 8);
         if (DAT_003af27c == uVar10) {
           mui_outputxy_t(DAT_003af29c,local_88[uVar10 * 4] + 0x120,local_88[uVar10 * 4 + 1] + -10,
-                         (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                         (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
         }
         else {
           mui_outputxy_t(DAT_003af29c,local_88[DAT_003af27c * 4] + 0x120,
-                         local_88[DAT_003af27c * 4 + 1] + -6,(undefined1)DAT_003af71c,DAT_003af718,
+                         local_88[DAT_003af27c * 4 + 1] + -6,(gh_u1)DAT_003af71c,DAT_003af718,
                          &DAT_003af708);
         }
       }
@@ -151,14 +151,14 @@ LAB_0002e400:
       if (-1 < (int)uVar6) {
         DrawSelectBar(local_88 + uVar6 * 4);
         mui_outputxy_t(DAT_003af29c,local_88[uVar6 * 4] + 8,local_88[uVar6 * 4 + 1] + 6,
-                       (undefined1)DAT_003af840,DAT_003af844,local_68 + uVar6 * 8);
+                       (gh_u1)DAT_003af840,DAT_003af844,local_68 + uVar6 * 8);
         if (uVar6 == uVar10) {
           mui_outputxy_t(DAT_003af29c,local_88[uVar6 * 4] + 0x120,local_88[uVar6 * 4 + 1] + -10,
-                         (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                         (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
         }
         else {
           mui_outputxy_t(DAT_003af29c,local_88[uVar6 * 4] + 0x120,local_88[uVar6 * 4 + 1] + -6,
-                         (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                         (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
         }
       }
 LAB_0002e534:
@@ -174,13 +174,13 @@ LAB_0002e544:
         if (uVar1 == 0x80) {
           uVar9 = uVar8;
           if (uVar8 == 0) {
-            if (DAT_003af830 < (int)(uint)*(ushort *)(DAT_003af2b8 + 0x16)) {
+            if (DAT_003af830 < (int)(gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x16)) {
               uVar9 = 1;
               DAT_003af27c = 0xffffffff;
               uVar6 = uVar8;
             }
           }
-          else if ((int)(uint)*(ushort *)(DAT_003af2b8 + 0x16) < DAT_003af830) {
+          else if ((int)(gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x16) < DAT_003af830) {
             uVar6 = 0xffffffff;
             uVar9 = 0;
           }
@@ -192,24 +192,24 @@ LAB_0002e544:
         if ((uVar1 != 0x2000) || (uVar8 == 0)) goto joined_r0x0002e5a8;
         UnDrawSelectBar(local_88,DAT_003af2b8,0);
         UnDrawSelectBar(local_88 + 4,DAT_003af2b8,0);
-        uVar10 = (uint)(uVar9 == 0);
+        uVar10 = (gh_uint)(uVar9 == 0);
         DrawSelectBar(local_88 + DAT_003af27c * 4);
-        mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(undefined1)DAT_003af840,
+        mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(gh_u1)DAT_003af840,
                        DAT_003af844,local_68);
         if (uVar9 == 0) {
-          mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(undefined1)DAT_003af71c,
+          mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(gh_u1)DAT_003af71c,
                          DAT_003af718,&DAT_003af708);
-          mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(undefined1)DAT_003af840,
+          mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,
                          DAT_003af844,auStack_48);
-          mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(undefined1)DAT_003af71c,
+          mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(gh_u1)DAT_003af71c,
                          DAT_003af718,&DAT_003af70f);
         }
         else {
-          mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(undefined1)DAT_003af71c
+          mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(gh_u1)DAT_003af71c
                          ,DAT_003af718,&DAT_003af70f);
-          mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(undefined1)DAT_003af840,
+          mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,
                          DAT_003af844,auStack_48);
-          mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(undefined1)DAT_003af71c,
+          mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(gh_u1)DAT_003af71c,
                          DAT_003af718,&DAT_003af708);
         }
         RARCH_LOG("VideoFull:%d\n",uVar10);
@@ -239,13 +239,13 @@ LAB_0002e544:
       }
       else if (uVar1 == 0x20) {
         if (uVar8 == 0) {
-          if ((int)(uint)*(ushort *)(DAT_003af2b8 + 0x16) < DAT_003af830) {
+          if ((int)(gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x16) < DAT_003af830) {
             DAT_003af27c = 0xffffffff;
             uVar6 = uVar8;
             uVar8 = 1;
           }
         }
-        else if (DAT_003af830 < (int)(uint)*(ushort *)(DAT_003af2b8 + 0x16)) {
+        else if (DAT_003af830 < (int)(gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x16)) {
           uVar8 = 0;
           uVar6 = 0xffffffff;
         }

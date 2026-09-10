@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void log_dummy(uint param_1,undefined4 param_2)
+void log_dummy(gh_uint param_1,gh_u4 param_2)
 
 {
   if (param_1 < 2) {

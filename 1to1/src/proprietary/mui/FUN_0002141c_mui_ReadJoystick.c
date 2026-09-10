@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-uint mui_ReadJoystick(void)
+gh_uint mui_ReadJoystick(void)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   
   uVar1 = ReadJoystick();
   return uVar1 & 0xefffffff;

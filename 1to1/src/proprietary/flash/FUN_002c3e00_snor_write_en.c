@@ -11,8 +11,8 @@
 void snor_write_en(void)
 
 {
-  undefined4 local_10;
-  undefined4 local_c;
+  gh_u4 local_10;
+  gh_u4 local_c;
   
   local_c = 0;
   local_10 = 6;

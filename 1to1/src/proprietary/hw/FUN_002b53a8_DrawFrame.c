@@ -8,21 +8,21 @@
 #include "globals.h"
 #include "proto.h"
 
-void DrawFrame(undefined2 *param_1,int param_2,int param_3,int param_4)
+void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
 
 {
-  undefined2 *puVar1;
-  undefined2 *puVar2;
-  undefined2 *puVar3;
-  undefined2 *puVar4;
+  gh_u2 *puVar1;
+  gh_u2 *puVar2;
+  gh_u2 *puVar3;
+  gh_u2 *puVar4;
   int iVar5;
   int iVar6;
-  undefined2 *puVar7;
+  gh_u2 *puVar7;
   int iVar8;
-  undefined2 *puVar9;
+  gh_u2 *puVar9;
   
   puVar1 = rotation_buff;
-  if (param_1 == (undefined2 *)0x0) {
+  if (param_1 == (gh_u2 *)0x0) {
     return;
   }
   if (FrameSkip != 0) {

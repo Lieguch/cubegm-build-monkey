@@ -8,17 +8,17 @@
 #include "globals.h"
 #include "proto.h"
 
-uint sunxi_gpio_get_cfgpin(uint param_1)
+gh_uint sunxi_gpio_get_cfgpin(gh_uint param_1)
 
 {
   if (param_1 == 0) {
-    return (*(uint *)(GPIO2 + 4) & 0xf) >> 3;
+    return (*(gh_uint *)(GPIO2 + 4) & 0xf) >> 3;
   }
   if (param_1 != 1) {
     if (param_1 != 2) {
       return param_1;
     }
-    return (*(uint *)(GPIO0 + 4) & 3) >> 1;
+    return (*(gh_uint *)(GPIO0 + 4) & 3) >> 1;
   }
-  return *(uint *)(GPIO0 + 4) & 1;
+  return *(gh_uint *)(GPIO0 + 4) & 1;
 }

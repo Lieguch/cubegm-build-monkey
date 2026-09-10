@@ -11,27 +11,27 @@
 void JoystickTest(int param_1)
 
 {
-  byte bVar1;
+  gh_byte bVar1;
   bool bVar2;
-  undefined4 uVar3;
+  gh_u4 uVar3;
   int *__ptr;
-  byte *__ptr_00;
+  gh_byte *__ptr_00;
   long lVar4;
-  uint *puVar5;
-  uint *puVar6;
-  uint uVar8;
+  gh_uint *puVar5;
+  gh_uint *puVar6;
+  gh_uint uVar8;
   int iVar9;
-  uint uVar10;
-  byte *pbVar11;
-  uint uVar13;
-  uint uVar14;
-  uint uVar15;
-  byte *pbVar16;
-  undefined4 local_4ac;
+  gh_uint uVar10;
+  gh_byte *pbVar11;
+  gh_uint uVar13;
+  gh_uint uVar14;
+  gh_uint uVar15;
+  gh_byte *pbVar16;
+  gh_u4 local_4ac;
   char acStack_4a8 [128];
-  byte local_428 [1028];
-  uint *puVar7;
-  byte *pbVar12;
+  gh_byte local_428 [1028];
+  gh_uint *puVar7;
+  gh_byte *pbVar12;
   
   RARCH_LOG("JoystickTest\n");
   if (DAT_003af29c == (void *)0x0) {
@@ -58,7 +58,7 @@ void JoystickTest(int param_1)
   if (zr == 0) {
     __ptr_00 = malloc(ze._296_4_);
     UnzipItem(res_hz,local_4ac,__ptr_00,0,3);
-    if (__ptr_00 != (byte *)0x0) {
+    if (__ptr_00 != (gh_byte *)0x0) {
       iVar9 = 0;
       pbVar12 = __ptr_00;
       pbVar16 = local_428;
@@ -93,7 +93,7 @@ LAB_0002b268:
   }
   CloseZipU(res_hz);
   memcpy(DAT_003af29c,(void *)((int)__ptr + *__ptr),
-         (uint)*(ushort *)((int)__ptr + 6) * (uint)*(ushort *)(__ptr + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)__ptr + 6) * (gh_uint)*(gh_ushort *)(__ptr + 1) * 2);
   OutRect._20_4_ = 0x2d0;
   OutRect._8_4_ = 0;
   OutRect._12_4_ = 0;
@@ -125,8 +125,8 @@ LAB_0002b268:
       TurboKeyProcess();
       uVar14 = 0;
       uVar13 = 0;
-      puVar5 = (uint *)(KEY_Table + 0x3c);
-      puVar6 = (uint *)(user_joy_key_mask + 0x40);
+      puVar5 = (gh_uint *)(KEY_Table + 0x3c);
+      puVar6 = (gh_uint *)(user_joy_key_mask + 0x40);
       do {
         puVar7 = puVar6 + -1;
         if ((game_joy_key._0_4_ & *puVar7) != 0) {
@@ -137,7 +137,7 @@ LAB_0002b268:
         }
         puVar5 = puVar5 + -1;
         puVar6 = puVar7;
-      } while (puVar7 != (uint *)user_joy_key_mask);
+      } while (puVar7 != (gh_uint *)user_joy_key_mask);
       local_4ac = 0xffffffff;
       if ((int)joy_key._0_4_ < 0) {
         uVar13 = uVar13 | 0x80000000;
@@ -153,10 +153,10 @@ LAB_0002b268:
     else {
       if ((uVar10 & 0xf0) != 0) {
         mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,
-                        *(undefined4 *)(P1_Table + ((uVar10 & 0xff) >> 4) * 4));
+                        *(gh_u4 *)(P1_Table + ((uVar10 & 0xff) >> 4) * 4));
       }
       if (uVar15 != 0) {
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,*(undefined4 *)(P1_Table + (uVar15 >> 2))
+        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,*(gh_u4 *)(P1_Table + (uVar15 >> 2))
                      );
       }
       bVar2 = true;
@@ -364,11 +364,11 @@ LAB_0002a390:
     if ((uVar8 & 0xf0) != uVar13) {
       if ((uVar8 & 0xf0) != 0) {
         mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,
-                        *(undefined4 *)(P1_Table + (((uVar8 & 0xff) >> 4) + 0x1b) * 4));
+                        *(gh_u4 *)(P1_Table + (((uVar8 & 0xff) >> 4) + 0x1b) * 4));
       }
       if (uVar13 != 0) {
         mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,
-                      *(undefined4 *)(P1_Table + (uVar13 >> 2) + 0x6c));
+                      *(gh_u4 *)(P1_Table + (uVar13 >> 2) + 0x6c));
       }
       bVar2 = true;
       uVar8 = uVar8 & 0xffffff0f | uVar13;

@@ -23,7 +23,7 @@ char * myStrrstr(char *param_1,char *param_2)
   if (sVar2 == 0) {
     return param_1;
   }
-  if (((int)sVar2 <= (int)sVar1) && (!CARRY4((uint)param_1,sVar1 - sVar2))) {
+  if (((int)sVar2 <= (int)sVar1) && (!CARRY4((gh_uint)param_1,sVar1 - sVar2))) {
     pcVar5 = param_1 + (sVar1 - sVar2);
     do {
       if ((int)sVar2 < 1) {

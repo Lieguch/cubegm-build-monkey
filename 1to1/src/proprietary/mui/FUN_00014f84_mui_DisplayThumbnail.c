@@ -15,8 +15,8 @@ void mui_DisplayThumbnail(void)
   int iVar2;
   void *__ptr;
   int iVar3;
-  undefined1 *puVar4;
-  undefined4 local_38c;
+  gh_u1 *puVar4;
+  gh_u4 local_38c;
   void *local_388;
   int local_384;
   int local_380;
@@ -29,11 +29,11 @@ void mui_DisplayThumbnail(void)
   int local_364;
   int local_360;
   int local_35c;
-  undefined1 auStack_358 [128];
-  undefined1 auStack_2d8 [128];
+  gh_u1 auStack_358 [128];
+  gh_u1 auStack_2d8 [128];
   char acStack_258 [128];
   char acStack_1d8 [128];
-  undefined1 auStack_158 [296];
+  gh_u1 auStack_158 [296];
   size_t local_30;
   
   puVar4 = auStack_358;

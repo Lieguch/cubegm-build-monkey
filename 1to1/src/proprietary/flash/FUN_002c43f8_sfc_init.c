@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 sfc_init(void)
+gh_u4 sfc_init(void)
 
 {
-  undefined4 *puVar1;
+  gh_u4 *puVar1;
   int __fd;
-  undefined4 uVar2;
+  gh_u4 uVar2;
   
   __fd = open("/dev/mem",2);
   if (__fd < 0) {
@@ -21,7 +21,7 @@ undefined4 sfc_init(void)
   }
   else {
     g_sfc_reg = mmap((void *)0x0,0x400,3,1,__fd,0x10208000);
-    if (g_sfc_reg == (undefined4 *)0xffffffff) {
+    if (g_sfc_reg == (gh_u4 *)0xffffffff) {
       uVar2 = 0xfffffffe;
     }
     else {

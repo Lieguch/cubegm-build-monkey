@@ -8,19 +8,19 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 GetJoystickConfig(int param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+gh_u4 GetJoystickConfig(int param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
   bool bVar1;
-  undefined4 uVar2;
-  undefined1 *__ptr;
-  undefined1 *puVar3;
-  undefined1 *puVar4;
+  gh_u4 uVar2;
+  gh_u1 *__ptr;
+  gh_u1 *puVar3;
+  gh_u1 *puVar4;
   int iVar6;
-  undefined4 local_4a4;
+  gh_u4 local_4a4;
   char acStack_4a0 [128];
-  undefined1 local_420 [1024];
-  undefined1 *puVar5;
+  gh_u1 local_420 [1024];
+  gh_u1 *puVar5;
   
   uVar2 = GetWorkPath();
   sprintf(acStack_4a0,"%s/joystick.zip",uVar2);
@@ -39,7 +39,7 @@ undefined4 GetJoystickConfig(int param_1,undefined4 param_2,undefined4 param_3,u
     __ptr = malloc(ze._296_4_ + 1);
     UnzipItem(res_hz,local_4a4,__ptr,0,3);
     __ptr[ze._296_4_] = 0;
-    if (__ptr != (undefined1 *)0x0) {
+    if (__ptr != (gh_u1 *)0x0) {
       puVar3 = local_420;
       puVar5 = __ptr;
 LAB_00029e40:
@@ -52,7 +52,7 @@ LAB_00029e40:
           return 0;
         }
         uVar2 = buttontoi(local_420);
-        *(undefined4 *)(param_1 + iVar6 * 4) = uVar2;
+        *(gh_u4 *)(param_1 + iVar6 * 4) = uVar2;
         free(__ptr);
         return 0;
       case 1:
@@ -179,7 +179,7 @@ LAB_00029f40:
         puVar5 = puVar4;
         if (bVar1) {
           uVar2 = buttontoi(local_420);
-          *(undefined4 *)(param_1 + iVar6 * 4) = uVar2;
+          *(gh_u4 *)(param_1 + iVar6 * 4) = uVar2;
           iVar6 = iVar6 + 1;
         }
         goto LAB_00029e40;

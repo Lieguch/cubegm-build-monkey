@@ -8,31 +8,31 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 IsShoucang(char *param_1)
+gh_u4 IsShoucang(char *param_1)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   FILE *__stream;
   size_t __n;
-  byte bVar2;
-  byte *pbVar3;
+  gh_byte bVar2;
+  gh_byte *pbVar3;
   int iVar4;
-  byte *pbVar5;
-  byte abStack_5ac [128];
+  gh_byte *pbVar5;
+  gh_byte abStack_5ac [128];
   char acStack_52c [256];
   char local_42c [260];
-  undefined1 local_328;
-  undefined1 local_2a8;
-  undefined1 local_228;
-  undefined1 local_1a8;
-  byte *pbVar6;
+  gh_u1 local_328;
+  gh_u1 local_2a8;
+  gh_u1 local_228;
+  gh_u1 local_1a8;
+  gh_byte *pbVar6;
   
-  if (DAT_003af2b4 == (byte *)0x0) {
+  if (DAT_003af2b4 == (gh_byte *)0x0) {
     uVar1 = GetWorkPath();
     sprintf(acStack_52c,"%s/favorites.lst",uVar1);
     __stream = fopen(acStack_52c,"rb");
     if (__stream == (FILE *)0x0) {
-      DAT_003af2b4 = (byte *)0x0;
+      DAT_003af2b4 = (gh_byte *)0x0;
       return 0;
     }
     fseek(__stream,0,2);
@@ -42,7 +42,7 @@ undefined4 IsShoucang(char *param_1)
     fread(DAT_003af2b4,1,__n,__stream);
     DAT_003af2b4[__n] = 0;
     fclose(__stream);
-    if (DAT_003af2b4 == (byte *)0x0) {
+    if (DAT_003af2b4 == (gh_byte *)0x0) {
       return 0;
     }
   }

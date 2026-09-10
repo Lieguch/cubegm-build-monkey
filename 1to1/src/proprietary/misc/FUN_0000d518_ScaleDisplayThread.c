@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 ScaleDisplayThread(void)
+gh_u4 ScaleDisplayThread(void)
 
 {
   while ((DisplayThreadflag & 1) != 0) {
     if ((DisplayThreadflag & 2) != 0) {
-      if (video_driver_frame != (code *)0x0) {
+      if (video_driver_frame != (gh_code *)0x0) {
         (*video_driver_frame)(Frame_data,Frame_width,Frame_height,Frame_pitch);
       }
       pthread_mutex_lock((pthread_mutex_t *)mutex);

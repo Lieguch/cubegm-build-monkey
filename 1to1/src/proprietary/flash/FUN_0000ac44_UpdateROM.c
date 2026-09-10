@@ -16,14 +16,14 @@ void UpdateROM(char *param_1)
   int iVar1;
   int iVar2;
   void *__s;
-  undefined4 uVar3;
+  gh_u4 uVar3;
   size_t unaff_r7;
   bool bVar4;
   char local_15c;
   char local_15b;
   char local_15a;
-  undefined1 auStack_158 [4];
-  undefined1 auStack_154 [268];
+  gh_u1 auStack_158 [4];
+  gh_u1 auStack_154 [268];
   int local_48;
   int local_30;
   int local_2c;

@@ -8,20 +8,20 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 FBA_Load(char *param_1)
+gh_u4 FBA_Load(char *param_1)
 
 {
   int iVar1;
-  undefined4 uVar2;
-  code *pcVar3;
+  gh_u4 uVar2;
+  gh_code *pcVar3;
   char **ppcVar4;
   char *local_150;
   char *local_14c [4];
-  undefined4 uStack_13c;
-  undefined4 uStack_138;
-  undefined4 uStack_134;
-  undefined4 uStack_130;
-  undefined4 uStack_12c;
+  gh_u4 uStack_13c;
+  gh_u4 uStack_138;
+  gh_u4 uStack_134;
+  gh_u4 uStack_130;
+  gh_u4 uStack_12c;
   char acStack_128 [260];
   
   local_150 = DAT_003b012c;
@@ -55,16 +55,16 @@ undefined4 FBA_Load(char *param_1)
           return 0;
         }
       }
-      _retro_is_support = (code *)dlsym(handle,"retro_is_support");
-      if (((_retro_is_support != (code *)0x0) && (iVar1 = (*_retro_is_support)(param_1), -1 < iVar1)
+      _retro_is_support = (gh_code *)dlsym(handle,"retro_is_support");
+      if (((_retro_is_support != (gh_code *)0x0) && (iVar1 = (*_retro_is_support)(param_1), -1 < iVar1)
           ) && (iVar1 = Load_Proc1(&DAT_002dbcb4), iVar1 != 0)) {
         run_process("retro_set_progress_callback",progress);
         game._0_4_ = fileName;
         game._4_4_ = 0;
         game._8_4_ = 0;
         progress_stepcount = 0;
-        pcVar3 = (code *)dlsym(handle,"retro_load_game");
-        if ((pcVar3 != (code *)0x0) && (iVar1 = (*pcVar3)(game), iVar1 != 0)) {
+        pcVar3 = (gh_code *)dlsym(handle,"retro_load_game");
+        if ((pcVar3 != (gh_code *)0x0) && (iVar1 = (*pcVar3)(game), iVar1 != 0)) {
           RARCH_LOG("use %s to run %s\n",acStack_128,fileName);
           Load_Proc2();
           rotation = 0;

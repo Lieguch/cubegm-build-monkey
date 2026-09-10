@@ -14,8 +14,8 @@ void InitSound(void)
   if (handle == 0) {
     return;
   }
-  sound_driver_init = (code *)dlsym(handle,"sound_driver_init");
-  if (sound_driver_init != (code *)0x0) {
+  sound_driver_init = (gh_code *)dlsym(handle,"sound_driver_init");
+  if (sound_driver_init != (gh_code *)0x0) {
     (*sound_driver_init)(USE_HDMI_OUT,UpdateROM,2);
     sound_driver_playframe = dlsym(handle,"sound_driver_playframe");
     if (sound_driver_playframe != 0) {

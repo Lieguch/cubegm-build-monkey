@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void SPI_Write(undefined4 param_1,undefined4 param_2)
+void SPI_Write(gh_u4 param_1,gh_u4 param_2)
 
 {
   sunxi_gpio_set_cfgpin(2,1);

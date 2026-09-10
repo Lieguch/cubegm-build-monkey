@@ -11,20 +11,20 @@
 void TestUSBJoy(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   ssize_t sVar3;
   int iVar4;
   int *piVar5;
   int iVar6;
-  undefined1 auStack_150 [4];
+  gh_u1 auStack_150 [4];
   short local_14c;
-  undefined1 local_14a;
-  undefined1 local_149;
+  gh_u1 local_14a;
+  gh_u1 local_149;
   int local_148 [5];
-  undefined4 uStack_134;
-  undefined4 uStack_130;
-  undefined4 uStack_12c;
+  gh_u4 uStack_134;
+  gh_u4 uStack_130;
+  gh_u4 uStack_12c;
   char local_128 [260];
   
   local_148[4] = DAT_003af008;

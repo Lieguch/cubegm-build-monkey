@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void video_driver_set_colormode(undefined4 param_1)
+void video_driver_set_colormode(gh_u4 param_1)
 
 {
-  undefined4 local_14;
-  undefined4 local_10;
-  undefined4 local_c;
+  gh_u4 local_14;
+  gh_u4 local_10;
+  gh_u4 local_c;
   
   local_10 = 1;
   local_c = 1;

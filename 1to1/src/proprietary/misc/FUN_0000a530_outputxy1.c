@@ -8,25 +8,25 @@
 #include "globals.h"
 #include "proto.h"
 
-void outputxy1(byte *param_1)
+void outputxy1(gh_byte *param_1)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   int iVar2;
   int iVar3;
-  undefined2 *puVar4;
-  undefined2 *puVar5;
-  uint uVar6;
-  byte *pbVar7;
+  gh_u2 *puVar4;
+  gh_u2 *puVar5;
+  gh_uint uVar6;
+  gh_byte *pbVar7;
   int iVar8;
-  byte *pbVar9;
-  undefined2 *puVar10;
-  undefined2 *puVar11;
+  gh_byte *pbVar9;
+  gh_u2 *puVar10;
+  gh_u2 *puVar11;
   
   iVar8 = output_x;
   do {
     iVar2 = output_y;
-    uVar6 = (uint)*param_1;
+    uVar6 = (gh_uint)*param_1;
     if (uVar6 == 0) {
       output_x = iVar8;
       return;
@@ -39,7 +39,7 @@ void outputxy1(byte *param_1)
         pbVar9 = &DAT_002e0d18;
       }
       pbVar7 = pbVar9 + 0x10;
-      puVar10 = (undefined2 *)(scr_data + (scr_h_size * iVar2 + iVar8) * 2);
+      puVar10 = (gh_u2 *)(scr_data + (scr_h_size * iVar2 + iVar8) * 2);
       puVar11 = puVar10;
       do {
         uVar6 = 7;
@@ -48,7 +48,7 @@ void outputxy1(byte *param_1)
         do {
           uVar1 = uVar6 & 0xff;
           uVar6 = uVar6 - 1;
-          if (((int)(uint)*pbVar9 >> uVar1 & 1U) == 0) {
+          if (((int)(gh_uint)*pbVar9 >> uVar1 & 1U) == 0) {
             *puVar4 = 0;
           }
           else {
@@ -61,7 +61,7 @@ void outputxy1(byte *param_1)
         puVar11 = puVar11 + iVar3;
         puVar10 = puVar10 + iVar3;
       } while (pbVar9 != pbVar7);
-      uVar6 = (uint)*param_1;
+      uVar6 = (gh_uint)*param_1;
       iVar8 = iVar8 + 8;
       if (uVar6 == 0) {
         output_x = iVar8;

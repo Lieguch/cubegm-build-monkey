@@ -11,8 +11,8 @@
 void LoadDefaultState(void)
 
 {
-  undefined4 uVar1;
-  undefined4 uVar2;
+  gh_u4 uVar1;
+  gh_u4 uVar2;
   int iVar3;
   char acStack_1010 [4100];
   

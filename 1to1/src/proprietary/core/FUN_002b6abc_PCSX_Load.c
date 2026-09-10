@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 PCSX_Load(char *param_1)
+gh_u4 PCSX_Load(char *param_1)
 
 {
   int iVar1;
-  code *pcVar2;
+  gh_code *pcVar2;
   char acStack_118 [260];
   
   n_input_width = 0x140;
@@ -29,8 +29,8 @@ undefined4 PCSX_Load(char *param_1)
     game._0_4_ = fileName;
     game._4_4_ = 0;
     game._8_4_ = 0;
-    pcVar2 = (code *)dlsym(handle,"retro_load_game");
-    if (pcVar2 == (code *)0x0) {
+    pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
+    if (pcVar2 == (gh_code *)0x0) {
       RARCH_LOG("find retro_load_game process fail \n");
     }
     else {

@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 ReadJoystick(void)
+gh_u4 ReadJoystick(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   
   ReadJoystickProc();
   if ((joy_key._0_4_ != joytemp0) || (joy_key._4_4_ != joytemp1)) {

@@ -13,44 +13,44 @@ void mui_recent(void)
 {
   bool bVar1;
   char cVar2;
-  undefined4 uVar3;
+  gh_u4 uVar3;
   FILE *pFVar4;
   size_t sVar5;
   int iVar6;
-  uint uVar7;
+  gh_uint uVar7;
   char *pcVar8;
-  byte *__ptr;
-  byte bVar9;
-  uint uVar10;
+  gh_byte *__ptr;
+  gh_byte bVar9;
+  gh_uint uVar10;
   int iVar11;
-  byte *pbVar12;
+  gh_byte *pbVar12;
   int iVar13;
-  uint uVar14;
-  byte *pbVar15;
+  gh_uint uVar14;
+  gh_byte *pbVar15;
   int iVar17;
   int iVar18;
   int iVar19;
   int iVar20;
-  uint local_670;
+  gh_uint local_670;
   int local_664;
   FILE *local_644;
   int local_628;
-  uint local_624;
-  uint local_620;
-  uint local_61c;
-  uint local_618;
+  gh_uint local_624;
+  gh_uint local_620;
+  gh_uint local_61c;
+  gh_uint local_618;
   int local_614;
   char acStack_610 [100];
-  byte abStack_5ac [128];
+  gh_byte abStack_5ac [128];
   pthread_t apStack_52c [64];
   char local_42c [256];
-  undefined4 local_32c;
+  gh_u4 local_32c;
   char local_328 [128];
   char local_2a8 [128];
   char local_228 [128];
   char local_1a8 [128];
   char acStack_128 [260];
-  byte *pbVar16;
+  gh_byte *pbVar16;
   
   uVar14 = 0;
   m_menulog._0_4_ = DAT_003af26c;
@@ -79,7 +79,7 @@ LAB_00027864:
     else {
       fseek(pFVar4,0,2);
       sVar5 = ftell(pFVar4);
-      if (DAT_003af2b0 != (undefined1 *)0x0) {
+      if (DAT_003af2b0 != (gh_u1 *)0x0) {
         free(DAT_003af2b0);
       }
       DAT_003af2b0 = malloc(sVar5 + 1);
@@ -92,7 +92,7 @@ LAB_00027864:
       mui_LoadUIResource(&DAT_003af28c,"menu.raw");
     }
     memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
-           (uint)*(ushort *)((int)DAT_003af28c + 6) * (uint)*(ushort *)(DAT_003af28c + 1) * 2);
+           (gh_uint)*(gh_ushort *)((int)DAT_003af28c + 6) * (gh_uint)*(gh_ushort *)(DAT_003af28c + 1) * 2);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 7);
     mui_fast_lsit = 0;
@@ -210,11 +210,11 @@ LAB_000284a8:
       DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
       iVar13 = DAT_003af394 + 0xb;
       local_628 = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];
-      local_624 = (uint)*(ushort *)(DAT_003af28c + iVar13 * 4 + 2);
+      local_624 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);
       local_614 = DAT_003af2a0 << 1;
-      local_620 = (uint)*(ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
-      local_61c = (uint)*(ushort *)(DAT_003af28c + iVar13 * 4 + 3);
-      local_618 = (uint)*(ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
+      local_620 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
+      local_61c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);
+      local_618 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
       popwindows(&local_628);
       mui_ReadJoystick();
       diff_prev = 0;
@@ -311,11 +311,11 @@ LAB_00027ca0:
         DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
         iVar13 = DAT_003af394 + 10;
         local_628 = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];
-        local_624 = (uint)*(ushort *)(DAT_003af28c + iVar13 * 4 + 2);
+        local_624 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);
         local_614 = DAT_003af2a0 << 1;
-        local_620 = (uint)*(ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
-        local_61c = (uint)*(ushort *)(DAT_003af28c + iVar13 * 4 + 3);
-        local_618 = (uint)*(ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
+        local_620 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
+        local_61c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);
+        local_618 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
         popwindows(&local_628);
         mui_ReadJoystick();
         diff_prev = 0;
@@ -339,7 +339,7 @@ LAB_00027ca0:
               __ptr[sVar5] = 0;
               fclose(pFVar4);
               local_644 = fopen((char *)apStack_52c,"wt");
-              if (__ptr != (byte *)0x0) {
+              if (__ptr != (gh_byte *)0x0) {
                 iVar6 = 0;
                 pbVar12 = __ptr;
                 pbVar15 = abStack_5ac;

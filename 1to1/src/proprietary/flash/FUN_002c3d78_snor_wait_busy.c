@@ -15,9 +15,9 @@ int snor_wait_busy(int param_1)
 {
   int iVar1;
   int iVar2;
-  uint *unaff_r6;
-  uint *unaff_r7;
-  uint local_24 [4];
+  gh_uint *unaff_r6;
+  gh_uint *unaff_r7;
+  gh_uint local_24 [4];
   
   iVar2 = 0;
   if (0 < param_1) {

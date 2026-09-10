@@ -16,8 +16,8 @@ void mui_DisplayInputBuffer(void)
   int iVar3;
   int iVar4;
   int iVar5;
-  undefined4 *puVar6;
-  undefined4 uVar7;
+  gh_u4 *puVar6;
+  gh_u4 uVar7;
   int iVar8;
   int iVar9;
   int iVar10;
@@ -35,14 +35,14 @@ void mui_DisplayInputBuffer(void)
     iVar8 = DAT_003af6cc;
     do {
       iVar2 = iVar8 * DAT_003af2a0 * 2;
-      iVar3 = iVar8 * (uint)*(ushort *)(DAT_003af290 + 1) * 2;
+      iVar3 = iVar8 * (gh_uint)*(gh_ushort *)(DAT_003af290 + 1) * 2;
       iVar8 = iVar8 + 1;
       memcpy((void *)(DAT_003af29c + iVar2 + iVar1),
              (void *)((int)DAT_003af290 + iVar3 + iVar1 + *DAT_003af290),iVar9 * 2);
     } while (iVar10 != iVar8);
   }
   puVar6 = m_search;
-  uVar7 = mui_outputxy_t(DAT_003af29c,iVar4 + 2,iVar5,(undefined1)DAT_003af6d8,DAT_003af6dc,
+  uVar7 = mui_outputxy_t(DAT_003af29c,iVar4 + 2,iVar5,(gh_u1)DAT_003af6d8,DAT_003af6dc,
                          *m_search);
   puVar6[3] = uVar7;
   return;

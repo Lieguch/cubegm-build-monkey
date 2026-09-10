@@ -8,14 +8,14 @@
 #include "globals.h"
 #include "proto.h"
 
-int code_convert_constprop_22(undefined4 param_1,undefined4 param_2,void *param_3,size_t param_4)
+int code_convert_constprop_22(gh_u4 param_1,gh_u4 param_2,void *param_3,size_t param_4)
 
 {
   int iVar1;
   int iVar2;
   void *local_20;
-  undefined4 local_1c;
-  undefined4 local_18;
+  gh_u4 local_1c;
+  gh_u4 local_18;
   size_t local_14;
   
   local_20 = param_3;

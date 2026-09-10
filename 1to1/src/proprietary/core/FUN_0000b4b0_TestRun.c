@@ -17,8 +17,8 @@ void TestRun(void)
   void *pvVar2;
   void *pvVar3;
   int iVar4;
-  undefined8 uVar5;
-  undefined8 uVar6;
+  gh_u8 uVar5;
+  gh_u8 uVar6;
   void *local_98;
   char acStack_8c [104];
   
@@ -61,9 +61,9 @@ void TestRun(void)
     uVar5 = GetTick();
     PlaySound(pvVar2,0x2df);
     uVar6 = GetTick();
-    if ((int)((ulonglong)uVar6 >> 0x20) !=
-        (int)((ulonglong)uVar5 >> 0x20) + (uint)((uint)uVar6 < (uint)uVar5) ||
-        5000 < (uint)uVar6 - (uint)uVar5) {
+    if ((int)((gh_ulonglong)uVar6 >> 0x20) !=
+        (int)((gh_ulonglong)uVar5 >> 0x20) + (gh_uint)((gh_uint)uVar6 < (gh_uint)uVar5) ||
+        5000 < (gh_uint)uVar6 - (gh_uint)uVar5) {
       printf("++++ AudioProcess timer over %dus ++++\n");
     }
     WaitNMI();

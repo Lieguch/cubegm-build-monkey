@@ -11,28 +11,28 @@
 void mui_setting(void)
 
 {
-  uint uVar1;
-  undefined4 uVar2;
+  gh_uint uVar1;
+  gh_u4 uVar2;
   FILE *pFVar3;
   size_t sVar4;
   char *pcVar5;
   int iVar6;
   int iVar7;
-  undefined4 uVar8;
+  gh_u4 uVar8;
   int iVar9;
   int iVar10;
   int iVar11;
   int *piVar12;
   int *piVar13;
   int iVar14;
-  undefined4 *puVar15;
+  gh_u4 *puVar15;
   int local_728;
   int local_724;
   char acStack_6d0 [100];
   char acStack_66c [256];
   int local_56c [80];
   char acStack_42c [256];
-  undefined4 local_32c;
+  gh_u4 local_32c;
   char local_128 [260];
   
   local_724 = m_menulog._272_4_;
@@ -63,7 +63,7 @@ LAB_0002b3b4:
   }
   iVar11 = 0;
   memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-         (uint)*(ushort *)((int)DAT_003af294 + 6) * (uint)*(ushort *)(DAT_003af294 + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
   OutRect._16_4_ = 0x500;
   OutRect._20_4_ = 0x2d0;
@@ -74,15 +74,15 @@ LAB_0002b3b4:
     piVar13 = local_56c;
     do {
       puVar15 = puVar15 + 1;
-      mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,piVar13[1] + 6,(undefined1)DAT_003af700,
+      mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,piVar13[1] + 6,(gh_u1)DAT_003af700,
                      DAT_003af704,*puVar15);
       if (m_ui == iVar11) {
         mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,piVar13[1] + -6,
-                       (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                       (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
       }
       else {
         mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,piVar13[1] + -10,
-                       (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                       (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
       }
       iVar11 = iVar11 + 1;
       piVar13 = piVar13 + 4;
@@ -105,13 +105,13 @@ LAB_0002b7a8:
   if (uVar1 < 0x401) {
     if (uVar1 == 0x20) {
       if (local_724 == 0) {
-        if ((int)(uint)*(ushort *)(DAT_003af294 + 6) < DAT_003af6f0) {
+        if ((int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 6) < DAT_003af6f0) {
           local_724 = 1;
           DAT_003af27c = -1;
           iVar11 = iVar9;
         }
       }
-      else if (DAT_003af6f0 < (int)(uint)*(ushort *)(DAT_003af294 + 6)) {
+      else if (DAT_003af6f0 < (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 6)) {
         iVar11 = -1;
         local_724 = 0;
       }
@@ -135,7 +135,7 @@ LAB_0002b5f4:
           UnDrawSelectBar(local_56c + DAT_003af27c * 4,DAT_003af294,0);
           mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
           mui_outputxy_t(DAT_003af29c,local_56c[DAT_003af27c * 4] + 8,
-                         local_56c[DAT_003af27c * 4 + 1] + 6,(undefined1)DAT_003af700,DAT_003af704,
+                         local_56c[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af700,DAT_003af704,
                          (&m_ui)[DAT_003af27c + 0x16]);
           if (DAT_003af27c == m_ui) {
             puVar15 = &DAT_003af708;
@@ -147,21 +147,21 @@ LAB_0002b5f4:
             iVar9 = local_56c[DAT_003af27c * 4];
             iVar10 = local_56c[DAT_003af27c * 4 + 1] + -10;
           }
-          mui_outputxy_t(DAT_003af29c,iVar9 + 0x120,iVar10,(undefined1)DAT_003af71c,DAT_003af718,
+          mui_outputxy_t(DAT_003af29c,iVar9 + 0x120,iVar10,(gh_u1)DAT_003af71c,DAT_003af718,
                          puVar15);
         }
         iVar9 = iVar11;
         if (-1 < iVar11) {
           DrawSelectBar(local_56c + iVar11 * 4);
           mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,local_56c[iVar11 * 4 + 1] + 6,
-                         (undefined1)DAT_003af700,DAT_003af704,(&m_ui)[iVar11 + 0x16]);
+                         (gh_u1)DAT_003af700,DAT_003af704,(&m_ui)[iVar11 + 0x16]);
           if (iVar11 == m_ui) {
             mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,local_56c[iVar11 * 4 + 1] + -6
-                           ,(undefined1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                           ,(gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
           }
           else {
             mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,
-                           local_56c[iVar11 * 4 + 1] + -10,(undefined1)DAT_003af71c,DAT_003af718,
+                           local_56c[iVar11 * 4 + 1] + -10,(gh_u1)DAT_003af71c,DAT_003af718,
                            &DAT_003af70f);
           }
         }
@@ -198,7 +198,7 @@ LAB_0002b828:
           } while (local_56c + DAT_003af30c * 4 != piVar12);
         }
         memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-               (uint)*(ushort *)((int)DAT_003af294 + 6) * (uint)*(ushort *)(DAT_003af294 + 1) * 2);
+               (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
         mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
         if (0 < DAT_003af30c) {
           puVar15 = &DAT_003af2b8;
@@ -207,14 +207,14 @@ LAB_0002b828:
           do {
             puVar15 = puVar15 + 1;
             mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 8,piVar13[1] + 6,
-                           (undefined1)DAT_003af700,DAT_003af704,*puVar15);
+                           (gh_u1)DAT_003af700,DAT_003af704,*puVar15);
             if (m_ui == iVar9) {
               mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 0x120,piVar13[1] + -6,
-                             (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                             (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
             }
             else {
               mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 0x120,piVar13[1] + -10,
-                             (undefined1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                             (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
             }
             iVar9 = iVar9 + 1;
             piVar13 = piVar13 + 4;
@@ -234,7 +234,7 @@ LAB_0002b828:
           if (tree != 0) {
             iVar9 = mxmlFindElement(tree,tree,"config",0,0,1);
             if (iVar9 != 0) {
-              mxmlElementSetAttr(iVar9,"language",*(undefined4 *)(number + m_ui * 4));
+              mxmlElementSetAttr(iVar9,"language",*(gh_u4 *)(number + m_ui * 4));
             }
             if (tree != 0) {
               pFVar3 = fopen(acStack_6d0,"wb");
@@ -289,7 +289,7 @@ LAB_0002be88:
         mui_LoadUIResource(&DAT_003af294,"setting.raw");
       }
       memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-             (uint)*(ushort *)((int)DAT_003af294 + 6) * (uint)*(ushort *)(DAT_003af294 + 1) * 2);
+             (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
       mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,2);
       iVar6 = dir_serial_list(iVar9,&DAT_002dd860);
       DisplayPage_list(iVar9,iVar10,iVar6);
@@ -306,7 +306,7 @@ LAB_0002c008:
         iVar7 = DAT_003af27c;
         iVar14 = DAT_003af278;
         if (iVar11 == 0) {
-          if ((int)(uint)*(ushort *)(DAT_003af294 + 10) <= DAT_003af720) goto LAB_0002c094;
+          if ((int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10) <= DAT_003af720) goto LAB_0002c094;
           iVar11 = 1;
           iVar6 = dir_serial_list(DAT_003af278,&DAT_002dd860);
         }
@@ -314,7 +314,7 @@ LAB_0002c008:
           if (iVar10 + iVar9 == 0) {
             iVar7 = iVar10;
             iVar14 = iVar9;
-            if ((int)(uint)*(ushort *)(DAT_003af294 + 10) < DAT_003af720) {
+            if ((int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10) < DAT_003af720) {
               iVar7 = -1;
               iVar11 = 0;
               DAT_003af278 = iVar9;
@@ -430,7 +430,7 @@ LAB_0002c094:
           iVar7 = DAT_003af27c;
           iVar14 = DAT_003af278;
           if (iVar11 == 0) {
-            if (DAT_003af720 <= (int)(uint)*(ushort *)(DAT_003af294 + 10)) goto LAB_0002c094;
+            if (DAT_003af720 <= (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10)) goto LAB_0002c094;
             iVar11 = 1;
             iVar6 = dir_serial_list(DAT_003af278,&DAT_002dd860);
           }
@@ -447,7 +447,7 @@ LAB_0002c094:
                 iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
                 iVar7 = iVar7 - iVar14;
               }
-              else if (DAT_003af720 < (int)(uint)*(ushort *)(DAT_003af294 + 10)) {
+              else if (DAT_003af720 < (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10)) {
                 iVar11 = 0;
                 iVar7 = -1;
                 iVar14 = iVar9;
@@ -471,17 +471,17 @@ LAB_0002c094:
             }
 LAB_0002c7b8:
             memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                   (uint)*(ushort *)((int)DAT_003af294 + 6) * (uint)*(ushort *)(DAT_003af294 + 1) *
+                   (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) *
                    2);
             mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,3);
             OutRect._8_4_ = 0;
             OutRect._12_4_ = 0;
             OutRect._16_4_ = 0x500;
             OutRect._20_4_ = 0x2d0;
-            mui_outputxy_t(DAT_003af29c,DAT_003af788,DAT_003af78c,(undefined1)DAT_003af798,
+            mui_outputxy_t(DAT_003af29c,DAT_003af788,DAT_003af78c,(gh_u1)DAT_003af798,
                            DAT_003af79c,&DAT_003af7a0);
             mui_outputxy_t(DAT_003af29c,DAT_003af788,DAT_003af78c + DAT_003af794,
-                           (undefined1)DAT_003af798,DAT_003af79c,&DAT_003af7e0);
+                           (gh_u1)DAT_003af798,DAT_003af79c,&DAT_003af7e0);
             ForceFlashCount = 0;
             dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
             mui_ReadJoystick();
@@ -496,8 +496,8 @@ LAB_0002c7b8:
                     mui_LoadUIResource(&DAT_003af294,"setting.raw");
                   }
                   memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                         (uint)*(ushort *)((int)DAT_003af294 + 6) *
-                         (uint)*(ushort *)(DAT_003af294 + 1) * 2);
+                         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) *
+                         (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
                   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,4);
                   OutRect._16_4_ = 0x500;
                   OutRect._20_4_ = 0x2d0;
@@ -549,8 +549,8 @@ LAB_0002c7b8:
                     mui_LoadUIResource(&DAT_003af298,"type.raw");
                   }
                   memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                         (uint)*(ushort *)((int)DAT_003af294 + 6) *
-                         (uint)*(ushort *)(DAT_003af294 + 1) * 2);
+                         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) *
+                         (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
                   uVar8 = GetWorkPath();
                   sprintf(acStack_42c,"%s/setting.xml",uVar8);
                   pFVar3 = fopen(acStack_42c,"r");
@@ -564,7 +564,7 @@ LAB_0002c7b8:
                     if (tree != 0) {
                       iVar6 = mxmlFindElement(tree,tree,"config",0,0,1);
                       if (iVar6 != 0) {
-                        mxmlElementSetAttr(iVar6,"language",*(undefined4 *)(number + m_ui * 4));
+                        mxmlElementSetAttr(iVar6,"language",*(gh_u4 *)(number + m_ui * 4));
                       }
                       if (tree != 0) {
                         pFVar3 = fopen(acStack_42c,"wb");
@@ -648,13 +648,13 @@ LAB_0002c004:
     }
     if (uVar1 != 0x80) goto LAB_0002b800;
     if (local_724 == 0) {
-      if (DAT_003af6f0 < (int)(uint)*(ushort *)(DAT_003af294 + 6)) {
+      if (DAT_003af6f0 < (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 6)) {
         local_724 = 1;
         DAT_003af27c = -1;
         iVar11 = iVar9;
       }
     }
-    else if ((int)(uint)*(ushort *)(DAT_003af294 + 6) < DAT_003af6f0) {
+    else if ((int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 6) < DAT_003af6f0) {
       iVar11 = -1;
       local_724 = 0;
     }

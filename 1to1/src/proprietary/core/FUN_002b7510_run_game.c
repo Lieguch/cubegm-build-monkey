@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 run_game(char *param_1)
+gh_u4 run_game(char *param_1)
 
 {
   char *pcVar1;
@@ -17,7 +17,7 @@ undefined4 run_game(char *param_1)
   int iVar3;
   int iVar4;
   size_t sVar5;
-  uint uVar6;
+  gh_uint uVar6;
   char acStack_160 [8];
   int local_158;
   char acStack_154 [4];

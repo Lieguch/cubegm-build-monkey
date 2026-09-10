@@ -13,25 +13,25 @@
 void mui_LoadConfig(void)
 
 {
-  undefined4 uVar1;
-  undefined4 uVar2;
+  gh_u4 uVar1;
+  gh_u4 uVar2;
   size_t sVar3;
   char *pcVar4;
   void *pvVar5;
   int iVar6;
   int iVar7;
-  undefined4 *puVar8;
+  gh_u4 *puVar8;
   int iVar9;
   int *piVar10;
   char *pcVar11;
   int *piVar12;
-  undefined1 *puVar13;
-  undefined4 *puVar14;
+  gh_u1 *puVar13;
+  gh_u4 *puVar14;
   int iVar15;
   int local_1a4;
   int local_1a0;
   char *local_19c;
-  undefined4 *local_198;
+  gh_u4 *local_198;
   size_t local_194 [2];
   char acStack_18c [100];
   char local_128 [260];
@@ -70,7 +70,7 @@ void mui_LoadConfig(void)
   get_value_from_items("TypeName_Name",local_128,configitems,uVar2);
   if (local_128[0] == '\0') {
     puVar8 = &DAT_003af328;
-    puVar14 = (undefined4 *)&mui_typename;
+    puVar14 = (gh_u4 *)&mui_typename;
     pcVar11 = "ARCADE";
     while( true ) {
       if ((void *)puVar8[1] != (void *)0x0) {
@@ -81,7 +81,7 @@ void mui_LoadConfig(void)
       puVar8 = puVar8 + 1;
       *puVar8 = pcVar4;
       strcpy(pcVar4,pcVar11);
-      if (puVar8 == (undefined4 *)0x3af34c) break;
+      if (puVar8 == (gh_u4 *)0x3af34c) break;
       puVar14 = puVar14 + 1;
       pcVar11 = (char *)*puVar14;
     }

@@ -11,7 +11,7 @@
 void PlaySound(void)
 
 {
-  if (sound_driver_playframe == (code *)0x0) {
+  if (sound_driver_playframe == (gh_code *)0x0) {
     return;
   }
                     /* WARNING: Could not recover jumptable at 0x0000dbf8. Too many branches */

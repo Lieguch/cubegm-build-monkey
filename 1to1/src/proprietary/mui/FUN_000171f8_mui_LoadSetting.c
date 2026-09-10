@@ -11,24 +11,24 @@
 void mui_LoadSetting(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   FILE *pFVar2;
   int iVar3;
   char *pcVar4;
   int iVar5;
-  undefined4 uVar6;
+  gh_u4 uVar6;
   size_t sVar7;
   long lVar8;
   long lVar9;
   long lVar10;
   int iVar11;
   char *__src;
-  undefined4 *puVar12;
+  gh_u4 *puVar12;
   int iVar13;
-  undefined1 auStack_154 [22];
-  ushort local_13e;
-  undefined4 local_13c;
-  ushort local_132;
+  gh_u1 auStack_154 [22];
+  gh_ushort local_13e;
+  gh_u4 local_13c;
+  gh_ushort local_132;
   size_t local_12c;
   char acStack_128 [260];
   
@@ -185,7 +185,7 @@ void mui_LoadSetting(void)
           }
           iVar5 = iVar5 * 0x44;
           (&DAT_003b0298)[iVar5] = 0;
-          *(undefined4 *)(&DAT_003b02b8 + iVar5) = 0;
+          *(gh_u4 *)(&DAT_003b02b8 + iVar5) = 0;
           (&DAT_003b02bc)[iVar5] = 0;
 LAB_000178ec:
         }
@@ -216,10 +216,10 @@ LAB_000178ec:
           *puVar12 = 0xe480aee7;
           puVar12[1] = 0xb8e493bd;
           puVar12[2] = 0x8796e6ad;
-          *(undefined1 *)(puVar12 + 3) = 0;
+          *(gh_u1 *)(puVar12 + 3) = 0;
           puVar12[8] = 0x635f6975;
           puVar12[9] = 0x697a2e6e;
-          *(undefined2 *)(puVar12 + 10) = 0x70;
+          *(gh_u2 *)(puVar12 + 10) = 0x70;
           pcVar4 = malloc(0x44);
           puVar12[0x10] = 0;
           iVar13 = tree;

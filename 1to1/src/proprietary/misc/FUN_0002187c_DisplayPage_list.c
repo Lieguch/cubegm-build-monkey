@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void DisplayPage_list(int param_1,undefined4 param_2,int param_3)
+void DisplayPage_list(int param_1,gh_u4 param_2,int param_3)
 
 {
   int iVar1;
@@ -19,7 +19,7 @@ void DisplayPage_list(int param_1,undefined4 param_2,int param_3)
   int local_3c;
   int local_38;
   int local_34;
-  undefined4 local_30;
+  gh_u4 local_30;
   int local_2c;
   int local_28;
   int local_24;

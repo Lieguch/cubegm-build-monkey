@@ -8,13 +8,13 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 gpsp_unzip(undefined4 param_1,undefined4 param_2)
+gh_u4 gpsp_unzip(gh_u4 param_1,gh_u4 param_2)
 
 {
   int iVar1;
   int iVar2;
-  undefined1 auStack_140 [296];
-  undefined4 local_18;
+  gh_u1 auStack_140 [296];
+  gh_u4 local_18;
   
   memset(auStack_140,0,0x130);
   RARCH_LOG("gpsp_unzip:%s to %x\n",param_2,param_1);

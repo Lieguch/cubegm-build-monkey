@@ -14,7 +14,7 @@ void __libc_csu_init(int argc,char **argv,char **envp)
 
 {
   int iVar1;
-  undefined **ppuVar2;
+  gh_undef **ppuVar2;
   
                     /* Unresolved local var: size_t size@[???] */
   _init((EVP_PKEY_CTX *)argc);
@@ -23,7 +23,7 @@ void __libc_csu_init(int argc,char **argv,char **envp)
   ppuVar2 = &__frame_dummy_init_array_entry;
   do {
     iVar1 = iVar1 + 1;
-    (*(code *)*ppuVar2)(argc,argv,envp);
+    (*(gh_code *)*ppuVar2)(argc,argv,envp);
     ppuVar2 = ppuVar2 + 1;
   } while (iVar1 != 1);
   return;

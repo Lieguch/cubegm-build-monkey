@@ -8,24 +8,24 @@
 #include "globals.h"
 #include "proto.h"
 
-int mui_do_file_list(int param_1,byte *param_2)
+int mui_do_file_list(int param_1,gh_byte *param_2)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   long lVar2;
   int iVar3;
-  byte *pbVar4;
-  byte bVar5;
-  undefined1 *puVar6;
-  byte *pbVar7;
+  gh_byte *pbVar4;
+  gh_byte bVar5;
+  gh_u1 *puVar6;
+  gh_byte *pbVar7;
   int iVar8;
   int iVar9;
   int iVar10;
-  byte *local_100;
-  byte *local_fc;
-  undefined1 *local_f8;
-  undefined1 *local_f4;
-  byte abStack_f0 [100];
+  gh_byte *local_100;
+  gh_byte *local_fc;
+  gh_u1 *local_f8;
+  gh_u1 *local_f4;
+  gh_byte abStack_f0 [100];
   char local_8c [104];
   
   uVar1 = libiconv_open("utf-8","GB2312");
@@ -34,7 +34,7 @@ int mui_do_file_list(int param_1,byte *param_2)
     iVar8 = DAT_003af394 * 0x404;
     do {
       *puVar6 = 0;
-      *(undefined4 *)(puVar6 + 0x100) = 0;
+      *(gh_u4 *)(puVar6 + 0x100) = 0;
       puVar6[0x104] = 0;
       puVar6[0x184] = 0;
       puVar6[0x204] = 0;
@@ -83,8 +83,8 @@ LAB_00018798:
       }
       *pbVar7 = 0;
       pbVar4 = &file_info_list + iVar10 * 0x404;
-      local_f8 = (undefined1 *)0x64;
-      local_f4 = (undefined1 *)0x100;
+      local_f8 = (gh_u1 *)0x64;
+      local_f4 = (gh_u1 *)0x100;
       local_100 = abStack_f0;
       local_fc = pbVar4;
       libiconv(uVar1,&local_100,&local_f8,&local_fc,&local_f4);
@@ -103,7 +103,7 @@ LAB_000189c4:
         local_f8 = &DAT_003b2324 + iVar10 * 0x404;
 LAB_00018a98:
         *pbVar7 = 0;
-        local_f4 = (undefined1 *)0x64;
+        local_f4 = (gh_u1 *)0x64;
         local_8c[0] = -0x80;
         local_8c[1] = '\0';
         local_8c[2] = '\0';

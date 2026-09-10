@@ -11,27 +11,27 @@
 void Load_Proc2(void)
 
 {
-  uint uVar1;
+  gh_uint uVar1;
   bool bVar2;
-  undefined4 uVar3;
-  code *pcVar4;
+  gh_u4 uVar3;
+  gh_code *pcVar4;
   int iVar5;
   int iVar6;
   int iVar7;
-  uint uVar8;
+  gh_uint uVar8;
   int local_50;
   
-  _retro_get_region = (code *)dlsym(handle,"retro_get_region");
-  if (_retro_get_region == (code *)0x0) {
+  _retro_get_region = (gh_code *)dlsym(handle,"retro_get_region");
+  if (_retro_get_region == (gh_code *)0x0) {
     RARCH_LOG("find retro_get_region process fail \n");
     return;
   }
   pal_ntsc = (*_retro_get_region)();
   RARCH_LOG("pal_ntsc:%d\n",pal_ntsc);
   uVar3 = handle;
-  _retro_run = (code *)dlsym(handle,"retro_run");
-  _SetFrameSkip = (code *)dlsym(uVar3,"SetFrameSkip");
-  if (_SetFrameSkip != (code *)0x0) {
+  _retro_run = (gh_code *)dlsym(handle,"retro_run");
+  _SetFrameSkip = (gh_code *)dlsym(uVar3,"SetFrameSkip");
+  if (_SetFrameSkip != (gh_code *)0x0) {
     RARCH_LOG("find _SetFrameSkip process\n");
   }
   if (pal_ntsc == 0) {
@@ -98,7 +98,7 @@ LAB_002b60a4:
     iVar6 = initialTicks;
     iVar7 = (int)outTimeVal * 1000 + outTimeVal._4_4_ / 1000;
     FrameCount0 = FrameCount0 + 1;
-    uVar1 = (uint)(fps * (iVar7 - initialTicks)) / 1000;
+    uVar1 = (gh_uint)(fps * (iVar7 - initialTicks)) / 1000;
     if (uVar1 < FrameCount0) {
       iVar5 = __aeabi_uidiv(FrameCount0 * 1000 + -1000,fps);
       iVar6 = (iVar5 - iVar7) + iVar6;
@@ -106,8 +106,8 @@ LAB_002b60a4:
         usleep(iVar6 * 1000);
       }
 LAB_002b5f64:
-      FrameSkip = (uint)(0 < skipCounter);
-      uVar8 = (uint)(0 >= skipCounter);
+      FrameSkip = (gh_uint)(0 < skipCounter);
+      uVar8 = (gh_uint)(0 >= skipCounter);
     }
     else {
       if ((uVar1 != FrameCount0) && (skipCounter < maxSkips)) {
@@ -121,12 +121,12 @@ LAB_002b5f64:
     }
     pcVar4 = _SetFrameSkip;
     iVar6 = fps_ptr + 1;
-    *(uint *)(fpsbuf + fps_ptr * 4) = uVar8;
+    *(gh_uint *)(fpsbuf + fps_ptr * 4) = uVar8;
     if (iVar6 == 0x10) {
       iVar6 = 0;
     }
     fps_ptr = iVar6;
-    if (pcVar4 != (code *)0x0) {
+    if (pcVar4 != (gh_code *)0x0) {
       (*pcVar4)();
     }
     ReadJoystickProc();

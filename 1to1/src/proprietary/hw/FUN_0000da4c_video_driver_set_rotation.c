@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-void video_driver_set_rotation(undefined4 param_1)
+void video_driver_set_rotation(gh_u4 param_1)
 
 {
   printf("video_driver_set_rotation: %X\n",param_1);
-  if (set_rotation == (code *)0x0) {
+  if (set_rotation == (gh_code *)0x0) {
     return;
   }
                     /* WARNING: Could not recover jumptable at 0x0000da8c. Too many branches */

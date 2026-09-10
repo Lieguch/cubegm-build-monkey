@@ -12,7 +12,7 @@ void xintiao(void)
 
 {
   int *piVar1;
-  undefined4 *puVar2;
+  gh_u4 *puVar2;
   
   puVar2 = shm;
   piVar1 = shm + 1;

@@ -8,16 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 mui_load_state(void)
+gh_u4 mui_load_state(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   FILE *__stream;
   long lVar3;
   void *__ptr;
   void *__ptr_00;
-  uint uVar4;
+  gh_uint uVar4;
   bool bVar5;
   size_t __size;
   int iVar6;
@@ -39,7 +39,7 @@ undefined4 mui_load_state(void)
   char acStack_8c [104];
   
   DAT_003af27c = 0;
-  if (*(ushort *)(DAT_003af2b8 + 0x1e) < *(ushort *)(DAT_003af2b8 + 0x12)) {
+  if (*(gh_ushort *)(DAT_003af2b8 + 0x1e) < *(gh_ushort *)(DAT_003af2b8 + 0x12)) {
     m_statetab._16_4_ = 0;
     m_statetab._88_4_ = 3;
     m_statetab._68_4_ = 0xffffffff;
@@ -57,7 +57,7 @@ joined_r0x0002eb88:
   }
   iVar6 = 0;
   memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-         (uint)*(ushort *)((int)DAT_003af2b8 + 6) * (uint)*(ushort *)(DAT_003af2b8 + 1) * 2);
+         (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,4);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,7);
   local_c8 = DAT_003af828;
@@ -77,7 +77,7 @@ joined_r0x0002eb88:
     while( true ) {
       uVar1 = GetWorkPath();
       iVar2 = gameType();
-      sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4),
+      sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
               RomName,iVar6);
       iVar2 = access(acStack_8c,0);
       if (iVar2 == 0) break;
@@ -102,8 +102,8 @@ LAB_0002ec70:
     fclose(__stream);
     uncompress(__ptr_00,&local_d8,__ptr,__size);
     local_c8 = DAT_003af828;
-    local_b4 = (iVar6 / 3) * 0xa8 + *(ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
-    local_b8 = (iVar6 % 3) * 0xa8 + *(ushort *)(DAT_003af2b8 + 0x1e) + 4;
+    local_b4 = (iVar6 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
+    local_b8 = (iVar6 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;
     local_bc = DAT_003af29c;
     local_a8 = DAT_003af2a0 << 1;
     local_c4 = DAT_003af82c;
@@ -136,13 +136,13 @@ LAB_0002ee58:
     if (uVar4 == 0x40) {
       if (!bVar5) break;
       iVar6 = iVar6 * 0x18;
-      draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
-                        (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+      draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
+                        (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                         *(int *)(m_statetab + iVar6 + 4),0);
       iVar6 = *(int *)(m_statetab + iVar6 + 0xc);
 LAB_0002f0a4:
-      draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6 * 0x18)
-                        ,(uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+      draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6 * 0x18)
+                        ,(gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                          *(int *)(m_statetab + iVar6 * 0x18 + 4),0xffff);
       SoundPlay(1,mui_Effect0);
 LAB_0002f03c:
@@ -159,19 +159,19 @@ LAB_0002f044:
             return 1;
           }
           iVar6 = iVar6 * 0x18;
-          draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
-                            (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+          draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
+                            (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                             *(int *)(m_statetab + iVar6 + 4),0);
           iVar6 = *(int *)(m_statetab + iVar6 + 8);
           goto LAB_0002f0a4;
         }
         if (uVar4 == 0x20) {
           if (!bVar5) {
-            if ((uint)*(ushort *)(DAT_003af2b8 + 0x1e) <= (uint)*(ushort *)(DAT_003af2b8 + 0xe))
+            if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe))
             goto LAB_0002ef08;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._0_4_,
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._4_4_,0xffff)
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._0_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._4_4_,0xffff)
             ;
             bVar5 = true;
             SoundPlay(1,mui_Effect1);
@@ -179,8 +179,8 @@ LAB_0002f044:
             goto LAB_0002f03c;
           }
           iVar6 = iVar6 * 0x18;
-          draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
-                            (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+          draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
+                            (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                             *(int *)(m_statetab + iVar6 + 4),0);
           iVar6 = *(int *)(m_statetab + iVar6 + 0x14);
           goto joined_r0x0002f22c;
@@ -190,8 +190,8 @@ LAB_0002f044:
         if (uVar4 == 0x80) {
           if (bVar5) {
             iVar6 = iVar6 * 0x18;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6),
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                               *(int *)(m_statetab + iVar6 + 4),0);
             iVar6 = *(int *)(m_statetab + iVar6 + 0x10);
 joined_r0x0002f22c:
@@ -200,15 +200,15 @@ joined_r0x0002f22c:
               SoundPlay(1,mui_Effect1);
             }
             else {
-              draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) +
+              draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) +
                                 *(int *)(m_statetab + iVar6 * 0x18),
-                                (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) +
+                                (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                                 *(int *)(m_statetab + iVar6 * 0x18 + 4),0xffff);
               SoundPlay(1,mui_Effect1);
             }
           }
           else {
-            if ((uint)*(ushort *)(DAT_003af2b8 + 0xe) <= (uint)*(ushort *)(DAT_003af2b8 + 0x1e)) {
+            if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e)) {
 LAB_0002ef08:
               bVar5 = false;
               SoundPlay(1,mui_Effect1);
@@ -216,8 +216,8 @@ LAB_0002ef08:
             }
             iVar6 = 2;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((uint)*(ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._48_4_,
-                              (uint)*(ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._52_4_,0xffff
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._48_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._52_4_,0xffff
                              );
             bVar5 = true;
             SoundPlay(1,mui_Effect1);
@@ -227,7 +227,7 @@ LAB_0002ef08:
         if (((uVar4 == 0x2000) && (bVar5)) && (local_a4[iVar6] == 1)) {
           uVar1 = GetWorkPath();
           iVar2 = gameType();
-          sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(undefined4 *)(ArchivePath + iVar2 * 4),
+          sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
                   RomName,iVar6);
           iVar2 = retro_load_state(acStack_8c);
           if (iVar2 != 0) {

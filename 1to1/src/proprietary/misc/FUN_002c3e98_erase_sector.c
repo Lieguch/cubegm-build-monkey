@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void erase_sector(undefined4 param_1)
+void erase_sector(gh_u4 param_1)
 
 {
   int iVar1;
-  undefined4 local_18;
-  undefined4 local_14;
+  gh_u4 local_18;
+  gh_u4 local_14;
   
   local_14 = 0;
   local_18 = 0x40d8;

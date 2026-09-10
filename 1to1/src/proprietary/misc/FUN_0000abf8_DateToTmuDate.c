@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void DateToTmuDate(uint param_1)
+void DateToTmuDate(gh_uint param_1)
 
 {
   printf("%d-%d-%d %d:%d:%d\n",(param_1 >> 0x19) + 0x7bc,(param_1 & 0x1ffffff) >> 0x15,

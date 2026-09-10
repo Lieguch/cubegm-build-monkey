@@ -12,15 +12,15 @@ void EmuCore_Blank(int param_1,int param_2,int param_3,int param_4)
 
 {
   int iVar1;
-  undefined2 *puVar2;
+  gh_u2 *puVar2;
   int iVar4;
-  undefined2 *puVar5;
-  undefined2 *puVar3;
+  gh_u2 *puVar5;
+  gh_u2 *puVar3;
   
   iVar1 = DAT_003af2a0;
   if (0 < param_4) {
     iVar4 = 0;
-    puVar5 = (undefined2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1 + 0x7ffffff8) * 2);
+    puVar5 = (gh_u2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1 + 0x7ffffff8) * 2);
     do {
       if (-0x10 < param_3) {
         puVar2 = puVar5;

@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-void Convert_Mono(undefined2 *param_1)
+void Convert_Mono(gh_u2 *param_1)
 
 {
-  undefined2 *puVar1;
-  undefined2 *puVar2;
+  gh_u2 *puVar1;
+  gh_u2 *puVar2;
   
   puVar1 = param_1 + 0x480;
   puVar2 = param_1 + 0x8fe;

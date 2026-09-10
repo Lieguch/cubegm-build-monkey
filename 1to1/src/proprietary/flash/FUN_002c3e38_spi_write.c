@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void spi_write(undefined4 param_1,undefined4 param_2,undefined4 param_3)
+void spi_write(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3)
 
 {
   int iVar1;
-  undefined4 local_18;
-  undefined4 local_14;
+  gh_u4 local_18;
+  gh_u4 local_14;
   
   local_18 = 0x5002;
   local_14 = 0;

@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-int SeletEmuCore(undefined4 param_1)
+int SeletEmuCore(gh_u4 param_1)
 
 {
   int iVar1;
@@ -18,20 +18,20 @@ int SeletEmuCore(undefined4 param_1)
   FILE *__stream;
   int iVar3;
   int iVar4;
-  uint uVar5;
-  ushort uVar6;
+  gh_uint uVar5;
+  gh_ushort uVar6;
   int iVar7;
   int iVar8;
-  ushort *puVar9;
-  ushort *puVar10;
+  gh_ushort *puVar9;
+  gh_ushort *puVar10;
   bool bVar11;
   int local_158 [6];
   void *local_140;
-  undefined4 local_13c;
-  undefined4 local_138;
-  undefined4 local_134;
-  undefined4 local_130;
-  undefined4 local_12c;
+  gh_u4 local_13c;
+  gh_u4 local_138;
+  gh_u4 local_134;
+  gh_u4 local_130;
+  gh_u4 local_12c;
   char acStack_128 [260];
   
   iVar1 = FilePreEmu();
@@ -53,7 +53,7 @@ int SeletEmuCore(undefined4 param_1)
   local_140 = __ptr;
   mui_blockcopy(&local_140,local_158);
   iVar4 = DAT_003af2a0;
-  puVar9 = (ushort *)(iVar8 + (iVar3 * 0x96 + 0x172) * 2 + -2);
+  puVar9 = (gh_ushort *)(iVar8 + (iVar3 * 0x96 + 0x172) * 2 + -2);
   do {
     iVar8 = 0;
     puVar10 = puVar9;
@@ -74,7 +74,7 @@ LAB_00021d10:
       if (iVar8 < 4) {
         if (iVar7 < 0x19f) goto LAB_00021e84;
 LAB_00021d08:
-        uVar6 = (ushort)uVar5 | uVar6 & 0xf800 | uVar6 & 0x7e0;
+        uVar6 = (gh_ushort)uVar5 | uVar6 & 0xf800 | uVar6 & 0x7e0;
         goto LAB_00021d10;
       }
 LAB_00021d44:
@@ -86,8 +86,8 @@ LAB_00021d44:
       if (iVar3 < 4) goto LAB_00021d08;
       iVar8 = iVar8 + 1;
       puVar10 = puVar10 + 1;
-      *puVar10 = (ushort)(uVar5 >> 3) | (uVar6 >> 0xe) << 0xb |
-                 (ushort)(((uVar6 & 0x7ff) >> 8) << 5);
+      *puVar10 = (gh_ushort)(uVar5 >> 3) | (uVar6 >> 0xe) << 0xb |
+                 (gh_ushort)(((uVar6 & 0x7ff) >> 8) << 5);
     } while (iVar8 != 0x21c);
 LAB_00021d94:
     iVar7 = iVar7 + 1;

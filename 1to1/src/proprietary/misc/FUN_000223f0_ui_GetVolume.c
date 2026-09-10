@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 ui_GetVolume(void)
+gh_u4 ui_GetVolume(void)
 
 {
   return DAT_003af268;

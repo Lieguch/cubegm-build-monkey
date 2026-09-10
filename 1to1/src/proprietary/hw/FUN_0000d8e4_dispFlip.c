@@ -8,11 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
-void dispFlip(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+void dispFlip(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
   if (DisplayThread == 0) {
-    if (video_driver_frame == (code *)0x0) {
+    if (video_driver_frame == (gh_code *)0x0) {
       return;
     }
   }

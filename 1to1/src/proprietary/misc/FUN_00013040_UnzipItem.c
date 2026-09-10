@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 UnzipItem(int *param_1,int param_2,void *param_3,uint param_4,uint param_5)
+gh_u4 UnzipItem(int *param_1,int param_2,void *param_3,gh_uint param_4,gh_uint param_5)
 
 {
   if (param_1 != (int *)0x0) {

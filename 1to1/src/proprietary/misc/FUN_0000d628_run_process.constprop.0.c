@@ -8,13 +8,13 @@
 #include "globals.h"
 #include "proto.h"
 
-undefined4 run_process_constprop_0(undefined4 param_1)
+gh_u4 run_process_constprop_0(gh_u4 param_1)
 
 {
-  code *pcVar1;
+  gh_code *pcVar1;
   
-  pcVar1 = (code *)dlsym(handle,param_1);
-  if (pcVar1 != (code *)0x0) {
+  pcVar1 = (gh_code *)dlsym(handle,param_1);
+  if (pcVar1 != (gh_code *)0x0) {
     (*pcVar1)();
     return 1;
   }

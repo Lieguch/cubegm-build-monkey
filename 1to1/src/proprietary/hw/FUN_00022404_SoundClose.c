@@ -23,6 +23,6 @@ void SoundClose(int param_1)
     }
     free(__ptr);
   }
-  *(undefined4 *)(SoundPlayer + param_1 * 0x24) = 0;
+  *(gh_u4 *)(SoundPlayer + param_1 * 0x24) = 0;
   return;
 }

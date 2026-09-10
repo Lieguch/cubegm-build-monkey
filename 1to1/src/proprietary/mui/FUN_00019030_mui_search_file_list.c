@@ -12,27 +12,27 @@ int mui_search_file_list(int param_1,int param_2)
 
 {
   char *pcVar1;
-  byte *pbVar2;
-  undefined4 uVar3;
+  gh_byte *pbVar2;
+  gh_u4 uVar3;
   long lVar4;
   char *pcVar5;
   char *pcVar6;
-  byte bVar7;
+  gh_byte bVar7;
   char cVar8;
-  undefined1 *puVar9;
-  byte *pbVar10;
+  gh_u1 *puVar9;
+  gh_byte *pbVar10;
   int iVar11;
   int iVar12;
   int iVar13;
   int iVar14;
-  byte *pbVar15;
+  gh_byte *pbVar15;
   int iVar16;
-  byte *local_100;
-  byte *local_fc;
-  undefined1 *local_f8;
-  undefined1 *local_f4;
-  byte local_f0 [100];
-  undefined4 local_8c [26];
+  gh_byte *local_100;
+  gh_byte *local_fc;
+  gh_u1 *local_f8;
+  gh_u1 *local_f4;
+  gh_byte local_f0 [100];
+  gh_u4 local_8c [26];
   
   pbVar10 = DAT_003af2ac;
   iVar11 = *(int *)((&m_ui)[m_ui + 0x16] + 0x40);
@@ -76,8 +76,8 @@ LAB_00019144:
       if (local_f0 < pbVar2) {
         pbVar15 = &file_info_list + iVar13 * 0x404;
         *pbVar2 = 0;
-        local_f4 = (undefined1 *)0x100;
-        local_f8 = (undefined1 *)0x64;
+        local_f4 = (gh_u1 *)0x100;
+        local_f8 = (gh_u1 *)0x64;
         local_100 = local_f0;
         local_fc = pbVar15;
         libiconv(uVar3,&local_100,&local_f8,&local_fc,&local_f4);
@@ -191,7 +191,7 @@ LAB_000192e4:
         local_f8 = &DAT_003b2324 + iVar13 * 0x404;
 LAB_000195cc:
         *pbVar2 = 0;
-        local_f4 = (undefined1 *)0x64;
+        local_f4 = (gh_u1 *)0x64;
         local_8c[0] = 0x80;
         local_fc = local_f0;
         libiconv(uVar3,&local_fc,&local_f4,&local_f8,local_8c);

@@ -11,11 +11,11 @@
 void mui_DisplayGameSum(void)
 
 {
-  undefined4 uVar1;
+  gh_u4 uVar1;
   int iVar2;
   int iVar3;
-  undefined4 uStack_98;
-  undefined *puStack_94;
+  gh_u4 uStack_98;
+  gh_undef *puStack_94;
   
   iVar3 = DAT_003af318;
   iVar2 = DAT_003af314;
@@ -36,6 +36,6 @@ void mui_DisplayGameSum(void)
     iVar2 = OutRect._8_4_;
     iVar3 = OutRect._12_4_;
   }
-  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(undefined1)DAT_003af324,DAT_003af328,&uStack_98);
+  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(gh_u1)DAT_003af324,DAT_003af328,&uStack_98);
   return;
 }

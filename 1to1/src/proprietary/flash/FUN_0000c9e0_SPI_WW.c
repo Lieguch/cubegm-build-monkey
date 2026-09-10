@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void SPI_WW(uint param_1)
+void SPI_WW(gh_uint param_1)
 
 {
   char cVar1;
