@@ -39,6 +39,9 @@ for f in FILES:
     t = re.sub(r'/\*.*?\*/', ' ', t, flags=re.S)
     for m in re.finditer(r'typedef\s+[\w\s\*]+?\s+(\w+)\s*;', t):
         defined.add(m.group(1))
+    # 多行 struct/union typedef： "... } NAME ;"
+    for m in re.finditer(r'\}\s*(\w+)\s*;', t):
+        defined.add(m.group(1))
 
 KNOWN = STD | defined
 

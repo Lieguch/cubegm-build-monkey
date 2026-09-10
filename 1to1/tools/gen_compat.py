@@ -187,6 +187,74 @@ for _m in _miss:
     glines.append('/* fallback */ extern unsigned char %s[];' % _m)
 print('fallback DAT_/UNK_ declarations: %d' % len(_miss))
 
+# ---------- 匿名 blob 覆盖类型（Ghidra _N_M_ 字段访问） ----------
+# 事实（取自源码实测）：_N_M_ 表示「偏移 N 字节、宽 M 字节」的字段；实测只用 M∈{1,4}，
+# 且所有 M=4 字段的 N 均为 4 的倍数。故可精确构造：
+#   每个 4 字节槽 S 放一个 union{ 匿名struct{_S_1_,_S+1_1_,_S+2_1_,_S+3_1_} ; unsigned int _S_4_ }
+# C11 允许匿名 struct 提升成员名，故 X._8_4_ / X._9_1_ 均能正确解析到真实偏移。
+import re as _re
+import glob as _g2
+_pairs = set()
+_owners = {}
+for _p in _g2.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+    _t = open(_p, encoding='utf-8', errors='replace').read()
+    for _m in _re.finditer(r'\b([A-Za-z_]\w*)\s*\.\s*_(\d+)_(\d+)_', _t):
+        _owners.setdefault(_m.group(1), set()).add((int(_m.group(2)), int(_m.group(3))))
+        _pairs.add((int(_m.group(2)), int(_m.group(3))))
+if _pairs:
+    _maxoff = max(n + m for n, m in _pairs)
+    _slots = (_maxoff + 3) // 4
+    _l = ['', '/* ---- 匿名 blob 覆盖类型：Ghidra _N_M_ 字段访问（偏移 N、宽 M） ---- */',
+          'typedef struct {']
+    for _s in range(_slots):
+        _b = _s * 4
+        _l.append('    union {')
+        _l.append('        struct { unsigned char _%d_1_, _%d_1_, _%d_1_, _%d_1_; };'
+                  % (_b, _b + 1, _b + 2, _b + 3))
+        _l.append('        unsigned int _%d_4_;' % _b)
+        _l.append('    };')
+    _l.append('} gh_blob_t;')
+    glines += _l
+    print('gh_blob_t: slots=%d, 覆盖 %d 个字段引用, 涉及 %d 个对象'
+          % (_slots, len(_pairs), len(_owners)))
+
+    # 被以上述方式访问的全局/对象，改用 gh_blob_t 声明
+    _need_retype = {k for k in _owners
+                    if k not in ('param_1', 'param_2', 'param_3', 'param_4', 'param_5',
+                                 'param_6', 'param_7', 'param_8', 'param_9', 'param_10')
+                    and not k.startswith(('uVar', 'iVar', 'cVar', 'bVar', 'pVar', 'local_',
+                                          'acStack_', 'auStack_', 'aStack_', 'uStack_', 'iStack_',
+                                          'pStack_', 'fStack_', 'sStack_'))}
+    # 过滤：只对「仅以 ._N_M_ 访问、未被当数组下标」的对象重定型，避免引入新破坏
+    _arraylike = set()
+    for _p in _g2.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+        _t = open(_p, encoding='utf-8', errors='replace').read()
+        for _m in _re.finditer(r'\b([A-Za-z_]\w*)\s*\[', _t):
+            _arraylike.add(_m.group(1))
+        # 取址/整体使用也视为不可重定型
+        for _m in _re.finditer(r'&\s*([A-Za-z_]\w*)\b', _t):
+            _arraylike.add(_m.group(1))
+    _need_retype = {k for k in _owners
+                    if k not in _arraylike
+                    and not k.startswith(('param_', 'uVar', 'iVar', 'cVar', 'bVar', 'pVar',
+                                          'local_', 'acStack_', 'auStack_', 'aStack_',
+                                          'uStack_', 'iStack_', 'pStack_', 'fStack_', 'sStack_'))}
+    _gl_out = []
+    _n_ret = 0
+    _re_extern = _re.compile(r'extern\s+[\w\s\*]+?\s+\*?(\w+)\s*(\[[^\]]*\])?\s*;')
+    for _ln in glines:
+        _mm2 = _re_extern.search(_ln)
+        if _mm2 and _mm2.group(1) in _need_retype:
+            # 注意：不得把原声明（含 /* */）嵌进注释 —— C 注释不嵌套
+            _gl_out.append('extern gh_blob_t %s;  /* retyped: Ghidra _N_M_ 字段访问 */'
+                           % _mm2.group(1))
+            _n_ret += 1
+        else:
+            _gl_out.append(_ln)
+    glines = _gl_out
+    print('retyped to gh_blob_t: %d (候选 %d, 因数组/取址用法排除 %d)'
+          % (_n_ret, len(_owners), len(_owners) - len(_need_retype)))
+
 glines += ['', '#endif']
 open(os.path.join(OUT, 'globals.h'), 'w', encoding='utf-8').write('\n'.join(glines))
 print('wrote globals.h (%d globals, %d skipped)' % (n_glob, skipped))

@@ -3765,30 +3765,30 @@
 /* @0x003af798 undefined4 */ extern unsigned int DAT_003af798;
 /* @0x003af79c undefined4 */ extern unsigned int DAT_003af79c;
 /* @0x003af7a0 undefined4 */ extern unsigned int DAT_003af7a0;
-/* @0x003af7a4 undefined4 */ extern unsigned int DAT_003af7a4;
-/* @0x003af7a8 undefined4 */ extern unsigned int DAT_003af7a8;
-/* @0x003af7ac undefined4 */ extern unsigned int DAT_003af7ac;
-/* @0x003af7b0 undefined4 */ extern unsigned int DAT_003af7b0;
-/* @0x003af7b4 undefined4 */ extern unsigned int DAT_003af7b4;
-/* @0x003af7b8 undefined4 */ extern unsigned int DAT_003af7b8;
-/* @0x003af7bc undefined4 */ extern unsigned int DAT_003af7bc;
-/* @0x003af7c0 undefined4 */ extern unsigned int DAT_003af7c0;
-/* @0x003af7c4 undefined4 */ extern unsigned int DAT_003af7c4;
-/* @0x003af7c8 undefined4 */ extern unsigned int DAT_003af7c8;
-/* @0x003af7cc undefined4 */ extern unsigned int DAT_003af7cc;
-/* @0x003af7d0 undefined4 */ extern unsigned int DAT_003af7d0;
-/* @0x003af7d4 undefined4 */ extern unsigned int DAT_003af7d4;
+extern gh_blob_t DAT_003af7a4;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7a8;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7ac;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7b0;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7b4;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7b8;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7bc;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7c0;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7c4;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7c8;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7cc;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7d0;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7d4;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003af7d8 undefined2 */ extern unsigned short DAT_003af7d8;
 /* @0x003af7e0 undefined4 */ extern unsigned int DAT_003af7e0;
-/* @0x003af7e4 undefined4 */ extern unsigned int DAT_003af7e4;
-/* @0x003af7e8 undefined4 */ extern unsigned int DAT_003af7e8;
-/* @0x003af7ec undefined4 */ extern unsigned int DAT_003af7ec;
-/* @0x003af7f0 undefined4 */ extern unsigned int DAT_003af7f0;
-/* @0x003af7f4 undefined4 */ extern unsigned int DAT_003af7f4;
-/* @0x003af7f8 undefined4 */ extern unsigned int DAT_003af7f8;
-/* @0x003af7fc undefined4 */ extern unsigned int DAT_003af7fc;
-/* @0x003af800 undefined4 */ extern unsigned int DAT_003af800;
-/* @0x003af804 undefined4 */ extern unsigned int DAT_003af804;
+extern gh_blob_t DAT_003af7e4;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7e8;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7ec;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7f0;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7f4;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7f8;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af7fc;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af800;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003af808 undefined2 */ extern unsigned short DAT_003af808;
 /* @0x003af820 undefined4 */ extern unsigned int DAT_003af820;
 /* @0x003af824 undefined4 */ extern unsigned int DAT_003af824;
@@ -3801,10 +3801,10 @@
 /* @0x003af840 undefined4 */ extern unsigned int DAT_003af840;
 /* @0x003af844 undefined4 */ extern unsigned int DAT_003af844;
 /* @0x003af848 undefined1[920] */ extern unsigned char m_movetab[920];
-/* @0x003afbe0 undefined1[924] */ extern unsigned char m_joysticktab[924];
-/* @0x003aff7c undefined1[144] */ extern unsigned char m_statetab[144];
+extern gh_blob_t m_joysticktab;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t m_statetab;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003b000c undefined1[64] */ extern unsigned char KEY_Table[64];
-/* @0x003b004c undefined1[220] */ extern unsigned char P1_Table[220];
+extern gh_blob_t P1_Table;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003b0128 undefined4 */ extern unsigned int turbo_delay;
 /* @0x003b012c undefined4 */ extern unsigned int DAT_003b012c;
 /* @0x003b0130 undefined4 */ extern unsigned int DAT_003b0130;
@@ -4141,7 +4141,7 @@
 /* @0x003bc2c4 undefined4 */ extern unsigned int tree;
 /* @0x003bc2c8 undefined4 */ extern unsigned int filelist_tree;
 /* @0x003bc2cc undefined4 */ extern unsigned int res_hz;
-/* @0x003bc2d0 undefined1[304] */ extern unsigned char ze[304];
+extern gh_blob_t ze;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc400 undefined4 */ extern unsigned int zr;
 /* @0x003bc404 undefined4 */ extern unsigned int mui_fast_lsit;
 /* @0x003bc408 undefined4 */ extern unsigned int m_search;
@@ -4153,7 +4153,7 @@
 /* @0x003bc498 undefined4 */ extern unsigned int fontscale;
 /* @0x003bc49c undefined4 */ extern unsigned int fontascent;
 /* @0x003bc4a0 undefined4 */ extern unsigned int fontbaseline;
-/* @0x003bc4a4 undefined1[24] */ extern unsigned char OutRect[24];
+extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc4bc undefined1[4096] */ extern unsigned char fontbitmap[4096];
 /* @0x003bd4bc undefined1[32] */ extern unsigned char fontname[32];
 /* @0x003bd4dc undefined4 */ extern unsigned int fontbuffer;
@@ -4208,24 +4208,24 @@
 /* @0x003e1498 undefined1[256] */ extern unsigned char work_path[256];
 /* @0x003e1598 undefined1[128] */ extern unsigned char m_crctable[128];
 /* @0x003e1618 undefined1[128] */ extern unsigned char mainkey[128];
-/* @0x003e1698 undefined1[112] */ extern unsigned char InputDeviceInfo[112];
+extern gh_blob_t InputDeviceInfo;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1708 undefined1[96] */ extern unsigned char keyMapping[96];
-/* @0x003e1768 undefined1[72] */ extern unsigned char SoundPlayer[72];
-/* @0x003e17b0 undefined1[64] */ extern unsigned char fpsbuf[64];
+extern gh_blob_t SoundPlayer;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t fpsbuf;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e17f0 undefined1[64] */ extern unsigned char ticks_buf[64];
 /* @0x003e1830 undefined1[56] */ extern unsigned char fh[56];
-/* @0x003e1868 undefined1[36] */ extern unsigned char mui_Effect0[36];
-/* @0x003e188c undefined1[36] */ extern unsigned char mui_Effect1[36];
-/* @0x003e18b0 undefined1[36] */ extern unsigned char mui_MenuMusic[36];
+extern gh_blob_t mui_Effect0;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t mui_Effect1;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t mui_MenuMusic;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e18f0 undefined1[28] */ extern unsigned char GamePath[28];
 /* @0x003e190c undefined1[28] */ extern unsigned char key2[28];
 /* @0x003e1928 undefined1[28] */ extern unsigned char mdtemp1[28];
-/* @0x003e1954 undefined1[16] */ extern unsigned char game[16];
-/* @0x003e1964 undefined1[16] */ extern unsigned char game_joy_key[16];
-/* @0x003e1974 undefined1[16] */ extern unsigned char joy_key[16];
-/* @0x003e1984 undefined1[16] */ extern unsigned char this_frame[16];
-/* @0x003e1998 undefined8 */ extern unsigned long long frame_time_last;
-/* @0x003e19a0 undefined8 */ extern unsigned long long progress_stepcount;
+extern gh_blob_t game;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t game_joy_key;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t joy_key;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t this_frame;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t frame_time_last;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t progress_stepcount;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e19a8 undefined8 */ extern unsigned long long RF_joy_key;
 /* @0x003e19b0 undefined8 */ extern unsigned long long inTimeVal;
 /* @0x003e19b8 undefined8 */ extern unsigned long long outTimeVal;
@@ -4294,8 +4294,8 @@
 /* @0x003e1abc undefined4 */ extern unsigned int video_driver_frame;
 /* @0x003e1ac0 undefined4 */ extern unsigned int video_driver_get_size;
 /* @0x003e1ac4 undefined4 */ extern unsigned int video_driver_setting;
-/* @0x003e1ac8 undefined3 */ extern unsigned char spi_id[3];
-/* @0x003e1acc undefined2 */ extern unsigned short IR_JoyKey;
+extern gh_blob_t spi_id;  /* retyped: Ghidra _N_M_ 字段访问 */
+extern gh_blob_t IR_JoyKey;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1ace undefined1 */ extern unsigned char ChannelIndex;
 /* @0x003e1acf undefined1 */ extern unsigned char ProtectCode;
 /* @0x003e1ad0 undefined1 */ extern unsigned char ProtectVer;
@@ -4331,5 +4331,453 @@
 /* fallback */ extern unsigned char UNK_000d2f00[];
 /* fallback */ extern unsigned char UNK_00118000[];
 /* fallback */ extern unsigned char UNK_002e0938[];
+
+/* ---- 匿名 blob 覆盖类型：Ghidra _N_M_ 字段访问（偏移 N、宽 M） ---- */
+typedef struct {
+    union {
+        struct { unsigned char _0_1_, _1_1_, _2_1_, _3_1_; };
+        unsigned int _0_4_;
+    };
+    union {
+        struct { unsigned char _4_1_, _5_1_, _6_1_, _7_1_; };
+        unsigned int _4_4_;
+    };
+    union {
+        struct { unsigned char _8_1_, _9_1_, _10_1_, _11_1_; };
+        unsigned int _8_4_;
+    };
+    union {
+        struct { unsigned char _12_1_, _13_1_, _14_1_, _15_1_; };
+        unsigned int _12_4_;
+    };
+    union {
+        struct { unsigned char _16_1_, _17_1_, _18_1_, _19_1_; };
+        unsigned int _16_4_;
+    };
+    union {
+        struct { unsigned char _20_1_, _21_1_, _22_1_, _23_1_; };
+        unsigned int _20_4_;
+    };
+    union {
+        struct { unsigned char _24_1_, _25_1_, _26_1_, _27_1_; };
+        unsigned int _24_4_;
+    };
+    union {
+        struct { unsigned char _28_1_, _29_1_, _30_1_, _31_1_; };
+        unsigned int _28_4_;
+    };
+    union {
+        struct { unsigned char _32_1_, _33_1_, _34_1_, _35_1_; };
+        unsigned int _32_4_;
+    };
+    union {
+        struct { unsigned char _36_1_, _37_1_, _38_1_, _39_1_; };
+        unsigned int _36_4_;
+    };
+    union {
+        struct { unsigned char _40_1_, _41_1_, _42_1_, _43_1_; };
+        unsigned int _40_4_;
+    };
+    union {
+        struct { unsigned char _44_1_, _45_1_, _46_1_, _47_1_; };
+        unsigned int _44_4_;
+    };
+    union {
+        struct { unsigned char _48_1_, _49_1_, _50_1_, _51_1_; };
+        unsigned int _48_4_;
+    };
+    union {
+        struct { unsigned char _52_1_, _53_1_, _54_1_, _55_1_; };
+        unsigned int _52_4_;
+    };
+    union {
+        struct { unsigned char _56_1_, _57_1_, _58_1_, _59_1_; };
+        unsigned int _56_4_;
+    };
+    union {
+        struct { unsigned char _60_1_, _61_1_, _62_1_, _63_1_; };
+        unsigned int _60_4_;
+    };
+    union {
+        struct { unsigned char _64_1_, _65_1_, _66_1_, _67_1_; };
+        unsigned int _64_4_;
+    };
+    union {
+        struct { unsigned char _68_1_, _69_1_, _70_1_, _71_1_; };
+        unsigned int _68_4_;
+    };
+    union {
+        struct { unsigned char _72_1_, _73_1_, _74_1_, _75_1_; };
+        unsigned int _72_4_;
+    };
+    union {
+        struct { unsigned char _76_1_, _77_1_, _78_1_, _79_1_; };
+        unsigned int _76_4_;
+    };
+    union {
+        struct { unsigned char _80_1_, _81_1_, _82_1_, _83_1_; };
+        unsigned int _80_4_;
+    };
+    union {
+        struct { unsigned char _84_1_, _85_1_, _86_1_, _87_1_; };
+        unsigned int _84_4_;
+    };
+    union {
+        struct { unsigned char _88_1_, _89_1_, _90_1_, _91_1_; };
+        unsigned int _88_4_;
+    };
+    union {
+        struct { unsigned char _92_1_, _93_1_, _94_1_, _95_1_; };
+        unsigned int _92_4_;
+    };
+    union {
+        struct { unsigned char _96_1_, _97_1_, _98_1_, _99_1_; };
+        unsigned int _96_4_;
+    };
+    union {
+        struct { unsigned char _100_1_, _101_1_, _102_1_, _103_1_; };
+        unsigned int _100_4_;
+    };
+    union {
+        struct { unsigned char _104_1_, _105_1_, _106_1_, _107_1_; };
+        unsigned int _104_4_;
+    };
+    union {
+        struct { unsigned char _108_1_, _109_1_, _110_1_, _111_1_; };
+        unsigned int _108_4_;
+    };
+    union {
+        struct { unsigned char _112_1_, _113_1_, _114_1_, _115_1_; };
+        unsigned int _112_4_;
+    };
+    union {
+        struct { unsigned char _116_1_, _117_1_, _118_1_, _119_1_; };
+        unsigned int _116_4_;
+    };
+    union {
+        struct { unsigned char _120_1_, _121_1_, _122_1_, _123_1_; };
+        unsigned int _120_4_;
+    };
+    union {
+        struct { unsigned char _124_1_, _125_1_, _126_1_, _127_1_; };
+        unsigned int _124_4_;
+    };
+    union {
+        struct { unsigned char _128_1_, _129_1_, _130_1_, _131_1_; };
+        unsigned int _128_4_;
+    };
+    union {
+        struct { unsigned char _132_1_, _133_1_, _134_1_, _135_1_; };
+        unsigned int _132_4_;
+    };
+    union {
+        struct { unsigned char _136_1_, _137_1_, _138_1_, _139_1_; };
+        unsigned int _136_4_;
+    };
+    union {
+        struct { unsigned char _140_1_, _141_1_, _142_1_, _143_1_; };
+        unsigned int _140_4_;
+    };
+    union {
+        struct { unsigned char _144_1_, _145_1_, _146_1_, _147_1_; };
+        unsigned int _144_4_;
+    };
+    union {
+        struct { unsigned char _148_1_, _149_1_, _150_1_, _151_1_; };
+        unsigned int _148_4_;
+    };
+    union {
+        struct { unsigned char _152_1_, _153_1_, _154_1_, _155_1_; };
+        unsigned int _152_4_;
+    };
+    union {
+        struct { unsigned char _156_1_, _157_1_, _158_1_, _159_1_; };
+        unsigned int _156_4_;
+    };
+    union {
+        struct { unsigned char _160_1_, _161_1_, _162_1_, _163_1_; };
+        unsigned int _160_4_;
+    };
+    union {
+        struct { unsigned char _164_1_, _165_1_, _166_1_, _167_1_; };
+        unsigned int _164_4_;
+    };
+    union {
+        struct { unsigned char _168_1_, _169_1_, _170_1_, _171_1_; };
+        unsigned int _168_4_;
+    };
+    union {
+        struct { unsigned char _172_1_, _173_1_, _174_1_, _175_1_; };
+        unsigned int _172_4_;
+    };
+    union {
+        struct { unsigned char _176_1_, _177_1_, _178_1_, _179_1_; };
+        unsigned int _176_4_;
+    };
+    union {
+        struct { unsigned char _180_1_, _181_1_, _182_1_, _183_1_; };
+        unsigned int _180_4_;
+    };
+    union {
+        struct { unsigned char _184_1_, _185_1_, _186_1_, _187_1_; };
+        unsigned int _184_4_;
+    };
+    union {
+        struct { unsigned char _188_1_, _189_1_, _190_1_, _191_1_; };
+        unsigned int _188_4_;
+    };
+    union {
+        struct { unsigned char _192_1_, _193_1_, _194_1_, _195_1_; };
+        unsigned int _192_4_;
+    };
+    union {
+        struct { unsigned char _196_1_, _197_1_, _198_1_, _199_1_; };
+        unsigned int _196_4_;
+    };
+    union {
+        struct { unsigned char _200_1_, _201_1_, _202_1_, _203_1_; };
+        unsigned int _200_4_;
+    };
+    union {
+        struct { unsigned char _204_1_, _205_1_, _206_1_, _207_1_; };
+        unsigned int _204_4_;
+    };
+    union {
+        struct { unsigned char _208_1_, _209_1_, _210_1_, _211_1_; };
+        unsigned int _208_4_;
+    };
+    union {
+        struct { unsigned char _212_1_, _213_1_, _214_1_, _215_1_; };
+        unsigned int _212_4_;
+    };
+    union {
+        struct { unsigned char _216_1_, _217_1_, _218_1_, _219_1_; };
+        unsigned int _216_4_;
+    };
+    union {
+        struct { unsigned char _220_1_, _221_1_, _222_1_, _223_1_; };
+        unsigned int _220_4_;
+    };
+    union {
+        struct { unsigned char _224_1_, _225_1_, _226_1_, _227_1_; };
+        unsigned int _224_4_;
+    };
+    union {
+        struct { unsigned char _228_1_, _229_1_, _230_1_, _231_1_; };
+        unsigned int _228_4_;
+    };
+    union {
+        struct { unsigned char _232_1_, _233_1_, _234_1_, _235_1_; };
+        unsigned int _232_4_;
+    };
+    union {
+        struct { unsigned char _236_1_, _237_1_, _238_1_, _239_1_; };
+        unsigned int _236_4_;
+    };
+    union {
+        struct { unsigned char _240_1_, _241_1_, _242_1_, _243_1_; };
+        unsigned int _240_4_;
+    };
+    union {
+        struct { unsigned char _244_1_, _245_1_, _246_1_, _247_1_; };
+        unsigned int _244_4_;
+    };
+    union {
+        struct { unsigned char _248_1_, _249_1_, _250_1_, _251_1_; };
+        unsigned int _248_4_;
+    };
+    union {
+        struct { unsigned char _252_1_, _253_1_, _254_1_, _255_1_; };
+        unsigned int _252_4_;
+    };
+    union {
+        struct { unsigned char _256_1_, _257_1_, _258_1_, _259_1_; };
+        unsigned int _256_4_;
+    };
+    union {
+        struct { unsigned char _260_1_, _261_1_, _262_1_, _263_1_; };
+        unsigned int _260_4_;
+    };
+    union {
+        struct { unsigned char _264_1_, _265_1_, _266_1_, _267_1_; };
+        unsigned int _264_4_;
+    };
+    union {
+        struct { unsigned char _268_1_, _269_1_, _270_1_, _271_1_; };
+        unsigned int _268_4_;
+    };
+    union {
+        struct { unsigned char _272_1_, _273_1_, _274_1_, _275_1_; };
+        unsigned int _272_4_;
+    };
+    union {
+        struct { unsigned char _276_1_, _277_1_, _278_1_, _279_1_; };
+        unsigned int _276_4_;
+    };
+    union {
+        struct { unsigned char _280_1_, _281_1_, _282_1_, _283_1_; };
+        unsigned int _280_4_;
+    };
+    union {
+        struct { unsigned char _284_1_, _285_1_, _286_1_, _287_1_; };
+        unsigned int _284_4_;
+    };
+    union {
+        struct { unsigned char _288_1_, _289_1_, _290_1_, _291_1_; };
+        unsigned int _288_4_;
+    };
+    union {
+        struct { unsigned char _292_1_, _293_1_, _294_1_, _295_1_; };
+        unsigned int _292_4_;
+    };
+    union {
+        struct { unsigned char _296_1_, _297_1_, _298_1_, _299_1_; };
+        unsigned int _296_4_;
+    };
+    union {
+        struct { unsigned char _300_1_, _301_1_, _302_1_, _303_1_; };
+        unsigned int _300_4_;
+    };
+    union {
+        struct { unsigned char _304_1_, _305_1_, _306_1_, _307_1_; };
+        unsigned int _304_4_;
+    };
+    union {
+        struct { unsigned char _308_1_, _309_1_, _310_1_, _311_1_; };
+        unsigned int _308_4_;
+    };
+    union {
+        struct { unsigned char _312_1_, _313_1_, _314_1_, _315_1_; };
+        unsigned int _312_4_;
+    };
+    union {
+        struct { unsigned char _316_1_, _317_1_, _318_1_, _319_1_; };
+        unsigned int _316_4_;
+    };
+    union {
+        struct { unsigned char _320_1_, _321_1_, _322_1_, _323_1_; };
+        unsigned int _320_4_;
+    };
+    union {
+        struct { unsigned char _324_1_, _325_1_, _326_1_, _327_1_; };
+        unsigned int _324_4_;
+    };
+    union {
+        struct { unsigned char _328_1_, _329_1_, _330_1_, _331_1_; };
+        unsigned int _328_4_;
+    };
+    union {
+        struct { unsigned char _332_1_, _333_1_, _334_1_, _335_1_; };
+        unsigned int _332_4_;
+    };
+    union {
+        struct { unsigned char _336_1_, _337_1_, _338_1_, _339_1_; };
+        unsigned int _336_4_;
+    };
+    union {
+        struct { unsigned char _340_1_, _341_1_, _342_1_, _343_1_; };
+        unsigned int _340_4_;
+    };
+    union {
+        struct { unsigned char _344_1_, _345_1_, _346_1_, _347_1_; };
+        unsigned int _344_4_;
+    };
+    union {
+        struct { unsigned char _348_1_, _349_1_, _350_1_, _351_1_; };
+        unsigned int _348_4_;
+    };
+    union {
+        struct { unsigned char _352_1_, _353_1_, _354_1_, _355_1_; };
+        unsigned int _352_4_;
+    };
+    union {
+        struct { unsigned char _356_1_, _357_1_, _358_1_, _359_1_; };
+        unsigned int _356_4_;
+    };
+    union {
+        struct { unsigned char _360_1_, _361_1_, _362_1_, _363_1_; };
+        unsigned int _360_4_;
+    };
+    union {
+        struct { unsigned char _364_1_, _365_1_, _366_1_, _367_1_; };
+        unsigned int _364_4_;
+    };
+    union {
+        struct { unsigned char _368_1_, _369_1_, _370_1_, _371_1_; };
+        unsigned int _368_4_;
+    };
+    union {
+        struct { unsigned char _372_1_, _373_1_, _374_1_, _375_1_; };
+        unsigned int _372_4_;
+    };
+    union {
+        struct { unsigned char _376_1_, _377_1_, _378_1_, _379_1_; };
+        unsigned int _376_4_;
+    };
+    union {
+        struct { unsigned char _380_1_, _381_1_, _382_1_, _383_1_; };
+        unsigned int _380_4_;
+    };
+    union {
+        struct { unsigned char _384_1_, _385_1_, _386_1_, _387_1_; };
+        unsigned int _384_4_;
+    };
+    union {
+        struct { unsigned char _388_1_, _389_1_, _390_1_, _391_1_; };
+        unsigned int _388_4_;
+    };
+    union {
+        struct { unsigned char _392_1_, _393_1_, _394_1_, _395_1_; };
+        unsigned int _392_4_;
+    };
+    union {
+        struct { unsigned char _396_1_, _397_1_, _398_1_, _399_1_; };
+        unsigned int _396_4_;
+    };
+    union {
+        struct { unsigned char _400_1_, _401_1_, _402_1_, _403_1_; };
+        unsigned int _400_4_;
+    };
+    union {
+        struct { unsigned char _404_1_, _405_1_, _406_1_, _407_1_; };
+        unsigned int _404_4_;
+    };
+    union {
+        struct { unsigned char _408_1_, _409_1_, _410_1_, _411_1_; };
+        unsigned int _408_4_;
+    };
+    union {
+        struct { unsigned char _412_1_, _413_1_, _414_1_, _415_1_; };
+        unsigned int _412_4_;
+    };
+    union {
+        struct { unsigned char _416_1_, _417_1_, _418_1_, _419_1_; };
+        unsigned int _416_4_;
+    };
+    union {
+        struct { unsigned char _420_1_, _421_1_, _422_1_, _423_1_; };
+        unsigned int _420_4_;
+    };
+    union {
+        struct { unsigned char _424_1_, _425_1_, _426_1_, _427_1_; };
+        unsigned int _424_4_;
+    };
+    union {
+        struct { unsigned char _428_1_, _429_1_, _430_1_, _431_1_; };
+        unsigned int _428_4_;
+    };
+    union {
+        struct { unsigned char _432_1_, _433_1_, _434_1_, _435_1_; };
+        unsigned int _432_4_;
+    };
+    union {
+        struct { unsigned char _436_1_, _437_1_, _438_1_, _439_1_; };
+        unsigned int _436_4_;
+    };
+    union {
+        struct { unsigned char _440_1_, _441_1_, _442_1_, _443_1_; };
+        unsigned int _440_4_;
+    };
+} gh_blob_t;
 
 #endif
