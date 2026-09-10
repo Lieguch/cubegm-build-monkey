@@ -18,4 +18,8 @@ int mui_LoadSetting(const char *path);
 /* 加载 cores/config.xml 核心注册表。返回 0 成功 */
 int mui_LoadConfig(const char *path);
 
+/* 原厂 1:1 language 写回：只改 <config language="N">，保持 9 个 <ui> 候选块。
+ * 返回 0 成功 / -1 失败。language_index 值域 0..8（对齐 number[]）。 */
+int SaveLanguageSetting(int language_index);
+
 #endif /* UI_CONFIG_H */

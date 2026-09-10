@@ -50,6 +50,40 @@ static thumb_cache_entry_t g_thumb_cache[THUMB_CACHE_MAX];
 static int g_thumb_cache_count = 0;
 
 /* ============================================================
+ * 失败负缓存（D3，2026-09-10）
+ * ============================================================
+ * 根因：ui.c 列表渲染每次重绘都对选中项调 thumb_extract；当该游戏
+ * 的 <NNN>.dat 不含其缩略图（或容器解包失败）时，原来每次都重做
+ * wqw_is_container + wqw_extract（全量解析 + 718KB raw-inflate），
+ * 真机日志表现为 ~100ms 一次的 "thumb_extract: failed" 密集刷屏。
+ * 负缓存记住失败键，后续同键直接短路返回 -1，避免重复昂贵解压。
+ * ============================================================ */
+#define THUMB_MISS_MAX   48
+
+static char g_thumb_miss[THUMB_MISS_MAX][GL_PATH_LEN + 16];
+static int  g_thumb_miss_count = 0;
+
+static bool thumb_miss_has(const char *key)
+{
+    for (int i = 0; i < g_thumb_miss_count; i++) {
+        if (strcmp(g_thumb_miss[i], key) == 0) return true;
+    }
+    return false;
+}
+
+static void thumb_miss_add(const char *key)
+{
+    if (thumb_miss_has(key)) return;
+    if (g_thumb_miss_count < THUMB_MISS_MAX) {
+        strncpy(g_thumb_miss[g_thumb_miss_count], key, GL_PATH_LEN + 15);
+        g_thumb_miss[g_thumb_miss_count][GL_PATH_LEN + 15] = '\0';
+        g_thumb_miss_count++;
+    }
+    LOG("thumb_miss: memoize '%s' (slot=%d/%d)", key,
+        g_thumb_miss_count - 1, THUMB_MISS_MAX);
+}
+
+/* ============================================================
  * 路径辅助（对齐工厂 mui_extract_basepath / mui_extract_basename）
  * ============================================================ */
 
@@ -187,6 +221,9 @@ int thumb_extract_nth(const char *game_path, int index,
         }
     }
 
+    /* D3: 失败负缓存短路 — 同键已失败则直接 -1，不再重做昂贵 wqw_extract */
+    if (thumb_miss_has(cache_key)) return -1;
+
     /* 提取路径 */
     char basepath[128], basename[128];
     thumb_extract_basepath(game_path, basepath, sizeof(basepath));
@@ -205,6 +242,8 @@ int thumb_extract_nth(const char *game_path, int index,
     size_t size = 0;
     if (wqw_extract(dat_path, thumb_name, &data, &size) != 0 || size == 0) {
         ERR("thumb_extract: failed for %s (index=%d)", game_path, index);
+        thumb_miss_add(cache_key);   /* D3: 记住失败键，避免下帧重复解压刷屏 */
+        free(data);
         return -1;
     }
 

@@ -5,6 +5,7 @@
 #include "ui_setting.h"
 #include "rkgame.h"
 #include "ui.h"
+#include "ui_config.h"
 #include "font.h"
 #include "debug.h"
 
@@ -42,6 +43,9 @@ void ui_setting_tick(int keycode)
     #define KEY_RIGHT 13
 
     int items = 5; /* volume, language, defaultlanguage, displayfps, save_dir */
+    /* 1:1 原厂 language 值域 = number[] "0".."8"（9 个 <ui> 候选），clamp 到 [0,8] */
+    #define LANG_MIN 0
+    #define LANG_MAX 8
 
     if (keycode == KEY_UP) {
         s_setting.cursor = (s_setting.cursor - 1 + items) % items;
@@ -49,20 +53,29 @@ void ui_setting_tick(int keycode)
         s_setting.cursor = (s_setting.cursor + 1) % items;
     } else if (keycode == KEY_LEFT) {
         if (s_setting.cursor == 0 && s_setting.volume > 0) s_setting.volume--;
-        else if (s_setting.cursor == 1 && s_setting.language > 0) s_setting.language--;
+        else if (s_setting.cursor == 1 && s_setting.language > LANG_MIN) s_setting.language--;
         else if (s_setting.cursor == 2 && s_setting.defaultlanguage > 0) s_setting.defaultlanguage--;
         else if (s_setting.cursor == 3 && s_setting.displayfps > 0) s_setting.displayfps--;
     } else if (keycode == KEY_RIGHT) {
         if (s_setting.cursor == 0 && s_setting.volume < 100) s_setting.volume++;
-        else if (s_setting.cursor == 1) s_setting.language++;
+        else if (s_setting.cursor == 1 && s_setting.language < LANG_MAX) s_setting.language++;
         else if (s_setting.cursor == 2) s_setting.defaultlanguage++;
         else if (s_setting.cursor == 3) s_setting.displayfps++;
     } else if (keycode == KEY_CANCEL) {
         s_setting.open = false;
     } else if (keycode == KEY_OK) {
-        /* 保存设置 */
+        /* 保存设置。
+         * 1:1 原厂 mui_setting L529-575：language 变更时只写回 <config language="N">
+         * （保持 9 个 <ui> 候选块），走 SaveLanguageSetting（字符串原地改
+         * language="N" + fsync，不重序列化），绝不用全量重写的 config_save_setting。 */
+        if (s_setting.language != g_cfg.m_ui) {
+            g_cfg.m_ui = s_setting.language;
+            if (SaveLanguageSetting(s_setting.language) == 0) {
+                RKLOG_I("ui_setting: language switched to %d (ui_list kept, reload on next boot)",
+                        s_setting.language);
+            }
+        }
         g_cfg.volume = s_setting.volume;
-        g_cfg.m_ui = s_setting.language;
         g_cfg.defaultlanguage = s_setting.defaultlanguage;
         g_cfg.displayfps = s_setting.displayfps;
         RKLOG_I("ui_setting: saved vol=%d lang=%d fps=%d",

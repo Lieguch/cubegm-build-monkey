@@ -133,6 +133,12 @@ static int wqw_inflate_raw(const unsigned char *comp, uLong comp_len,
         if (inflateInit2(&zs, -15) != Z_OK) { inflateEnd(&zs); free(buf); return -1; }
         ret = inflate(&zs, Z_FINISH);
         if (ret != Z_STREAM_END && ret != Z_OK) {
+            /* D1 诊断（2026-09-10）：真机可定位 zlib 版本/流错误/缓冲大小 */
+            ERR("wqw_inflate_raw: inflate fail ret=%d (%s) zlib=%s "
+                "in=%lu/%lu out=%lu/%lu",
+                ret, zs.msg ? zs.msg : "?", zlibVersion(),
+                (unsigned long)zs.avail_in, (unsigned long)comp_len,
+                (unsigned long)zs.total_out, (unsigned long)cap);
             inflateEnd(&zs);
             free(buf);
             return -1;

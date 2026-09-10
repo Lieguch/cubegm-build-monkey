@@ -26,7 +26,7 @@
  * ============================================================ */
 
 #define _GNU_SOURCE
-/* rkgame v1.6.0 — SRAM + evdev + GL_MAX_GAMES 21000 (full list), 2026-09-10 */
+/* rkgame v1.7.0 — language 1:1 (0-based, ui_list kept) + wqw diag + thumb neg-cache, 2026-09-10 */
 /* Build trigger */
 #include <stdio.h>
 #include <stdlib.h>
@@ -825,7 +825,7 @@ int main(int argc, char **argv)
 {
     dbg_init();
     DBGP(MAIN_BEGIN);
-    LOG("rkgame v1.6.0 (rebuild, v11 full-list)");
+    LOG("rkgame v1.7.0 (rebuild, v12 language 1:1 + wqw diag + thumb neg-cache)");
 
     /* 尽早安装信号处理器，让任何阶段的信号都能被记录 */
     hb_install_signal_handlers();

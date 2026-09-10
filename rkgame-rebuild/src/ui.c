@@ -154,12 +154,17 @@ static bool select_ui_zip(char *out, size_t out_size)
 
     free(buf);
 
-    /* 步骤 3: 按 language_index 选择 */
-    if (language_index > 0 && language_index < candidate_count) {
-        strncpy(out, candidates[language_index - 1], out_size - 1);
+    /* 步骤 3: 按 language_index 选择。
+     *   1:1 原厂语义 = 0 基：mui_LoadUIResource 用 ui_list[m_ui]（m_ui=strtol(language)）。
+     *   故 language=N → candidates[N]（N 直接为下标，非 N-1）。
+     *   边界：language 值域由 number[] 定 = "0".."8"（9 槽），故 0 <= N < candidate_count。
+     *   N=0（默认/缺省）= candidates[0]，与无 <config> 时 m_ui=0 一致。 */
+    if (language_index >= 0 && language_index < candidate_count) {
+        strncpy(out, candidates[language_index], out_size - 1);
         out[out_size - 1] = '\0';
         found = true;
-        LOG("select_ui_zip: language=%d → %s", language_index, out);
+        LOG("select_ui_zip: language=%d → %s (0-based, factory ui_list[m_ui])",
+            language_index, out);
     } else if (gamelist_index >= 0) {
         strncpy(out, candidates[gamelist_index], out_size - 1);
         out[out_size - 1] = '\0';
