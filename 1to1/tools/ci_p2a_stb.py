@@ -106,7 +106,8 @@ def main():
             if cf is None:
                 c['MISSING'] += 1
                 continue
-            c[structsig.cmp_sig(structsig.sig(gf), structsig.sig(cf))] += 1
+            c[structsig.cmp_sig(structsig.sig(gf, 'stbtt_'),
+                                structsig.sig(cf, 'stbtt_'))] += 1
         cov = len(g) - c['MISSING']
         rows.append((c['S1'], c['S2'], cov, ver, sha, len(cand)))
         L.append('%-7s %-10s %6d %6d %6d %6d %6d' %

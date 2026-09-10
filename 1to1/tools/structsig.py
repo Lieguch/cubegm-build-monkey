@@ -30,46 +30,68 @@ RE_CALL = re.compile(r'^bl(?:x)?\s+@(\S+)')
 RE_IMM = re.compile(r'#(-?0x[0-9a-f]+|-?\d+)')
 RE_WORD = re.compile(r'^\.word\s+(0x[0-9a-f]+)', re.I)
 
+# 编译器鲁棒性处理：
+#  a) 去 @plt 后缀 —— .o 内为 "bl 0 <malloc>"（->@malloc），可执行文件内为 "@malloc@plt"
+#  b) 立即数分层 —— 小立即数(<0x1000)多为栈偏移/loop 计数，跨编译器噪声大；
+#     大立即数(>=0x1000)多为逻辑常量/掩码，是有效语义信号
+RE_PLT = re.compile(r'@plt$')
+BIG = 0x1000
 
-def sig(f):
+
+def _norm_call(t):
+    return RE_PLT.sub('', t)
+
+
+def sig(f, prefix=None):
     calls = collections.Counter()
-    imms = collections.Counter()
+    imms_small = collections.Counter()
+    imms_big = collections.Counter()
     words = collections.Counter()
     br = set()
-    for i, ins in enumerate(f['t1']):
+    for ins in f['t1']:
         m = RE_CALL.match(ins)
         if m:
-            calls[m.group(1)] += 1
+            calls[_norm_call(m.group(1))] += 1
         for v in RE_IMM.findall(ins):
-            imms[v] += 1
+            try:
+                n = int(v, 16) if v.lower().startswith(('0x', '-0x')) else int(v)
+            except ValueError:
+                continue
+            (imms_big if abs(n) >= BIG else imms_small)[v] += 1
         m = RE_WORD.match(ins)
         if m:
             words[m.group(1)] += 1
-        # 分支目标（相对该函数）作为基本块标识
         if re.match(r'^(b|bx|beq|bne|bgt|blt|bge|ble|bhi|bls|bcs|bcc|bmi|bpl|bvs|bvc|cbz|cbnz)\b', ins):
             tgt = re.findall(r'@([\w.]+(?:\+0x[0-9a-f]+)?)', ins)
             if tgt:
                 br.add(tgt[0])
+    # 内外调用分离：内部 = 目标名以组件前缀开头
+    if prefix:
+        c_in = {k: v for k, v in calls.items() if k.startswith(prefix)}
+        c_ext = {k: v for k, v in calls.items() if not k.startswith(prefix)}
+    else:
+        c_in, c_ext = dict(calls), {}
     return {
         'calls': dict(sorted(calls.items())),
-        'imms': dict(sorted(imms.items())),
-        'words': dict(sorted(words.items())),
+        'calls_ext': dict(sorted(c_ext.items())),
+        'calls_int': dict(sorted(c_in.items())),
+        'imms_big': dict(sorted(imms_big.items())),
+        'imms_small_n': sum(imms_small.values()),
         'nblk': len(br) + 1,
         'ncall': sum(calls.values()),
         'n': f['n'],
     }
 
 
-def cmp_sig(g, c, tol=0.10):
-    if g['calls'] != c['calls']:
+def cmp_sig(g, c):
+    """S1 强语义等价 / S2 调用等价 / S3 结构等价 / FAIL。"""
+    if g['calls_ext'] != c['calls_ext']:
         return 'FAIL'
-    if g['imms'] == c['imms']:
+    if g['imms_big'] == c['imms_big'] and g['nblk'] == c['nblk']:
         return 'S1'
-    if g['nblk'] == c['nblk'] and g['ncall'] == c['ncall']:
+    if g['ncall'] == c['ncall']:
         return 'S2'
-    if g['nblk'] == c['nblk'] and g['ncall'] == c['ncall']:
-        return 'S3'
-    if g['n'] and abs(c['n'] - g['n']) / g['n'] <= tol and g['ncall'] == c['ncall']:
+    if g['nblk'] == c['nblk']:
         return 'S3'
     return 'FAIL'
 
@@ -84,12 +106,15 @@ def main():
     G, C = load(sys.argv[1]), load(sys.argv[2])
     detail = None
     outjson = None
+    prefix = None
     a = sys.argv[3:]
     for i, v in enumerate(a):
         if v == '--detail' and i + 1 < len(a):
             detail = a[i + 1]
         if v == '--json' and i + 1 < len(a):
             outjson = a[i + 1]
+        if v == '--prefix' and i + 1 < len(a):
+            prefix = a[i + 1]
 
     res = {}
     for name, gf in G.items():
@@ -97,7 +122,7 @@ def main():
         if cf is None:
             res[name] = 'MISSING'
         else:
-            res[name] = cmp_sig(sig(gf), sig(cf))
+            res[name] = cmp_sig(sig(gf, prefix), sig(cf, prefix))
 
     cnt = collections.Counter(res.values())
     total = len(G)
@@ -117,25 +142,26 @@ def main():
         if not gf or not cf:
             print('\n[detail] 缺函数:', detail)
         else:
-            sg, sc = sig(gf), sig(cf)
+            sg, sc = sig(gf, prefix), sig(cf, prefix)
             print('\n[detail] %s  判定=%s' % (detail, res[detail]))
             print('  n: %d vs %d   nblk: %d vs %d   ncall: %d vs %d'
                   % (sg['n'], sc['n'], sg['nblk'], sc['nblk'], sg['ncall'], sc['ncall']))
-            only_g = {k: v for k, v in sg['calls'].items() if k not in sc['calls']}
-            only_c = {k: v for k, v in sc['calls'].items() if k not in sg['calls']}
-            if only_g:
-                print('  仅金标准调用:', list(only_g)[:8])
-            if only_c:
-                print('  仅候选调用:', list(only_c)[:8])
-            diff_n = {k: (sg['calls'][k], sc['calls'][k]) for k in sg['calls']
-                      if k in sc['calls'] and sg['calls'][k] != sc['calls'][k]}
-            if diff_n:
-                print('  调用次数不同:', list(diff_n.items())[:8])
-            gi, ci = set(sg['imms']), set(sc['imms'])
+            for key, label in (('calls_ext', '外部调用'), ('calls_int', '内部调用')):
+                only_g = {k: v for k, v in sg[key].items() if k not in sc[key]}
+                only_c = {k: v for k, v in sc[key].items() if k not in sg[key]}
+                diff_n = {k: (sg[key][k], sc[key][k]) for k in sg[key]
+                          if k in sc[key] and sg[key][k] != sc[key][k]}
+                if only_g:
+                    print('  仅金标准%s:' % label, list(only_g)[:8])
+                if only_c:
+                    print('  仅候选%s:' % label, list(only_c)[:8])
+                if diff_n:
+                    print('  %s次数不同:' % label, list(diff_n.items())[:8])
+            gi, ci = set(sg['imms_big']), set(sc['imms_big'])
             if gi - ci:
-                print('  仅金标准立即数:', sorted(gi - ci)[:8])
+                print('  仅金标准大立即数:', sorted(gi - ci)[:8])
             if ci - gi:
-                print('  仅候选立即数:', sorted(ci - gi)[:8])
+                print('  仅候选大立即数:', sorted(ci - gi)[:8])
 
     if outjson:
         json.dump({'summary': dict(cnt), 'total': total, 'status': res},
