@@ -31,7 +31,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define GL_MAX_GAMES    2048
+#define GL_MAX_GAMES    21000
 #define GL_MAX_FAVORITES 256
 #define GL_PATH_LEN     512
 #define GL_NAME_LEN     256
