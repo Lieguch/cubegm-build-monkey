@@ -11,6 +11,22 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <ctype.h>
+#include <errno.h>
+#include <math.h>
+#include <time.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/mman.h>
+#include <sys/ioctl.h>
 
 /* ---- Ghidra 私有类型 ---- */
 typedef unsigned char       gh_undef;      /* 未定，按 1 字节 */

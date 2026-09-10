@@ -5,6 +5,7 @@
 #include "globals.h"
 
 extern gh_u4 main(void);
+extern void RARCH_LOG_V(); /* K&R: 参数类型不可解析 */
 extern void RARCH_LOG(gh_u4 param_1);
 extern void GetConfig(void);
 extern int get_executable_path(char *param_1,char *param_2,size_t param_3);
@@ -60,6 +61,7 @@ extern gh_u4 GetDecodeData(void);
 extern void InitDecode(void);
 extern void ReInitDecode(void);
 extern gh_u4 ScaleDisplayThread(void);
+extern gh_u4 run_process_constprop_0(gh_u4 param_1);
 extern gh_u4 InitDisplay(void);
 extern void dispFlip(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4);
 extern void video_driver_set_rotation(gh_u4 param_1);
@@ -70,6 +72,8 @@ extern void DeinitSound(void);
 extern void PlaySound(void);
 extern gh_uint ucrc32(gh_uint param_1,gh_byte *param_2,gh_uint param_3);
 extern gh_u4 OpenZipU(void *param_1,gh_uint param_2,gh_uint param_3);
+extern gh_u4 GetZipItemA(); /* K&R: 参数类型不可解析 */
+extern gh_u4 FindZipItemA(); /* K&R: 参数类型不可解析 */
 extern gh_u4 UnzipItem(int *param_1,int param_2,void *param_3,gh_uint param_4,gh_uint param_5);
 extern gh_u4 CloseZipU(int *param_1);
 extern void DrawSelectBar(int *param_1);
@@ -82,6 +86,7 @@ extern void mui_extract_basepath(char *param_1,char *param_2,int param_3);
 extern void mui_extract_basename(char *param_1,char *param_2,int param_3);
 extern void mui_DisplayThumbnail(void);
 extern long buttontoi(char *param_1);
+extern int code_convert_constprop_22(gh_u4 param_1,gh_u4 param_2,void *param_3,size_t param_4);
 extern gh_byte strupr(gh_byte *param_1);
 extern gh_u4 FilePreEmu(char *param_1);
 extern gh_u1 GetWorkPath(void);
@@ -95,10 +100,14 @@ extern int mui_search_file_list(int param_1,int param_2);
 extern int GetTicks(void);
 extern void mui_DisplayThumbnailThread(void);
 extern void mui_WaitNMI(void);
+extern void stbtt_GetFontVMetrics(int param_1,int *param_2,int *param_3,int *param_4);
+extern float stbtt_ScaleForPixelHeight(float param_1,int param_2);
+extern int mui_outputxy_length_isra_19(int param_1,int param_2,gh_byte *param_3);
 extern int mui_outputxy_t(int param_1,int param_2,int param_3,int param_4,gh_uint param_5,gh_byte *param_6);
 extern void mui_DisplayGameSum(void);
 extern void mui_DisplayLine_t(int param_1,int param_2,int param_3);
 extern void mui_DisplayInputBuffer(void);
+extern gh_u4 stbtt_InitFont(int param_1,int param_2,gh_u4 param_3);
 extern void mui_InitFont(void);
 extern char strtrimr(char *param_1);
 extern gh_byte strtriml(gh_byte *param_1);
@@ -192,10 +201,21 @@ extern gh_u4 VRT_Load(char *param_1,int param_2);
 extern gh_u4 Pico_Load(char *param_1,int param_2);
 extern gh_u4 retro_save_state(char *param_1);
 extern gh_u4 retro_load_state(char *param_1);
+extern void MP3FreeDecoder(int param_1);
+extern int MP3FindSyncWord(gh_byte *param_1,int param_2);
+extern void MP3GetLastFrameInfo(int param_1,gh_u4 *param_2);
 extern gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 param_2,gh_u4 param_3);
+extern gh_u4 MP3Decode(int param_1,int *param_2,int *param_3,int param_4,int param_5);
 extern void Convert_Stereo(gh_u2 *param_1);
 extern void Convert_Mono(gh_u2 *param_1);
+extern gh_u4 xmp3_UnpackFrameHeader(int *param_1,char *param_2);
 extern void ClearBuffer(gh_u1 *param_1,int param_2);
+extern gh_u4 mxmlElementGetAttr(int *param_1,char *param_2);
+extern void mxmlElementSetAttr(int *param_1,int param_2,int param_3);
+extern void mxmlLoadFile(void);
+extern int mxmlSaveFile(); /* K&R: 参数类型不可解析 */
+extern void mxmlDelete(gh_u4 *param_1);
+extern int mxmlFindElement(int param_1,int param_2,char *param_3,int param_4,char *param_5,int param_6);
 extern gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint param_4);
 extern int snor_wait_busy(int param_1);
 extern void snor_write_en(void);
@@ -213,9 +233,14 @@ extern gh_bool normal_flushwc(int param_1,int *param_2);
 extern gh_u4 hz_reset(int param_1,gh_u1 *param_2,gh_uint param_3);
 extern void uc_to_mb_write_replacement(void *param_1,gh_uint param_2,int *param_3);
 extern void wc_to_mb_write_replacement(void *param_1,gh_uint param_2,int *param_3);
+extern gh_u4 libiconv_open(gh_byte *param_1,gh_byte *param_2);
+extern gh_u4 libiconv_close(void *param_1);
 extern int compare_by_index(int param_1,int param_2);
 extern int compare_by_name(gh_u4 *param_1,gh_u4 *param_2);
 extern char locale_charset(void);
+extern gh_uint __aeabi_uidiv(gh_uint param_1,gh_uint param_2);
+extern gh_uint __aeabi_idiv(gh_uint param_1,gh_uint param_2);
+extern void __libc_csu_init(); /* K&R: 参数类型不可解析 */
 extern void __libc_csu_fini(void);
 
 #endif

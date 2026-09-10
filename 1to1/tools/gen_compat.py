@@ -32,6 +32,22 @@ COMPAT = r'''/* ============================================================
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <ctype.h>
+#include <errno.h>
+#include <math.h>
+#include <time.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/mman.h>
+#include <sys/ioctl.h>
 
 /* ---- Ghidra 私有类型 ---- */
 typedef unsigned char       undefined;      /* 未定，按 1 字节 */
@@ -186,6 +202,27 @@ _prop = {r['name'] for r in _json.load(
     open(r'D:/output/rkgame-1to1/ledger/functions.json', encoding='utf-8'))}
 print('proprietary function names: %d' % len(_prop))
 
+# ★ 同时声明「被专有代码实际调用」的全部函数（上游组件 API 等）。
+#   证据：find_undeclared.py 显示 FindZipItemA/GetZipItemA/libiconv*/mxml*/compress 等未被声明。
+import glob as _g
+_CALL = re.compile(r'\b([A-Za-z_]\w*)\s*\(')
+_KW = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else', 'case', 'break',
+       'continue', 'goto', 'default', 'void', 'int', 'char', 'long', 'short', 'unsigned',
+       'signed', 'float', 'double', 'const', 'struct', 'union', 'enum', 'typedef', 'extern',
+       'static', 'inline', 'volatile'}
+_called = set()
+for _p in _g.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+    _t = open(_p, encoding='utf-8', errors='replace').read()
+    _t = re.sub(r'/\*.*?\*/', ' ', _t, flags=re.S)
+    _t = re.sub(r'//[^\n]*', ' ', _t)
+    _t = re.sub(r'"(?:[^"\\]|\\.)*"', '""', _t)
+    for _m in _CALL.finditer(_t):
+        _n2 = _m.group(1)
+        if _n2 not in _KW and not _n2.startswith(('gh_', '__builtin', '__asm')):
+            _called.add(_n2)
+print('called names (from proprietary code): %d' % len(_called))
+_want = _prop | _called
+
 # 允许出现的类型词（其余视为未知类型 -> 跳过该原型）
 _ALLOWED_TYPES = set(SCALAR) | {
     'void', 'int', 'char', 'long', 'short', 'float', 'double', 'unsigned', 'signed',
@@ -208,19 +245,23 @@ while i < n:
                                                          'union', 'const', 'volatile'):
                     ret = ret.split()[0]
                 cand = '%s %s%s(%s)' % (ret, star, fname, args)
-                if fname in _prop and fname not in seen:
+                if fname in _want and fname not in seen:
                     # 类型健全性：所有类型词必须在允许集合内
                     tnames = set(re.findall(r'\b([A-Za-z_]\w*)\b', ret + ' ' + args))
                     unknown = {x for x in tnames
                                if x not in _ALLOWED_TYPES and x != fname
-                               and not x.isdigit() and x not in ('param_1', 'param_2', 'param_3',
-                                                                 'param_4', 'param_5', 'param_6',
-                                                                 'param_7', 'param_8')
-                               and not x.startswith('param_')}
-                    if unknown:
-                        continue
-                    seen.add(fname)
-                    protos.append('extern ' + cand + ';')
+                               and not x.isdigit() and not x.startswith('param_')}
+                    ret_ok = (ret in _ALLOWED_TYPES) or (' ' in ret and
+                                                         ret.split()[0] in _ALLOWED_TYPES)
+                    if unknown and ret_ok:
+                        # 参数类型不可解析 -> 用 K&R 式非原型声明（C 语言为此场景设计：
+                        # 接受任意实参、保留正确返回类型）。**不是猜类型**，是显式声明"未知"。
+                        seen.add(fname)
+                        protos.append('extern %s %s%s(); /* K&R: 参数类型不可解析 */'
+                                      % (ret, star, fname))
+                    elif not unknown:
+                        seen.add(fname)
+                        protos.append('extern ' + cand + ';')
         continue
     i += 1
 
