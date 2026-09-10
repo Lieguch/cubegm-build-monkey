@@ -165,6 +165,19 @@ print('wrote globals.h (%d globals, %d skipped)' % (n_glob, skipped))
 # ---------- 函数原型（反编译签名行） ----------
 lines = open(ALL, encoding='utf-8', errors='replace').read().splitlines()
 protos, seen = [], set()
+
+# ★ 只声明**专有函数**：上游组件的原型（如 zlib C++ 内部的 inflate_blocks_state）
+#   会引用不可用的类型，包含进来会让每个 .c 都编译失败。
+import json as _json
+_prop = {r['name'] for r in _json.load(
+    open(r'D:/output/rkgame-1to1/ledger/functions.json', encoding='utf-8'))}
+print('proprietary function names: %d' % len(_prop))
+
+# 允许出现的类型词（其余视为未知类型 -> 跳过该原型）
+_ALLOWED_TYPES = set(SCALAR) | {
+    'void', 'int', 'char', 'long', 'short', 'float', 'double', 'unsigned', 'signed',
+    'size_t', 'ssize_t', 'short', 'const', 'struct', 'union',
+}
 i, n = 0, len(lines)
 while i < n:
     if lines[i].startswith('/* ===='):
@@ -178,12 +191,21 @@ while i < n:
             m = re.match(r'^([A-Za-z_][\w \*]*?[\w\*])\s+(\*?)(\w+)\s*\((.*)\)\s*$', cand)
             if m:
                 ret, star, fname, args = m.group(1).strip(), m.group(2), m.group(3), m.group(4)
-                # 修正形如 "void processEntry _start(...)" 的异常签名：返回类型只取首词
-                if ' ' in ret and not ret.split()[0] in ('unsigned', 'signed', 'long', 'struct',
+                if ' ' in ret and ret.split()[0] not in ('unsigned', 'signed', 'long', 'struct',
                                                          'union', 'const', 'volatile'):
                     ret = ret.split()[0]
                 cand = '%s %s%s(%s)' % (ret, star, fname, args)
-                if fname not in seen:
+                if fname in _prop and fname not in seen:
+                    # 类型健全性：所有类型词必须在允许集合内
+                    tnames = set(re.findall(r'\b([A-Za-z_]\w*)\b', ret + ' ' + args))
+                    unknown = {x for x in tnames
+                               if x not in _ALLOWED_TYPES and x != fname
+                               and not x.isdigit() and x not in ('param_1', 'param_2', 'param_3',
+                                                                 'param_4', 'param_5', 'param_6',
+                                                                 'param_7', 'param_8')
+                               and not x.startswith('param_')}
+                    if unknown:
+                        continue
                     seen.add(fname)
                     protos.append('extern ' + cand + ';')
         continue
