@@ -951,13 +951,13 @@ uint32_t keycode_to_keymask(uint32_t factory_mask)
 }
 
 /**
- * joy_factory_key_state_all() — 跨所有设备 OR 之后按**原厂事件码**返回
- * @return factory keycode bitmask（与 setting.xml 热键值同格式）
+ * joy_factory_key_state_all() — 跨所有设备 OR 之后按原厂事件码返回。
+ * @return factory keycode bitmask（与 setting.xml 热键值同格式）。
  *
  * 用途：main.c 主循环可直接
  *   uint32_t f = joy_factory_key_state_all();
- *   if (f & 0x400u) { ... }  /* TL1 按下 */
- * 无需再维护本地 bitmask ↔ 工厂 keycode 双套对照。
+ *   if (f & 0x400u) 则 TL1 按下
+ * 无需再维护本地 bitmask 与 工厂 keycode 双套对照。
  */
 uint32_t joy_factory_key_state_all(void)
 {
