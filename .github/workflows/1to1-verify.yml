@@ -1,0 +1,55 @@
+name: 1to1-verify
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '1to1/**'
+      - '.github/workflows/1to1-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  p2a-stb:
+    name: P2-A stb_truetype 版本锁定
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 ARM 交叉工具链（armv7 hard-float）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          arm-linux-gnueabihf-gcc --version | head -1
+          arm-linux-gnueabihf-objdump --version | head -1
+
+      - name: 校验金标准完整性
+        run: |
+          python3 - <<'PY'
+          import gzip, json
+          d = json.load(gzip.open('1to1/golden/factory.funcs.json.gz', 'rt', encoding='utf-8'))
+          f = d['functions']
+          n = sum(x['n'] for x in f.values())
+          print('golden functions=%d instructions=%d' % (len(f), n))
+          assert len(f) == 835, 'golden 函数数异常（应 835）'
+          assert n == 715473, 'golden 指令数异常（应 715473）'
+          print('golden integrity OK')
+          PY
+
+      - name: P2-A stb_truetype 版本指纹锁定
+        run: |
+          cd 1to1
+          mkdir -p report
+          CC=arm-linux-gnueabihf-gcc OBJDUMP=arm-linux-gnueabihf-objdump \
+            python3 tools/ci_p2a_stb.py golden/factory.funcs.json.gz report/p2a_stb.txt
+          echo '--- report ---'
+          cat report/p2a_stb.txt
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1to1-p2a-report
+          path: 1to1/report/
+          if-no-files-found: warn
