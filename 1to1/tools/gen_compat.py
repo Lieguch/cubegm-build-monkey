@@ -226,17 +226,17 @@ if _pairs:
                     and not k.startswith(('uVar', 'iVar', 'cVar', 'bVar', 'pVar', 'local_',
                                           'acStack_', 'auStack_', 'aStack_', 'uStack_', 'iStack_',
                                           'pStack_', 'fStack_', 'sStack_'))}
-    # 过滤：只对「仅以 ._N_M_ 访问、未被当数组下标」的对象重定型，避免引入新破坏
-    _arraylike = set()
+    # 过滤：只对「**仅**以 ._N_M_ 访问」的对象重定型。
+    # 证据做法：把该对象的所有 NAME._N_M_ 出现剔除后，若裸名仍出现 -> 说明还有标量/数组用法 -> 不重定型。
+    _bare = set()
     for _p in _g2.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
         _t = open(_p, encoding='utf-8', errors='replace').read()
-        for _m in _re.finditer(r'\b([A-Za-z_]\w*)\s*\[', _t):
-            _arraylike.add(_m.group(1))
-        # 取址/整体使用也视为不可重定型
-        for _m in _re.finditer(r'&\s*([A-Za-z_]\w*)\b', _t):
-            _arraylike.add(_m.group(1))
+        for _k in _owners:
+            _stripped = _re.sub(r'\b' + _re.escape(_k) + r'\s*\.\s*_\d+_\d_', ' ', _t)
+            if _re.search(r'\b' + _re.escape(_k) + r'\b', _stripped):
+                _bare.add(_k)
     _need_retype = {k for k in _owners
-                    if k not in _arraylike
+                    if k not in _bare
                     and not k.startswith(('param_', 'uVar', 'iVar', 'cVar', 'bVar', 'pVar',
                                           'local_', 'acStack_', 'auStack_', 'aStack_',
                                           'uStack_', 'iStack_', 'pStack_', 'fStack_', 'sStack_'))}

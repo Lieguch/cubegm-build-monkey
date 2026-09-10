@@ -4223,7 +4223,7 @@ extern gh_blob_t DAT_003af7bc;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c0;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c4;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c8;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t DAT_003af7cc;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003af7cc undefined4 */ extern unsigned int DAT_003af7cc;
 extern gh_blob_t DAT_003af7d0;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7d4;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003af7d8 undefined2 */ extern unsigned short DAT_003af7d8;
@@ -4249,10 +4249,10 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003af840 undefined4 */ extern unsigned int DAT_003af840;
 /* @0x003af844 undefined4 */ extern unsigned int DAT_003af844;
 /* @0x003af848 undefined1[920] */ extern unsigned char m_movetab[920];
-extern gh_blob_t m_joysticktab;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t m_statetab;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003afbe0 undefined1[924] */ extern unsigned char m_joysticktab[924];
+/* @0x003aff7c undefined1[144] */ extern unsigned char m_statetab[144];
 /* @0x003b000c undefined1[64] */ extern unsigned char KEY_Table[64];
-extern gh_blob_t P1_Table;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003b004c undefined1[220] */ extern unsigned char P1_Table[220];
 /* @0x003b0128 undefined4 */ extern unsigned int turbo_delay;
 /* @0x003b012c undefined4 */ extern unsigned int DAT_003b012c;
 /* @0x003b0130 undefined4 */ extern unsigned int DAT_003b0130;
@@ -4589,7 +4589,7 @@ extern gh_blob_t P1_Table;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc2c4 undefined4 */ extern unsigned int tree;
 /* @0x003bc2c8 undefined4 */ extern unsigned int filelist_tree;
 /* @0x003bc2cc undefined4 */ extern unsigned int res_hz;
-extern gh_blob_t ze;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003bc2d0 undefined1[304] */ extern unsigned char ze[304];
 /* @0x003bc400 undefined4 */ extern unsigned int zr;
 /* @0x003bc404 undefined4 */ extern unsigned int mui_fast_lsit;
 /* @0x003bc408 undefined4 */ extern unsigned int m_search;
@@ -4656,24 +4656,24 @@ extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1498 undefined1[256] */ extern unsigned char work_path[256];
 /* @0x003e1598 undefined1[128] */ extern unsigned char m_crctable[128];
 /* @0x003e1618 undefined1[128] */ extern unsigned char mainkey[128];
-extern gh_blob_t InputDeviceInfo;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1698 undefined1[112] */ extern unsigned char InputDeviceInfo[112];
 /* @0x003e1708 undefined1[96] */ extern unsigned char keyMapping[96];
-extern gh_blob_t SoundPlayer;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t fpsbuf;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1768 undefined1[72] */ extern unsigned char SoundPlayer[72];
+/* @0x003e17b0 undefined1[64] */ extern unsigned char fpsbuf[64];
 /* @0x003e17f0 undefined1[64] */ extern unsigned char ticks_buf[64];
 /* @0x003e1830 undefined1[56] */ extern unsigned char fh[56];
-extern gh_blob_t mui_Effect0;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t mui_Effect1;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t mui_MenuMusic;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1868 undefined1[36] */ extern unsigned char mui_Effect0[36];
+/* @0x003e188c undefined1[36] */ extern unsigned char mui_Effect1[36];
+/* @0x003e18b0 undefined1[36] */ extern unsigned char mui_MenuMusic[36];
 /* @0x003e18f0 undefined1[28] */ extern unsigned char GamePath[28];
 /* @0x003e190c undefined1[28] */ extern unsigned char key2[28];
 /* @0x003e1928 undefined1[28] */ extern unsigned char mdtemp1[28];
-extern gh_blob_t game;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t game_joy_key;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t joy_key;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1954 undefined1[16] */ extern unsigned char game[16];
+/* @0x003e1964 undefined1[16] */ extern unsigned char game_joy_key[16];
+/* @0x003e1974 undefined1[16] */ extern unsigned char joy_key[16];
 extern gh_blob_t this_frame;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t frame_time_last;  /* retyped: Ghidra _N_M_ 字段访问 */
-extern gh_blob_t progress_stepcount;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1998 undefined8 */ extern unsigned long long frame_time_last;
+/* @0x003e19a0 undefined8 */ extern unsigned long long progress_stepcount;
 /* @0x003e19a8 undefined8 */ extern unsigned long long RF_joy_key;
 /* @0x003e19b0 undefined8 */ extern unsigned long long inTimeVal;
 /* @0x003e19b8 undefined8 */ extern unsigned long long outTimeVal;
@@ -4742,7 +4742,7 @@ extern gh_blob_t progress_stepcount;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1abc undefined4 */ extern unsigned int video_driver_frame;
 /* @0x003e1ac0 undefined4 */ extern unsigned int video_driver_get_size;
 /* @0x003e1ac4 undefined4 */ extern unsigned int video_driver_setting;
-extern gh_blob_t spi_id;  /* retyped: Ghidra _N_M_ 字段访问 */
+/* @0x003e1ac8 undefined3 */ extern unsigned char spi_id[3];
 extern gh_blob_t IR_JoyKey;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1ace undefined1 */ extern unsigned char ChannelIndex;
 /* @0x003e1acf undefined1 */ extern unsigned char ProtectCode;
