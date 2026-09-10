@@ -51,11 +51,21 @@
 
 ## 四、下一步（依赖顺序）
 
+> ★ **N3 里程碑（本轮达成）**：CI 中用现有工具链编译并过 ABI 门禁，**全项 PASS**：
+> ```
+> [PASS] e_type    got=0x2        want=0x2
+> [PASS] e_machine got=0x28       want=0x28
+> [PASS] e_flags   got=0x5000400  want=0x5000400
+> [PASS] interp    got=/lib/ld-linux-armhf.so.3  want=/lib/ld-linux-armhf.so.3
+> ```
+> 结论：**P3 链路/ABI 门禁不依赖 GCC 6 即可达成**，重建产物可直接具备原厂 ELF 规格。
+> 实现：`tools/abi_check.py`（自检：原厂二进制全 PASS）+ workflow `N3 ABI 门禁` 步骤。
+
 | # | 动作 | 门禁 | 状态 |
 |---|---|---|---|
 | N1 | ~~取得工具链~~ | — | **已裁定不需要**（策略修正 §三） |
 | N2 | 上游 5 组件按时代+覆盖率证据定版 | 证据链完整 | **已完成**（stb=v1.26；iconv=glibc 2.24；其余按同一方法） |
-| N3 | 用现有可用工具链复现 `_start`/crt，ABI 门禁 | ELF 头/`.interp`/`e_flags` 逐字段一致 | 可执行（不依赖编译器版本） |
+| N3 | 用现有可用工具链复现 `_start`/crt，ABI 门禁 | ELF 头/`.interp`/`e_flags` 逐字段一致 | ★ **已完成并 PASS** |
 | N4 | 按台账逐函数重建（优先 mui 42f/70KB） | **行为差分门禁** | 可执行 |
 | N5 | 行为差分（factory vs rebuild，多入口） | `behav_diff.py` PASS | 工具已就绪 |
 | N6 | 真机验收 | 19088 游戏 / 中文 UI / 全菜单 / 存档 / BGM | 依赖 N4+N5 |
