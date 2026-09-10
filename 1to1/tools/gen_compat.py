@@ -159,6 +159,18 @@ for ln in open(TSV, encoding='utf-8', errors='replace'):
     declared.add(name)
     glines.append('/* @0x%s %s */ %s' % (addr, gtype, declare(name, gtype, length)))
     n_glob += 1
+glines += ['', '/* ---- 兜底：源码引用但符号表未覆盖的 DAT_/UNK_（Ghidra 内联字面量命名） ---- */']
+import glob as _glob
+_refs = set()
+for _p in _glob.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+    _t = open(_p, encoding='utf-8', errors='replace').read()
+    _refs |= set(re.findall(r'\b((?:DAT|UNK)_[0-9a-f]+)\b', _t))
+_miss = sorted(_refs - declared)
+for _m in _miss:
+    # 用法均为 &DAT_xxxx（取地址），声明为字节数组即可
+    glines.append('/* fallback */ extern unsigned char %s[];' % _m)
+print('fallback DAT_/UNK_ declarations: %d' % len(_miss))
+
 glines += ['', '#endif']
 open(os.path.join(OUT, 'globals.h'), 'w', encoding='utf-8').write('\n'.join(glines))
 print('wrote globals.h (%d globals, %d skipped)' % (n_glob, skipped))

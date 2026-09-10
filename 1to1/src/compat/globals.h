@@ -4303,4 +4303,33 @@
 /* @0x003e1ad2 undefined1 */ extern unsigned char joy_key_Temp;
 /* @0x_elfSectionHeaders::00000000 Elf32_Shdr[42] */ extern unsigned char Elf32_Shdr_ARRAY__elfSectionHeaders__00000000[42];
 
+/* ---- 兜底：源码引用但符号表未覆盖的 DAT_/UNK_（Ghidra 内联字面量命名） ---- */
+/* fallback */ extern unsigned char DAT_00061a80[];
+/* fallback */ extern unsigned char DAT_000f4240[];
+/* fallback */ extern unsigned char DAT_0020202d[];
+/* fallback */ extern unsigned char DAT_002dbcb4[];
+/* fallback */ extern unsigned char DAT_002dbd74[];
+/* fallback */ extern unsigned char DAT_002dbe58[];
+/* fallback */ extern unsigned char DAT_002dbe5c[];
+/* fallback */ extern unsigned char DAT_002dbe60[];
+/* fallback */ extern unsigned char DAT_002dccf4[];
+/* fallback */ extern unsigned char DAT_002dcd50[];
+/* fallback */ extern unsigned char DAT_002dcd5c[];
+/* fallback */ extern unsigned char DAT_002dcd70[];
+/* fallback */ extern unsigned char DAT_002dcf4c[];
+/* fallback */ extern unsigned char DAT_002dd508[];
+/* fallback */ extern unsigned char DAT_002dd860[];
+/* fallback */ extern unsigned char DAT_002dd878[];
+/* fallback */ extern unsigned char DAT_002dd88c[];
+/* fallback */ extern unsigned char DAT_002ddd74[];
+/* fallback */ extern unsigned char DAT_002e0d18[];
+/* fallback */ extern unsigned char DAT_003b0274[];
+/* fallback */ extern unsigned char DAT_003b0278[];
+/* fallback */ extern unsigned char DAT_003b0298[];
+/* fallback */ extern unsigned char DAT_003b02b8[];
+/* fallback */ extern unsigned char DAT_003b02bc[];
+/* fallback */ extern unsigned char UNK_000d2f00[];
+/* fallback */ extern unsigned char UNK_00118000[];
+/* fallback */ extern unsigned char UNK_002e0938[];
+
 #endif
