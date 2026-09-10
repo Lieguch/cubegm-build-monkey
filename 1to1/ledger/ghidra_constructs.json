@@ -1,0 +1,63 @@
+{
+ "files": 213,
+ "types": {
+  "undefined4": 340,
+  "size_t": 43,
+  "undefined8": 2,
+  "uint": 484,
+  "ulonglong": 5,
+  "byte": 144,
+  "undefined1": 148,
+  "undefined2": 77,
+  "bool": 18,
+  "code": 71,
+  "ushort": 209,
+  "longlong": 2,
+  "uchar": 1,
+  "undefined": 11
+ },
+ "pseudo": {
+  "unaff_": 64,
+  "CONCAT11": 1,
+  "CONCAT44": 1,
+  "SBORROW": 2,
+  "CONCAT22": 3,
+  "CARRY": 2,
+  "SUB84": 3
+ },
+ "labels": {
+  "LAB": 712,
+  "joined": 39,
+  "switchD": 2,
+  "UNK": 3,
+  "default_core_list": 4,
+  "code": 8
+ },
+ "misc": {
+  "__stream": 106,
+  "__s": 32,
+  "__ptr": 241,
+  "__size": 20,
+  "__timezone_ptr_t": 11,
+  "__aeabi_uidiv": 1,
+  "__n": 63,
+  "__ptr_00": 27,
+  "__aeabi_idiv": 6,
+  "__fd": 20,
+  "__gnuc_va_list": 1,
+  "__errno_location": 1,
+  "__isoc99_sscanf": 48,
+  "__int32_t": 1,
+  "__ctype_toupper_loc": 1,
+  "__ctype_b_loc": 2,
+  "__src": 19,
+  "__dest": 15,
+  "__c": 6,
+  "__selector": 1,
+  "__s1": 6,
+  "__libc_csu_init": 1,
+  "__frame_dummy_init_array_entry": 1,
+  "__libc_csu_fini": 1,
+  "__th": 6
+ }
+}

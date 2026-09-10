@@ -1,0 +1,2009 @@
+[
+ {
+  "addr": "0x00009b58",
+  "size": 492,
+  "name": "main",
+  "module": "main",
+  "src": "src/proprietary/main/FUN_00009b58_main.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00009e6c",
+  "size": 108,
+  "name": "RARCH_LOG_V",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00009e6c_RARCH_LOG_V.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00009ed8",
+  "size": 44,
+  "name": "RARCH_LOG",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00009ed8_RARCH_LOG.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00009f04",
+  "size": 1332,
+  "name": "GetConfig",
+  "module": "config",
+  "src": "src/proprietary/config/FUN_00009f04_GetConfig.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a438",
+  "size": 100,
+  "name": "get_executable_path",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000a438_get_executable_path.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a49c",
+  "size": 148,
+  "name": "dispmeninfo",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000a49c_dispmeninfo.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a530",
+  "size": 448,
+  "name": "outputxy1",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000a530_outputxy1.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a6f0",
+  "size": 132,
+  "name": "spi_printf",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000a6f0_spi_printf.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a774",
+  "size": 152,
+  "name": "ShareMemCreat",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000a774_ShareMemCreat.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a80c",
+  "size": 80,
+  "name": "ShareMemClose",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000a80c_ShareMemClose.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a85c",
+  "size": 52,
+  "name": "xintiao",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000a85c_xintiao.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a890",
+  "size": 20,
+  "name": "XintiaoThread",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000a890_XintiaoThread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000a8a4",
+  "size": 852,
+  "name": "UpdateROMProc",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000a8a4_UpdateROMProc.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000abf8",
+  "size": 76,
+  "name": "DateToTmuDate",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000abf8_DateToTmuDate.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000ac44",
+  "size": 976,
+  "name": "UpdateROM",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000ac44_UpdateROM.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b014",
+  "size": 760,
+  "name": "TestUSBJoy",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000b014_TestUSBJoy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b30c",
+  "size": 244,
+  "name": "ConvertCode",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000b30c_ConvertCode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b400",
+  "size": 48,
+  "name": "GetTick",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000b400_GetTick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b430",
+  "size": 128,
+  "name": "WaitNMI",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000b430_WaitNMI.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b4b0",
+  "size": 512,
+  "name": "TestRun",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_0000b4b0_TestRun.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b6b0",
+  "size": 596,
+  "name": "TestLibz0",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_0000b6b0_TestLibz0.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000b904",
+  "size": 280,
+  "name": "TestLibz1",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000b904_TestLibz1.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000ba1c",
+  "size": 448,
+  "name": "sunxi_gpio_init",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000ba1c_sunxi_gpio_init.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000bbdc",
+  "size": 256,
+  "name": "sunxi_gpio_set_cfgpin",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000bbdc_sunxi_gpio_set_cfgpin.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000bcdc",
+  "size": 112,
+  "name": "sunxi_gpio_get_cfgpin",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000bcdc_sunxi_gpio_get_cfgpin.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000bd4c",
+  "size": 256,
+  "name": "sunxi_gpio_output",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000bd4c_sunxi_gpio_output.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000be4c",
+  "size": 112,
+  "name": "sunxi_gpio_input",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000be4c_sunxi_gpio_input.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000bebc",
+  "size": 224,
+  "name": "sunxi_gpio_cleanup",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000bebc_sunxi_gpio_cleanup.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000bf9c",
+  "size": 260,
+  "name": "get_from_line",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000bf9c_get_from_line.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c0a0",
+  "size": 176,
+  "name": "GetInputInfo",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c0a0_GetInputInfo.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c150",
+  "size": 1196,
+  "name": "ReadUSBJoy",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000c150_ReadUSBJoy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c5fc",
+  "size": 92,
+  "name": "InitMDJoystick",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000c5fc_InitMDJoystick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c658",
+  "size": 384,
+  "name": "ReadPS2JS",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c658_ReadPS2JS.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c7d8",
+  "size": 108,
+  "name": "ReadJoystickProc",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000c7d8_ReadJoystickProc.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c844",
+  "size": 4,
+  "name": "processvblank",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c844_processvblank.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c848",
+  "size": 116,
+  "name": "ReadJoystickThread",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000c848_ReadJoystickThread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c8bc",
+  "size": 16,
+  "name": "timer_thread",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c8bc_timer_thread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c8cc",
+  "size": 28,
+  "name": "SetBacklight",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c8cc_SetBacklight.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c8e8",
+  "size": 4,
+  "name": "InitIOSignal",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000c8e8_InitIOSignal.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c8ec",
+  "size": 4,
+  "name": "OutputIOSignal",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c8ec_OutputIOSignal.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c8f0",
+  "size": 228,
+  "name": "ReadJoystick",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000c8f0_ReadJoystick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c9d4",
+  "size": 12,
+  "name": "osDelay",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000c9d4_osDelay.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000c9e0",
+  "size": 104,
+  "name": "SPI_WW",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000c9e0_SPI_WW.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000ca48",
+  "size": 92,
+  "name": "SPI_RR",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000ca48_SPI_RR.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000caa4",
+  "size": 104,
+  "name": "SPI_Read",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000caa4_SPI_Read.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cb0c",
+  "size": 136,
+  "name": "SPI_Read_BUF",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000cb0c_SPI_Read_BUF.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cb94",
+  "size": 112,
+  "name": "SPI_Write_BUF",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000cb94_SPI_Write_BUF.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cc04",
+  "size": 80,
+  "name": "SPI_Write",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_0000cc04_SPI_Write.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cc54",
+  "size": 76,
+  "name": "RxMode",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000cc54_RxMode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cca0",
+  "size": 88,
+  "name": "TxMode",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000cca0_TxMode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000ccf8",
+  "size": 44,
+  "name": "getticks",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000ccf8_getticks.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000cd24",
+  "size": 1184,
+  "name": "RF_Joystick_timer_isr",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0000cd24_RF_Joystick_timer_isr.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d1c4",
+  "size": 708,
+  "name": "InitRFJoystick",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000d1c4_InitRFJoystick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d488",
+  "size": 128,
+  "name": "InitJoystick",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000d488_InitJoystick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d508",
+  "size": 8,
+  "name": "GetDecodeData",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000d508_GetDecodeData.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d510",
+  "size": 4,
+  "name": "InitDecode",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000d510_InitDecode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d514",
+  "size": 4,
+  "name": "ReInitDecode",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000d514_ReInitDecode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d518",
+  "size": 272,
+  "name": "ScaleDisplayThread",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000d518_ScaleDisplayThread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d628",
+  "size": 80,
+  "name": "run_process.constprop.0",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000d628_run_process.constprop.0.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d678",
+  "size": 620,
+  "name": "InitDisplay",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000d678_InitDisplay.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000d8e4",
+  "size": 360,
+  "name": "dispFlip",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000d8e4_dispFlip.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000da4c",
+  "size": 80,
+  "name": "video_driver_set_rotation",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000da4c_video_driver_set_rotation.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000da9c",
+  "size": 68,
+  "name": "video_driver_set_colormode",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000da9c_video_driver_set_colormode.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000dae0",
+  "size": 40,
+  "name": "DeinitDisplay",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000dae0_DeinitDisplay.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000db08",
+  "size": 196,
+  "name": "InitSound",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000db08_InitSound.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000dbcc",
+  "size": 16,
+  "name": "DeinitSound",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_0000dbcc_DeinitSound.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000dbdc",
+  "size": 40,
+  "name": "PlaySound",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000dbdc_PlaySound.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0000fff4",
+  "size": 348,
+  "name": "ucrc32",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0000fff4_ucrc32.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00012cd0",
+  "size": 136,
+  "name": "OpenZipU",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00012cd0_OpenZipU.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00012d58",
+  "size": 112,
+  "name": "GetZipItemA",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00012d58_GetZipItemA.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00012ebc",
+  "size": 132,
+  "name": "FindZipItemA",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00012ebc_FindZipItemA.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00013040",
+  "size": 132,
+  "name": "UnzipItem",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00013040_UnzipItem.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000130c4",
+  "size": 140,
+  "name": "CloseZipU",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000130c4_CloseZipU.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014340",
+  "size": 168,
+  "name": "DrawSelectBar",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00014340_DrawSelectBar.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000143e8",
+  "size": 136,
+  "name": "mui_blockcopy",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000143e8_mui_blockcopy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014470",
+  "size": 152,
+  "name": "UnDrawSelectBar",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00014470_UnDrawSelectBar.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014508",
+  "size": 124,
+  "name": "mui_DispBlock",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014508_mui_DispBlock.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014584",
+  "size": 128,
+  "name": "mui_UnDispBlock",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014584_mui_UnDispBlock.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014604",
+  "size": 120,
+  "name": "mui_Undisplay",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014604_mui_Undisplay.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014eac",
+  "size": 88,
+  "name": "mui_extract_basepath",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014eac_mui_extract_basepath.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014f04",
+  "size": 128,
+  "name": "mui_extract_basename",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014f04_mui_extract_basename.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00014f84",
+  "size": 608,
+  "name": "mui_DisplayThumbnail",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00014f84_mui_DisplayThumbnail.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000151e4",
+  "size": 576,
+  "name": "buttontoi",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_000151e4_buttontoi.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000164b8",
+  "size": 152,
+  "name": "code_convert.constprop.22",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000164b8_code_convert.constprop.22.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00016ebc",
+  "size": 76,
+  "name": "strupr",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00016ebc_strupr.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00016f08",
+  "size": 724,
+  "name": "FilePreEmu",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_00016f08_FilePreEmu.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000171dc",
+  "size": 28,
+  "name": "GetWorkPath",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000171dc_GetWorkPath.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000171f8",
+  "size": 2996,
+  "name": "mui_LoadSetting",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00017dac",
+  "size": 324,
+  "name": "mui_LoadUIResource",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00017dac_mui_LoadUIResource.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00017ef0",
+  "size": 1388,
+  "name": "shoucang",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00017ef0_shoucang.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001845c",
+  "size": 584,
+  "name": "IsShoucang",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001845c_IsShoucang.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000186a4",
+  "size": 1380,
+  "name": "mui_do_file_list",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000186a4_mui_do_file_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00018c08",
+  "size": 1064,
+  "name": "mui_type_file_list",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00018c08_mui_type_file_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00019030",
+  "size": 1724,
+  "name": "mui_search_file_list",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00019030_mui_search_file_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000196ec",
+  "size": 64,
+  "name": "GetTicks",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000196ec_GetTicks.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001972c",
+  "size": 328,
+  "name": "mui_DisplayThumbnailThread",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001972c_mui_DisplayThumbnailThread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00019874",
+  "size": 156,
+  "name": "mui_WaitNMI",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00019874_mui_WaitNMI.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001b240",
+  "size": 380,
+  "name": "mui_outputxy_length.isra.19",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001b240_mui_outputxy_length.isra.19.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001bbf8",
+  "size": 904,
+  "name": "mui_outputxy_t",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001bbf8_mui_outputxy_t.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001bf80",
+  "size": 252,
+  "name": "mui_DisplayGameSum",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001bf80_mui_DisplayGameSum.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001c07c",
+  "size": 692,
+  "name": "mui_DisplayLine_t",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001c07c_mui_DisplayLine_t.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001c330",
+  "size": 236,
+  "name": "mui_DisplayInputBuffer",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001c330_mui_DisplayInputBuffer.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001ecac",
+  "size": 684,
+  "name": "mui_InitFont",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001ecac_mui_InitFont.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f150",
+  "size": 84,
+  "name": "strtrimr",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f150_strtrimr.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f1a4",
+  "size": 104,
+  "name": "strtriml",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f1a4_strtriml.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f20c",
+  "size": 16,
+  "name": "strtrim",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f20c_strtrim.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f21c",
+  "size": 224,
+  "name": "get_item_from_line",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f21c_get_item_from_line.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f2fc",
+  "size": 160,
+  "name": "get_items_from_file",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f2fc_get_items_from_file.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f39c",
+  "size": 376,
+  "name": "get_items_from_zipfile",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f39c_get_items_from_zipfile.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f514",
+  "size": 108,
+  "name": "get_value_from_items",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0001f514_get_value_from_items.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0001f580",
+  "size": 7228,
+  "name": "mui_LoadConfig",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0001f580_mui_LoadConfig.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000211bc",
+  "size": 60,
+  "name": "gameType",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000211bc_gameType.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000211f8",
+  "size": 400,
+  "name": "LoadMenuLog",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000211f8_LoadMenuLog.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021388",
+  "size": 148,
+  "name": "SaveMenuLog",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00021388_SaveMenuLog.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002141c",
+  "size": 16,
+  "name": "mui_ReadJoystick",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002141c_mui_ReadJoystick.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002142c",
+  "size": 620,
+  "name": "dir_serial_list",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0002142c_dir_serial_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021698",
+  "size": 220,
+  "name": "outputblankxy",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00021698_outputblankxy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021774",
+  "size": 264,
+  "name": "DisplayLine_list",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00021774_DisplayLine_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002187c",
+  "size": 256,
+  "name": "DisplayPage_list",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0002187c_DisplayPage_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002197c",
+  "size": 176,
+  "name": "myStrrstr",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_0002197c_myStrrstr.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021a2c",
+  "size": 120,
+  "name": "EmuCore_Blank",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_00021a2c_EmuCore_Blank.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021aa4",
+  "size": 252,
+  "name": "EmuCore_Line",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_00021aa4_EmuCore_Line.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021ba0",
+  "size": 104,
+  "name": "EmuCore_list",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_00021ba0_EmuCore_list.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00021c08",
+  "size": 1836,
+  "name": "SeletEmuCore",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00021c08_SeletEmuCore.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00022334",
+  "size": 188,
+  "name": "GetFileCore",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00022334_GetFileCore.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000223f0",
+  "size": 20,
+  "name": "ui_GetVolume",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000223f0_ui_GetVolume.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00022404",
+  "size": 124,
+  "name": "SoundClose",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_00022404_SoundClose.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00022480",
+  "size": 160,
+  "name": "ui_deinit",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00022480_ui_deinit.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00022520",
+  "size": 392,
+  "name": "SoundPlay",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_00022520_SoundPlay.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000226a8",
+  "size": 848,
+  "name": "filelist_run_game",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_000226a8_filelist_run_game.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000229f8",
+  "size": 2060,
+  "name": "mui_run_game",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000229f8_mui_run_game.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00023204",
+  "size": 3084,
+  "name": "mui_menu",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00023204_mui_menu.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00023e10",
+  "size": 4740,
+  "name": "mui_type",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00023e10_mui_type.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00025094",
+  "size": 5712,
+  "name": "mui_search",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00025094_mui_search.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000266e4",
+  "size": 380,
+  "name": "Mp3DecodeLoop",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000266e4_Mp3DecodeLoop.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00026860",
+  "size": 772,
+  "name": "AudioProcess",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_00026860_AudioProcess.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00026b64",
+  "size": 248,
+  "name": "mui_SoundplayThread",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00026b64_mui_SoundplayThread.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00026c5c",
+  "size": 124,
+  "name": "LoadDefaultState",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00026c5c_LoadDefaultState.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00026cd8",
+  "size": 124,
+  "name": "SaveDefaultState",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00026cd8_SaveDefaultState.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00026d54",
+  "size": 912,
+  "name": "InitKeyMapping0fEmuType",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_00026d54_InitKeyMapping0fEmuType.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000270e4",
+  "size": 420,
+  "name": "SaveKeyMappingConfigFile",
+  "module": "config",
+  "src": "src/proprietary/config/FUN_000270e4_SaveKeyMappingConfigFile.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00027288",
+  "size": 272,
+  "name": "blockadaptive",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00027288_blockadaptive.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00027398",
+  "size": 556,
+  "name": "popwindows",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00027398_popwindows.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000275c4",
+  "size": 504,
+  "name": "popoffwindows",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000275c4_popoffwindows.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000277bc",
+  "size": 4792,
+  "name": "mui_recent",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_000277bc_mui_recent.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00028a74",
+  "size": 3888,
+  "name": "mui_shoucang",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_00028a74_mui_shoucang.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x000299a4",
+  "size": 136,
+  "name": "blockcopy",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_000299a4_blockcopy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00029a2c",
+  "size": 280,
+  "name": "draw_state_select",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00029a2c_draw_state_select.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00029b44",
+  "size": 416,
+  "name": "progress",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_00029b44_progress.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00029ce4",
+  "size": 4,
+  "name": "spi_memcpy",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_00029ce4_spi_memcpy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00029ce8",
+  "size": 96,
+  "name": "InitScr",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_00029ce8_InitScr.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x00029d48",
+  "size": 708,
+  "name": "GetJoystickConfig",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_00029d48_GetJoystickConfig.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002a00c",
+  "size": 4776,
+  "name": "JoystickTest",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_0002a00c_JoystickTest.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002b2b4",
+  "size": 7096,
+  "name": "mui_setting",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002b2b4_mui_setting.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002ce6c",
+  "size": 616,
+  "name": "main_Menu",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002ce6c_main_Menu.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002d0d4",
+  "size": 3948,
+  "name": "mui_joystick_setting",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002d0d4_mui_joystick_setting.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002e040",
+  "size": 2696,
+  "name": "mui_video_setting",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002e040_mui_video_setting.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002eac8",
+  "size": 2136,
+  "name": "mui_load_state",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002eac8_mui_load_state.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002f320",
+  "size": 2852,
+  "name": "mui_save_state",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002f320_mui_save_state.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002fe44",
+  "size": 328,
+  "name": "mui_game_exit",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002fe44_mui_game_exit.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x0002ff8c",
+  "size": 1636,
+  "name": "PauseMenu",
+  "module": "mui",
+  "src": "src/proprietary/mui/FUN_0002ff8c_PauseMenu.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4d60",
+  "size": 4,
+  "name": "joystick_poll",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_002b4d60_joystick_poll.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4d64",
+  "size": 188,
+  "name": "PlayFrame",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_002b4d64_PlayFrame.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4e20",
+  "size": 244,
+  "name": "gpsp_unzip",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b4e20_gpsp_unzip.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4f14",
+  "size": 52,
+  "name": "log_dummy",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b4f14_log_dummy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4f48",
+  "size": 80,
+  "name": "joystick_input",
+  "module": "input",
+  "src": "src/proprietary/input/FUN_002b4f48_joystick_input.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b4f98",
+  "size": 528,
+  "name": "environment",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b4f98_environment.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b51a8",
+  "size": 512,
+  "name": "UIDebug",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b51a8_UIDebug.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b53a8",
+  "size": 552,
+  "name": "DrawFrame",
+  "module": "hw",
+  "src": "src/proprietary/hw/FUN_002b53a8_DrawFrame.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b55d0",
+  "size": 84,
+  "name": "rgb8888_to_rgb565",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b55d0_rgb8888_to_rgb565.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b5624",
+  "size": 148,
+  "name": "GetCoreIndex",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b5624_GetCoreIndex.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b56b8",
+  "size": 92,
+  "name": "GetFilenameExt",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b56b8_GetFilenameExt.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b5714",
+  "size": 88,
+  "name": "extract_basepath",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b5714_extract_basepath.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b576c",
+  "size": 340,
+  "name": "init_user_joy_key_mask",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b576c_init_user_joy_key_mask.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b58c0",
+  "size": 252,
+  "name": "TurboKeyProcess",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b58c0_TurboKeyProcess.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b59bc",
+  "size": 140,
+  "name": "run_process",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b59bc_run_process.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b5a48",
+  "size": 4,
+  "name": "RetroInitSound",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b5a48_RetroInitSound.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b5a4c",
+  "size": 444,
+  "name": "Load_Proc1",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b5a4c_Load_Proc1.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b5c08",
+  "size": 1380,
+  "name": "Load_Proc2",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b5c08_Load_Proc2.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b616c",
+  "size": 596,
+  "name": "Snes_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b616c_Snes_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b63c0",
+  "size": 596,
+  "name": "TGB_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b63c0_TGB_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b6614",
+  "size": 596,
+  "name": "prosystem_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b6614_prosystem_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b6868",
+  "size": 596,
+  "name": "stella_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b6868_stella_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b6abc",
+  "size": 344,
+  "name": "PCSX_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b6abc_PCSX_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b6c14",
+  "size": 836,
+  "name": "FBA_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b6c14_FBA_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b6f58",
+  "size": 1060,
+  "name": "Core_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b6f58_Core_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b737c",
+  "size": 404,
+  "name": "Gpsp_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b737c_Gpsp_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b7510",
+  "size": 1304,
+  "name": "run_game",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b7510_run_game.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b7a28",
+  "size": 64,
+  "name": "autorun",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b7a28_autorun.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b7a68",
+  "size": 612,
+  "name": "NES_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b7a68_NES_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b7ccc",
+  "size": 612,
+  "name": "GBC_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b7ccc_GBC_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b7f30",
+  "size": 612,
+  "name": "VRT_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b7f30_VRT_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b8194",
+  "size": 596,
+  "name": "Pico_Load",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b8194_Pico_Load.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b83e8",
+  "size": 392,
+  "name": "retro_save_state",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b83e8_retro_save_state.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b8570",
+  "size": 384,
+  "name": "retro_load_state",
+  "module": "core",
+  "src": "src/proprietary/core/FUN_002b8570_retro_load_state.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b86f0",
+  "size": 4,
+  "name": "save_state",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b86f4",
+  "size": 4,
+  "name": "load_state",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b87f4",
+  "size": 80,
+  "name": "MP3GetNextFrameInfo",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b87f4_MP3GetNextFrameInfo.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b8c84",
+  "size": 56,
+  "name": "Convert_Stereo",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b8c84_Convert_Stereo.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002b8cbc",
+  "size": 44,
+  "name": "Convert_Mono",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002b8cbc_Convert_Mono.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002bdefc",
+  "size": 32,
+  "name": "ClearBuffer",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002bdefc_ClearBuffer.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c39f0",
+  "size": 904,
+  "name": "sfc_request",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c39f0_sfc_request.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3d78",
+  "size": 136,
+  "name": "snor_wait_busy",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3d78_snor_wait_busy.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3e00",
+  "size": 56,
+  "name": "snor_write_en",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3e00_snor_write_en.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3e38",
+  "size": 96,
+  "name": "spi_write",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3e38_spi_write.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3e98",
+  "size": 100,
+  "name": "erase_sector",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002c3e98_erase_sector.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3efc",
+  "size": 68,
+  "name": "spi_read",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3efc_spi_read.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3f40",
+  "size": 92,
+  "name": "sflash_write_security_data",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3f40_sflash_write_security_data.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c3f9c",
+  "size": 100,
+  "name": "sflash_erase_security_data",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c3f9c_sflash_erase_security_data.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c4000",
+  "size": 68,
+  "name": "sflash_read_security_data",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c4000_sflash_read_security_data.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c4044",
+  "size": 904,
+  "name": "spi_driver_init",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c4044_spi_driver_init.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c43cc",
+  "size": 44,
+  "name": "sfc_uninit",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c43cc_sfc_uninit.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c43f8",
+  "size": 160,
+  "name": "sfc_init",
+  "module": "flash",
+  "src": "src/proprietary/flash/FUN_002c43f8_sfc_init.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c5c75",
+  "size": 188,
+  "name": "utf7_reset",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002c7e6d",
+  "size": 52,
+  "name": "normal_flushwc",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002d441d",
+  "size": 68,
+  "name": "hz_reset",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002d992d",
+  "size": 86,
+  "name": "uc_to_mb_write_replacement",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002da0c1",
+  "size": 86,
+  "name": "wc_to_mb_write_replacement",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002db2f1",
+  "size": 42,
+  "name": "compare_by_index",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002db31d",
+  "size": 118,
+  "name": "compare_by_name",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002db79d",
+  "size": 58,
+  "name": "locale_charset",
+  "module": "misc",
+  "src": "",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002dbc34",
+  "size": 96,
+  "name": "__libc_csu_init",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002dbc34___libc_csu_init.c",
+  "status": "TODO",
+  "tier": ""
+ },
+ {
+  "addr": "0x002dbc94",
+  "size": 4,
+  "name": "__libc_csu_fini",
+  "module": "misc",
+  "src": "src/proprietary/misc/FUN_002dbc94___libc_csu_fini.c",
+  "status": "TODO",
+  "tier": ""
+ }
+]

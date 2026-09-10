@@ -65,6 +65,12 @@ jobs:
           echo '--- report ---'
           cat report/p2a_stb.txt
 
+      - name: 重建编译门禁（逐函数，真实进度度量）
+        run: |
+          cd 1to1
+          mkdir -p report
+          CC=arm-linux-gnueabihf-gcc sh tools/recon_build.sh report/recon_build.txt
+
       - name: 上传报告
         if: always()
         uses: actions/upload-artifact@v4

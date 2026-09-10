@@ -1,0 +1,18 @@
+/* ============================================================
+ * ReadJoystickThread   @ 0x0000c848   size=100B   callers=0
+ * module: 01_main_emurun_joystick
+ * ============================================================ */
+
+void ReadJoystickThread(void)
+
+{
+  do {
+    ReadJoystickProc();
+    if ((joy_key._0_4_ != joytemp0) || (joy_key._4_4_ != joytemp1)) {
+      joytemp0 = joy_key._0_4_;
+      joytemp1 = joy_key._4_4_;
+    }
+    processvblank();
+    usleep(15000);
+  } while( true );
+}

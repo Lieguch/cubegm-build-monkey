@@ -1,0 +1,19 @@
+/* ============================================================
+ * GetZipItemA   @ 0x00012d58   size=104B   callers=6
+ * module: 01_main_emurun_joystick
+ * ============================================================ */
+
+undefined4 GetZipItemA(int *param_1,int param_2,ZIPENTRY *param_3)
+
+{
+  if (param_1 == (int *)0x0) {
+    lasterrorU = 0x10000;
+    return 0x10000;
+  }
+  if (*param_1 != 1) {
+    lasterrorU = 0x80000;
+    return 0x80000;
+  }
+  lasterrorU = TUnzip::Get((TUnzip *)param_1[1],param_2,param_3);
+  return lasterrorU;
+}

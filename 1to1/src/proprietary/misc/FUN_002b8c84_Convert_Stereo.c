@@ -1,0 +1,26 @@
+/* ============================================================
+ * Convert_Stereo   @ 0x002b8c84   size=56B   callers=0
+ * module: 01_main_emurun_joystick
+ * ============================================================ */
+
+void Convert_Stereo(undefined2 *param_1)
+
+{
+  undefined2 *puVar1;
+  undefined2 *puVar2;
+  undefined2 *puVar3;
+  
+  puVar3 = param_1 + 0x900;
+  do {
+    puVar1 = param_1 + 0x20;
+    puVar2 = param_1;
+    do {
+      puVar2[0x3f] = puVar1[-1];
+      puVar1 = puVar1 + -1;
+      puVar2[0x3e] = *puVar1;
+      puVar2 = puVar2 + -2;
+    } while (param_1 != puVar1);
+    param_1 = param_1 + 0x40;
+  } while (puVar3 != param_1);
+  return;
+}

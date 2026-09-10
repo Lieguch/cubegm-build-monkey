@@ -1,0 +1,34 @@
+/* ============================================================
+ * sunxi_gpio_set_cfgpin   @ 0x0000bbdc   size=232B   callers=6
+ * module: 09_gpio
+ * ============================================================ */
+
+undefined4 sunxi_gpio_set_cfgpin(int param_1,int param_2)
+
+{
+  if (param_1 != 0) {
+    if (param_1 == 1) {
+      if (param_2 == 0) {
+        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) & 0xfffffffe;
+      }
+      else {
+        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) | 1;
+      }
+    }
+    else if (param_1 == 2) {
+      if (param_2 == 0) {
+        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) & 0xfffffffd;
+      }
+      else {
+        *(uint *)(GPIO0 + 4) = *(uint *)(GPIO0 + 4) | 2;
+      }
+    }
+    return 0;
+  }
+  if (param_2 != 0) {
+    *(uint *)(GPIO2 + 4) = *(uint *)(GPIO2 + 4) | 8;
+    return 0;
+  }
+  *(uint *)(GPIO2 + 4) = *(uint *)(GPIO2 + 4) & 0xfffffff7;
+  return 0;
+}
