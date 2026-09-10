@@ -69,6 +69,16 @@ def compile_and_sizes(header_bytes, workdir):
                 sizes[name] = int(p[1], 16)
             except ValueError:
                 pass
+    if not sizes:
+        # 取证转储：不猜，直接看 objdump 真实输出与产物状态
+        print('!! objdump 提取 0 个函数，转储取证:')
+        print('   .o exists=%s size=%s' % (os.path.exists(op),
+                                           os.path.getsize(op) if os.path.exists(op) else -1))
+        print('   objdump rc=%d stderr=%s' % (r.returncode, r.stderr[:200]))
+        print('   --- objdump -t stdout (first 30 lines) ---')
+        for ln in r.stdout.splitlines()[:30]:
+            print('   |' + ln)
+        print('   --- end ---')
     return sizes, None
 
 
@@ -118,6 +128,13 @@ def main():
     txt = '\n'.join(lines)
     open(out_path, 'w', encoding='utf-8').write(txt)
     print(txt)
+    # 硬门禁（假绿防护）：所有候选覆盖为 0 = 作业未真正生效，必须失败
+    if rows and all(r[4] == 0 for r in rows):
+        print('::error::P2-A 覆盖全为 0，作业未真正生效')
+        sys.exit(1)
+    if not rows:
+        print('::error::P2-A 无任何候选可编译')
+        sys.exit(1)
 
 
 if __name__ == '__main__':
