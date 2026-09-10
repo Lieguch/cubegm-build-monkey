@@ -224,6 +224,11 @@ jobs:
           echo "status=$BUILD_STATUS" >> "$GITHUB_OUTPUT"
           echo "=== build.log ==="
           cat build.log
+          # 门禁：build 失败必须让 step 红（消除历史假绿）
+          if [ "$BUILD_STATUS" != "0" ]; then
+            echo "::error::rkgame build failed with status $BUILD_STATUS (see build.log above)"
+            exit 1
+          fi
 
       # ----- Commit build artifact to artifacts branch -----
       - name: Commit build artifact to artifacts branch
