@@ -27,7 +27,8 @@ import re, sys, json
 
 RE_FUNC = re.compile(r'^([0-9a-f]{8,16}) <([^>]+)>:\s*$')
 RE_INST = re.compile(r'^\s*([0-9a-f]+):\s+([0-9a-f]{8})\s+(\S+)\s*(.*)$')
-RE_REF  = re.compile(r'([0-9a-f]{4,16}) <([^>]+)>')
+# 允许 1 位十六进制：重定位未解析时 objdump 显示 "bl 0 <malloc>"
+RE_REF  = re.compile(r'([0-9a-f]+) <([^>]+)>')
 
 
 def build_labels(text):

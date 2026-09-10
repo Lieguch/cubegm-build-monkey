@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
 """
-ci_p2a_stb.py — P2-A：stb_truetype 版本锁定（CI 专用，须 Linux + ARM 交叉工具链）
+ci_p2a_stb.py — P2-A：stb_truetype 版本锁定（CI 专用，跨编译器鲁棒）
 
-方法（非猜测）：
-  1. 从金标准取原厂 stbtt_* 的**每函数机器码字节数**（= 指令数 × 4）
-  2. 逐个候选版本：下载 stb_truetype.h -> 编译 -> objdump -t 取每函数尺寸
-  3. 比对：函数集覆盖率 + 逐函数尺寸偏差 -> 输出匹配度排序
+为什么不用「函数尺寸」定版：
+  首版实测 Ubuntu GCC 11 与原厂工具链平均尺寸偏差 49.6%，全版本不可区分
+  —— 编译器版本差异淹没了版本差异。尺寸不是可靠指纹。
+
+改用**结构语义指纹**（见 tools/structsig.py）：
+  calls 调用符号集合 + imms 立即数多重集 + nblk 基本块数 + ncall 调用点数
+  这些对寄存器分配/指令调度不敏感，却对逻辑差异敏感 => 可跨编译器定版。
 
 用法:
   CC=arm-linux-gnueabihf-gcc OBJDUMP=arm-linux-gnueabihf-objdump \
-  python3 tools/ci_p2a_stb.py golden/factory.funcs.json report/p2a_stb.txt
+  python3 tools/ci_p2a_stb.py golden/factory.funcs.json.gz report/p2a_stb.txt
 """
 import json, gzip, os, re, subprocess, sys, urllib.request, ssl, tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import funcdump
+import structsig
 
 CC = os.environ.get('CC', 'arm-linux-gnueabihf-gcc')
 OBJDUMP = os.environ.get('OBJDUMP', 'arm-linux-gnueabihf-objdump')
 
-# stb_truetype.h 历史锚点（覆盖 v1.19 ~ v1.26）
-CANDIDATES = [
-    ('v1.19', '4b5d6a3a'),  # 占位：CI 内改为真实 sha 列表
+# stb_truetype.h 历史锚点（由 tools/stb_range.py 的提交遍历得出）
+ANCHORS = [
+    ('v1.22', '787f1d64'), ('v1.23', '7a69424f'), ('v1.24', 'e140649c'),
+    ('v1.25', 'be901954'), ('v1.26', '6e9f34d5'),
 ]
-# 真实锚点由 tools/stb_range.py 生成后写入；此处按 tag 注释版本逐版抓取最新提交
-VERSION_ANCHORS = {
-    'v1.19': None, 'v1.20': None, 'v1.21': 'f7d1cd58', 'v1.22': '787f1d64',
-    'v1.23': '7a69424f', 'v1.24': 'e140649c', 'v1.25': 'be901954', 'v1.26': '6e9f34d5',
-}
+SUFFIX = re.compile(r'\.(isra|part|constprop)(\.\d+)?$')
 
 
 def load_golden(p):
@@ -33,12 +37,20 @@ def load_golden(p):
     return json.load(open(p, encoding='utf-8'))
 
 
-def golden_stb_sizes(gold):
+def stb_subset(gold):
+    """原厂 stbtt_* 子集；剔除编译器拆分产物（.isra/.part/.constprop）与重名。"""
     out = {}
+    dup = set()
     for name, f in gold['functions'].items():
-        if name.startswith('stbtt_'):
-            base = re.sub(r'\.(isra|part|constprop)(\.\d+)?$', '', name)
-            out[base] = f['n'] * 4          # ARM32：每条指令 4 字节
+        if not name.startswith('stbtt_'):
+            continue
+        if SUFFIX.search(name):
+            continue
+        if name in out:
+            dup.add(name)
+        out[name] = f
+    for d in dup:
+        out.pop(d, None)
     return out
 
 
@@ -49,94 +61,72 @@ def fetch(url):
         return r.read()
 
 
-def compile_and_sizes(header_bytes, workdir):
-    hp = os.path.join(workdir, 'stb_truetype.h')
-    cp = os.path.join(workdir, 'tu.c')
-    op = os.path.join(workdir, 'tu.o')
-    open(hp, 'wb').write(header_bytes)
-    open(cp, 'w').write('#define STB_TRUETYPE_IMPLEMENTATION\n#include "stb_truetype.h"\n')
-    r = subprocess.run([CC, '-O2', '-fno-inline-functions-called-once', '-c', cp, '-o', op],
+def compile_disasm(hb, wd):
+    open(os.path.join(wd, 'stb_truetype.h'), 'wb').write(hb)
+    open(os.path.join(wd, 'tu.c'), 'w').write(
+        '#define STB_TRUETYPE_IMPLEMENTATION\n#include "stb_truetype.h"\n')
+    op = os.path.join(wd, 'tu.o')
+    r = subprocess.run([CC, '-O2', '-c', os.path.join(wd, 'tu.c'), '-o', op],
                        capture_output=True, text=True)
     if r.returncode != 0:
-        return None, r.stderr[:300]
-    r = subprocess.run([OBJDUMP, '-t', op], capture_output=True, text=True)
-    sizes = {}
-    # objdump -t 行格式: addr  bind  type  section  size  name
-    #   例: "00000000 l     F .text\t00000086 stbtt__isfont"
-    #   split 后 -> ['00000000','l','F','.text','00000086','stbtt__isfont']
-    #   ★ 尺寸在 p[4]（p[1] 是绑定属性 l/g）
-    for ln in r.stdout.splitlines():
-        p = ln.split()
-        if len(p) >= 6 and p[2] == 'F' and p[3] != '*ABS*':
-            try:
-                sizes[p[5]] = int(p[4], 16)
-            except ValueError:
-                pass
-    if not sizes:
-        # 取证转储：不猜，直接看 objdump 真实输出与产物状态
-        print('!! objdump 提取 0 个函数，转储取证:')
-        print('   .o exists=%s size=%s' % (os.path.exists(op),
-                                           os.path.getsize(op) if os.path.exists(op) else -1))
-        print('   objdump rc=%d stderr=%s' % (r.returncode, r.stderr[:200]))
-        print('   --- objdump -t stdout (first 30 lines) ---')
-        for ln in r.stdout.splitlines()[:30]:
-            print('   |' + ln)
-        print('   --- end ---')
-    return sizes, None
+        return None, 'compile: ' + r.stderr[:200]
+    r = subprocess.run([OBJDUMP, '-d', op], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, 'objdump: ' + r.stderr[:200]
+    return funcdump.parse(r.stdout)['functions'], None
 
 
 def main():
     gold_path = sys.argv[1] if len(sys.argv) > 1 else 'golden/factory.funcs.json.gz'
     out_path = sys.argv[2] if len(sys.argv) > 2 else 'report/p2a_stb.txt'
-    g = golden_stb_sizes(load_golden(gold_path))
+    g = stb_subset(load_golden(gold_path))
     os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
-    lines = []
-    lines.append('原厂 stb_truetype 函数 %d 个（金标准机器码尺寸）' % len(g))
-    lines.append('CC=%s' % CC)
-    lines.append('')
-    lines.append('%-8s %-11s %6s %6s %8s %8s %9s' %
-                 ('版本', 'sha', 'cand', '覆盖', '尺寸全等', '尺寸±10%', '平均偏差%'))
+
+    L = []
+    L.append('原厂 stb_truetype 可比函数 %d 个（结构语义指纹，跨编译器鲁棒）' % len(g))
+    L.append('CC=%s' % CC)
+    L.append('')
+    L.append('%-7s %-10s %6s %6s %6s %6s %6s' %
+             ('版本', 'sha', '候选', 'S1', 'S2', 'S3', 'FAIL'))
     rows = []
-    for ver, sha in VERSION_ANCHORS.items():
-        if not sha:
-            lines.append('%-8s %-11s  (无锚点，跳过)' % (ver, '-'))
-            continue
+    for ver, sha in ANCHORS:
         try:
             hb = fetch('https://raw.githubusercontent.com/nothings/stb/%s/stb_truetype.h' % sha)
         except Exception as e:
-            lines.append('%-8s %-11s  fetch ERR %s' % (ver, sha, str(e)[:40]))
+            L.append('%-7s %-10s  fetch ERR %s' % (ver, sha, str(e)[:40]))
             continue
         with tempfile.TemporaryDirectory() as wd:
-            sizes, err = compile_and_sizes(hb, wd)
-        if sizes is None:
-            lines.append('%-8s %-11s  compile ERR %s' % (ver, sha, err[:60]))
+            cand, err = compile_disasm(hb, wd)
+        if cand is None:
+            L.append('%-7s %-10s  %s' % (ver, sha, err[:52]))
             continue
-        common = set(g) & set(sizes)
-        cover = len(common)
-        exact = sum(1 for k in common if sizes[k] == g[k])
-        near = sum(1 for k in common if g[k] and abs(sizes[k] - g[k]) / g[k] <= 0.10)
-        devs = [abs(sizes[k] - g[k]) / g[k] for k in common if g[k]]
-        avg = 100.0 * sum(devs) / len(devs) if devs else 999
-        rows.append((avg, ver, sha, len(sizes), cover, exact, near))
-        lines.append('%-8s %-11s %6d %6d %8d %8d %8.1f' %
-                     (ver, sha, len(sizes), cover, exact, near, avg))
-    lines.append('')
+        c = {'S1': 0, 'S2': 0, 'S3': 0, 'FAIL': 0, 'MISSING': 0}
+        for name, gf in g.items():
+            cf = cand.get(name)
+            if cf is None:
+                c['MISSING'] += 1
+                continue
+            c[structsig.cmp_sig(structsig.sig(gf), structsig.sig(cf))] += 1
+        cov = len(g) - c['MISSING']
+        rows.append((c['S1'], c['S2'], cov, ver, sha, len(cand)))
+        L.append('%-7s %-10s %6d %6d %6d %6d %6d' %
+                 (ver, sha, len(cand), c['S1'], c['S2'], c['S3'], c['FAIL']))
+    L.append('')
     if rows:
-        rows.sort()
+        rows.sort(key=lambda x: (-(x[0] + x[1]), -x[2]))
         best = rows[0]
-        lines.append('★ 最佳匹配（按平均尺寸偏差）: %s (%s)  cand=%d 覆盖=%d 尺寸全等=%d 平均偏差=%.1f%%'
-                     % (best[1], best[2], best[3], best[4], best[5], best[0]))
-        lines.append('  注：绝对尺寸受编译器版本影响；若工具链与原厂不一致，')
-        lines.append('      仅「函数集合」与「相对排序」可用于定版，绝对尺寸需匹配工具链后复验。')
-    txt = '\n'.join(lines)
+        L.append('★ 最佳匹配（S1+S2 优先）: %s (%s)  S1=%d S2=%d 覆盖=%d/%d 候选函数=%d'
+                 % (best[3], best[4], best[0], best[1], best[2], len(g), best[5]))
+        L.append('  判据：S1+S2 覆盖率最高且唯一者即定版。')
+    txt = '\n'.join(L)
     open(out_path, 'w', encoding='utf-8').write(txt)
     print(txt)
-    # 硬门禁（假绿防护）：所有候选覆盖为 0 = 作业未真正生效，必须失败
-    if rows and all(r[4] == 0 for r in rows):
-        print('::error::P2-A 覆盖全为 0，作业未真正生效')
-        sys.exit(1)
+
     if not rows:
         print('::error::P2-A 无任何候选可编译')
+        sys.exit(1)
+    if all(r[0] + r[1] == 0 for r in rows):
+        print('::error::P2-A 全部候选结构指纹零命中，作业未真正生效')
         sys.exit(1)
 
 

@@ -37,6 +37,14 @@ jobs:
           print('golden integrity OK')
           PY
 
+      - name: 解压金标准
+        run: gunzip -k -f 1to1/golden/factory.funcs.json.gz
+
+      - name: 结构语义指纹门禁自检（期望 100% S1）
+        run: |
+          cd 1to1
+          python3 tools/structsig.py golden/factory.funcs.json golden/factory.funcs.json
+
       - name: P2-A stb_truetype 版本指纹锁定
         run: |
           cd 1to1
