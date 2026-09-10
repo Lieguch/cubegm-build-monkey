@@ -3,6 +3,11 @@
  * module: 01_main_emurun_joystick
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 void SPI_Read_BUF(undefined4 param_1,int param_2,int param_3)
 
 {

@@ -3,6 +3,11 @@
  * module: 09_gpio
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 undefined4 sunxi_gpio_output(int param_1,int param_2)
 
 {

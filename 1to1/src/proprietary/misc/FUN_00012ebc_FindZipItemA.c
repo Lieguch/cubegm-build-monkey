@@ -3,6 +3,11 @@
  * module: 01_main_emurun_joystick
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 undefined4 FindZipItemA(int *param_1,char *param_2,uchar param_3,int *param_4,ZIPENTRY *param_5)
 
 {

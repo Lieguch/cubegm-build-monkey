@@ -3,6 +3,11 @@
  * module: 01_main_emurun_joystick
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 int get_executable_path(char *param_1,char *param_2,size_t param_3)
 
 {

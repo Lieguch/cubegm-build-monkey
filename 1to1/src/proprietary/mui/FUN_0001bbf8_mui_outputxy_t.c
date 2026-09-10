@@ -3,6 +3,11 @@
  * module: 02_mui_menu_ui
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 int mui_outputxy_t(int param_1,int param_2,int param_3,int param_4,uint param_5,byte *param_6)
 
 {

@@ -3,6 +3,11 @@
  * module: 01_main_emurun_joystick
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 uint sfc_request(uint *param_1,uint param_2,uint *param_3,uint param_4)
 
 {

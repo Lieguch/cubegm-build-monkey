@@ -3,6 +3,11 @@
  * module: 02_mui_menu_ui
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 void mui_extract_basename(char *param_1,char *param_2,int param_3)
 
 {

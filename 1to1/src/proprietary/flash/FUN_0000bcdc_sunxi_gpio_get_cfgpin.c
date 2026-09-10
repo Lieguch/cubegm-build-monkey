@@ -3,6 +3,11 @@
  * module: 09_gpio
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 uint sunxi_gpio_get_cfgpin(uint param_1)
 
 {

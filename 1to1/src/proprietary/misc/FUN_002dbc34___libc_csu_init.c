@@ -3,6 +3,11 @@
  * module: 99_crt_glibc
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 /* WARNING: Removing unreachable block (ram,0x002dbc60) */
 
 void __libc_csu_init(int argc,char **argv,char **envp)

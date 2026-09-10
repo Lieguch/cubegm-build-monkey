@@ -3,6 +3,11 @@
  * module: 02_mui_menu_ui
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 undefined4 mui_game_exit(void)
 
 {

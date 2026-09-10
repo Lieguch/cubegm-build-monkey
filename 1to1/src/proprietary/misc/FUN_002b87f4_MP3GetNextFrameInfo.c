@@ -3,6 +3,11 @@
  * module: 06_helix_mp3
  * ============================================================ */
 
+/* ---- 重建注入：Ghidra 函数文件本身无 include ---- */
+#include "ghidra_compat.h"
+#include "globals.h"
+#include "proto.h"
+
 undefined4 MP3GetNextFrameInfo(int param_1,undefined4 param_2,undefined4 param_3)
 
 {
