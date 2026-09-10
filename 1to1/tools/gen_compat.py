@@ -223,6 +223,63 @@ for _p in _g.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
 print('called names (from proprietary code): %d' % len(_called))
 _want = _prop | _called
 
+# ★ 取证：调用点的**实参个数**与**值用法**（用于判定原型是否可信、返回类型是否必须非 void）
+def _scan_calls(text):
+    """返回 (arity_by_name, value_used_names)。括号配平，非经验猜测。"""
+    arity, val = {}, set()
+    for m in re.finditer(r'([=(\[,]|return\s+|\b)\s*([A-Za-z_]\w*)\s*\(', text):
+        pre, name = m.group(1), m.group(2)
+        if name in _KW or name.startswith(('gh_', '__builtin', '__asm')):
+            continue
+        i = m.end()
+        depth, args, buf, n = 1, 0, '', len(text)
+        while i < n and depth > 0:
+            c = text[i]
+            if c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth == 0:
+                    if buf.strip():
+                        args += 1
+                    break
+            elif c == ',' and depth == 1:
+                args += 1
+                buf = ''
+                i += 1
+                continue
+            buf += c
+            i += 1
+        arity.setdefault(name, set()).add(args)
+        if pre in ('=', '[') or pre.startswith('return') or pre == '(':
+            # '(' 前缀也可能是类型转换，保守只认 = 与 return
+            if pre in ('=', '[') or pre.startswith('return'):
+                val.add(name)
+    return arity, val
+
+
+_ARITY, _VALUE_USED = {}, set()
+for _p in _g.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+    _t = open(_p, encoding='utf-8', errors='replace').read()
+    _t = re.sub(r'/\*.*?\*/', ' ', _t, flags=re.S)
+    _t = re.sub(r'//[^\n]*', ' ', _t)
+    _t = re.sub(r'"(?:[^"\\]|\\.)*"', '""', _t)
+    _a, _v = _scan_calls(_t)
+    for _k, _s in _a.items():
+        _ARITY.setdefault(_k, set()).update(_s)
+    _VALUE_USED |= _v
+
+# 函数体是否出现 return 非空值
+_BODY_VALRET = set()
+for _p in _g.glob(r'D:/output/rkgame-1to1/src/proprietary/*/*.c'):
+    _t = open(_p, encoding='utf-8', errors='replace').read()
+    _t = re.sub(r'/\*.*?\*/', ' ', _t, flags=re.S)
+    _mm = re.search(r'\b(\w+)\s*\([^;]*\)\s*\{\s*(.*)$', _t, re.S)
+    if _mm and re.search(r'\breturn\s+[^;]+;', _mm.group(2)):
+        _BODY_VALRET.add(_mm.group(1))
+print('arity info: %d names; value-used: %d; body-value-return: %d'
+      % (len(_ARITY), len(_VALUE_USED), len(_BODY_VALRET)))
+
 # 允许出现的类型词（其余视为未知类型 -> 跳过该原型）
 _ALLOWED_TYPES = set(SCALAR) | {
     'void', 'int', 'char', 'long', 'short', 'float', 'double', 'unsigned', 'signed',
@@ -246,22 +303,33 @@ while i < n:
                     ret = ret.split()[0]
                 cand = '%s %s%s(%s)' % (ret, star, fname, args)
                 if fname in _want and fname not in seen:
-                    # 类型健全性：所有类型词必须在允许集合内
-                    tnames = set(re.findall(r'\b([A-Za-z_]\w*)\b', ret + ' ' + args))
+                    # ① 返回类型：声明 void 但「被当作值使用」或「体内 return 值」-> 必须非 void
+                    ret_fixed = ret
+                    if 'void' in ret and (fname in _VALUE_USED or fname in _BODY_VALRET):
+                        ret_fixed = 'undefined4'
+
+                    # ② 参数：调用点实参数与声明参数数不符 -> K&R 非原型声明（显式声明"参数未知"）
+                    _a = args.strip()
+                    decl_n = 0 if _a in ('void', '') else _a.count(',') + 1
+                    call_ar = _ARITY.get(fname, set())
+                    kr = False
+                    if call_ar and (decl_n not in call_ar or len(call_ar) > 1):
+                        kr = True
+
+                    # ③ 类型健全性：类型词必须在允许集合内
+                    tnames = set(re.findall(r'\b([A-Za-z_]\w*)\b', ret_fixed + ' ' + args))
                     unknown = {x for x in tnames
                                if x not in _ALLOWED_TYPES and x != fname
                                and not x.isdigit() and not x.startswith('param_')}
-                    ret_ok = (ret in _ALLOWED_TYPES) or (' ' in ret and
-                                                         ret.split()[0] in _ALLOWED_TYPES)
-                    if unknown and ret_ok:
-                        # 参数类型不可解析 -> 用 K&R 式非原型声明（C 语言为此场景设计：
-                        # 接受任意实参、保留正确返回类型）。**不是猜类型**，是显式声明"未知"。
-                        seen.add(fname)
-                        protos.append('extern %s %s%s(); /* K&R: 参数类型不可解析 */'
-                                      % (ret, star, fname))
-                    elif not unknown:
-                        seen.add(fname)
-                        protos.append('extern ' + cand + ';')
+                    if unknown:
+                        kr = True
+
+                    seen.add(fname)
+                    if kr:
+                        protos.append('extern %s %s%s(); /* K&R: 参数不可信/不可解析 */'
+                                      % (ret_fixed, star, fname))
+                    else:
+                        protos.append('extern %s %s%s(%s);' % (ret_fixed, star, fname, args))
         continue
     i += 1
 
