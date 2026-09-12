@@ -26,7 +26,12 @@ winpath() {
     if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 WINROOT=$(winpath "$ROOT")
-CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon"
+# CC 自适应：zig(cc/clang) 用 -target，GCC 用 -march/-mfloat-abi
+case "$CC" in
+  *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
+  *)     ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic" ;;
+esac
+CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH"
 
 mkdir -p "$OBJD" "$(dirname "$REP")"
 rm -f "$OBJD"/*.o 2>/dev/null
