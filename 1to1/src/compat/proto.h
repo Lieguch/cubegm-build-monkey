@@ -246,14 +246,14 @@ extern void __libc_csu_fini(); /* K&R: 参数不可信/不可解析 */
 /* ---- XUnzip(C++ XZip/TUnzip) → C 接口（mangled 符号 1:1，见 01-static/symtab）----
  * 原厂 XUnzip.cpp 为 C++ 类静态方法，Ghidra 渲染 TUnzip::X(...) 在 C 中非法。
  * 转写：TUnzip 实例指针作首参（this），其余参数与原厂签名逐项对齐。 */
-extern gh_u4 XUnzip_Open (TUnzip *this_, void *fp, gh_uint a, gh_uint b);   /* _ZN6TUnzip4OpenEPvjj */
-extern gh_u4 XUnzip_Get  (TUnzip *this_, int n, ZIPENTRY *ze);                /* _ZN6TUnzip3GetEiP8ZIPENTRY */
-extern gh_u4 XUnzip_Find (TUnzip *this_, char *n, gh_uchar c, int *i, ZIPENTRY *ze); /* _ZN6TUnzip4FindEPKchPiP8ZIPENTRY */
-extern gh_u4 XUnzip_Unzip(TUnzip *this_, int n, void *buf, gh_uint a, gh_uint b);     /* _ZN6TUnzip5UnzipEiPvjj */
-extern gh_u4 XUnzip_Close(TUnzip *this_);                                              /* _ZN6TUnzip5CloseEv */
+extern gh_u4 _ZN6TUnzip4OpenEPvjj(TUnzip*, void*, gh_uint, gh_uint); /* TUnzip::Open(void*,uint,DWORD) */
+extern gh_u4 _ZN6TUnzip3GetEiP8ZIPENTRY(TUnzip*, int, ZIPENTRY*);   /* TUnzip::Get(int,ZIPENTRY*) */
+extern gh_u4 _ZN6TUnzip4FindEPKchPiP8ZIPENTRY(TUnzip*, char*, gh_uchar, int*, ZIPENTRY*); /* TUnzip::Find（ic=uchar，工厂指纹） */
+extern gh_u4 _ZN6TUnzip5UnzipEiPvjj(TUnzip*, int, void*, gh_uint, gh_uint); /* TUnzip::Unzip */
+extern gh_u4 _ZN6TUnzip5CloseEv(TUnzip*);                            /* TUnzip::Close */
 /* C++ operator new/delete（libstdc++ 符号，NEEDED libstdc++） */
-extern void * operator_new   (unsigned int size);
-extern void   operator_delete(void *p);
+extern void * _Znwj(unsigned int size);  /* operator new(uint)：libstdc++ 供应 */
+extern void   _ZdlPv(void *p);           /* operator delete(void*) */
 
 #endif
 

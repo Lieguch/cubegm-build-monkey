@@ -22,8 +22,8 @@ gh_u4 CloseZipU(gh_u4 *param_1)
     return 0x80000;
   }
   this = (TUnzip *)param_1[1];
-  lasterrorU = XUnzip_Close(this);
-  operator_delete(this);
-  operator_delete(param_1);
+  lasterrorU = _ZN6TUnzip5CloseEv(this);
+  _ZdlPv(this);
+  _ZdlPv(param_1);
   return lasterrorU;
 }

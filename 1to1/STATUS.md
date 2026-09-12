@@ -145,6 +145,40 @@
 **下一步（P3 二期）**：① XUnzip POSIX 移植 + `XUnzip_` 方法名映射；② 3 对同名局部符号按 TU 拆分；③ `.text` 精确逐函数布局（函数指针表依赖）；④ 完整链接 + `abi_check.py` 过门禁。
 ---
 
+
+### 2026-09-12 第六轮：★ PAT 通道打通 + CI 全绿（GCC 实测双轨 100%）
+
+**PAT 定位与安全整改**：PAT 原嵌在 `tools/push_1to1.py` 第 7 行（该文件在 `tools/` 推送范围内 ⇒ 会被推上 GitHub 并被密钥扫描吊销）。
+已改为 **环境变量 `GITHUB_TOKEN` / 本地 `.pat` 文件**（`.pat` 在推送范围外），脚本内已无 token，且保留「含 `ghp_` 的文件一律不推送」自检。
+
+**push 脚本加固**：原 `ThreadPoolExecutor(max_workers=8)` 触发 GitHub 次级限流（HTTP 403 secondary rate limit）
+→ 改 **串行 + 403/429 指数退避重试**（20s/40s/60s…，最多 7 次）。
+
+**★ 首次全链路推送与 CI 实测（3 次推送全部成功，blob 逐个 SHA1 校验 567/567）**：
+
+| commit | CI | 结果 |
+|---|---|---|
+| `90ebce380f5b` | rkgame-rebuild ✅ / 1to1-verify ✅ | 首次全链路打通 |
+| `4bd8cddfd0ab` | rkgame-rebuild ✅ / 1to1-verify ✅ | 发现 link_audit 未产出报告 |
+| `222b3aa66caa` | rkgame-rebuild ✅ / 1to1-verify ✅ | **link_audit 在 CI 完整产出** |
+
+**CI（GCC 11 / Ubuntu 22.04）实测 = 本地（zig clang 21）实测，完全一致：**
+
+| 口径 | 本地 | CI(GCC) |
+|---|---|---|
+| 宽松（语法） | 213/213 = 100% | **213/213 = 100%** ✅ |
+| 严格（类型正确） | 213/213 = 100% | **213/213 = 100%** ✅（假绿 0） |
+| P3 重复定义 | 0 | **0** ✅ |
+| P3 未解析 | 392 | 463（MISSING 405 / upstream 7 / libc 47 / eabi 4）——GCC 多 13 个数据引用，仍无函数缺口 |
+
+**★ 第六轮抓到的根因：CRLF 行尾**
+`link_audit.sh`/`link_probe.sh` 被我用 Python 文本模式改写后变成 **CRLF**，CI 的 `sh`（dash）把 `set -u\r` 当非法选项
+（报 `set: Illegal option -`），`continue-on-error: true` 把失败吞成 success，导致 artifact 里没有报告。
+修复：① 两个脚本 + `factory_image.S` + `factory.ld` 全部规范化为 LF；
+② **推送脚本加防线**：`.sh/.yml/.S/.ld` 上传前若含 CRLF 自动转 LF（防再犯）。
+
+**新增工具**：`tools/ci_watch.py`（轮询 CI 至完成，失败时给出 job/step 级定位；artifact 下载需在 302 到 Azure 签名 URL 时**剥离 Authorization**）。
+
 ## 零之一、历史阶段（2026-09-12 第一轮：宽松 86.4% → 100%）
 
 ### 2026-09-12 进度（本地，未推送）

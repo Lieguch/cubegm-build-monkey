@@ -13,7 +13,7 @@ gh_u4 FindZipItemA(gh_u4 *param_1,char *param_2,gh_uchar param_3,int *param_4,vo
 {
   if (param_1 != (gh_u4 *)0x0) {
     if (*param_1 == 1) {
-      lasterrorU = XUnzip_Find((TUnzip *)param_1[1],param_2,param_3,param_4,(ZIPENTRY *)param_5);
+      lasterrorU = _ZN6TUnzip4FindEPKchPiP8ZIPENTRY((TUnzip *)param_1[1],param_2,param_3,param_4,(ZIPENTRY *)param_5);
     }
     else {
       lasterrorU = 0x80000;

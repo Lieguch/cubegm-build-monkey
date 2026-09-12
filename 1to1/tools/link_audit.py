@@ -49,8 +49,22 @@ LIBC_EXACT = {
     'iconv', 'iconv_open', 'iconv_close',
     'gmtime_r', 'localtime_r', 'difftime', 'setlocale',
     'tolower', 'toupper', 'isdigit', 'isalpha', 'isspace', 'isupper', 'islower',
+    # P3 二期补充（实测 UNDEF 中出现，均为 libc/POSIX）
+    'dup', 'readlink', 'rewind', 'scandir', 'alphasort', 'stpcpy', 'bcmp',
+    'futimens', 'utimensat', 'strcasecmp', 'strncasecmp', '__errno_location',
+    'putc', 'getc', 'ungetc', 'setvbuf', 'setbuf', 'compress', 'uncompress', 'inflateInit',
+    '__isoc99_sscanf', '__isoc99_scanf', 'isgraph', 'ispunct', 'iscntrl',
+    'memchr', 'strcasestr', 'asprintf', 'vasprintf', 'fdopen', 'fileno',
 }
+# libstdc++ 供应（工厂 UNDEF 同款：operator new/delete 及数组变体）
+LIBSTDCXX = {'_Znwj', '_ZdlPv', '_Znaj', '_ZdaPv', '_ZnwjRKSt9nothrow_t', '_ZdlPvm'}
+# CRT 供应（crt1.o / crtbegin.o）
+CRT_SYMS = {'_init', '_fini', '__frame_dummy_init_array_entry',
+            '__do_global_dtors_aux_fini_array_entry', '__libc_csu_init',
+            '__libc_csu_fini', '_IO_stdin_used', '__data_start', '_edata',
+            '__bss_start', '_end', '__dso_handle'}
 LIBC_PREFIX = (
+    '__ctype_', 'stdout', 'stderr', 'stdin',
     'snd_',        # ALSA
     'drm', 'DRM',  # DRM/KMS
     'EGL', 'gl', 'gl3', 'gles',  # GLES
@@ -110,6 +124,10 @@ def main():
             continue
         if s in upstream:
             unresolved[s] = 'upstream'
+        elif s in LIBSTDCXX:
+            unresolved[s] = 'libstdc++'
+        elif s in CRT_SYMS:
+            unresolved[s] = 'crt'
         elif s in LIBC_EXACT or s.startswith(LIBC_PREFIX):
             unresolved[s] = 'libc'
         elif s.startswith(EABI_PREFIX):
@@ -137,7 +155,7 @@ def main():
     for s, c in unresolved.items():
         cats[c].append(s)
     A('【2】未解析引用（本体重无定义）: %d' % len(unresolved))
-    for c in ('MISSING', 'upstream', 'libc', 'eabi'):
+    for c in ('MISSING', 'upstream', 'libstdc++', 'libc', 'eabi'):
         v = sorted(cats.get(c, []))
         A('   %-9s : %d' % (c, len(v)))
     A('')

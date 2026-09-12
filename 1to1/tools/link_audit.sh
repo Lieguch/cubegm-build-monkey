@@ -57,11 +57,46 @@ done
 
 echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 
+# 上游组件对象（已预编译 / 本脚本内编译）一并纳入符号审计
+XUPOBJ="$ROOT/src/upstream/xunzip/XUnzip.o"
+if [ ! -f "$XUPOBJ" ]; then
+    XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
+    if [ -f "$XUSRC" ]; then
+        XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
+        case "$CC" in
+          *zig*)
+            # zig cc 按扩展名自动按 C++ 编译 .cpp
+            XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
+            $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && echo "XUnzip.o 已编译" || echo "XUnzip.o 编译失败"
+            ;;
+          *)
+            XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
+            $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && echo "XUnzip.o 已编译" || echo "XUnzip.o 编译失败"
+            ;;
+        esac
+    fi
+fi
+
 : > "$ROOT/report/_link_syms.tsv"
 if [ "$ok" -gt 0 ]; then
     winobj=$(winpath "$OBJD")
     # shellcheck disable=SC2086
     $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$winobj"/*.o > "$ROOT/report/_link_syms.tsv" 2>/dev/null
+    if [ -f "$XUPOBJ" ]; then
+        $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$XUPOBJ")" >> "$ROOT/report/_link_syms.tsv" 2>/dev/null
+    fi
+    # 工厂 LOCAL 数据对象别名：拼接镜像+别名后单文件汇编（.set 引用跨段基址需同 TU）
+    LOCALS="$ROOT/src/data/factory_local.S"
+    LOCOBJ="$ROOT/build/factory_local.o"   # 不放 build/obj/：那里的 *.o 会被上面的 glob 重复扫描
+    if [ -f "$LOCALS" ]; then
+        IMG="$ROOT/src/data/factory_image.S"
+        ALLS="$ROOT/build/obj/factory_all.S"
+        cat "$IMG" "$LOCALS" > "$ALLS"
+        DATINC=$(winpath "$ROOT/src/data")
+        $CC $ARCH -c -I"$DATINC" "$(winpath "$ALLS")" -o "$(winpath "$LOCOBJ")" 2>>"$ROOT/report/_link_bad.txt" \
+          && $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$LOCOBJ")" >> "$ROOT/report/_link_syms.tsv" 2>/dev/null \
+          || echo "factory_all 汇编失败"
+    fi
 fi
 echo "== 符号条目: $(wc -l < "$ROOT/report/_link_syms.tsv") =="
 

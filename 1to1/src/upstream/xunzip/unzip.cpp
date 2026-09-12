@@ -1,3 +1,17 @@
+/* ============================================================
+ * XUnzip.cpp —— 工厂变体移植（1:1 目标：mangled 符号集与工厂逐位一致）
+ * 原始来源：Wischik zip_utils 的 tomyqg/helix_mp3 变体 unzip.cpp
+ * 工厂证据（01-static/symtab.txt，编译单元名 XUnzip.cpp）：
+ *   保留：TUnzip 五方法 / FormatZipMessageU / GetZipItemW / FindZipItemW /
+ *         IsZipHandleU / lu* / unz* / 内嵌 zlib 1.1.x（inflate 系 + adler32 + crc 表）
+ *   删除：纯 C++ 包装（OpenZip* / CloseZip / GetZipItem / FindZipItem /
+ *         UnzipItem / OpenZipU 重载 / CloseZipU）—— 工厂自研 C 包装替代
+ *   修改：Find 的 ic: bool→unsigned char（mangled 'h'）；DWORD=unsigned int（'j'）
+ *   新增：ZIPENTRYW + GetZipItemW/FindZipItemW（工厂有，本变体缺失，按
+ *         _Z12GetZipItemWP6HZIP__iP9ZIPENTRYW / _Z12FindZipItemWP6HZIP__PKchPiP9ZIPENTRYW 重建）
+ *   lasterrorU：定义由工厂数据镜像提供（.bss 0x3b221c），此处仅 extern
+ * POSIX shim：posix/windows.h、posix/tchar.h（同目录 -I）
+ * ============================================================ */
 #include <windows.h>
 #include <time.h>
 #include <stdio.h>
@@ -3731,7 +3745,7 @@ class TUnzip
 
   ZRESULT Open(void *z,unsigned int len,DWORD flags);
   ZRESULT Get(int index,ZIPENTRY *ze);
-  ZRESULT Find(const TCHAR *name,bool ic,int *index,ZIPENTRY *ze);
+  ZRESULT Find(const TCHAR *name,unsigned char ic,int *index,ZIPENTRY *ze); /* 工厂: mangled 'h' */
   ZRESULT Unzip(int index,void *dst,unsigned int len,DWORD flags);
   ZRESULT Close();
 };
@@ -3844,7 +3858,7 @@ ZRESULT TUnzip::Get(int index,ZIPENTRY *ze)
   return ZR_OK;
 }
 
-ZRESULT TUnzip::Find(const TCHAR *tname,bool ic,int *index,ZIPENTRY *ze)
+ZRESULT TUnzip::Find(const TCHAR *tname,unsigned char ic,int *index,ZIPENTRY *ze)
 { char name[MAX_PATH];
 #ifdef UNICODE
   WideCharToMultiByte(CP_ACP,0,tname,-1,name,MAX_PATH,0,0);
@@ -3965,11 +3979,11 @@ ZRESULT TUnzip::Close()
 
 
 
-ZRESULT lasterrorU=ZR_OK;
+extern ZRESULT lasterrorU; /* 1:1：定义在工厂数据镜像（.bss 0x3b221c），避免双定义破坏布局 */
 
 unsigned int FormatZipMessageU(ZRESULT code, TCHAR *buf,unsigned int len)
 { if (code==ZR_RECENT) code=lasterrorU;
-  const TCHAR *msg=L"unknown zip result code";
+  const TCHAR *msg=_T("unknown zip result code"); /* 工厂: 非 UNICODE */
   switch (code)
   { case ZR_OK: msg=_T("Success"); break;
     case ZR_NODUPH: msg=_T("Culdn't duplicate handle"); break;
@@ -4007,6 +4021,7 @@ typedef struct
   TUnzip *unz;
 } TUnzipHandleData;
 
+#ifdef XUNZIP_KEEP_PLAIN_WRAPPERS /* 工厂变体默认剔除：这些纯 C++ 包装不在工厂符号表中（由工厂自研 C 包装替代） */
 HZIP OpenZipU(void *z,unsigned int len,DWORD flags, const char *password)
 { TUnzip *unz = new TUnzip(password);
   lasterrorU = unz->Open(z,len,flags);
@@ -4062,6 +4077,8 @@ ZRESULT CloseZipU(HZIP hz)
   return lasterrorU;
 }
 
+#endif /* XUNZIP_KEEP_PLAIN_WRAPPERS */
+
 bool IsZipHandleU(HZIP hz)
 { if (hz==0) return true;
   TUnzipHandleData *han = (TUnzipHandleData*)hz;
@@ -4069,3 +4086,51 @@ bool IsZipHandleU(HZIP hz)
 }
 
 
+/* ============================================================
+ * W 变体（工厂符号 _Z12GetZipItemWP6HZIP__iP9ZIPENTRYW /
+ * _Z12FindZipItemWP6HZIP__PKchPiP9ZIPENTRYW；'h' 再证 ic 为 unsigned char）
+ * 本变体源码缺失，按 stock zip_utils UNICODE 语义重建（P5 行为差分候选：函数体逐位恢复）
+ * ============================================================ */
+typedef unsigned short WCHAR; /* POSIX 无此类型，无冲突 */
+typedef struct
+{ WCHAR name[MAX_PATH];
+  int index;
+  DWORD attr;
+  FILETIME atime,ctime,mtime;
+  DWORD comp_size;
+  DWORD unc_size;
+} ZIPENTRYW;
+
+ZRESULT GetZipItemW(HZIP hz, int index, ZIPENTRYW *zew)
+{ if (hz==0) {lasterrorU=ZR_ARGS;return ZR_ARGS;}
+  TUnzipHandleData *han = (TUnzipHandleData*)hz;
+  if (han->flag!=1) {lasterrorU=ZR_ZMODE;return ZR_ZMODE;}
+  ZIPENTRY ze;
+  ZRESULT res = han->unz->Get(index,&ze);
+  if (res==ZR_OK)
+  { unsigned int i; for (i=0;i<MAX_PATH && ze.name[i];i++) zew->name[i]=(WCHAR)ze.name[i];
+    for (;i<MAX_PATH;i++) zew->name[i]=0;
+    zew->index=ze.index; zew->attr=ze.attr;
+    zew->atime=ze.atime; zew->ctime=ze.ctime; zew->mtime=ze.mtime;
+    zew->comp_size=(DWORD)ze.comp_size; zew->unc_size=(DWORD)ze.unc_size;
+  }
+  lasterrorU=res;
+  return res;
+}
+
+ZRESULT FindZipItemW(HZIP hz, const TCHAR *name, unsigned char ic, int *index, ZIPENTRYW *zew)
+{ if (hz==0) {lasterrorU=ZR_ARGS;return ZR_ARGS;}
+  TUnzipHandleData *han = (TUnzipHandleData*)hz;
+  if (han->flag!=1) {lasterrorU=ZR_ZMODE;return ZR_ZMODE;}
+  ZIPENTRY ze;
+  ZRESULT res = han->unz->Find(name,ic,index,&ze);
+  if (res==ZR_OK)
+  { unsigned int i; for (i=0;i<MAX_PATH && ze.name[i];i++) zew->name[i]=(WCHAR)ze.name[i];
+    for (;i<MAX_PATH;i++) zew->name[i]=0;
+    zew->index=ze.index; zew->attr=ze.attr;
+    zew->atime=ze.atime; zew->ctime=ze.ctime; zew->mtime=ze.mtime;
+    zew->comp_size=(DWORD)ze.comp_size; zew->unc_size=(DWORD)ze.unc_size;
+  }
+  lasterrorU=res;
+  return res;
+}
