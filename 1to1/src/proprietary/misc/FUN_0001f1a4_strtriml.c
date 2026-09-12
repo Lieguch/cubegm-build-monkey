@@ -17,7 +17,7 @@ gh_byte * strtriml(gh_byte *param_1)
   int iVar3;
   
   sVar1 = strlen((char *)param_1);
-  ppuVar2 = __ctype_b_loc();
+  ppuVar2 = (gh_ushort **)__ctype_b_loc();
   __src = param_1;
   for (iVar3 = 0; (gh_ushort)((gh_ushort)(iVar3 <= (int)(sVar1 - 1)) & (*ppuVar2)[*__src] >> 0xd) != 0;
       iVar3 = iVar3 + 1) {

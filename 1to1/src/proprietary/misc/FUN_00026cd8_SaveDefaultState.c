@@ -15,7 +15,7 @@ void SaveDefaultState(void)
   gh_u4 uVar2;
   char acStack_1008 [4096];
   
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   uVar2 = gameType();
   sprintf(acStack_1008,"%ssaves/%03d/%s.sav",uVar1,uVar2,RomName);
   RARCH_LOG("SaveDefaultState:%s\n",acStack_1008);

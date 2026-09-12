@@ -16,19 +16,19 @@ void main_Menu(void)
   pthread_t apStack_1c [2];
   
   strcpy(root_path,work_path);
-  myStrrstr(root_path,&DAT_002dd64c);
-  myStrrstr(root_path,&DAT_002dd64c);
+  myStrrstr(root_path,(char *)(char *)&DAT_002dd64c);
+  myStrrstr(root_path,(char *)(char *)&DAT_002dd64c);
   RARCH_LOG("root_path:%s\n",root_path);
   mui_LoadSetting();
   mui_LoadConfig();
   mui_InitFont();
   Soundplayflag = 3;
-  iVar1 = pthread_create(apStack_1c,(pthread_attr_t *)0x0,mui_SoundplayThread,(void *)0x0);
+  iVar1 = pthread_create(apStack_1c,(pthread_attr_t *)0x0,(void *(*)(void *))mui_SoundplayThread,(void *)0x0);
   if (iVar1 != 0) {
     RARCH_LOG("can\'t create mui_SoundplayThread process thread \r\n");
   }
   DisplayThumbnailflag = 1;
-  iVar1 = pthread_create(apStack_1c,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+  iVar1 = pthread_create(apStack_1c,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
   if (iVar1 != 0) {
     RARCH_LOG("can\'t create mui_DisplayThread process thread \r\n");
   }
@@ -40,8 +40,8 @@ void main_Menu(void)
   DAT_003af290 = 0;
   DAT_003af298 = 0;
   DAT_003af294 = 0;
-  SoundPlayer._0_4_ = 0;
-  SoundPlayer._36_4_ = 0;
+  (SoundPlayer_blob)._0_4_ = 0;
+  (SoundPlayer_blob)._36_4_ = 0;
   scr_h_size = 0x500;
   DAT_003af2a0 = 0x500;
   DAT_003af274 = 0;
@@ -56,10 +56,10 @@ void main_Menu(void)
   if (DAT_003af29c == (void *)0x0) {
     DAT_003af29c = malloc(0x1c2000);
   }
-  SoundPlay(0,mui_MenuMusic);
+  SoundPlay(0,(int *)mui_MenuMusic);
   LoadMenuLog();
-  DAT_003af26c = m_menulog._0_4_;
-  uVar2 = m_menulog._0_4_;
+  DAT_003af26c = (m_menulog_blob)._0_4_;
+  uVar2 = (m_menulog_blob)._0_4_;
   do {
     switch(uVar2) {
     case 0:

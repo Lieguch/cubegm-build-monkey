@@ -46,17 +46,17 @@ void mui_search(void)
   gh_u4 local_32c;
   char acStack_128 [260];
   
-  m_menulog._0_4_ = DAT_003af26c;
-  local_46c = m_menulog._324_4_;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
+  local_46c = (m_menulog_blob)._324_4_;
   uVar19 = 0;
   local_460 = 0;
   local_45c = 0;
   local_474 = 0;
   local_458 = 0;
-  DAT_003af278 = m_menulog._328_4_;
-  DAT_003af27c = m_menulog._332_4_;
-  uVar18 = m_menulog._332_4_;
-  iVar20 = m_menulog._328_4_;
+  DAT_003af278 = (m_menulog_blob)._328_4_;
+  DAT_003af27c = (m_menulog_blob)._332_4_;
+  uVar18 = (m_menulog_blob)._332_4_;
+  iVar20 = (m_menulog_blob)._328_4_;
 LAB_00025144:
   while ((DisplayThumbnailflag & 8) != 0) {
     usleep(1000);
@@ -68,7 +68,7 @@ LAB_00025144:
     pvVar10 = malloc(100);
     *piVar9 = (int)pvVar10;
     memcpy(pvVar10,m_menulog + 0x150,100);
-    piVar9[2] = m_menulog._436_4_;
+    piVar9[2] = (m_menulog_blob)._436_4_;
   }
   if (DAT_003af28c == 0) {
     mui_LoadUIResource(&DAT_003af28c,"menu.raw");
@@ -85,11 +85,11 @@ LAB_00025144:
     else {
       RARCH_LOG("find %s ok!\n",acStack_42c);
       GetZipItemA(hz,0xffffffff,ze);
-      zr = FindZipItemA(hz,"fileinfo.txt",1,&local_430,ze);
+      zr = FindZipItemA(hz,"fileinfo.txt",1,(int *)&local_430,ze);
       if (zr == 0) {
-        DAT_003af2ac = malloc(ze._296_4_ + 1);
+        DAT_003af2ac = malloc((ze_blob)._296_4_ + 1);
         zr = UnzipItem(hz,local_430,DAT_003af2ac,0,3);
-        *(gh_u1 *)((int)DAT_003af2ac + ze._296_4_) = 0;
+        *(gh_u1 *)((int)DAT_003af2ac + (ze_blob)._296_4_) = 0;
       }
       CloseZipU(hz);
     }
@@ -101,8 +101,8 @@ LAB_00025144:
   m_search[3] = DAT_003af6c8 + 2;
   memcpy(DAT_003af29c,(void *)((int)piVar9 + *piVar9),(gh_uint)uVar3 * (gh_uint)uVar2 * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
-  uVar14 = m_menulog._440_4_;
-  local_454 = m_menulog._440_4_;
+  uVar14 = (m_menulog_blob)._440_4_;
+  local_454 = (m_menulog_blob)._440_4_;
   if (piVar5[2] != 0) {
     unaff_r11 = mui_search_file_list(iVar20,0);
   }
@@ -122,7 +122,7 @@ LAB_00025144:
   mui_ReadJoystick();
   diff_prev = 0;
   m_time0 = GetTicks();
-  if ((joy_key._0_4_ & 0x8000) != 0) goto LAB_00025514;
+  if ((joy_key_blob._0_4_ & 0x8000) != 0) goto LAB_00025514;
 LAB_000252cc:
   if (local_470 == 0) {
     uVar6 = mui_ReadJoystick();
@@ -211,12 +211,12 @@ LAB_00025e4c:
               goto LAB_00025318;
             }
             if ((AutoRestoreKey & 0x10) != 0) {
-              m_menulog._324_4_ = local_46c;
-              m_menulog._328_4_ = iVar20;
-              m_menulog._332_4_ = uVar18;
+              (m_menulog_blob)._324_4_ = local_46c;
+              (m_menulog_blob)._328_4_ = iVar20;
+              (m_menulog_blob)._332_4_ = uVar18;
               memcpy(m_menulog + 0x150,(void *)*m_search,100);
-              m_menulog._436_4_ = piVar9[2];
-              m_menulog._440_4_ = local_454;
+              (m_menulog_blob)._436_4_ = piVar9[2];
+              (m_menulog_blob)._440_4_ = local_454;
               SaveMenuLog();
             }
             mui_run_game(&file_info_list + DAT_003af27c * 0x404);
@@ -268,7 +268,7 @@ LAB_00025e4c:
               iVar20 = iVar20 - DAT_003af394;
               mui_search_file_list(iVar20,1);
             }
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
             local_470 = 0;
             goto LAB_00025318;
           }
@@ -317,7 +317,7 @@ joined_r0x00026390:
                 iVar17 = iVar20;
               }
             }
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
             local_470 = 0;
             iVar20 = iVar17;
             goto LAB_00025318;
@@ -332,7 +332,7 @@ joined_r0x00026390:
         }
       }
       local_470 = 0;
-      SoundPlay(1,mui_Effect0);
+      SoundPlay(1,(int *)mui_Effect0);
       goto LAB_00025318;
     }
     if (uVar6 == 0x1000) {
@@ -353,15 +353,15 @@ joined_r0x00026390:
       if (uVar6 == 0x400) {
 LAB_00025a84:
         DAT_003af26c = 3;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         piVar9 = m_search;
         if ((AutoRestoreKey & 0x10) != 0) {
-          m_menulog._324_4_ = local_46c;
-          m_menulog._328_4_ = iVar20;
-          m_menulog._332_4_ = uVar18;
+          (m_menulog_blob)._324_4_ = local_46c;
+          (m_menulog_blob)._328_4_ = iVar20;
+          (m_menulog_blob)._332_4_ = uVar18;
           memcpy(m_menulog + 0x150,(void *)*m_search,100);
-          m_menulog._436_4_ = piVar9[2];
-          m_menulog._440_4_ = local_454;
+          (m_menulog_blob)._436_4_ = piVar9[2];
+          (m_menulog_blob)._440_4_ = local_454;
         }
         if ((void *)*piVar9 != (void *)0x0) {
           free((void *)*piVar9);
@@ -540,7 +540,7 @@ LAB_000253f4:
   }
   if ((local_474 & 0x10) != 0) {
     mui_outputxy_t(DAT_003af29c,iVar15 + 2,iVar17,(gh_u1)DAT_003af6e0,DAT_003af6e4,
-                   &DAT_003af6e8);
+                   (gh_byte *)&DAT_003af6e8);
   }
 LAB_000254c0:
   DAT_003af274 = DAT_003af274 | 1;
@@ -551,7 +551,7 @@ LAB_000254c0:
     do {
       mui_WaitNMI();
       uVar19 = 0;
-      if ((joy_key._0_4_ & 0x8000) == 0) goto LAB_000252cc;
+      if ((joy_key_blob._0_4_ & 0x8000) == 0) goto LAB_000252cc;
 LAB_00025514:
       uVar6 = mui_ReadJoystick();
       if ((uVar6 & 0xffff7fff) == 0x20) goto LAB_000255bc;
@@ -587,16 +587,16 @@ code_r0x00025694:
   piVar9 = m_search;
   if (pcVar8 == (char *)0x0) {
     DisplayThumbnailflag = 1;
-    pthread_create(&local_430,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+    pthread_create(&local_430,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
   }
   else {
     if ((AutoRestoreKey & 0x10) != 0) {
-      m_menulog._324_4_ = 0;
-      m_menulog._328_4_ = iVar20;
-      m_menulog._332_4_ = uVar18;
+      (m_menulog_blob)._324_4_ = 0;
+      (m_menulog_blob)._328_4_ = iVar20;
+      (m_menulog_blob)._332_4_ = uVar18;
       memcpy(m_menulog + 0x150,(void *)*m_search,100);
-      m_menulog._436_4_ = piVar9[2];
-      m_menulog._440_4_ = local_454;
+      (m_menulog_blob)._436_4_ = piVar9[2];
+      (m_menulog_blob)._440_4_ = local_454;
       SaveMenuLog();
     }
     strcpy(acStack_128,pcVar8);

@@ -19,7 +19,7 @@ void WaitNMI(void)
   while( true ) {
     lVar4 = GetTick();
     lVar1 = lVar4 + CONCAT44(((int)diff_prev >> 0x1f) -
-                             (frame_time_last._4_4_ + (gh_uint)(diff_prev < (gh_uint)frame_time_last)),
+                             (frame_time_last_blob._4_4_ + (gh_uint)(diff_prev < (gh_uint)frame_time_last)),
                              diff_prev - (gh_uint)frame_time_last);
     uVar2 = (gh_uint)lVar1;
     iVar3 = (int)((gh_ulonglong)lVar1 >> 0x20);

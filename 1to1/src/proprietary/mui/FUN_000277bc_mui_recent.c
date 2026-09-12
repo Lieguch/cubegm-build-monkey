@@ -53,17 +53,17 @@ void mui_recent(void)
   gh_byte *pbVar16;
   
   uVar14 = 0;
-  m_menulog._0_4_ = DAT_003af26c;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
   local_664 = 0;
   local_670 = 0;
   bVar1 = false;
-  DAT_003af278 = m_menulog._308_4_;
-  DAT_003af27c = m_menulog._312_4_;
-  iVar19 = m_menulog._312_4_;
-  iVar20 = m_menulog._308_4_;
+  DAT_003af278 = (m_menulog_blob)._308_4_;
+  DAT_003af27c = (m_menulog_blob)._312_4_;
+  iVar19 = (m_menulog_blob)._312_4_;
+  iVar20 = (m_menulog_blob)._308_4_;
 LAB_00027864:
   do {
-    uVar3 = GetWorkPath();
+    uVar3 = (gh_u4)GetWorkPath();
     sprintf(acStack_610,"%s/recent.lst",uVar3);
     pFVar4 = fopen(acStack_610,"rb");
     if (pFVar4 == (FILE *)0x0) {
@@ -122,7 +122,7 @@ LAB_00027864:
     mui_ReadJoystick();
     diff_prev = 0;
     m_time0 = GetTicks();
-    if ((joy_key._0_4_ & 0x8000) != 0) goto LAB_00027ba4;
+    if ((joy_key_blob._0_4_ & 0x8000) != 0) goto LAB_00027ba4;
 LAB_00027a14:
     if (uVar10 != 0) {
       bVar1 = true;
@@ -147,7 +147,7 @@ LAB_00027a28:
           iVar19 = iVar19 + -1;
         }
 LAB_000284a8:
-        SoundPlay(1,mui_Effect0);
+        SoundPlay(1,(int *)mui_Effect0);
         goto LAB_00027a50;
       }
       if (0x10 < uVar10) {
@@ -178,7 +178,7 @@ LAB_000284a8:
               }
             }
           }
-          SoundPlay(1,mui_Effect1);
+          SoundPlay(1,(int *)mui_Effect1);
           goto LAB_00027a50;
         }
         if (iVar19 < DAT_003af394 + -1) {
@@ -222,7 +222,7 @@ LAB_000284a8:
       while( true ) {
         iVar13 = mui_ReadJoystick();
         if (iVar13 == 0x2000) {
-          uVar3 = GetWorkPath();
+          uVar3 = (gh_u4)GetWorkPath();
           sprintf(acStack_610,"%s/recent.lst",uVar3);
           pFVar4 = fopen(acStack_610,"wb");
           if (pFVar4 != (FILE *)0x0) {
@@ -247,10 +247,10 @@ LAB_000284a8:
       if (uVar10 == 0x400) {
 LAB_00028198:
         DAT_003af26c = 1;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         if ((AutoRestoreKey & 4) != 0) {
-          m_menulog._308_4_ = iVar20;
-          m_menulog._312_4_ = iVar19;
+          (m_menulog_blob)._308_4_ = iVar20;
+          (m_menulog_blob)._312_4_ = iVar19;
           return;
         }
       }
@@ -258,10 +258,10 @@ LAB_00028198:
         if (uVar10 != 0x800) goto LAB_00027a50;
 LAB_00027c1c:
         DAT_003af26c = 3;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         if ((AutoRestoreKey & 4) != 0) {
-          m_menulog._308_4_ = iVar20;
-          m_menulog._312_4_ = iVar19;
+          (m_menulog_blob)._308_4_ = iVar20;
+          (m_menulog_blob)._312_4_ = iVar19;
         }
       }
       return;
@@ -282,12 +282,12 @@ LAB_00027ca0:
       pcVar8 = (char *)SeletEmuCore(local_42c);
       if (pcVar8 == (char *)0x0) {
         DisplayThumbnailflag = 1;
-        pthread_create(apStack_52c,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+        pthread_create(apStack_52c,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
       }
       else {
         if ((AutoRestoreKey & 4) != 0) {
-          m_menulog._308_4_ = 0;
-          m_menulog._312_4_ = 0;
+          (m_menulog_blob)._308_4_ = 0;
+          (m_menulog_blob)._312_4_ = 0;
           SaveMenuLog();
         }
         strcpy(acStack_128,pcVar8);
@@ -324,7 +324,7 @@ LAB_00027ca0:
           iVar11 = mui_ReadJoystick();
           iVar13 = DAT_003af27c;
           if (iVar11 == 0x2000) {
-            uVar3 = GetWorkPath();
+            uVar3 = (gh_u4)GetWorkPath();
             sprintf((char *)apStack_52c,"%s/recent.lst",uVar3);
             pFVar4 = fopen((char *)apStack_52c,"rb");
             if (pFVar4 == (FILE *)0x0) {
@@ -429,7 +429,7 @@ LAB_00027b50:
           do {
             mui_WaitNMI();
             bVar1 = false;
-            if ((joy_key._0_4_ & 0x8000) == 0) goto LAB_00027a14;
+            if ((joy_key_blob._0_4_ & 0x8000) == 0) goto LAB_00027a14;
 LAB_00027ba4:
             uVar7 = mui_ReadJoystick();
             if ((uVar7 & 0xffff7fff) == 0x20) goto LAB_00027c1c;
@@ -454,8 +454,8 @@ LAB_00027de8:
       if (uVar10 != 0x2000) goto LAB_00027a50;
 LAB_0002827c:
       if ((AutoRestoreKey & 4) != 0) {
-        m_menulog._308_4_ = 0;
-        m_menulog._312_4_ = 0;
+        (m_menulog_blob)._308_4_ = 0;
+        (m_menulog_blob)._312_4_ = 0;
         SaveMenuLog();
       }
       iVar19 = 0;

@@ -14,15 +14,15 @@ gh_u4 ReadJoystick(void)
   gh_u4 uVar1;
   
   ReadJoystickProc();
-  if ((joy_key._0_4_ != joytemp0) || (joy_key._4_4_ != joytemp1)) {
-    joytemp0 = joy_key._0_4_;
-    joytemp1 = joy_key._4_4_;
+  if ((joy_key_blob._0_4_ != joytemp0) || (joy_key_blob._4_4_ != joytemp1)) {
+    joytemp0 = joy_key_blob._0_4_;
+    joytemp1 = joy_key_blob._4_4_;
   }
-  if (joy_key._0_4_ != 0) {
-    if (joy_key._0_4_ != Joy1_Press) {
-      Joy1_Press = joy_key._0_4_;
+  if (joy_key_blob._0_4_ != 0) {
+    if (joy_key_blob._0_4_ != Joy1_Press) {
+      Joy1_Press = joy_key_blob._0_4_;
       Joy1_Delay = 0;
-      return joy_key._0_4_;
+      return joy_key_blob._0_4_;
     }
     Joy1_Delay = Joy1_Delay + 1;
     if (Joy1_Delay < 0x27) {
@@ -30,7 +30,7 @@ gh_u4 ReadJoystick(void)
     }
     else {
       Joy1_Delay = 0x1e;
-      uVar1 = joy_key._0_4_;
+      uVar1 = joy_key_blob._0_4_;
     }
     return uVar1;
   }

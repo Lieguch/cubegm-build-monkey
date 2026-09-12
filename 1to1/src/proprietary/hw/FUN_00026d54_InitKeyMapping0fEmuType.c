@@ -16,7 +16,7 @@ void InitKeyMapping0fEmuType(void)
   FILE *__stream;
   char acStack_1018 [4100];
   
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   iVar2 = gameType();
   sprintf(acStack_1018,"%ssaves/%s/%s.scf",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),RomName);
   RARCH_LOG("Load %s\n",acStack_1018);
@@ -73,7 +73,7 @@ LAB_00026fc8:
       }
       memcpy(keyMapping,GBAKeyMapping,0x60);
     }
-    uVar1 = GetWorkPath();
+    uVar1 = (gh_u4)GetWorkPath();
     iVar2 = gameType();
     sprintf(acStack_1018,"%ssaves/%s/default.scf",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4));
     RARCH_LOG("Load %s\n",acStack_1018);

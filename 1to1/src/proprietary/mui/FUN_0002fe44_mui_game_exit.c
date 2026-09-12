@@ -32,13 +32,13 @@ gh_u4 mui_game_exit(void)
         return 0;
       }
       if (iVar1 == 0x10) {
-        SoundPlay(1,mui_Effect0);
+        SoundPlay(1,(int *)mui_Effect0);
         return 1;
       }
       mui_WaitNMI();
       iVar1 = mui_ReadJoystick();
     }
-    SoundPlay(1,mui_Effect0);
+    SoundPlay(1,(int *)mui_Effect0);
     iVar1 = mui_save_state();
     if (iVar1 == 0) {
       return 0;

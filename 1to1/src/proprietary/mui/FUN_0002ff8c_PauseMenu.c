@@ -45,7 +45,7 @@ gh_u4 PauseMenu(void)
     local_70 = malloc(iVar3 * 2);
     rgb8888_to_rgb565(local_70,this_frame._0_4_,iVar3 * 4);
     this_frame._12_4_ = (gh_uint)this_frame._12_4_ >> 1;
-    this_frame._0_4_ = local_70;
+    this_frame._0_4_ = (gh_u4)local_70;
   }
   __ptr = (gh_u2 *)0x0;
   video_driver_set_rotation(0x1ff);
@@ -156,7 +156,7 @@ gh_u4 PauseMenu(void)
       local_44 = uVar1 << 1;
       local_58 = __ptr;
     }
-    blockadaptive(&local_40,&local_58);
+    blockadaptive((int *)&local_40,(int *)&local_58);
     local_58 = bimapFilebuffer;
     local_3c = DAT_003af820;
     local_4c = DAT_003af828;
@@ -169,7 +169,7 @@ gh_u4 PauseMenu(void)
     local_2c = DAT_003af2a0 << 1;
     local_54 = 0;
     local_50 = 0;
-    blockcopy(&local_40,&local_58);
+    blockcopy((int *)&local_40,(int *)&local_58);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
     mui_ReadJoystick();
@@ -187,7 +187,7 @@ gh_u4 PauseMenu(void)
         }
         if (DAT_003af2b8 != (int *)0x0) {
           free(DAT_003af2b8);
-          DAT_003af2b8 = (int *)0x0;
+          DAT_003af2b8 = (gh_u4 *)0x0;
         }
         if (ChangeSeting != 0) {
           SaveKeyMappingConfigFile();
@@ -205,7 +205,7 @@ gh_u4 PauseMenu(void)
         return 0;
       }
       if (iVar3 == 0x10) {
-        SoundPlay(1,mui_Effect0);
+        SoundPlay(1,(int *)mui_Effect0);
       }
       mui_WaitNMI();
       iVar3 = mui_ReadJoystick();
@@ -221,7 +221,7 @@ gh_u4 PauseMenu(void)
       }
       if (DAT_003af2b8 != (int *)0x0) {
         free(DAT_003af2b8);
-        DAT_003af2b8 = (int *)0x0;
+        DAT_003af2b8 = (gh_u4 *)0x0;
       }
       if (ChangeSeting != 0) {
         SaveKeyMappingConfigFile();

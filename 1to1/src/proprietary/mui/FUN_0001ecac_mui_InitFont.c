@@ -20,16 +20,16 @@ void mui_InitFont(void)
   
   iVar1 = strcmp(fontname,(char *)((&m_ui)[m_ui + 0x16] + 0x20));
   if (iVar1 != 0) {
-    uVar2 = GetWorkPath();
+    uVar2 = (gh_u4)GetWorkPath();
     sprintf(acStack_118,"%s/%s",uVar2,(&m_ui)[m_ui + 0x16] + 0x20);
     res_hz = OpenZipU(acStack_118,0,2);
     if (res_hz != 0) {
-      zr = FindZipItemA(res_hz,&DAT_002dcea4,1,&local_11c,ze);
+      zr = FindZipItemA(res_hz,(char *)DAT_002dcea4,1,&local_11c,ze);
       if (zr == 0) {
         if (fontbuffer != (void *)0x0) {
           free(fontbuffer);
         }
-        fontbuffer = malloc(ze._296_4_);
+        fontbuffer = malloc((ze_blob)._296_4_);
         UnzipItem(res_hz,local_11c,fontbuffer,0,3);
         strcpy(fontname,(char *)((&m_ui)[m_ui + 0x16] + 0x20));
         CloseZipU(res_hz);
@@ -41,7 +41,7 @@ void mui_InitFont(void)
   }
   iVar1 = strcmp(fontname,"font.ttf");
   if (iVar1 != 0) {
-    uVar2 = GetWorkPath();
+    uVar2 = (gh_u4)GetWorkPath();
     sprintf(acStack_118,"%s/font.ttf",uVar2);
     __stream = fopen(acStack_118,"rb");
     if (__stream == (FILE *)0x0) {
@@ -57,8 +57,8 @@ void mui_InitFont(void)
     fseek(__stream,0,0);
     fread(fontbuffer,1,__size,__stream);
     fclose(__stream);
-    fontname._0_4_ = 0x746e6f66;
-    fontname._4_4_ = 0x6674742e;
+    (fontname_blob)._0_4_ = 0x746e6f66;
+    (fontname_blob)._4_4_ = 0x6674742e;
     fontname[8] = 0;
   }
 LAB_0001ed0c:

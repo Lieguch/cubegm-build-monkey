@@ -17,8 +17,8 @@ void ui_deinit(void)
   }
   SoundClose(0);
   DisplayThumbnailflag = DisplayThumbnailflag & 0xfe;
-  SoundPlayer._0_4_ = 0;
-  SoundPlayer._36_4_ = 0;
+  (SoundPlayer_blob)._0_4_ = 0;
+  (SoundPlayer_blob)._36_4_ = 0;
   if (DisplayThumbnailflag == 0) {
     return;
   }

@@ -16,7 +16,7 @@ char * strtrimr(char *param_1)
   char *pcVar3;
   
   sVar1 = strlen(param_1);
-  ppuVar2 = __ctype_b_loc();
+  ppuVar2 = (gh_ushort **)__ctype_b_loc();
   pcVar3 = param_1 + sVar1;
   while (sVar1 = sVar1 - 1, (~sVar1 >> 0x1f & (gh_uint)((*ppuVar2)[(gh_byte)pcVar3[-1]] >> 0xd)) != 0) {
     pcVar3 = pcVar3 + -1;

@@ -32,18 +32,18 @@ void mui_type(void)
   gh_u4 local_32c;
   char acStack_128 [260];
   
-  DAT_003af278 = m_menulog._300_4_;
-  DAT_003af27c = m_menulog._304_4_;
+  DAT_003af278 = (m_menulog_blob)._300_4_;
+  DAT_003af27c = (m_menulog_blob)._304_4_;
   iVar5 = 0;
-  local_474 = m_menulog._292_4_;
-  m_menulog._0_4_ = DAT_003af26c;
+  local_474 = (m_menulog_blob)._292_4_;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
   local_450 = 0;
   local_468 = 0;
   local_464 = 0;
-  local_45c = m_menulog._296_4_;
+  local_45c = (m_menulog_blob)._296_4_;
   bVar1 = false;
-  uVar4 = m_menulog._304_4_;
-  iVar10 = m_menulog._300_4_;
+  uVar4 = (m_menulog_blob)._304_4_;
+  iVar10 = (m_menulog_blob)._300_4_;
 LAB_00023eb8:
   while ((DisplayThumbnailflag & 8) != 0) {
     usleep(1000);
@@ -69,9 +69,9 @@ LAB_00023eb8:
       GetZipItemA(hz,0xffffffff,ze);
       zr = FindZipItemA(hz,"filelist.txt",1,&local_434,ze);
       if (zr == 0) {
-        DAT_003af2a8 = malloc(ze._296_4_ + 1);
+        DAT_003af2a8 = malloc((ze_blob)._296_4_ + 1);
         zr = UnzipItem(hz,local_434,DAT_003af2a8,0,3);
-        *(gh_u1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
+        *(gh_u1 *)((int)DAT_003af2a8 + (ze_blob)._296_4_) = 0;
       }
       CloseZipU(hz);
     }
@@ -106,7 +106,7 @@ LAB_00023eb8:
   diff_prev = 0;
   m_time0 = GetTicks();
   uVar9 = local_450;
-  if ((joy_key._0_4_ & 0x8000) != 0) goto LAB_00024188;
+  if ((joy_key_blob._0_4_ & 0x8000) != 0) goto LAB_00024188;
 LAB_00023ff8:
   iVar8 = local_474;
   local_450 = uVar9;
@@ -139,7 +139,7 @@ joined_r0x00024aec:
           }
         }
 LAB_00024a5c:
-        SoundPlay(1,mui_Effect0);
+        SoundPlay(1,(int *)mui_Effect0);
       }
       else if (uVar7 < 0x11) {
         if (uVar7 == 1) {
@@ -188,7 +188,7 @@ LAB_00024a5c:
               mui_type_file_list(iVar10,DAT_003af2a8);
             }
 LAB_00024a00:
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
           }
         }
         else {
@@ -209,17 +209,17 @@ LAB_00024a00:
             goto LAB_00024a00;
           }
         }
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
       }
     }
     else if (uVar7 == 0x2000) {
 LAB_0002475c:
       if (local_474 == 0) {
         if ((AutoRestoreKey & 2) != 0) {
-          m_menulog._292_4_ = local_474;
-          m_menulog._296_4_ = local_45c;
-          m_menulog._300_4_ = iVar10;
-          m_menulog._304_4_ = uVar4;
+          (m_menulog_blob)._292_4_ = local_474;
+          (m_menulog_blob)._296_4_ = local_45c;
+          (m_menulog_blob)._300_4_ = iVar10;
+          (m_menulog_blob)._304_4_ = uVar4;
           SaveMenuLog();
         }
         mui_run_game(&file_info_list + DAT_003af27c * 0x404);
@@ -242,9 +242,9 @@ LAB_0002475c:
           if (DAT_003af2a8 != (void *)0x0) {
             free(DAT_003af2a8);
           }
-          DAT_003af2a8 = malloc(ze._296_4_ + 1);
+          DAT_003af2a8 = malloc((ze_blob)._296_4_ + 1);
           zr = UnzipItem(hz,local_434,DAT_003af2a8,0,3);
-          *(gh_u1 *)((int)DAT_003af2a8 + ze._296_4_) = 0;
+          *(gh_u1 *)((int)DAT_003af2a8 + (ze_blob)._296_4_) = 0;
         }
         CloseZipU(hz);
       }
@@ -267,20 +267,20 @@ LAB_0002475c:
       if (uVar7 == 0x400) {
 LAB_00024238:
         DAT_003af26c = 0;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
 joined_r0x00024228:
         if ((AutoRestoreKey & 2) != 0) {
-          m_menulog._292_4_ = local_474;
-          m_menulog._296_4_ = local_45c;
-          m_menulog._300_4_ = iVar10;
-          m_menulog._304_4_ = uVar4;
+          (m_menulog_blob)._292_4_ = local_474;
+          (m_menulog_blob)._296_4_ = local_45c;
+          (m_menulog_blob)._300_4_ = iVar10;
+          (m_menulog_blob)._304_4_ = uVar4;
         }
         return;
       }
       if (uVar7 == 0x800) {
 LAB_00024200:
         DAT_003af26c = 2;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         goto joined_r0x00024228;
       }
     }
@@ -312,14 +312,14 @@ LAB_000242d0:
       pcVar3 = (char *)SeletEmuCore(acStack_42c);
       if (pcVar3 == (char *)0x0) {
         DisplayThumbnailflag = 1;
-        pthread_create(&pStack_430,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+        pthread_create(&pStack_430,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
       }
       else {
         if ((AutoRestoreKey & 2) != 0) {
-          m_menulog._296_4_ = local_45c;
-          m_menulog._292_4_ = 0;
-          m_menulog._300_4_ = iVar10;
-          m_menulog._304_4_ = uVar4;
+          (m_menulog_blob)._296_4_ = local_45c;
+          (m_menulog_blob)._292_4_ = 0;
+          (m_menulog_blob)._300_4_ = iVar10;
+          (m_menulog_blob)._304_4_ = uVar4;
           SaveMenuLog();
         }
         strcpy(acStack_128,pcVar3);
@@ -462,7 +462,7 @@ LAB_00024134:
     do {
       mui_WaitNMI();
       bVar1 = false;
-      if ((joy_key._0_4_ & 0x8000) == 0) goto LAB_00023ff8;
+      if ((joy_key_blob._0_4_ & 0x8000) == 0) goto LAB_00023ff8;
 LAB_00024188:
       uVar2 = mui_ReadJoystick();
       if ((uVar2 & 0xffff7fff) == 0x20) goto LAB_00024200;

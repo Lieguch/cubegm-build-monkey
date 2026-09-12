@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void gameType(void)
+gh_u4 gameType(void) /* 原厂 r0 返回位索引（bxeq lr 时 r0=uVar1，落尾时 r0=0x10） */
 
 {
   gh_uint uVar1;
@@ -16,9 +16,9 @@ void gameType(void)
   uVar1 = 0;
   do {
     if ((gh_ushort)Filetype >> (uVar1 & 0xff) == 1) {
-      return;
+      return uVar1;
     }
     uVar1 = uVar1 + 1;
   } while (uVar1 != 0x10);
-  return;
+  return uVar1;
 }

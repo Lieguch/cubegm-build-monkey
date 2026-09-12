@@ -40,9 +40,9 @@ void mui_menu(void)
   DAT_003af284 = 0;
   DAT_003af2ac = (void *)0x0;
   DAT_003af288 = 0;
-  m_menulog._0_4_ = DAT_003af26c;
-  DAT_003af278 = m_menulog._288_4_;
-  DAT_003af27c = m_menulog._284_4_;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
+  DAT_003af278 = (m_menulog_blob)._288_4_;
+  DAT_003af27c = (m_menulog_blob)._284_4_;
   scr_h_size = 0x500;
   DAT_003af274 = 0;
   DAT_003af2a0 = 0x500;
@@ -67,9 +67,9 @@ joined_r0x0002331c:
       RARCH_LOG("find %s fail!\n",acStack_490);
     }
     else {
-      DAT_003af2ac = malloc(ze._296_4_ + 1);
+      DAT_003af2ac = malloc((ze_blob)._296_4_ + 1);
       zr = UnzipItem(hz,local_498,DAT_003af2ac,0,3);
-      *(gh_u1 *)((int)DAT_003af2ac + ze._296_4_) = 0;
+      *(gh_u1 *)((int)DAT_003af2ac + (ze_blob)._296_4_) = 0;
     }
   }
   memcpy(DAT_003af29c,(void *)((int)DAT_003af28c + *DAT_003af28c),
@@ -101,7 +101,7 @@ joined_r0x0002331c:
   diff_prev = 0;
   m_time0 = GetTicks();
   uVar10 = uVar10 >> 0x1f;
-  if ((joy_key._0_4_ & 0x8000) != 0) goto LAB_00023688;
+  if ((joy_key_blob._0_4_ & 0x8000) != 0) goto LAB_00023688;
 LAB_0002348c:
   if (uVar12 != 0) {
     bVar1 = true;
@@ -119,33 +119,33 @@ LAB_0002348c:
       mui_do_file_list(iVar11,DAT_003af2ac);
     }
 LAB_0002351c:
-    SoundPlay(1,mui_Effect1);
+    SoundPlay(1,(int *)mui_Effect1);
   }
   else {
     if (0x80 < uVar12) {
       if (uVar12 == 0x800) {
 LAB_00023978:
         DAT_003af26c = 1;
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         if ((AutoRestoreKey & 1) == 0) {
           return;
         }
-        m_menulog._284_4_ = iVar7;
-        m_menulog._288_4_ = iVar11;
+        (m_menulog_blob)._284_4_ = iVar7;
+        (m_menulog_blob)._288_4_ = iVar11;
         return;
       }
       if (uVar12 < 0x801) {
         if (uVar12 != 0x108) {
           if (uVar12 == 0x400) {
 LAB_00023700:
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
             if ((AutoRestoreKey & 1) == 0) {
               DAT_003af26c = 5;
               return;
             }
             DAT_003af26c = 5;
-            m_menulog._284_4_ = iVar7;
-            m_menulog._288_4_ = iVar11;
+            (m_menulog_blob)._284_4_ = iVar7;
+            (m_menulog_blob)._288_4_ = iVar11;
             return;
           }
           goto LAB_00023528;
@@ -169,12 +169,12 @@ LAB_00023700:
       pcVar4 = (char *)SeletEmuCore(acStack_42c);
       if (pcVar4 == (char *)0x0) {
         DisplayThumbnailflag = 1;
-        pthread_create(&pStack_494,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+        pthread_create(&pStack_494,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
       }
       else {
         if ((AutoRestoreKey & 1) != 0) {
-          m_menulog._284_4_ = iVar7;
-          m_menulog._288_4_ = iVar11;
+          (m_menulog_blob)._284_4_ = iVar7;
+          (m_menulog_blob)._288_4_ = iVar11;
           SaveMenuLog();
         }
         strcpy(acStack_128,pcVar4);
@@ -240,7 +240,7 @@ LAB_00023700:
         mui_do_file_list(iVar11,DAT_003af2ac);
       }
     }
-    SoundPlay(1,mui_Effect0);
+    SoundPlay(1,(int *)mui_Effect0);
   }
 LAB_00023528:
   if (iVar11 == DAT_003af278) {
@@ -318,7 +318,7 @@ LAB_00023630:
     do {
       mui_WaitNMI();
       bVar1 = false;
-      if ((joy_key._0_4_ & 0x8000) == 0) goto LAB_0002348c;
+      if ((joy_key_blob._0_4_ & 0x8000) == 0) goto LAB_0002348c;
 LAB_00023688:
       uVar3 = mui_ReadJoystick();
       if ((uVar3 & 0xffff7fff) == 0x20) goto LAB_00023978;
@@ -341,8 +341,8 @@ LAB_000237b4:
   } while( true );
 LAB_00023a80:
   if ((AutoRestoreKey & 1) != 0) {
-    m_menulog._284_4_ = iVar7;
-    m_menulog._288_4_ = iVar11;
+    (m_menulog_blob)._284_4_ = iVar7;
+    (m_menulog_blob)._288_4_ = iVar11;
     SaveMenuLog();
   }
   mui_run_game(&file_info_list + DAT_003af27c * 0x404);

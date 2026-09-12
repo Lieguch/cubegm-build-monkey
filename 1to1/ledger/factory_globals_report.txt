@@ -1,0 +1,37 @@
+==================================================================
+工厂权威全局布局账本（来源：symtab.txt）
+==================================================================
+数据类符号总数 : 940
+独立对象数     : 940
+别名字段数     : 0   ← 落在更大对象区间内，定义时必须 alias
+
+section           count      bytes independent
+.bss                192     194896        192
+.data                28      11439         28
+.fini_array           1          0          1
+.init_array           1          0          1
+.rodata             718     844211        718
+
+--- 别名样例（前 40，显示 字段 -> 父对象）---
+
+--- 最大独立对象（前 20）---
+  cns11643_inv_2charset    @0033231c size=166326   .rodata
+  configitems              @003bd4e0 size=50000    .bss
+  cjk_variants_indx        @003941f0 size=41984    .rodata
+  file_info_list           @003b2220 size=41120    .bss
+  translit_data            @0039e5f0 size=36464    .rodata
+  gbkext_inv_2charset      @0030cea4 size=28626    .rodata
+  big5_2charset            @0036611c size=27406    .rodata
+  cjk_variants             @0038e3e4 size=24076    .rodata
+  core_info_list           @003c9aec size=20480    .bss
+  cns11643_5_2uni_page21   @00323510 size=17206    .rodata
+  gbkext2_2uni_pagea8      @00308e04 size=16544    .rodata
+  ksc5601_2charset         @00372550 size=16454    .rodata
+  corecfg                  @003cfac8 size=16000    .bss
+  items                    @003d3948 size=16000    .bss
+  big5_2uni_pagec9         @00362554 size=15304    .rodata
+  cns11643_2_2uni_page21   @003184a8 size=15300    .rodata
+  gb2312_2charset          @002fe934 size=14890    .rodata
+  cns11643_15_2uni_page21  @0032e724 size=14338    .rodata
+  jisx0208_2charset        @002eeac8 size=13758    .rodata
+  gb2312_2uni_page30       @002fb454 size=13536    .rodata

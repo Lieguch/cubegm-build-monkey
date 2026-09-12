@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-int get_items_from_zipfile(gh_u4 param_1,int param_2)
+int get_items_from_zipfile(char *param_1,char *param_2)
 
 {
   char cVar1;
@@ -20,7 +20,7 @@ int get_items_from_zipfile(gh_u4 param_1,int param_2)
   gh_u4 local_424;
   char acStack_420 [1024];
   
-  res_hz = OpenZipU(param_1,0,2);
+  res_hz = OpenZipU((void *)param_1,0,2);
   if (res_hz == 0) {
     RARCH_LOG("open %s fail\n",param_1);
     return 0;
@@ -31,7 +31,7 @@ int get_items_from_zipfile(gh_u4 param_1,int param_2)
     CloseZipU(res_hz);
     return 0;
   }
-  __ptr = malloc(ze._296_4_);
+  __ptr = malloc((ze_blob)._296_4_);
   UnzipItem(res_hz,local_424,__ptr,0,3);
   CloseZipU(res_hz);
   if (__ptr == (char *)0x0) {

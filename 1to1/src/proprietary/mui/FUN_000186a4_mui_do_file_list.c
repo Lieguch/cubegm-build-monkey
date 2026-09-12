@@ -188,7 +188,7 @@ LAB_000187dc:
       iVar9 = iVar9 + 1;
     }
 LAB_00018830:
-    libiconv_close(uVar1);
+    libiconv_close((void *)uVar1);
     return iVar9;
   }
   goto LAB_00018754;

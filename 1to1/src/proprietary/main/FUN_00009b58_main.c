@@ -40,7 +40,7 @@ gh_u4 main(void)
     UpdateROM(acStack_518);
     sfc_uninit();
     ShareMemCreat();
-    iVar2 = pthread_create(&pStack_51c,(pthread_attr_t *)0x0,XintiaoThread,(void *)0x0);
+    iVar2 = pthread_create(&pStack_51c,(pthread_attr_t *)0x0,(void *(*)(void *))XintiaoThread,(void *)0x0);
     if (iVar2 != 0) {
       puts("can\'t create XintiaoThread process thread \r");
     }

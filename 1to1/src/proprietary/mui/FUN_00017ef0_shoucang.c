@@ -29,7 +29,7 @@ void shoucang(char *param_1)
   char local_1a8 [388];
   gh_byte *pbVar9;
   
-  uVar2 = GetWorkPath();
+  uVar2 = (gh_u4)GetWorkPath();
   sprintf(acStack_52c,"%s/favorites.lst",uVar2);
   pFVar3 = fopen(acStack_52c,"rb");
   if (pFVar3 == (FILE *)0x0) {
@@ -187,7 +187,7 @@ LAB_0001811c:
   iVar7 = fileno(pFVar3);
   fsync(iVar7);
   fclose(pFVar3);
-  uVar2 = GetWorkPath();
+  uVar2 = (gh_u4)GetWorkPath();
   sprintf(acStack_52c,"%s/favorites.lst",uVar2);
   pFVar3 = fopen(acStack_52c,"rb");
   if (pFVar3 != (FILE *)0x0) {

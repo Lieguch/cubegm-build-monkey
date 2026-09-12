@@ -21,7 +21,7 @@ void draw_state_select(int param_1,int param_2,int param_3)
   gh_u2 *puVar8;
   gh_uint uVar9;
   
-  iVar2 = DAT_003af2b8;
+  iVar2 = (int)DAT_003af2b8;
   iVar1 = DAT_003af2a0;
   if (param_3 == 0) {
     puVar8 = (gh_u2 *)(DAT_003af29c + (DAT_003af2a0 * param_2 + param_1) * 2);

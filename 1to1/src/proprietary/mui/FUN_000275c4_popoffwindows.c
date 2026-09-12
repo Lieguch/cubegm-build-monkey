@@ -66,11 +66,11 @@ void popoffwindows(gh_u4 *param_1)
     iVar7 = iVar7 + -1;
     local_2c = DAT_003af2a0 << 1;
     local_38 = (iVar9 * iVar3) / 10 + iVar5;
-    local_40 = DAT_003af29c;
+    local_40 = (int)DAT_003af29c;
     local_3c = (iVar9 * iVar4) / 10 + iVar2;
     local_30 = iVar6 / 5 + local_38;
     local_34 = iVar8 / 5 + local_3c;
-    blockadaptive(&local_40,&local_58);
+    blockadaptive((int *)&local_40,(int *)&local_58);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
     usleep(18000);

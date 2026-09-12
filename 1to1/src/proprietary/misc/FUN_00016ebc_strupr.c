@@ -22,7 +22,7 @@ gh_byte * strupr(gh_byte *param_1)
   while (uVar2 = (gh_uint)bVar1, uVar2 != 0) {
     iVar3 = islower(uVar2);
     if (iVar3 != 0) {
-      pp_Var4 = __ctype_toupper_loc();
+      pp_Var4 = (int **)__ctype_toupper_loc();
       *pbVar5 = (gh_byte)(*pp_Var4)[uVar2];
     }
     pbVar5 = pbVar5 + 1;

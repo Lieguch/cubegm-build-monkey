@@ -40,7 +40,7 @@ void popwindows(gh_u4 *param_1)
   iVar7 = param_1[4] - iVar4;
   iVar6 = param_1[3] - iVar2;
   __dest = malloc(iVar6 * iVar7 * 2);
-  local_40 = DAT_003af29c;
+  local_40 = (int)DAT_003af29c;
   scrbuf = __dest;
   if (iVar7 < 1) {
     iVar9 = DAT_003af2a0 << 1;
@@ -73,7 +73,7 @@ void popwindows(gh_u4 *param_1)
     local_34 = iVar1 / 5 + local_3c;
     local_30 = iVar8 / 5 + local_38;
     local_2c = iVar9;
-    blockadaptive(&local_40,&local_58);
+    blockadaptive((int *)&local_40,(int *)&local_58);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
     usleep(18000);
@@ -83,7 +83,7 @@ void popwindows(gh_u4 *param_1)
     iVar9 = DAT_003af2a0 << 1;
     iVar6 = param_1[3] - iVar2;
     iVar7 = param_1[4] - iVar4;
-    local_40 = DAT_003af29c;
+    local_40 = (int)DAT_003af29c;
   }
   return;
 }

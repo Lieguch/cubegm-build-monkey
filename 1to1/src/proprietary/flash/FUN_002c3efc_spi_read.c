@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void spi_read(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3)
+gh_u4 spi_read(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3) /* 原厂 r0 = sfc_request 返回值 */
 
 {
   gh_u4 local_10;
@@ -16,6 +16,5 @@ void spi_read(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3)
   
   local_c = 0;
   local_10 = 0x4003;
-  sfc_request(&local_10,param_1,param_2,param_3);
-  return;
+  return sfc_request(&local_10,param_1,(gh_uint *)param_2,param_3);
 }

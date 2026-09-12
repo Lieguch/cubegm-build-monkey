@@ -16,7 +16,7 @@ void LoadDefaultState(void)
   int iVar3;
   char acStack_1010 [4100];
   
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   uVar2 = gameType();
   sprintf(acStack_1010,"%ssaves/%03d/%s.sav",uVar1,uVar2,RomName);
   iVar3 = access(acStack_1010,0);

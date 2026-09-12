@@ -14,7 +14,7 @@ gh_u4 FilePreEmu(char *param_1)
   char *pcVar1;
   gh_u4 uVar2;
   FILE *__stream;
-  int iVar3;
+  gh_u4 *iVar3;
   int iVar4;
   gh_uint uVar5;
   int local_158;
@@ -25,7 +25,7 @@ gh_u4 FilePreEmu(char *param_1)
   strcpy((char *)&FilenameExt,pcVar1);
   strupr(&FilenameExt);
   Filetype = 0;
-  GetCoreIndex(&FilenameExt);
+  GetCoreIndex((char *)&FilenameExt);
   RARCH_LOG("Filetype %d\n",Filetype);
   uVar5 = Filetype;
   if (Filetype < 0x10000) {
@@ -69,7 +69,7 @@ gh_u4 FilePreEmu(char *param_1)
             strcpy((char *)&FilenameExt,pcVar1);
             strupr(&FilenameExt);
             RARCH_LOG("FilenameExt %s\n",&FilenameExt);
-            GetCoreIndex(&FilenameExt);
+            GetCoreIndex((char *)&FilenameExt);
             RARCH_LOG("Filetype %d\n",Filetype);
             ZIP_BUF_SIZE = local_30;
             ZIP_BUF = malloc(local_30 + 0x10);

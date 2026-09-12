@@ -19,7 +19,7 @@ void progress(char *param_1,gh_u4 param_2)
   uVar1 = (gh_u4)((gh_ulonglong)progress_stepcount >> 0x20);
   if (*param_1 == '\0') {
     RARCH_LOG("    %2.2f%%\n",param_2,SUB84(progress_stepcount,0),uVar1);
-    sprintf(acStack_120,"    %2.2f%%",progress_stepcount._0_4_,progress_stepcount._4_4_);
+    sprintf(acStack_120,"    %2.2f%%",progress_stepcount_blob._0_4_,progress_stepcount_blob._4_4_);
   }
   else if (in_d0 == 0.0) {
     RARCH_LOG("00 Loading %s\n",param_1);
@@ -27,7 +27,7 @@ void progress(char *param_1,gh_u4 param_2)
   }
   else {
     RARCH_LOG("01 %s: %2.2f%%\n",param_1,SUB84(progress_stepcount,0),uVar1);
-    sprintf(acStack_120,"Loading: %2.2f%%",progress_stepcount._0_4_,progress_stepcount._4_4_);
+    sprintf(acStack_120,"Loading: %2.2f%%",progress_stepcount_blob._0_4_,progress_stepcount_blob._4_4_);
   }
   OutRect._16_4_ = 0x500;
   OutRect._20_4_ = 0x2d0;

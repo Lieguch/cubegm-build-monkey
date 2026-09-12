@@ -32,8 +32,8 @@ gh_u4 filelist_run_game(char *param_1)
   }
   SoundClose(0);
   DisplayThumbnailflag = DisplayThumbnailflag & 0xfe;
-  SoundPlayer._0_4_ = 0;
-  SoundPlayer._36_4_ = 0;
+  (SoundPlayer_blob)._0_4_ = 0;
+  (SoundPlayer_blob)._36_4_ = 0;
   while (DisplayThumbnailflag != 0) {
     usleep(1000);
   }
@@ -76,16 +76,16 @@ gh_u4 filelist_run_game(char *param_1)
     uVar1 = Core_Load(acStack_120,param_1 + 0x304);
   }
   Soundplayflag = 3;
-  iVar2 = pthread_create(&pStack_124,(pthread_attr_t *)0x0,mui_SoundplayThread,(void *)0x0);
+  iVar2 = pthread_create(&pStack_124,(pthread_attr_t *)0x0,(void *(*)(void *))mui_SoundplayThread,(void *)0x0);
   if (iVar2 != 0) {
     RARCH_LOG("can\'t create mui_SoundplayThread process thread \r\n");
   }
   DisplayThumbnailflag = 1;
-  iVar2 = pthread_create(&pStack_124,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+  iVar2 = pthread_create(&pStack_124,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
   if (iVar2 != 0) {
     RARCH_LOG("can\'t create mui_DisplayThread process thread \r\n");
   }
   usleep(1000);
-  SoundPlay(0,mui_MenuMusic);
+  SoundPlay(0,(int *)mui_MenuMusic);
   return uVar1;
 }

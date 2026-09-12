@@ -8,10 +8,9 @@
 #include "globals.h"
 #include "proto.h"
 
-void strtrim(void)
+char * strtrim(void) /* 原厂：bl strtriml → 尾调用 strtrimr，r0 = strtrimr 结果 */
 
 {
   strtriml();
-  strtrimr();
-  return;
+  return (char *)strtrimr();
 }

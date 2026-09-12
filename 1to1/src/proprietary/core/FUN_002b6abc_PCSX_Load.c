@@ -26,9 +26,9 @@ gh_u4 PCSX_Load(char *param_1)
   if (iVar1 != 0) {
     strcpy(fileName,param_1);
     RARCH_LOG("\nLoading %s ... \r\n",param_1);
-    game._0_4_ = fileName;
-    game._4_4_ = 0;
-    game._8_4_ = 0;
+    game_blob._0_4_ = fileName;
+    game_blob._4_4_ = 0;
+    game_blob._8_4_ = 0;
     pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
     if (pcVar2 == (gh_code *)0x0) {
       RARCH_LOG("find retro_load_game process fail \n");

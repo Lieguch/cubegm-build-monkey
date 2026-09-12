@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void erase_sector(gh_u4 param_1)
+gh_u4 erase_sector(gh_u4 param_1) /* 原厂 r0 = sfc_request 结果；若为 0 则 = snor_wait_busy(0x61a80) */
 
 {
   int iVar1;
@@ -20,7 +20,7 @@ void erase_sector(gh_u4 param_1)
   snor_write_en();
   iVar1 = sfc_request(&local_18,param_1,0,0);
   if (iVar1 == 0) {
-    snor_wait_busy(&DAT_00061a80);
+    return (gh_u4)snor_wait_busy(0x61a80);
   }
-  return;
+  return (gh_u4)iVar1;
 }

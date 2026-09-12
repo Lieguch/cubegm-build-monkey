@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-void dispFlip(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
+gh_u4 dispFlip(void *param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
   if (DisplayThread == 0) {
     if (video_driver_frame == (gh_code *)0x0) {
-      return;
+      return 0;
     }
   }
   else {
@@ -40,6 +40,6 @@ void dispFlip(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
   }
                     /* WARNING: Could not recover jumptable at 0x0000d9c4. Too many branches */
                     /* WARNING: Treating indirect jump as call */
-  (*video_driver_frame)(param_1,param_2,param_3,param_4);
-  return;
+  gh_u4 ret = (*video_driver_frame)(param_1,param_2,param_3,param_4);
+  return ret;
 }

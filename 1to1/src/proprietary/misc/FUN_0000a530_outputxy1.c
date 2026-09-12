@@ -33,10 +33,10 @@ void outputxy1(gh_byte *param_1)
     }
     while (iVar3 = scr_h_size, param_1 = param_1 + 1, uVar6 != 10) {
       if ((uVar6 & 0x80) == 0) {
-        pbVar9 = &asc2_1608 + (uVar6 - 0x20) * 0x10;
+        pbVar9 = asc2_1608 + (uVar6 - 0x20) * 0x10;
       }
       else {
-        pbVar9 = &DAT_002e0d18;
+        pbVar9 = DAT_002e0d18;
       }
       pbVar7 = pbVar9 + 0x10;
       puVar10 = (gh_u2 *)(scr_data + (scr_h_size * iVar2 + iVar8) * 2);

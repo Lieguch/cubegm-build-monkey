@@ -27,14 +27,14 @@ gh_u4 Gpsp_Load(char *param_1,int param_2)
   if (iVar1 != 0) {
     strcpy(fileName,param_1);
     if (param_2 < 0x10000) {
-      run_process("retro_set_unzip",0xffffffff);
+      run_process("retro_set_unzip",(gh_code *)0xffffffff);
     }
     else {
-      run_process("retro_set_unzip",gpsp_unzip);
+      run_process("retro_set_unzip",(gh_code *)gpsp_unzip);
     }
-    game._0_4_ = fileName;
-    game._4_4_ = 0;
-    game._8_4_ = 0;
+    game_blob._0_4_ = fileName;
+    game_blob._4_4_ = 0;
+    game_blob._8_4_ = 0;
     pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
     if (pcVar2 == (gh_code *)0x0) {
       RARCH_LOG("find retro_load_game process fail \n");

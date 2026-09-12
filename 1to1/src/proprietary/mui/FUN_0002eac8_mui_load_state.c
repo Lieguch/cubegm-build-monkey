@@ -40,16 +40,16 @@ gh_u4 mui_load_state(void)
   
   DAT_003af27c = 0;
   if (*(gh_ushort *)(DAT_003af2b8 + 0x1e) < *(gh_ushort *)(DAT_003af2b8 + 0x12)) {
-    m_statetab._16_4_ = 0;
-    m_statetab._88_4_ = 3;
-    m_statetab._68_4_ = 0xffffffff;
-    m_statetab._140_4_ = 0xffffffff;
+    (m_statetab_blob)._16_4_ = 0;
+    (m_statetab_blob)._88_4_ = 3;
+    (m_statetab_blob)._68_4_ = 0xffffffff;
+    (m_statetab_blob)._140_4_ = 0xffffffff;
   }
   else {
-    m_statetab._16_4_ = 0xffffffff;
-    m_statetab._88_4_ = 0xffffffff;
-    m_statetab._68_4_ = 2;
-    m_statetab._140_4_ = 5;
+    (m_statetab_blob)._16_4_ = 0xffffffff;
+    (m_statetab_blob)._88_4_ = 0xffffffff;
+    (m_statetab_blob)._68_4_ = 2;
+    (m_statetab_blob)._140_4_ = 5;
   }
 joined_r0x0002eb88:
   if (DAT_003af2b8 == (int *)0x0) {
@@ -72,10 +72,10 @@ joined_r0x0002eb88:
   local_a8 = DAT_003af2a0 << 1;
   local_d0 = 0;
   local_cc = 0;
-  blockcopy(&local_bc,&local_d4);
+  blockcopy((int *)&local_bc,(int *)&local_d4);
   do {
     while( true ) {
-      uVar1 = GetWorkPath();
+      uVar1 = (gh_u4)GetWorkPath();
       iVar2 = gameType();
       sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
               RomName,iVar6);
@@ -114,7 +114,7 @@ LAB_0002ec70:
     local_d4 = __ptr_00;
     local_d0 = iVar2;
     local_cc = iVar2;
-    blockadaptive(&local_bc,&local_d4);
+    blockadaptive((int *)&local_bc,(int *)&local_d4);
     free(__ptr);
     free(__ptr_00);
   } while (iVar6 != 6);
@@ -144,7 +144,7 @@ LAB_0002f0a4:
       draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + *(int *)(m_statetab + iVar6 * 0x18)
                         ,(gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                          *(int *)(m_statetab + iVar6 * 0x18 + 4),0xffff);
-      SoundPlay(1,mui_Effect0);
+      SoundPlay(1,(int *)mui_Effect0);
 LAB_0002f03c:
       DAT_003af274 = 1;
 LAB_0002f044:
@@ -170,11 +170,11 @@ LAB_0002f044:
             if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe))
             goto LAB_0002ef08;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._0_4_,
-                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._4_4_,0xffff)
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + (m_statetab_blob)._0_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + (m_statetab_blob)._4_4_,0xffff)
             ;
             bVar5 = true;
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
             iVar6 = 0;
             goto LAB_0002f03c;
           }
@@ -197,35 +197,35 @@ LAB_0002f044:
 joined_r0x0002f22c:
             if (iVar6 < 0) {
               bVar5 = false;
-              SoundPlay(1,mui_Effect1);
+              SoundPlay(1,(int *)mui_Effect1);
             }
             else {
               draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) +
                                 *(int *)(m_statetab + iVar6 * 0x18),
                                 (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) +
                                 *(int *)(m_statetab + iVar6 * 0x18 + 4),0xffff);
-              SoundPlay(1,mui_Effect1);
+              SoundPlay(1,(int *)mui_Effect1);
             }
           }
           else {
             if ((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0xe) <= (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e)) {
 LAB_0002ef08:
               bVar5 = false;
-              SoundPlay(1,mui_Effect1);
+              SoundPlay(1,(int *)mui_Effect1);
               goto LAB_0002ef1c;
             }
             iVar6 = 2;
             DAT_003af27c = 0xffffffff;
-            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + m_statetab._48_4_,
-                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + m_statetab._52_4_,0xffff
+            draw_state_select((gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x1e) + (m_statetab_blob)._48_4_,
+                              (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + (m_statetab_blob)._52_4_,0xffff
                              );
             bVar5 = true;
-            SoundPlay(1,mui_Effect1);
+            SoundPlay(1,(int *)mui_Effect1);
           }
           goto LAB_0002f03c;
         }
         if (((uVar4 == 0x2000) && (bVar5)) && (local_a4[iVar6] == 1)) {
-          uVar1 = GetWorkPath();
+          uVar1 = (gh_u4)GetWorkPath();
           iVar2 = gameType();
           sprintf(acStack_8c,"%sstates/%s/%s.sv%d",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),
                   RomName,iVar6);

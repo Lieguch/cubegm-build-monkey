@@ -31,10 +31,10 @@ void mui_SoundplayThread(void)
       if (&UNK_000d2f00 < puVar3) {
         puVar3 = (gh_undef *)0x0;
         SoundClose();
-        SoundPlayer._0_4_ = 0;
-        SoundPlayer._36_4_ = 0;
+        (SoundPlayer_blob)._0_4_ = 0;
+        (SoundPlayer_blob)._36_4_ = 0;
         usleep(1000);
-        SoundPlay(0,mui_MenuMusic);
+        SoundPlay(0,(int *)mui_MenuMusic);
         iVar1 = GetTicks();
       }
       if ((Soundplayflag & 1) == 0) goto LAB_00026bf8;

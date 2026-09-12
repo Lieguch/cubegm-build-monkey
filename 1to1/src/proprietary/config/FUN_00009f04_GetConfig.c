@@ -83,7 +83,7 @@ void GetConfig(void)
   }
   if ((autorunfile[0] == '\0') && (iVar2 = mxmlFindElement(uVar1,uVar1,"autorun",0,0,1), iVar2 != 0)
      ) {
-    pcVar3 = (char *)mxmlElementGetAttr(iVar2,&DAT_002dbd74);
+    pcVar3 = (char *)mxmlElementGetAttr(iVar2,(char *)DAT_002dbd74);
     pcVar3 = stpcpy(local_1020,pcVar3);
     if (local_1020[0] != '\0') {
       if (local_1020[0] == '/') {

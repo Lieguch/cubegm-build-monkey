@@ -28,7 +28,7 @@ gh_u4 IsShoucang(char *param_1)
   gh_byte *pbVar6;
   
   if (DAT_003af2b4 == (gh_byte *)0x0) {
-    uVar1 = GetWorkPath();
+    uVar1 = (gh_u4)GetWorkPath();
     sprintf(acStack_52c,"%s/favorites.lst",uVar1);
     __stream = fopen(acStack_52c,"rb");
     if (__stream == (FILE *)0x0) {

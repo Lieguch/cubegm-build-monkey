@@ -25,7 +25,7 @@ void mui_setting(void)
   int *piVar12;
   int *piVar13;
   int iVar14;
-  gh_u4 *puVar15;
+  gh_u4 **puVar15;
   int local_728;
   int local_724;
   char acStack_6d0 [100];
@@ -35,10 +35,10 @@ void mui_setting(void)
   gh_u4 local_32c;
   char local_128 [260];
   
-  local_724 = m_menulog._272_4_;
-  m_menulog._0_4_ = DAT_003af26c;
+  local_724 = (m_menulog_blob)._272_4_;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
   local_728 = m_ui;
-  DAT_003af27c = m_menulog._276_4_;
+  DAT_003af27c = (m_menulog_blob)._276_4_;
   if (0 < DAT_003af30c) {
     iVar11 = DAT_003af6f4;
     piVar13 = local_56c;
@@ -75,14 +75,14 @@ LAB_0002b3b4:
     do {
       puVar15 = puVar15 + 1;
       mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,piVar13[1] + 6,(gh_u1)DAT_003af700,
-                     DAT_003af704,*puVar15);
+                     DAT_003af704,(gh_byte *)*(gh_byte *)puVar15);
       if (m_ui == iVar11) {
         mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,piVar13[1] + -6,
-                       (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                       (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)(gh_byte *)&DAT_003af708);
       }
       else {
         mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,piVar13[1] + -10,
-                       (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                       (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)&DAT_003af70f);
       }
       iVar11 = iVar11 + 1;
       piVar13 = piVar13 + 4;
@@ -115,12 +115,12 @@ LAB_0002b7a8:
         iVar11 = -1;
         local_724 = 0;
       }
-      SoundPlay(1,mui_Effect1);
+      SoundPlay(1,(int *)mui_Effect1);
       goto LAB_0002b5d4;
     }
     if (uVar1 < 0x21) {
       if (uVar1 == 0x10) {
-        SoundPlay(1,mui_Effect0);
+        SoundPlay(1,(int *)mui_Effect0);
         if ((local_724 != 0) && (iVar11 != 0)) {
           iVar11 = iVar11 + -1;
         }
@@ -132,37 +132,37 @@ LAB_0002b5dc:
       if (local_728 == m_ui) {
 LAB_0002b5f4:
         if (-1 < DAT_003af27c) {
-          UnDrawSelectBar(local_56c + DAT_003af27c * 4,DAT_003af294,0);
+          UnDrawSelectBar(local_56c + DAT_003af27c * 4,(int)DAT_003af294,0);
           mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
           mui_outputxy_t(DAT_003af29c,local_56c[DAT_003af27c * 4] + 8,
                          local_56c[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af700,DAT_003af704,
-                         (&m_ui)[DAT_003af27c + 0x16]);
+                         (gh_byte *)(&m_ui)[DAT_003af27c + 0x16]);
           if (DAT_003af27c == m_ui) {
-            puVar15 = &DAT_003af708;
+            puVar15 = (gh_u4 **)&DAT_003af708;
             iVar9 = local_56c[DAT_003af27c * 4];
             iVar10 = local_56c[DAT_003af27c * 4 + 1] + -6;
           }
           else {
-            puVar15 = &DAT_003af70f;
+            puVar15 = (gh_u4 **)&DAT_003af70f;
             iVar9 = local_56c[DAT_003af27c * 4];
             iVar10 = local_56c[DAT_003af27c * 4 + 1] + -10;
           }
           mui_outputxy_t(DAT_003af29c,iVar9 + 0x120,iVar10,(gh_u1)DAT_003af71c,DAT_003af718,
-                         puVar15);
+                         (gh_byte *)puVar15);
         }
         iVar9 = iVar11;
         if (-1 < iVar11) {
           DrawSelectBar(local_56c + iVar11 * 4);
           mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,local_56c[iVar11 * 4 + 1] + 6,
-                         (gh_u1)DAT_003af700,DAT_003af704,(&m_ui)[iVar11 + 0x16]);
+                         (gh_u1)DAT_003af700,DAT_003af704,(gh_byte *)(&m_ui)[iVar11 + 0x16]);
           if (iVar11 == m_ui) {
             mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,local_56c[iVar11 * 4 + 1] + -6
-                           ,(gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                           ,(gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)(gh_byte *)&DAT_003af708);
           }
           else {
             mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,
                            local_56c[iVar11 * 4 + 1] + -10,(gh_u1)DAT_003af71c,DAT_003af718,
-                           &DAT_003af70f);
+                           (gh_byte *)&DAT_003af70f);
           }
         }
       }
@@ -207,21 +207,21 @@ LAB_0002b828:
           do {
             puVar15 = puVar15 + 1;
             mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 8,piVar13[1] + 6,
-                           (gh_u1)DAT_003af700,DAT_003af704,*puVar15);
+                           (gh_u1)DAT_003af700,DAT_003af704,(gh_byte *)*(gh_byte *)puVar15);
             if (m_ui == iVar9) {
               mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 0x120,piVar13[1] + -6,
-                             (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af708);
+                             (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)(gh_byte *)&DAT_003af708);
             }
             else {
               mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 0x120,piVar13[1] + -10,
-                             (gh_u1)DAT_003af71c,DAT_003af718,&DAT_003af70f);
+                             (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)&DAT_003af70f);
             }
             iVar9 = iVar9 + 1;
             piVar13 = piVar13 + 4;
           } while (iVar9 < DAT_003af30c);
         }
         DAT_003af27c = -1;
-        uVar2 = GetWorkPath();
+        uVar2 = (gh_u4)GetWorkPath();
         sprintf(acStack_6d0,"%s/setting.xml",uVar2);
         pFVar3 = fopen(acStack_6d0,"r");
         if (pFVar3 == (FILE *)0x0) {
@@ -260,8 +260,8 @@ LAB_0002b778:
       goto LAB_0002b7a4;
     }
     if (uVar1 == 0x40) {
-      SoundPlay(1,mui_Effect0);
-      iVar9 = m_menulog._8_4_;
+      SoundPlay(1,(int *)mui_Effect0);
+      iVar9 = (m_menulog_blob)._8_4_;
       uVar2 = DAT_003af394;
       if (local_724 != 0) {
         if (iVar11 < DAT_003af30c + -1) {
@@ -269,9 +269,9 @@ LAB_0002b778:
         }
         goto LAB_0002b5d4;
       }
-      DAT_003af27c = m_menulog._12_4_;
+      DAT_003af27c = (m_menulog_blob)._12_4_;
       DAT_003af394 = DAT_003af740;
-      DAT_003af278 = m_menulog._8_4_;
+      DAT_003af278 = (m_menulog_blob)._8_4_;
       strcpy(acStack_66c,root_path);
       sVar4 = strlen(root_path);
       pcVar5 = stpcpy(root_path + sVar4,(char *)&DAT_003af748);
@@ -283,7 +283,7 @@ LAB_0002b778:
       }
       RARCH_LOG("mui_file_list path:%s\n",path);
       iVar10 = -1;
-      iVar11 = m_menulog._4_4_;
+      iVar11 = (m_menulog_blob)._4_4_;
 LAB_0002be88:
       if (DAT_003af294 == (int *)0x0) {
         mui_LoadUIResource(&DAT_003af294,"setting.raw");
@@ -302,7 +302,7 @@ LAB_0002c008:
       uVar1 = mui_ReadJoystick();
       iVar14 = iVar9;
       if (uVar1 == 0x80) {
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         iVar7 = DAT_003af27c;
         iVar14 = DAT_003af278;
         if (iVar11 == 0) {
@@ -347,7 +347,7 @@ LAB_0002c500:
                 if (iVar14 == 0) goto LAB_0002c094;
                 sVar4 = strlen(path);
                 m_menulog[sVar4 + 0x1bb] = 0;
-                myStrrstr(path,&DAT_002dd64c);
+                myStrrstr(path,(char *)&DAT_002dd64c);
                 RARCH_LOG(&DAT_002dd878,path);
                 iVar6 = dir_serial_list(0,&DAT_002dd860);
                 iVar7 = 0;
@@ -390,7 +390,7 @@ LAB_0002c1dc:
             else {
               sVar4 = strlen(path);
               m_menulog[sVar4 + 0x1bb] = 0;
-              myStrrstr(path,&DAT_002dd64c);
+              myStrrstr(path,(char *)&DAT_002dd64c);
               iVar6 = dir_serial_list(0,&DAT_002dd860);
               iVar7 = 0;
               iVar14 = 0;
@@ -402,7 +402,7 @@ LAB_0002c094:
           goto LAB_0002c004;
         }
         if (uVar1 == 0x10) {
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           if (iVar11 != 0) {
             if (iVar10 < 1) {
               if (iVar9 == 0) goto LAB_0002c094;
@@ -426,7 +426,7 @@ LAB_0002c094:
           goto LAB_0002c094;
         }
         if (uVar1 == 0x20) {
-          SoundPlay(1,mui_Effect1);
+          SoundPlay(1,(int *)mui_Effect1);
           iVar7 = DAT_003af27c;
           iVar14 = DAT_003af278;
           if (iVar11 == 0) {
@@ -464,7 +464,7 @@ LAB_0002c094:
         }
         else {
           if (uVar1 != 0x40) goto LAB_0002c094;
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           if (iVar11 == 0) {
             if (DAT_003af294 == (int *)0x0) {
               mui_LoadUIResource(&DAT_003af294,"setting.raw");
@@ -479,9 +479,9 @@ LAB_0002c7b8:
             OutRect._16_4_ = 0x500;
             OutRect._20_4_ = 0x2d0;
             mui_outputxy_t(DAT_003af29c,DAT_003af788,DAT_003af78c,(gh_u1)DAT_003af798,
-                           DAT_003af79c,&DAT_003af7a0);
+                           DAT_003af79c,(gh_byte *)&DAT_003af7a0);
             mui_outputxy_t(DAT_003af29c,DAT_003af788,DAT_003af78c + DAT_003af794,
-                           (gh_u1)DAT_003af798,DAT_003af79c,&DAT_003af7e0);
+                           (gh_u1)DAT_003af798,DAT_003af79c,(gh_byte *)&DAT_003af7e0);
             ForceFlashCount = 0;
             dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
             mui_ReadJoystick();
@@ -490,7 +490,7 @@ LAB_0002c7b8:
             iVar6 = mui_ReadJoystick();
             do {
               if (iVar6 == 0x40) {
-                SoundPlay(1,mui_Effect0);
+                SoundPlay(1,(int *)mui_Effect0);
                 do {
                   if (DAT_003af294 == (int *)0x0) {
                     mui_LoadUIResource(&DAT_003af294,"setting.raw");
@@ -517,7 +517,7 @@ LAB_0002c7b8:
                       return;
                     }
                     if (iVar6 == 0x10) {
-                      SoundPlay(1,mui_Effect0);
+                      SoundPlay(1,(int *)mui_Effect0);
                       goto LAB_0002c7b8;
                     }
                     if (DAT_003af274 != 0) {
@@ -551,7 +551,7 @@ LAB_0002c7b8:
                   memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
                          (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) *
                          (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
-                  uVar8 = GetWorkPath();
+                  uVar8 = (gh_u4)GetWorkPath();
                   sprintf(acStack_42c,"%s/setting.xml",uVar8);
                   pFVar3 = fopen(acStack_42c,"r");
                   if (pFVar3 == (FILE *)0x0) {
@@ -583,7 +583,7 @@ LAB_0002c7b8:
                   free(DAT_003af2b0);
                   DAT_003af2b0 = (void *)0x0;
                 }
-                uVar8 = GetWorkPath();
+                uVar8 = (gh_u4)GetWorkPath();
                 sprintf(acStack_42c,"%s/recent.lst",uVar8);
                 pFVar3 = fopen(acStack_42c,"wb");
                 if (pFVar3 != (FILE *)0x0) {
@@ -597,7 +597,7 @@ LAB_0002c7b8:
                   free(DAT_003af2b4);
                   DAT_003af2b4 = (void *)0x0;
                 }
-                uVar8 = GetWorkPath();
+                uVar8 = (gh_u4)GetWorkPath();
                 sprintf(acStack_42c,"%s/favorites.lst",uVar8);
                 pFVar3 = fopen(acStack_42c,"wb");
                 if (pFVar3 != (FILE *)0x0) {
@@ -609,7 +609,7 @@ LAB_0002c7b8:
                 }
               }
               else if (iVar6 == 0x10) {
-                SoundPlay(1,mui_Effect0);
+                SoundPlay(1,(int *)mui_Effect0);
                 goto LAB_0002be88;
               }
               if (DAT_003af274 != 0) {
@@ -658,7 +658,7 @@ LAB_0002c004:
       iVar11 = -1;
       local_724 = 0;
     }
-    SoundPlay(1,mui_Effect1);
+    SoundPlay(1,(int *)mui_Effect1);
   }
   else {
     if (uVar1 != 0x2000) {

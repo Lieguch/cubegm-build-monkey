@@ -35,13 +35,13 @@ void AudioProcess(void)
   short local_60 [4];
   timeval local_58;
   timeval local_50;
-  timezone tStack_48;
-  timezone tStack_40;
+  struct timezone tStack_48;
+  struct timezone tStack_40;
   
-  if ((SoundPlayer._0_4_ != 0) && (SoundPlayer._32_4_ = 0, SoundPlayer._4_4_ == 1)) {
+  if (((SoundPlayer_blob)._0_4_ != 0) && ((SoundPlayer_blob)._32_4_ = 0, (SoundPlayer_blob)._4_4_ == 1)) {
     Mp3DecodeLoop(0);
   }
-  if ((SoundPlayer._36_4_ != 0) && (SoundPlayer._68_4_ = 0, SoundPlayer._40_4_ == 1)) {
+  if (((SoundPlayer_blob)._36_4_ != 0) && ((SoundPlayer_blob)._68_4_ = 0, (SoundPlayer_blob)._40_4_ == 1)) {
     Mp3DecodeLoop();
   }
   fVar18 = 0.0;
@@ -107,7 +107,7 @@ void AudioProcess(void)
               }
               piVar15[6] = iVar10;
             }
-            uVar6 = __aeabi_idiv(&DAT_000f4240,piVar15[4]);
+            uVar6 = __aeabi_idiv((gh_uint)0xf4240,piVar15[4]);
             fVar16 = (float)VectorSignedToFloat(uVar6,(gh_byte)(in_fpscr >> 0x16) & 3);
             fVar17 = fVar16 + fVar17;
             in_fpscr = in_fpscr & 0xfffffff | (gh_uint)(fVar17 == fVar18) << 0x1e |

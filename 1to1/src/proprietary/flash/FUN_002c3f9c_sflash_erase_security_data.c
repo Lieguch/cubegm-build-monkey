@@ -20,7 +20,7 @@ void sflash_erase_security_data(gh_u4 param_1)
   snor_write_en();
   iVar1 = sfc_request(&local_18,param_1,0,0);
   if (iVar1 == 0) {
-    snor_wait_busy(&DAT_00061a80);
+    snor_wait_busy(0x61a80);
   }
   return;
 }

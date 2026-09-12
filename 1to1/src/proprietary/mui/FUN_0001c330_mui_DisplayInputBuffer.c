@@ -43,7 +43,7 @@ void mui_DisplayInputBuffer(void)
   }
   puVar6 = m_search;
   uVar7 = mui_outputxy_t(DAT_003af29c,iVar4 + 2,iVar5,(gh_u1)DAT_003af6d8,DAT_003af6dc,
-                         *m_search);
+                         (gh_byte *)*m_search);
   puVar6[3] = uVar7;
   return;
 }

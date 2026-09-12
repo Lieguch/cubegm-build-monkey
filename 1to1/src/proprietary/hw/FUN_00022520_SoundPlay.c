@@ -65,7 +65,7 @@ void SoundPlay(int param_1,int *param_2)
   piVar1[2] = iVar3;
   pvVar2 = malloc(iVar3 + 0x900);
   piVar1[3] = (int)pvVar2;
-  iVar3 = MP3InitDecoder();
+  iVar3 = (int)MP3InitDecoder();
   *piVar1 = iVar3;
   if (iVar3 == 0) {
     RARCH_LOG("** Cannot initialize MP3 decoder.\r\n");
@@ -77,7 +77,7 @@ void SoundPlay(int param_1,int *param_2)
   piVar1[5] = 0;
   piVar1[6] = iVar3;
   while( true ) {
-    iVar4 = MP3FindSyncWord(piVar1[1],iVar3);
+    iVar4 = MP3FindSyncWord((gh_byte *)piVar1[1],iVar3);
     iVar3 = 0;
     if (-1 < iVar4) break;
     piVar1[6] = 0;

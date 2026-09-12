@@ -33,7 +33,7 @@ void DisplayPage_list(int param_1,gh_u4 param_2,int param_3)
   OutRect._8_4_ = DAT_003af720;
   local_38 = DAT_003af724 + DAT_003af72c;
   OutRect._12_4_ = DAT_003af724;
-  local_30 = DAT_003af29c;
+  local_30 = (int)DAT_003af29c;
   local_34 = DAT_003af2a0 << 1;
   local_44 = DAT_003af720 + -8;
   local_2c = local_44;
@@ -42,7 +42,7 @@ void DisplayPage_list(int param_1,gh_u4 param_2,int param_3)
   local_20 = local_38;
   local_1c = local_34;
   OutRect._20_4_ = local_38;
-  mui_blockcopy(&local_30,&local_48);
+  mui_blockcopy((int *)&local_30,(int *)&local_48);
   if ((0 < DAT_003af394) && (param_1 != param_3)) {
     iVar1 = 0;
     do {

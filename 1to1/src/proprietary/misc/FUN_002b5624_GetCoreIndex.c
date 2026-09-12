@@ -16,7 +16,7 @@ int GetCoreIndex(char *param_1)
   int iVar2;
   
   iVar2 = 0;
-  __s1 = &default_core_list;
+  __s1 = default_core_list;
   while( true ) {
     if (*__s1 == '\0') {
       return -1;
@@ -29,6 +29,6 @@ int GetCoreIndex(char *param_1)
       return -1;
     }
   }
-  Filetype = *(gh_uint *)(&DAT_003b0274 + iVar2 * 0x44) | Filetype;
+  Filetype = *(gh_uint *)(DAT_003b0274 + iVar2 * 0x44) | Filetype;
   return iVar2;
 }

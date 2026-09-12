@@ -26,7 +26,7 @@ gh_u4 UpdateROMProc(int param_1,int param_2)
   pthread_t apStack_2c [2];
   
   __ptr = malloc(0x10000);
-  iVar1 = pthread_create(apStack_2c,(pthread_attr_t *)0x0,XintiaoThread,(void *)0x0);
+  iVar1 = pthread_create(apStack_2c,(pthread_attr_t *)0x0,(void *(*)(void *))XintiaoThread,(void *)0x0);
   if (iVar1 != 0) {
     puts("can\'t create XintiaoThread process thread \r");
   }
@@ -41,7 +41,7 @@ gh_u4 UpdateROMProc(int param_1,int param_2)
       spi_printf("%08X %3d%%",iVar1,uVar2);
       local_48 = 3;
       while( true ) {
-        spi_printf(&DAT_002dbe58);
+        spi_printf((char *)DAT_002dbe58);
         dispFlip(scr_data,scr_h_size,scr_v_size,scr_h_size << 1);
         pvVar6 = __ptr;
         do {
@@ -65,11 +65,11 @@ gh_u4 UpdateROMProc(int param_1,int param_2)
           if (iVar8 <= iVar3) goto LAB_0000aa64;
         }
         if (iVar8 <= iVar3) break;
-        spi_printf(&DAT_002dbe5c);
+        spi_printf((char *)DAT_002dbe5c);
         dispFlip(scr_data,scr_h_size,scr_v_size,scr_h_size << 1);
         iVar3 = erase_sector(iVar1);
         if (-1 < iVar3) {
-          spi_printf(&DAT_002dbe60);
+          spi_printf((char *)DAT_002dbe60);
           dispFlip(scr_data,scr_h_size,scr_v_size,scr_h_size << 1);
           iVar3 = local_44;
           do {

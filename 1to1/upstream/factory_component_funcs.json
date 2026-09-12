@@ -1,0 +1,1001 @@
+{
+ "stb_truetype": [
+  {
+   "addr": "0x00013170",
+   "size": 336,
+   "name": "stbtt__cff_get_index"
+  },
+  {
+   "addr": "0x000132c0",
+   "size": 312,
+   "name": "stbtt__cff_int"
+  },
+  {
+   "addr": "0x000133f8",
+   "size": 412,
+   "name": "stbtt__dict_get_ints"
+  },
+  {
+   "addr": "0x00013594",
+   "size": 232,
+   "name": "stbtt__isfont"
+  },
+  {
+   "addr": "0x0001367c",
+   "size": 188,
+   "name": "stbtt__find_table"
+  },
+  {
+   "addr": "0x00013738",
+   "size": 284,
+   "name": "stbtt__get_subrs"
+  },
+  {
+   "addr": "0x00013854",
+   "size": 224,
+   "name": "stbtt__GetGlyfOffset"
+  },
+  {
+   "addr": "0x00013934",
+   "size": 180,
+   "name": "stbtt__track_vertex"
+  },
+  {
+   "addr": "0x000139e8",
+   "size": 156,
+   "name": "stbtt__csctx_v"
+  },
+  {
+   "addr": "0x00013a84",
+   "size": 100,
+   "name": "stbtt__csctx_close_shape"
+  },
+  {
+   "addr": "0x00013ae8",
+   "size": 104,
+   "name": "stbtt__csctx_rmove_to"
+  },
+  {
+   "addr": "0x00013b50",
+   "size": 84,
+   "name": "stbtt__csctx_rline_to"
+  },
+  {
+   "addr": "0x00013ba4",
+   "size": 112,
+   "name": "stbtt__csctx_rccurve_to"
+  },
+  {
+   "addr": "0x00013c14",
+   "size": 568,
+   "name": "stbtt__sort_edges_quicksort"
+  },
+  {
+   "addr": "0x00013e4c",
+   "size": 280,
+   "name": "stbtt__tesselate_curve"
+  },
+  {
+   "addr": "0x00013f64",
+   "size": 436,
+   "name": "stbtt__CompareUTF8toUTF16_bigendian_prefix"
+  },
+  {
+   "addr": "0x00014118",
+   "size": 552,
+   "name": "stbtt__matchpair"
+  },
+  {
+   "addr": "0x0001467c",
+   "size": 492,
+   "name": "stbtt__tesselate_cubic"
+  },
+  {
+   "addr": "0x00014868",
+   "size": 804,
+   "name": "stbtt__h_prefilter"
+  },
+  {
+   "addr": "0x00014b8c",
+   "size": 800,
+   "name": "stbtt__v_prefilter"
+  },
+  {
+   "addr": "0x00015424",
+   "size": 320,
+   "name": "stbtt__cff_index_get.isra.2"
+  },
+  {
+   "addr": "0x00015564",
+   "size": 268,
+   "name": "stbtt__close_shape"
+  },
+  {
+   "addr": "0x00015670",
+   "size": 3036,
+   "name": "stbtt__run_charstring"
+  },
+  {
+   "addr": "0x0001624c",
+   "size": 284,
+   "name": "stbtt__GetGlyphClass"
+  },
+  {
+   "addr": "0x00016368",
+   "size": 264,
+   "name": "stbtt__handle_clipped_edge.part.9"
+  },
+  {
+   "addr": "0x00016470",
+   "size": 72,
+   "name": "stbtt__cuberoot"
+  },
+  {
+   "addr": "0x00016550",
+   "size": 2412,
+   "name": "stbtt__rasterize_sorted_edges.isra.16"
+  },
+  {
+   "addr": "0x00019910",
+   "size": 848,
+   "name": "stbtt_FindGlyphIndex"
+  },
+  {
+   "addr": "0x00019c60",
+   "size": 372,
+   "name": "stbtt_GetGlyphBox"
+  },
+  {
+   "addr": "0x00019dd4",
+   "size": 60,
+   "name": "stbtt_GetCodepointBox"
+  },
+  {
+   "addr": "0x00019e10",
+   "size": 156,
+   "name": "stbtt_IsGlyphEmpty"
+  },
+  {
+   "addr": "0x00019eac",
+   "size": 2304,
+   "name": "stbtt_GetGlyphShape"
+  },
+  {
+   "addr": "0x0001a7ac",
+   "size": 36,
+   "name": "stbtt_GetCodepointShape"
+  },
+  {
+   "addr": "0x0001a7d0",
+   "size": 208,
+   "name": "stbtt_GetGlyphHMetrics"
+  },
+  {
+   "addr": "0x0001a8a0",
+   "size": 1308,
+   "name": "stbtt_GetGlyphKernAdvance"
+  },
+  {
+   "addr": "0x0001adbc",
+   "size": 84,
+   "name": "stbtt_GetCodepointKernAdvance"
+  },
+  {
+   "addr": "0x0001ae10",
+   "size": 44,
+   "name": "stbtt_GetCodepointHMetrics"
+  },
+  {
+   "addr": "0x0001ae3c",
+   "size": 140,
+   "name": "stbtt_GetFontVMetrics"
+  },
+  {
+   "addr": "0x0001aec8",
+   "size": 168,
+   "name": "stbtt_GetFontVMetricsOS2"
+  },
+  {
+   "addr": "0x0001af70",
+   "size": 144,
+   "name": "stbtt_GetFontBoundingBox"
+  },
+  {
+   "addr": "0x0001b000",
+   "size": 80,
+   "name": "stbtt_ScaleForPixelHeight"
+  },
+  {
+   "addr": "0x0001b050",
+   "size": 48,
+   "name": "stbtt_ScaleForMappingEmToPixels"
+  },
+  {
+   "addr": "0x0001b080",
+   "size": 8,
+   "name": "stbtt_FreeShape"
+  },
+  {
+   "addr": "0x0001b088",
+   "size": 324,
+   "name": "stbtt_GetGlyphBitmapBoxSubpixel"
+  },
+  {
+   "addr": "0x0001b1cc",
+   "size": 16,
+   "name": "stbtt_GetGlyphBitmapBox"
+  },
+  {
+   "addr": "0x0001b1dc",
+   "size": 100,
+   "name": "stbtt_GetCodepointBitmapBoxSubpixel"
+  },
+  {
+   "addr": "0x0001b3bc",
+   "size": 16,
+   "name": "stbtt_GetCodepointBitmapBox"
+  },
+  {
+   "addr": "0x0001b3cc",
+   "size": 1244,
+   "name": "stbtt_Rasterize"
+  },
+  {
+   "addr": "0x0001b8a8",
+   "size": 4,
+   "name": "stbtt_FreeBitmap"
+  },
+  {
+   "addr": "0x0001b8ac",
+   "size": 376,
+   "name": "stbtt_GetGlyphBitmapSubpixel"
+  },
+  {
+   "addr": "0x0001ba24",
+   "size": 16,
+   "name": "stbtt_GetGlyphBitmap"
+  },
+  {
+   "addr": "0x0001ba34",
+   "size": 232,
+   "name": "stbtt_MakeGlyphBitmapSubpixel"
+  },
+  {
+   "addr": "0x0001bb1c",
+   "size": 16,
+   "name": "stbtt_MakeGlyphBitmap"
+  },
+  {
+   "addr": "0x0001bb2c",
+   "size": 100,
+   "name": "stbtt_GetCodepointBitmapSubpixel"
+  },
+  {
+   "addr": "0x0001bb90",
+   "size": 104,
+   "name": "stbtt_MakeCodepointBitmapSubpixel"
+  },
+  {
+   "addr": "0x0001c41c",
+   "size": 16,
+   "name": "stbtt_GetCodepointBitmap"
+  },
+  {
+   "addr": "0x0001c42c",
+   "size": 16,
+   "name": "stbtt_MakeCodepointBitmap"
+  },
+  {
+   "addr": "0x0001c43c",
+   "size": 324,
+   "name": "stbtt_GetBakedQuad"
+  },
+  {
+   "addr": "0x0001c580",
+   "size": 244,
+   "name": "stbtt_PackBegin"
+  },
+  {
+   "addr": "0x0001c674",
+   "size": 28,
+   "name": "stbtt_PackEnd"
+  },
+  {
+   "addr": "0x0001c690",
+   "size": 20,
+   "name": "stbtt_PackSetOversampling"
+  },
+  {
+   "addr": "0x0001c6a4",
+   "size": 8,
+   "name": "stbtt_PackSetSkipMissingCodepoints"
+  },
+  {
+   "addr": "0x0001c6ac",
+   "size": 440,
+   "name": "stbtt_PackFontRangesGatherRects"
+  },
+  {
+   "addr": "0x0001c864",
+   "size": 228,
+   "name": "stbtt_MakeGlyphBitmapSubpixelPrefilter"
+  },
+  {
+   "addr": "0x0001c948",
+   "size": 152,
+   "name": "stbtt_MakeCodepointBitmapSubpixelPrefilter"
+  },
+  {
+   "addr": "0x0001c9e0",
+   "size": 984,
+   "name": "stbtt_PackFontRangesRenderIntoRects"
+  },
+  {
+   "addr": "0x0001cdb8",
+   "size": 196,
+   "name": "stbtt_PackFontRangesPackRects"
+  },
+  {
+   "addr": "0x0001ce7c",
+   "size": 348,
+   "name": "stbtt_GetPackedQuad"
+  },
+  {
+   "addr": "0x0001cfd8",
+   "size": 4236,
+   "name": "stbtt_GetGlyphSDF"
+  },
+  {
+   "addr": "0x0001e064",
+   "size": 100,
+   "name": "stbtt_GetCodepointSDF"
+  },
+  {
+   "addr": "0x0001e0c8",
+   "size": 4,
+   "name": "stbtt_FreeSDF"
+  },
+  {
+   "addr": "0x0001e0cc",
+   "size": 312,
+   "name": "stbtt_GetFontNameString"
+  },
+  {
+   "addr": "0x0001e204",
+   "size": 224,
+   "name": "stbtt_GetFontOffsetForIndex"
+  },
+  {
+   "addr": "0x0001e2e4",
+   "size": 156,
+   "name": "stbtt_GetNumberOfFonts"
+  },
+  {
+   "addr": "0x0001e380",
+   "size": 1232,
+   "name": "stbtt_InitFont"
+  },
+  {
+   "addr": "0x0001e850",
+   "size": 296,
+   "name": "stbtt_PackFontRanges"
+  },
+  {
+   "addr": "0x0001e978",
+   "size": 68,
+   "name": "stbtt_PackFontRange"
+  },
+  {
+   "addr": "0x0001e9bc",
+   "size": 184,
+   "name": "stbtt_GetScaledFontVMetrics"
+  },
+  {
+   "addr": "0x0001ea74",
+   "size": 568,
+   "name": "stbtt_BakeFontBitmap"
+  },
+  {
+   "addr": "0x0001ef58",
+   "size": 476,
+   "name": "stbtt_FindMatchingFont"
+  },
+  {
+   "addr": "0x0001f134",
+   "size": 28,
+   "name": "stbtt_CompareUTF8toUTF16_bigendian"
+  }
+ ],
+ "mini-XML": [
+  {
+   "addr": "0x00009b10",
+   "size": 72,
+   "name": "_mxml_fini"
+  },
+  {
+   "addr": "0x002bea48",
+   "size": 276,
+   "name": "mxml_set_attr"
+  },
+  {
+   "addr": "0x002bef64",
+   "size": 168,
+   "name": "_mxml_entity_cb"
+  },
+  {
+   "addr": "0x002bf00c",
+   "size": 36,
+   "name": "mxml_string_putc"
+  },
+  {
+   "addr": "0x002bf030",
+   "size": 164,
+   "name": "mxml_write_ws"
+  },
+  {
+   "addr": "0x002bf0d4",
+   "size": 916,
+   "name": "mxml_string_getc"
+  },
+  {
+   "addr": "0x002bf468",
+   "size": 480,
+   "name": "mxml_get_entity"
+  },
+  {
+   "addr": "0x002bf648",
+   "size": 420,
+   "name": "mxml_add_char"
+  },
+  {
+   "addr": "0x002bf7ec",
+   "size": 872,
+   "name": "mxml_file_getc"
+  },
+  {
+   "addr": "0x002bfb54",
+   "size": 172,
+   "name": "mxml_write_string"
+  },
+  {
+   "addr": "0x002bfc00",
+   "size": 108,
+   "name": "mxml_fd_write"
+  },
+  {
+   "addr": "0x002bfc6c",
+   "size": 76,
+   "name": "mxml_fd_putc"
+  },
+  {
+   "addr": "0x002bfcb8",
+   "size": 28,
+   "name": "mxml_file_putc"
+  },
+  {
+   "addr": "0x002bfcd4",
+   "size": 20,
+   "name": "mxml_isspace.part.0"
+  },
+  {
+   "addr": "0x002bfce8",
+   "size": 5452,
+   "name": "mxml_load_data"
+  },
+  {
+   "addr": "0x002c1234",
+   "size": 92,
+   "name": "mxml_fd_read.part.1"
+  },
+  {
+   "addr": "0x002c1290",
+   "size": 1364,
+   "name": "mxml_fd_getc"
+  },
+  {
+   "addr": "0x002c17e4",
+   "size": 268,
+   "name": "mxml_write_name"
+  },
+  {
+   "addr": "0x002c18f0",
+   "size": 1600,
+   "name": "mxml_write_node"
+  },
+  {
+   "addr": "0x002c2d40",
+   "size": 76,
+   "name": "mxml_new"
+  },
+  {
+   "addr": "0x002c3108",
+   "size": 4,
+   "name": "_mxml_destructor"
+  },
+  {
+   "addr": "0x002c310c",
+   "size": 28,
+   "name": "_mxml_init"
+  },
+  {
+   "addr": "0x002c3128",
+   "size": 8,
+   "name": "mxml_ignore_cb"
+  },
+  {
+   "addr": "0x002c3130",
+   "size": 8,
+   "name": "mxml_integer_cb"
+  },
+  {
+   "addr": "0x002c3138",
+   "size": 8,
+   "name": "mxml_opaque_cb"
+  },
+  {
+   "addr": "0x002c3140",
+   "size": 8,
+   "name": "mxml_real_cb"
+  },
+  {
+   "addr": "0x002c3148",
+   "size": 148,
+   "name": "_mxml_global"
+  },
+  {
+   "addr": "0x002c31dc",
+   "size": 164,
+   "name": "mxml_error"
+  },
+  {
+   "addr": "0x002c3944",
+   "size": 128,
+   "name": "_mxml_vstrdupf"
+  },
+  {
+   "addr": "0x002c39c4",
+   "size": 44,
+   "name": "_mxml_strdupf"
+  }
+ ],
+ "XUnzip": [
+  {
+   "addr": "0x0000dc04",
+   "size": 12,
+   "name": "_Z7zcallocPvjj"
+  },
+  {
+   "addr": "0x0000dc10",
+   "size": 8,
+   "name": "_Z6zcfreePvS_"
+  },
+  {
+   "addr": "0x0000dc18",
+   "size": 356,
+   "name": "_Z13inflate_flushP20inflate_blocks_stateP10z_stream_si"
+  },
+  {
+   "addr": "0x0000dd7c",
+   "size": 80,
+   "name": "_Z17inflate_codes_newjjPK14inflate_huft_sS1_P10z_stream_s"
+  },
+  {
+   "addr": "0x0000ddcc",
+   "size": 20,
+   "name": "_Z18inflate_codes_freeP19inflate_codes_stateP10z_stream_s"
+  },
+  {
+   "addr": "0x0000dde0",
+   "size": 152,
+   "name": "_Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm"
+  },
+  {
+   "addr": "0x0000de78",
+   "size": 224,
+   "name": "_Z18inflate_blocks_newP10z_stream_sPFmmPKhjEj"
+  },
+  {
+   "addr": "0x0000df58",
+   "size": 76,
+   "name": "_Z19inflate_blocks_freeP20inflate_blocks_stateP10z_stream_s"
+  },
+  {
+   "addr": "0x0000dfa4",
+   "size": 1432,
+   "name": "_Z10huft_buildPjjjPKjS1_PP14inflate_huft_sS_S3_S_S_"
+  },
+  {
+   "addr": "0x0000e53c",
+   "size": 224,
+   "name": "_Z18inflate_trees_bitsPjS_PP14inflate_huft_sS1_P10z_stream_s"
+  },
+  {
+   "addr": "0x0000e61c",
+   "size": 452,
+   "name": "_Z21inflate_trees_dynamicjjPjS_S_PP14inflate_huft_sS2_S1_P10z_stream_s"
+  },
+  {
+   "addr": "0x0000e7e0",
+   "size": 68,
+   "name": "_Z19inflate_trees_fixedPjS_PPK14inflate_huft_sS3_P10z_stream_s"
+  },
+  {
+   "addr": "0x0000e824",
+   "size": 1140,
+   "name": "_Z12inflate_fastjjPK14inflate_huft_sS1_P20inflate_blocks_stateP10z_stream_s"
+  },
+  {
+   "addr": "0x0000ec98",
+   "size": 2148,
+   "name": "_Z13inflate_codesP20inflate_blocks_stateP10z_stream_si"
+  },
+  {
+   "addr": "0x0000f4fc",
+   "size": 2788,
+   "name": "_Z14inflate_blocksP20inflate_blocks_stateP10z_stream_si"
+  },
+  {
+   "addr": "0x0000ffe0",
+   "size": 20,
+   "name": "_Z13get_crc_tablev"
+  },
+  {
+   "addr": "0x00010150",
+   "size": 392,
+   "name": "_Z7adler32mPKhj"
+  },
+  {
+   "addr": "0x000102d8",
+   "size": 16,
+   "name": "_Z11zlibVersionv"
+  },
+  {
+   "addr": "0x000102e8",
+   "size": 24,
+   "name": "_Z6zErrori"
+  },
+  {
+   "addr": "0x00010300",
+   "size": 92,
+   "name": "_Z12inflateResetP10z_stream_s"
+  },
+  {
+   "addr": "0x0001035c",
+   "size": 96,
+   "name": "_Z10inflateEndP10z_stream_s"
+  },
+  {
+   "addr": "0x000103bc",
+   "size": 244,
+   "name": "_Z12inflateInit2P10z_stream_s"
+  },
+  {
+   "addr": "0x000104b0",
+   "size": 1356,
+   "name": "_Z7inflateP10z_stream_si"
+  },
+  {
+   "addr": "0x000109fc",
+   "size": 212,
+   "name": "_Z7lufopenPvjjPj"
+  },
+  {
+   "addr": "0x00010ad0",
+   "size": 60,
+   "name": "_Z8lufcloseP6LUFILE"
+  },
+  {
+   "addr": "0x00010b0c",
+   "size": 36,
+   "name": "_Z8luferrorP6LUFILE"
+  },
+  {
+   "addr": "0x00010b30",
+   "size": 68,
+   "name": "_Z7luftellP6LUFILE"
+  },
+  {
+   "addr": "0x00010b74",
+   "size": 172,
+   "name": "_Z7lufseekP6LUFILEli"
+  },
+  {
+   "addr": "0x00010c20",
+   "size": 168,
+   "name": "_Z7lufreadPvjjP6LUFILE"
+  },
+  {
+   "addr": "0x00010cc8",
+   "size": 92,
+   "name": "_Z16unzlocal_getByteP6LUFILEPi"
+  },
+  {
+   "addr": "0x00010d24",
+   "size": 96,
+   "name": "_Z17unzlocal_getShortP6LUFILEPm"
+  },
+  {
+   "addr": "0x00010d84",
+   "size": 156,
+   "name": "_Z16unzlocal_getLongP6LUFILEPm"
+  },
+  {
+   "addr": "0x00010e20",
+   "size": 128,
+   "name": "_Z30strcmpcasenosensitive_internalPKcS0_"
+  },
+  {
+   "addr": "0x00010ea0",
+   "size": 16,
+   "name": "_Z24unzStringFileNameComparePKcS0_i"
+  },
+  {
+   "addr": "0x00010eb0",
+   "size": 452,
+   "name": "_Z25unzlocal_SearchCentralDirP6LUFILE"
+  },
+  {
+   "addr": "0x00011074",
+   "size": 32,
+   "name": "_Z16unzGetGlobalInfoP5unz_sP17unz_global_info_s"
+  },
+  {
+   "addr": "0x00011094",
+   "size": 64,
+   "name": "_Z25unzlocal_DosDateToTmuDatemP8tm_unz_s"
+  },
+  {
+   "addr": "0x000110d4",
+   "size": 1304,
+   "name": "_Z35unzlocal_GetCurrentFileInfoInternalP5unz_sP15unz_file_info_sP24unz_file_info_internal_sPcmPvmS5_m"
+  },
+  {
+   "addr": "0x000115ec",
+   "size": 64,
+   "name": "_Z21unzGetCurrentFileInfoP5unz_sP15unz_file_info_sPcmPvmS3_m"
+  },
+  {
+   "addr": "0x0001162c",
+   "size": 96,
+   "name": "_Z16unzGoToFirstFileP5unz_s"
+  },
+  {
+   "addr": "0x0001168c",
+   "size": 476,
+   "name": "_Z15unzOpenInternalP6LUFILE"
+  },
+  {
+   "addr": "0x00011868",
+   "size": 164,
+   "name": "_Z15unzGoToNextFileP5unz_s"
+  },
+  {
+   "addr": "0x0001190c",
+   "size": 240,
+   "name": "_Z13unzLocateFileP5unz_sPKci"
+  },
+  {
+   "addr": "0x000119fc",
+   "size": 732,
+   "name": "_Z40unzlocal_CheckCurrentFileCoherencyHeaderP5unz_sPjPmS1_"
+  },
+  {
+   "addr": "0x00011cd8",
+   "size": 540,
+   "name": "_Z18unzReadCurrentFileP5unz_sPvj"
+  },
+  {
+   "addr": "0x00011ef4",
+   "size": 36,
+   "name": "_Z7unztellP5unz_s"
+  },
+  {
+   "addr": "0x00011f18",
+   "size": 44,
+   "name": "_Z6unzeofP5unz_s"
+  },
+  {
+   "addr": "0x00011f44",
+   "size": 164,
+   "name": "_Z21unzGetLocalExtrafieldP5unz_sPvj"
+  },
+  {
+   "addr": "0x00011fe8",
+   "size": 144,
+   "name": "_Z19unzCloseCurrentFileP5unz_s"
+  },
+  {
+   "addr": "0x00012078",
+   "size": 60,
+   "name": "_Z8unzCloseP5unz_s"
+  },
+  {
+   "addr": "0x000120b4",
+   "size": 316,
+   "name": "_Z18unzOpenCurrentFileP5unz_s"
+  },
+  {
+   "addr": "0x000121f0",
+   "size": 148,
+   "name": "_Z19unzGetGlobalCommentP5unz_sPcm"
+  },
+  {
+   "addr": "0x00012284",
+   "size": 12,
+   "name": "_Z14timet2filetimel"
+  },
+  {
+   "addr": "0x00012290",
+   "size": 888,
+   "name": "_ZN6TUnzip3GetEiP8ZIPENTRY.part.5"
+  },
+  {
+   "addr": "0x00012608",
+   "size": 84,
+   "name": "_ZN6TUnzip4OpenEPvjj"
+  },
+  {
+   "addr": "0x0001265c",
+   "size": 152,
+   "name": "_ZN6TUnzip3GetEiP8ZIPENTRY"
+  },
+  {
+   "addr": "0x000126f4",
+   "size": 488,
+   "name": "_ZN6TUnzip5UnzipEiPvjj.part.7"
+  },
+  {
+   "addr": "0x000128dc",
+   "size": 180,
+   "name": "_ZN6TUnzip4FindEPKchPiP8ZIPENTRY"
+  },
+  {
+   "addr": "0x00012990",
+   "size": 28,
+   "name": "_ZN6TUnzip5UnzipEiPvjj"
+  },
+  {
+   "addr": "0x000129ac",
+   "size": 68,
+   "name": "_ZN6TUnzip5CloseEv"
+  },
+  {
+   "addr": "0x000129f0",
+   "size": 736,
+   "name": "_Z17FormatZipMessageUjPcj"
+  },
+  {
+   "addr": "0x00012dc8",
+   "size": 244,
+   "name": "_Z11GetZipItemWP6HZIP__iP9ZIPENTRYW"
+  },
+  {
+   "addr": "0x00012f40",
+   "size": 256,
+   "name": "_Z12FindZipItemWP6HZIP__PKchPiP9ZIPENTRYW"
+  },
+  {
+   "addr": "0x00013150",
+   "size": 28,
+   "name": "_Z12IsZipHandleUP6HZIP__"
+  }
+ ],
+ "HelixMP3": [
+  {
+   "addr": "0x002b8ce8",
+   "size": 2668,
+   "name": "xmp3_UnpackScaleFactors"
+  },
+  {
+   "addr": "0x002b9754",
+   "size": 148,
+   "name": "xmp3_MidSideProc"
+  },
+  {
+   "addr": "0x002b97e8",
+   "size": 1136,
+   "name": "xmp3_IntensityProcMPEG1"
+  },
+  {
+   "addr": "0x002b9c58",
+   "size": 1076,
+   "name": "xmp3_IntensityProcMPEG2"
+  },
+  {
+   "addr": "0x002ba08c",
+   "size": 356,
+   "name": "xmp3_Subband"
+  },
+  {
+   "addr": "0x002ba1f0",
+   "size": 412,
+   "name": "WinPrevious"
+  },
+  {
+   "addr": "0x002ba38c",
+   "size": 460,
+   "name": "FreqInvertRescale"
+  },
+  {
+   "addr": "0x002ba558",
+   "size": 5064,
+   "name": "xmp3_IMDCT"
+  },
+  {
+   "addr": "0x002bb920",
+   "size": 2652,
+   "name": "xmp3_DecodeHuffman"
+  },
+  {
+   "addr": "0x002bc37c",
+   "size": 648,
+   "name": "DequantBlock"
+  },
+  {
+   "addr": "0x002bc604",
+   "size": 1116,
+   "name": "xmp3_DequantChannel"
+  },
+  {
+   "addr": "0x002bca60",
+   "size": 916,
+   "name": "xmp3_Dequantize"
+  },
+  {
+   "addr": "0x002bcdf4",
+   "size": 2432,
+   "name": "xmp3_FDCT32"
+  },
+  {
+   "addr": "0x002bd774",
+   "size": 24,
+   "name": "xmp3_SetBitstreamPointer"
+  },
+  {
+   "addr": "0x002bd78c",
+   "size": 280,
+   "name": "xmp3_GetBits"
+  },
+  {
+   "addr": "0x002bd8a4",
+   "size": 24,
+   "name": "xmp3_CalcBitsUsed"
+  },
+  {
+   "addr": "0x002bd8bc",
+   "size": 44,
+   "name": "xmp3_CheckPadBit"
+  },
+  {
+   "addr": "0x002bd8e8",
+   "size": 692,
+   "name": "xmp3_UnpackFrameHeader"
+  },
+  {
+   "addr": "0x002bdb9c",
+   "size": 864,
+   "name": "xmp3_UnpackSideInfo"
+  },
+  {
+   "addr": "0x002bdf1c",
+   "size": 240,
+   "name": "xmp3_AllocateBuffers"
+  },
+  {
+   "addr": "0x002be00c",
+   "size": 4,
+   "name": "xmp3_FreeBuffers"
+  },
+  {
+   "addr": "0x002be010",
+   "size": 884,
+   "name": "xmp3_PolyphaseMono"
+  },
+  {
+   "addr": "0x002be384",
+   "size": 1732,
+   "name": "xmp3_PolyphaseStereo"
+  }
+ ],
+ "zlib": []
+}

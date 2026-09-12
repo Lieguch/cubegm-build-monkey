@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 Core_Load(char *param_1,gh_u4 param_2)
+gh_u4 Core_Load(char *param_1,char *param_2)
 
 {
   int iVar1;
@@ -43,11 +43,11 @@ gh_u4 Core_Load(char *param_1,gh_u4 param_2)
     }
     RARCH_LOG("support this game rom\n");
   }
-  iVar1 = Load_Proc1(&DAT_002dbcb4);
+  iVar1 = Load_Proc1((char *)DAT_002dbcb4);
   if (iVar1 == 0) {
     return 0;
   }
-  run_process("retro_set_progress_callback",progress);
+  run_process("retro_set_progress_callback",(gh_code *)progress);
   strcpy(fileName,param_1);
   if ((short)Filetype == 0x800) {
     _retro_set_device = (gh_code *)dlsym(handle,"retro_set_controller_port_device");
@@ -69,9 +69,9 @@ gh_u4 Core_Load(char *param_1,gh_u4 param_2)
       }
     }
   }
-  game._0_4_ = fileName;
-  game._4_4_ = ZIP_BUF;
-  game._8_4_ = ZIP_BUF_SIZE;
+  game_blob._0_4_ = fileName;
+  game_blob._4_4_ = ZIP_BUF;
+  game_blob._8_4_ = ZIP_BUF_SIZE;
   pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
   if (pcVar2 == (gh_code *)0x0) {
     RARCH_LOG("find retro_load_game process fail \n");

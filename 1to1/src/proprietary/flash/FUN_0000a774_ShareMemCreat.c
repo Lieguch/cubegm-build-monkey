@@ -18,7 +18,7 @@ gh_u4 * ShareMemCreat(void)
     puts("shmget failed");
   }
   else {
-    puVar1 = shmat(shmid,(void *)0x0,0);
+    puVar1 = (gh_u4 *)shmat(shmid,(void *)0x0,0);
     shm = puVar1;
     if (puVar1 != (gh_u4 *)0xffffffff) {
       *puVar1 = 1;

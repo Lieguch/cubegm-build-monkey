@@ -27,7 +27,7 @@ void mui_DisplayGameSum(void)
   uVar1 = DAT_003af394;
   if (DAT_003af288 == 0) {
     uStack_98 = 0x2f2d2020;
-    puStack_94 = &DAT_0020202d;
+    puStack_94 = DAT_0020202d;
   }
   else {
     iVar2 = __aeabi_idiv(DAT_003af288,DAT_003af394);
@@ -36,6 +36,6 @@ void mui_DisplayGameSum(void)
     iVar2 = OutRect._8_4_;
     iVar3 = OutRect._12_4_;
   }
-  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(gh_u1)DAT_003af324,DAT_003af328,&uStack_98);
+  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(gh_u1)DAT_003af324,DAT_003af328,(gh_byte *)&uStack_98);
   return;
 }

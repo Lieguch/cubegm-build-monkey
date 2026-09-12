@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 run_process_constprop_0(gh_u4 param_1)
+gh_u4 run_process_constprop_0(char *param_1)
 
 {
   gh_code *pcVar1;

@@ -8,10 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 gpsp_unzip(gh_u4 param_1,gh_u4 param_2)
+gh_u4 gpsp_unzip(gh_u4 param_1,char *param_2)
 
 {
-  int iVar1;
+  gh_u4 *iVar1;
   int iVar2;
   gh_u1 auStack_140 [296];
   gh_u4 local_18;
@@ -23,7 +23,7 @@ gh_u4 gpsp_unzip(gh_u4 param_1,gh_u4 param_2)
     RARCH_LOG("Open ZIP file ok\n");
     iVar2 = GetZipItemA(iVar1,0,auStack_140);
     if (iVar2 == 0) {
-      iVar2 = UnzipItem(iVar1,0,param_1,0,3);
+      iVar2 = UnzipItem(iVar1,0,(void *)param_1,0,3);
       CloseZipU(iVar1);
       if (iVar2 == 0) {
         RARCH_LOG("UnzipItem success!\n");

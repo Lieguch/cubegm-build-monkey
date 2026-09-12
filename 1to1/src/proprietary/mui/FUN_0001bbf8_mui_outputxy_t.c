@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-int mui_outputxy_t(int param_1,int param_2,int param_3,int param_4,gh_uint param_5,gh_byte *param_6)
+int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint param_5,gh_byte *param_6)
 
 {
   gh_byte *pbVar1;
@@ -27,6 +27,7 @@ int mui_outputxy_t(int param_1,int param_2,int param_3,int param_4,gh_uint param
   int iVar14;
   gh_uint in_fpscr;
   gh_u4 uVar15;
+  float fVarScaleIn;  /* 原寄存器复用：此处专供 stbtt_ScaleForPixelHeight(float) */
   float fVar16;
   float fVar17;
   gh_u4 local_50;
@@ -36,8 +37,8 @@ int mui_outputxy_t(int param_1,int param_2,int param_3,int param_4,gh_uint param
   int local_40;
   int local_3c [2];
   
-  uVar15 = VectorUnsignedToFloat(param_4 + 4U & 0xff,(gh_byte)(in_fpscr >> 0x16) & 3);
-  fontscale = (float)stbtt_ScaleForPixelHeight(uVar15,font);
+  fVarScaleIn = VectorUnsignedToFloat(param_4 + 4U & 0xff,(gh_byte)(in_fpscr >> 0x16) & 3);
+  fontscale = (float)stbtt_ScaleForPixelHeight(fVarScaleIn,font);
   stbtt_GetFontVMetrics(font,&fontascent,0);
   uVar11 = (gh_uint)*param_6;
   fVar16 = (float)VectorSignedToFloat(fontascent,(gh_byte)(in_fpscr >> 0x16) & 3);

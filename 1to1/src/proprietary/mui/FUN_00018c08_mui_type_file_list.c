@@ -149,7 +149,7 @@ LAB_00018f8c:
       iVar7 = iVar7 + 1;
     }
 LAB_00018e00:
-    libiconv_close(uVar2);
+    libiconv_close((void *)uVar2);
     return iVar7;
   }
   goto joined_r0x00018cbc;

@@ -12,12 +12,14 @@ gh_bool Load_Proc1(char *param_1)
 
 {
   int iVar1;
-  gh_u4 uVar2;
+  char *uVar2;
   
-  fpsbuf._4_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0x4);
-  fpsbuf._8_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0x8);
-  fpsbuf._12_4_ = *(gh_u4 *)((gh_u1  [16])0x0 + (gh_u1  [16])0xc);
-  fpsbuf._0_4_ = 0;
+  /* 证据：2b5a50 vmov.i32 q8,#0 + 2b5a7c vst1.8 {d16-d17},[lr]（lr=*(0x3B1EA0)=&fpsbuf）
+     → 一次 16 字节零写，即 fpsbuf._0_4_.._12_4_ 四字清零；原 3 行系 Ghidra 对 NEON 存储的误还原 */
+  (fpsbuf_blob)._4_4_ = 0;
+  (fpsbuf_blob)._8_4_ = 0;
+  (fpsbuf_blob)._12_4_ = 0;
+  (fpsbuf_blob)._0_4_ = 0;
   fps_ptr = 0;
   overtime = 0;
   overtime1 = 0;
@@ -27,12 +29,12 @@ gh_bool Load_Proc1(char *param_1)
     handle = dlopen(param_1,2);
   }
   if (handle != 0) {
-    iVar1 = run_process("retro_set_video_refresh",DrawFrame);
+    iVar1 = run_process("retro_set_video_refresh",(gh_code *)DrawFrame);
     if ((((iVar1 != 0) &&
-         (iVar1 = run_process("retro_set_audio_sample_batch",PlayFrame), iVar1 != 0)) &&
-        (iVar1 = run_process("retro_set_input_state",joystick_input), iVar1 != 0)) &&
-       ((iVar1 = run_process("retro_set_environment",environment), iVar1 != 0 &&
-        (iVar1 = run_process("retro_set_input_poll",joystick_poll), iVar1 != 0)))) {
+         (iVar1 = run_process("retro_set_audio_sample_batch",(gh_code *)PlayFrame), iVar1 != 0)) &&
+        (iVar1 = run_process("retro_set_input_state",(gh_code *)joystick_input), iVar1 != 0)) &&
+       ((iVar1 = run_process("retro_set_environment",(gh_code *)environment), iVar1 != 0 &&
+        (iVar1 = run_process("retro_set_input_poll",(gh_code *)joystick_poll), iVar1 != 0)))) {
       iVar1 = run_process("retro_init",0);
       return iVar1 != 0;
     }

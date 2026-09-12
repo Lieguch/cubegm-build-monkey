@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-int get_items_from_file(char *param_1,int param_2)
+int get_items_from_file(char *param_1,char *param_2)
 
 {
   FILE *__stream;

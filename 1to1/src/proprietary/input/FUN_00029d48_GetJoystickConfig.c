@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 GetJoystickConfig(int param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
+gh_u4 GetJoystickConfig(void *param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
   gh_bool bVar1;
@@ -22,7 +22,7 @@ gh_u4 GetJoystickConfig(int param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
   gh_u1 local_420 [1024];
   gh_u1 *puVar5;
   
-  uVar2 = GetWorkPath();
+  uVar2 = (gh_u4)GetWorkPath();
   sprintf(acStack_4a0,"%s/joystick.zip",uVar2);
   res_hz = OpenZipU(acStack_4a0,0,2);
   if (res_hz != 0) {
@@ -36,9 +36,9 @@ gh_u4 GetJoystickConfig(int param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
       }
     }
     iVar6 = 0;
-    __ptr = malloc(ze._296_4_ + 1);
+    __ptr = malloc((ze_blob)._296_4_ + 1);
     UnzipItem(res_hz,local_4a4,__ptr,0,3);
-    __ptr[ze._296_4_] = 0;
+    __ptr[(ze_blob)._296_4_] = 0;
     if (__ptr != (gh_u1 *)0x0) {
       puVar3 = local_420;
       puVar5 = __ptr;

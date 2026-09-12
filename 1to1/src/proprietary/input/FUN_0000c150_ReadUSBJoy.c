@@ -29,8 +29,8 @@ gh_uint ReadUSBJoy(int param_1)
     close(*(int *)(&joystick_fd + param_1 * 4));
     *(gh_u4 *)(&joystick_fd + param_1 * 4) = 0xffffffff;
     if (USBJoy_debug != 0) {
-      spi_printf("%s %04x %04x %x js%d Closed\n",0x3e16a4,InputDeviceInfo._0_4_,
-                 InputDeviceInfo._4_4_,InputDeviceInfo._8_4_,param_1);
+      spi_printf("%s %04x %04x %x js%d Closed\n",0x3e16a4,(InputDeviceInfo_blob)._0_4_,
+                 (InputDeviceInfo_blob)._4_4_,(InputDeviceInfo_blob)._8_4_,param_1);
       return *(gh_uint *)(&joy_key_tmp + param_1 * 4);
     }
     return *(gh_uint *)(&joy_key_tmp + param_1 * 4);
@@ -45,10 +45,10 @@ gh_uint ReadUSBJoy(int param_1)
     sprintf(acStack_38,"js%d",param_1);
     iVar1 = GetInputInfo(acStack_38,InputDeviceInfo);
     if (iVar1 != 0) {
-      RARCH_LOG("%s %04x %04x %x js%d Opened!\n",0x3e16a4,InputDeviceInfo._0_4_,
-                InputDeviceInfo._4_4_,InputDeviceInfo._8_4_,param_1);
-      GetJoystickConfig(USB_Table + param_1 * 0x60,InputDeviceInfo._0_4_,InputDeviceInfo._4_4_,
-                        InputDeviceInfo._8_4_);
+      RARCH_LOG("%s %04x %04x %x js%d Opened!\n",0x3e16a4,(InputDeviceInfo_blob)._0_4_,
+                (InputDeviceInfo_blob)._4_4_,(InputDeviceInfo_blob)._8_4_,param_1);
+      GetJoystickConfig(USB_Table + param_1 * 0x60,(InputDeviceInfo_blob)._0_4_,(InputDeviceInfo_blob)._4_4_,
+                        (InputDeviceInfo_blob)._8_4_);
     }
     if (USBJoy_debug != 0) {
       spi_printf("USB Joystick %d Opened\n",param_1 + 1);

@@ -32,7 +32,7 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
   iVar5 = param_3;
   iVar6 = param_2;
   puVar2 = param_1;
-  this_frame._0_4_ = param_1;
+  this_frame._0_4_ = (gh_u4)param_1;
   this_frame._4_4_ = param_2;
   this_frame._8_4_ = param_3;
   this_frame._12_4_ = param_4;
@@ -112,7 +112,7 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
   puVar2 = puVar1;
 LAB_002b5440:
   if (displayfps != 0) {
-    UIDebug(puVar2,iVar6,iVar5,param_4);
+    UIDebug((void *)puVar2,iVar6,iVar5,param_4);
   }
   dispFlip(puVar2,iVar6,iVar5,param_4);
   return;

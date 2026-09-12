@@ -11,7 +11,7 @@
 void mui_DisplayThumbnail(void)
 
 {
-  int iVar1;
+  gh_u4 *iVar1;
   int iVar2;
   void *__ptr;
   int iVar3;
@@ -48,7 +48,9 @@ void mui_DisplayThumbnail(void)
     while( true ) {
       sprintf(acStack_1d8,"%s_%03d.raw",auStack_2d8,DAT_003af280,puVar4);
       puVar4 = auStack_158;
-      iVar2 = FindZipItemA(iVar1,acStack_1d8,1,&local_38c);
+      /* 证据：15028 add r9,sp,#0x240 + 15060 str r9,[sp]（AAPCS 第 5 参经栈传递）
+         → 原厂此处传了 ZIPENTRY 输出缓冲；Ghidra C 漏参并留下死赋值 puVar4 = auStack_158 */
+      iVar2 = FindZipItemA(iVar1,acStack_1d8,1,&local_38c,(ZIPENTRY *)auStack_158);
       if (iVar2 == 0) break;
       if (DAT_003af280 == 0) {
         iVar2 = 0;
@@ -74,13 +76,13 @@ void mui_DisplayThumbnail(void)
     local_368 = DAT_003af6bc;
     local_364 = DAT_003af6b8 + DAT_003af6c0;
     local_374 = DAT_003af6c0 << 1;
-    local_370 = DAT_003af29c;
+    local_370 = (int)DAT_003af29c;
     local_35c = DAT_003af2a0 << 1;
     local_360 = DAT_003af6bc + DAT_003af6c4;
     local_388 = __ptr;
     local_384 = iVar2;
     local_380 = iVar2;
-    mui_blockcopy(&local_370,&local_388);
+    mui_blockcopy((int *)&local_370,(int *)&local_388);
     free(__ptr);
     DAT_003af280 = DAT_003af280 + 1;
 LAB_00015128:

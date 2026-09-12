@@ -32,7 +32,7 @@ void mui_LoadSetting(void)
   size_t local_12c;
   char acStack_128 [260];
   
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   sprintf(acStack_128,"%s/setting.xml",uVar1);
   pFVar2 = fopen(acStack_128,"r");
   if (pFVar2 == (FILE *)0x0) {
@@ -64,71 +64,71 @@ void mui_LoadSetting(void)
       if (tree != 0) {
         iVar3 = mxmlFindElement(tree,tree,"sound",0,0,1);
         if (iVar3 != 0) {
-          iVar5 = mxmlFindElement(iVar3,tree,&DAT_002dccf4,0,0,1);
+          iVar5 = mxmlFindElement(iVar3,tree,DAT_002dccf4,0,0,1);
           if (iVar5 != 0) {
-            uVar1 = GetWorkPath();
-            uVar6 = mxmlElementGetAttr(iVar5,&DAT_002dbd74);
+            uVar1 = (gh_u4)GetWorkPath();
+            uVar6 = mxmlElementGetAttr(iVar5,DAT_002dbd74);
             sprintf(acStack_128,"%s/%s",uVar1,uVar6);
             pFVar2 = fopen(acStack_128,"rb");
             if (pFVar2 != (FILE *)0x0) {
               fseek(pFVar2,0,2);
               sVar7 = ftell(pFVar2);
               rewind(pFVar2);
-              mui_MenuMusic._0_4_ = malloc(sVar7 + 1);
-              fread((void *)mui_MenuMusic._0_4_,sVar7,1,pFVar2);
+              (mui_MenuMusic_blob)._0_4_ = (gh_u4)malloc(sVar7 + 1);
+              fread((void *)(mui_MenuMusic_blob)._0_4_,sVar7,1,pFVar2);
               fclose(pFVar2);
-              mui_MenuMusic._28_4_ = sVar7 + mui_MenuMusic._0_4_;
-              mui_MenuMusic._4_4_ = 1;
-              mui_MenuMusic._8_4_ = 1;
-              mui_MenuMusic._32_4_ = 0;
-              mui_MenuMusic._12_4_ = 1;
-              mui_MenuMusic._20_4_ = 1;
-              mui_MenuMusic._16_4_ = 0x5622;
-              mui_MenuMusic._24_4_ = mui_MenuMusic._0_4_;
+              (mui_MenuMusic_blob)._28_4_ = sVar7 + (mui_MenuMusic_blob)._0_4_;
+              (mui_MenuMusic_blob)._4_4_ = 1;
+              (mui_MenuMusic_blob)._8_4_ = 1;
+              (mui_MenuMusic_blob)._32_4_ = 0;
+              (mui_MenuMusic_blob)._12_4_ = 1;
+              (mui_MenuMusic_blob)._20_4_ = 1;
+              (mui_MenuMusic_blob)._16_4_ = 0x5622;
+              (mui_MenuMusic_blob)._24_4_ = (mui_MenuMusic_blob)._0_4_;
             }
           }
           iVar5 = mxmlFindElement(iVar3,tree,"effect0",0,0,1);
           if (iVar5 != 0) {
-            uVar1 = GetWorkPath();
-            uVar6 = mxmlElementGetAttr(iVar5,&DAT_002dbd74);
+            uVar1 = (gh_u4)GetWorkPath();
+            uVar6 = mxmlElementGetAttr(iVar5,DAT_002dbd74);
             sprintf(acStack_128,"%s/%s",uVar1,uVar6);
             pFVar2 = fopen(acStack_128,"rb");
             if (pFVar2 != (FILE *)0x0) {
               fread(auStack_154,1,0x2c,pFVar2);
               sVar7 = local_12c;
-              mui_Effect0._0_4_ = malloc(local_12c + 1);
-              fread((void *)mui_Effect0._0_4_,sVar7,1,pFVar2);
+              (mui_Effect0_blob)._0_4_ = (gh_u4)malloc(local_12c + 1);
+              fread((void *)(mui_Effect0_blob)._0_4_,sVar7,1,pFVar2);
               fclose(pFVar2);
-              mui_Effect0._32_4_ = 0;
-              mui_Effect0._8_4_ = (local_132 >> 3) - 1;
-              mui_Effect0._12_4_ = local_13e - 1;
-              mui_Effect0._4_4_ = 0;
-              mui_Effect0._28_4_ = local_12c + mui_Effect0._0_4_;
-              mui_Effect0._20_4_ = 0;
-              mui_Effect0._16_4_ = local_13c;
-              mui_Effect0._24_4_ = mui_Effect0._0_4_;
+              (mui_Effect0_blob)._32_4_ = 0;
+              (mui_Effect0_blob)._8_4_ = (local_132 >> 3) - 1;
+              (mui_Effect0_blob)._12_4_ = local_13e - 1;
+              (mui_Effect0_blob)._4_4_ = 0;
+              (mui_Effect0_blob)._28_4_ = local_12c + (mui_Effect0_blob)._0_4_;
+              (mui_Effect0_blob)._20_4_ = 0;
+              (mui_Effect0_blob)._16_4_ = local_13c;
+              (mui_Effect0_blob)._24_4_ = (mui_Effect0_blob)._0_4_;
             }
           }
           iVar3 = mxmlFindElement(iVar3,tree,"effect1",0,0,1);
           if (iVar3 != 0) {
-            uVar1 = GetWorkPath();
-            uVar6 = mxmlElementGetAttr(iVar3,&DAT_002dbd74);
+            uVar1 = (gh_u4)GetWorkPath();
+            uVar6 = mxmlElementGetAttr(iVar3,DAT_002dbd74);
             sprintf(acStack_128,"%s/%s",uVar1,uVar6);
             pFVar2 = fopen(acStack_128,"rb");
             if (pFVar2 != (FILE *)0x0) {
               fread(auStack_154,1,0x2c,pFVar2);
               sVar7 = local_12c;
-              mui_Effect1._0_4_ = malloc(local_12c + 1);
-              fread((void *)mui_Effect1._0_4_,sVar7,1,pFVar2);
+              (mui_Effect1_blob)._0_4_ = (gh_u4)malloc(local_12c + 1);
+              fread((void *)(mui_Effect1_blob)._0_4_,sVar7,1,pFVar2);
               fclose(pFVar2);
-              mui_Effect1._32_4_ = 0;
-              mui_Effect1._8_4_ = (local_132 >> 3) - 1;
-              mui_Effect1._12_4_ = local_13e - 1;
-              mui_Effect1._4_4_ = 0;
-              mui_Effect1._28_4_ = local_12c + mui_Effect1._0_4_;
-              mui_Effect1._20_4_ = 0;
-              mui_Effect1._16_4_ = local_13c;
-              mui_Effect1._24_4_ = mui_Effect1._0_4_;
+              (mui_Effect1_blob)._32_4_ = 0;
+              (mui_Effect1_blob)._8_4_ = (local_132 >> 3) - 1;
+              (mui_Effect1_blob)._12_4_ = local_13e - 1;
+              (mui_Effect1_blob)._4_4_ = 0;
+              (mui_Effect1_blob)._28_4_ = local_12c + (mui_Effect1_blob)._0_4_;
+              (mui_Effect1_blob)._20_4_ = 0;
+              (mui_Effect1_blob)._16_4_ = local_13c;
+              (mui_Effect1_blob)._24_4_ = (mui_Effect1_blob)._0_4_;
             }
           }
         }
@@ -158,15 +158,15 @@ void mui_LoadSetting(void)
           pcVar4 = (char *)mxmlElementGetAttr(iVar3,"extname");
           iVar13 = 0;
           iVar5 = 0;
-          while ((&default_core_list)[iVar13] != '\0') {
-            iVar11 = strcmp(&default_core_list + iVar13,pcVar4);
+          while ((default_core_list)[iVar13] != '\0') {
+            iVar11 = strcmp(default_core_list + iVar13,pcVar4);
             if (iVar11 == 0) {
-              pcVar4 = (char *)mxmlElementGetAttr(iVar3,&DAT_002dcd5c);
+              pcVar4 = (char *)mxmlElementGetAttr(iVar3,DAT_002dcd5c);
               if (pcVar4 != (char *)0x0) {
                 lVar8 = strtol(pcVar4,(char **)0x0,10);
-                *(long *)(&DAT_003b0274 + iVar5 * 0x44) = lVar8;
+                *(long *)(DAT_003b0274 + iVar5 * 0x44) = lVar8;
                 pcVar4 = (char *)mxmlElementGetAttr(iVar3,"corename");
-                strcpy(&DAT_003b0278 + iVar13,pcVar4);
+                strcpy(DAT_003b0278 + iVar13,pcVar4);
               }
               goto LAB_000178ec;
             }
@@ -175,27 +175,27 @@ void mui_LoadSetting(void)
             if (iVar5 == 100) goto LAB_000178ec;
           }
           iVar13 = iVar5 * 0x44;
-          strcpy(&default_core_list + iVar13,pcVar4);
-          pcVar4 = (char *)mxmlElementGetAttr(iVar3,&DAT_002dcd5c);
+          strcpy(default_core_list + iVar13,pcVar4);
+          pcVar4 = (char *)mxmlElementGetAttr(iVar3,DAT_002dcd5c);
           if (pcVar4 != (char *)0x0) {
             lVar8 = strtol(pcVar4,(char **)0x0,10);
-            *(long *)(&DAT_003b0274 + iVar13) = lVar8;
+            *(long *)(DAT_003b0274 + iVar13) = lVar8;
             pcVar4 = (char *)mxmlElementGetAttr(iVar3,"corename");
-            strcpy(&DAT_003b0278 + iVar13,pcVar4);
+            strcpy(DAT_003b0278 + iVar13,pcVar4);
           }
           iVar5 = iVar5 * 0x44;
-          (&DAT_003b0298)[iVar5] = 0;
-          *(gh_u4 *)(&DAT_003b02b8 + iVar5) = 0;
-          (&DAT_003b02bc)[iVar5] = 0;
+          DAT_003b0298[iVar5] = 0;
+          *(gh_u4 *)(DAT_003b02b8 + iVar5) = 0;
+          DAT_003b02bc[iVar5] = 0;
 LAB_000178ec:
         }
-        iVar3 = mxmlFindElement(tree,tree,&DAT_002dcd50,0,0,1);
+        iVar3 = mxmlFindElement(tree,tree,DAT_002dcd50,0,0,1);
         iVar5 = DAT_003af30c;
         iVar13 = tree;
         while (DAT_003af30c = iVar5, tree = iVar13, iVar3 != 0) {
           pcVar4 = malloc(0x44);
           (&m_ui)[iVar5 + 0x16] = (long)pcVar4;
-          __src = (char *)mxmlElementGetAttr(iVar3,&DAT_002dcd70);
+          __src = (char *)mxmlElementGetAttr(iVar3,DAT_002dcd70);
           strcpy(pcVar4,__src);
           iVar5 = (&m_ui)[DAT_003af30c + 0x16];
           pcVar4 = (char *)mxmlElementGetAttr(iVar3,"filename");
@@ -206,7 +206,7 @@ LAB_000178ec:
           iVar5 = tree;
           DAT_003af30c = DAT_003af30c + 1;
           *(long *)(iVar13 + 0x40) = lVar8;
-          iVar3 = mxmlFindElement(iVar3,iVar5,&DAT_002dcd50,0,0,1);
+          iVar3 = mxmlFindElement(iVar3,iVar5,DAT_002dcd50,0,0,1);
           iVar5 = DAT_003af30c;
           iVar13 = tree;
         }

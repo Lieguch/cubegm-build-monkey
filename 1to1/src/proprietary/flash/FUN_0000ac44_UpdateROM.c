@@ -13,7 +13,7 @@ void UpdateROM(char *param_1)
 {
   FILE *__stream;
   int *__ptr;
-  int iVar1;
+  gh_u4 *iVar1;
   int iVar2;
   void *__s;
   gh_u4 uVar3;
@@ -94,7 +94,7 @@ void UpdateROM(char *param_1)
       __s = (void *)0x0;
     }
     CloseZipU(iVar1);
-    iVar1 = UpdateROMProc(__s,unaff_r7);
+    iVar1 = (gh_u4 *)UpdateROMProc((int)__s,unaff_r7);
     if (iVar1 != 0) {
       if ((char)spi_id == '\v') {
         sflash_read_security_data(__ptr + 0x40,0);

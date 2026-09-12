@@ -17,14 +17,14 @@ void ReadJoystickProc(void)
   gh_uint uVar4;
   gh_u4 uVar5;
   
-  uVar2 = RF_joy_key._4_4_;
+  uVar2 = RF_joy_key_blob._4_4_;
   uVar1 = (gh_uint)RF_joy_key;
   uVar3 = ReadUSBJoy(0);
   uVar4 = ReadUSBJoy(1);
   uVar5 = ReadUSBJoy(2);
-  joy_key._12_4_ = ReadUSBJoy(3);
-  joy_key._0_4_ = uVar1 | uVar3;
-  joy_key._4_4_ = uVar2 | uVar4;
-  joy_key._8_4_ = uVar5;
+  joy_key_blob._12_4_ = ReadUSBJoy(3);
+  joy_key_blob._0_4_ = uVar1 | uVar3;
+  joy_key_blob._4_4_ = uVar2 | uVar4;
+  joy_key_blob._8_4_ = uVar5;
   return;
 }

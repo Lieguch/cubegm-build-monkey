@@ -70,11 +70,18 @@ jobs:
           cd 1to1
           python3 tools/check_types.py
 
-      - name: 重建编译门禁（逐函数，真实进度度量）
+      - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
         run: |
           cd 1to1
           mkdir -p report
           CC=arm-linux-gnueabihf-gcc sh tools/recon_build.sh report/recon_build.txt
+
+      - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）
+        run: |
+          cd 1to1
+          mkdir -p report
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt
+        continue-on-error: true
 
       - name: 上传报告
         if: always()

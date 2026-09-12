@@ -22,7 +22,7 @@ gh_u4 InitDisplay(void)
   sprintf(acStack_418,"%s/driver.so",work_path);
   handle = dlopen(acStack_418,2);
   if (handle == 0) {
-    uVar2 = dlerror();
+    uVar2 = (gh_u4)dlerror();
     printf("open driver.so fail, %s.\n",uVar2);
     return 0;
   }
@@ -37,23 +37,23 @@ gh_u4 InitDisplay(void)
     apStack_428[3] = 1;
     (*video_driver_setting)(apStack_428 + 1);
     iVar1 = run_process_constprop_0("video_drivers_init");
-    iVar3 = handle;
+    iVar3 = (int)handle;
     if (iVar1 != 0) {
       video_driver_frame = dlsym(handle,"video_driver_disp_frame");
       if (video_driver_frame == 0) {
         puts("can\'t find video_driver_disp_frame proc");
       }
       else {
-        set_rotation = dlsym(iVar3,"video_driver_setmode");
+        set_rotation = dlsym((void *)iVar3,"video_driver_setmode");
         if (set_rotation == 0) {
           puts("can\'t find video_driver_setmode proc");
         }
         else {
-          video_driver_get_size = dlsym(iVar3,"video_driver_get_size");
+          video_driver_get_size = dlsym((void *)iVar3,"video_driver_get_size");
           if (video_driver_get_size != 0) {
             if (DisplayThread != 0) {
               DisplayThreadflag = 1;
-              iVar3 = pthread_create(apStack_428,(pthread_attr_t *)0x0,ScaleDisplayThread,
+              iVar3 = pthread_create(apStack_428,(pthread_attr_t *)0x0,(void *(*)(void *))ScaleDisplayThread,
                                      (void *)0x0);
               if (iVar3 != 0) {
                 puts("can\'t create DoubleFrame Display thread \r");

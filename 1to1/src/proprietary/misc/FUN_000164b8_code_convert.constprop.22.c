@@ -30,7 +30,7 @@ int code_convert_constprop_22(gh_u4 param_1,gh_u4 param_2,void *param_3,size_t p
     memset(local_20,0,param_4);
     iVar2 = libiconv(iVar1,&local_1c,&local_18,&local_20,&local_14);
     if (iVar2 != -1) {
-      libiconv_close(iVar1);
+      libiconv_close((void *)iVar1);
     }
   }
   return iVar2;

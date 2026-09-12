@@ -24,7 +24,7 @@ gh_u4 FBA_Load(char *param_1)
   gh_u4 uStack_12c;
   char acStack_128 [260];
   
-  local_150 = DAT_003b012c;
+  local_150 = (char *)DAT_003b012c;
   local_14c[0] = (char *)DAT_003b0130;
   local_14c[1] = (char *)DAT_003b0134;
   local_14c[2] = (char *)DAT_003b0138;
@@ -48,7 +48,7 @@ gh_u4 FBA_Load(char *param_1)
         sprintf(acStack_128,"%s/cores/%s",work_path);
         handle = dlopen(acStack_128,2);
         if (handle != 0) break;
-        uVar2 = dlerror();
+        uVar2 = (gh_u4)dlerror();
         RARCH_LOG("open %s fail,%s \n",acStack_128,uVar2);
         ppcVar4 = ppcVar4 + 1;
         if (**ppcVar4 == '\0') {
@@ -57,11 +57,11 @@ gh_u4 FBA_Load(char *param_1)
       }
       _retro_is_support = (gh_code *)dlsym(handle,"retro_is_support");
       if (((_retro_is_support != (gh_code *)0x0) && (iVar1 = (*_retro_is_support)(param_1), -1 < iVar1)
-          ) && (iVar1 = Load_Proc1(&DAT_002dbcb4), iVar1 != 0)) {
-        run_process("retro_set_progress_callback",progress);
-        game._0_4_ = fileName;
-        game._4_4_ = 0;
-        game._8_4_ = 0;
+          ) && (iVar1 = Load_Proc1(DAT_002dbcb4), iVar1 != 0)) {
+        run_process("retro_set_progress_callback",(gh_code *)progress);
+        game_blob._0_4_ = fileName;
+        game_blob._4_4_ = 0;
+        game_blob._8_4_ = 0;
         progress_stepcount = 0;
         pcVar3 = (gh_code *)dlsym(handle,"retro_load_game");
         if ((pcVar3 != (gh_code *)0x0) && (iVar1 = (*pcVar3)(game), iVar1 != 0)) {

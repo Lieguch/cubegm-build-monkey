@@ -20,7 +20,7 @@ void UnDrawSelectBar(int *param_1,int param_2,int param_3)
   int iVar7;
   int iVar8;
   
-  iVar2 = DAT_003af29c;
+  iVar2 = (int)DAT_003af29c;
   iVar7 = param_1[1];
   if (param_1[3] <= iVar7) {
     return;

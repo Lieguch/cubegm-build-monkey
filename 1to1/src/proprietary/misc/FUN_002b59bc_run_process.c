@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 run_process(gh_u4 param_1,int param_2)
+gh_u4 run_process(char *param_1,gh_code *param_2)
 
 {
   pf = (gh_code *)dlsym(handle,param_1);

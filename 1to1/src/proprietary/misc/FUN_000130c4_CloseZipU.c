@@ -8,12 +8,12 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 CloseZipU(int *param_1)
+gh_u4 CloseZipU(gh_u4 *param_1)
 
 {
   TUnzip *this;
   
-  if (param_1 == (int *)0x0) {
+  if (param_1 == (gh_u4 *)0x0) {
     lasterrorU = 0x10000;
     return 0x10000;
   }
@@ -22,7 +22,7 @@ gh_u4 CloseZipU(int *param_1)
     return 0x80000;
   }
   this = (TUnzip *)param_1[1];
-  lasterrorU = TUnzip::Close(this);
+  lasterrorU = XUnzip_Close(this);
   operator_delete(this);
   operator_delete(param_1);
   return lasterrorU;

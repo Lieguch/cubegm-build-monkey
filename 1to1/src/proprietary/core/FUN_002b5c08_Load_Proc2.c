@@ -13,7 +13,7 @@ void Load_Proc2(void)
 {
   gh_uint uVar1;
   gh_bool bVar2;
-  gh_u4 uVar3;
+  void *uVar3;
   gh_code *pcVar4;
   int iVar5;
   int iVar6;
@@ -43,11 +43,11 @@ void Load_Proc2(void)
   RetroInitSound();
   bVar2 = true;
   gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
-  inTimeVal._0_4_ = (int)outTimeVal;
-  inTimeVal._4_4_ = outTimeVal._4_4_;
+  inTimeVal_blob._0_4_ = (int)outTimeVal;
+  inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
   diff_prev = 0;
   local_50 = 0;
-  initialTicks = (int)outTimeVal * 1000 + outTimeVal._4_4_ / 1000;
+  initialTicks = (int)outTimeVal * 1000 + outTimeVal_blob._4_4_ / 1000;
   if (pal_ntsc == 0) {
     fps = 0x3c;
   }
@@ -59,7 +59,7 @@ void Load_Proc2(void)
   skipCounter = 0;
   FrameCount = 0;
   do {
-    if (joy_key._0_4_ == GameMenuHotKey) {
+    if (joy_key_blob._0_4_ == GameMenuHotKey) {
       iVar6 = PauseMenu();
       if (iVar6 != 0) {
 LAB_002b60a4:
@@ -69,13 +69,13 @@ LAB_002b60a4:
         return;
       }
       gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
-      inTimeVal._0_4_ = (int)outTimeVal;
-      inTimeVal._4_4_ = outTimeVal._4_4_;
+      inTimeVal_blob._0_4_ = (int)outTimeVal;
+      inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
       diff_prev = 0;
       FrameCount0 = 0;
       skipCounter = 0;
       FrameCount = 0;
-      initialTicks = (int)outTimeVal * 1000 + outTimeVal._4_4_ / 1000;
+      initialTicks = (int)outTimeVal * 1000 + outTimeVal_blob._4_4_ / 1000;
       maxSkips = 2;
       if (pal_ntsc == 0) {
         fps = 0x3c;
@@ -84,8 +84,8 @@ LAB_002b60a4:
         fps = 0x32;
       }
     }
-    else if ((int)joy_key._0_4_ < 0) goto LAB_002b60a4;
-    if (SaveDefaultStateKey == joy_key._0_4_) {
+    else if ((int)(joy_key_blob._0_4_) < 0) goto LAB_002b60a4;
+    if (SaveDefaultStateKey == joy_key_blob._0_4_) {
       if (local_50 == 0) {
         SaveDefaultState();
         local_50 = 0xf;
@@ -96,7 +96,7 @@ LAB_002b60a4:
     }
     gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
     iVar6 = initialTicks;
-    iVar7 = (int)outTimeVal * 1000 + outTimeVal._4_4_ / 1000;
+    iVar7 = (int)outTimeVal * 1000 + outTimeVal_blob._4_4_ / 1000;
     FrameCount0 = FrameCount0 + 1;
     uVar1 = (gh_uint)(fps * (iVar7 - initialTicks)) / 1000;
     if (uVar1 < FrameCount0) {
@@ -135,13 +135,13 @@ LAB_002b5f64:
     if (bVar2) {
       LoadDefaultState();
       gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
-      inTimeVal._0_4_ = (int)outTimeVal;
-      inTimeVal._4_4_ = outTimeVal._4_4_;
+      inTimeVal_blob._0_4_ = (int)outTimeVal;
+      inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
       diff_prev = 0;
       FrameCount0 = 0;
       skipCounter = 0;
       FrameCount = 0;
-      initialTicks = (int)outTimeVal * 1000 + outTimeVal._4_4_ / 1000;
+      initialTicks = (int)outTimeVal * 1000 + outTimeVal_blob._4_4_ / 1000;
       maxSkips = 2;
       if (pal_ntsc == 0) {
         fps = 0x3c;

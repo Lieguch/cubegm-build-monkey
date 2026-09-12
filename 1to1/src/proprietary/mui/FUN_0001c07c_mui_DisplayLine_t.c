@@ -31,7 +31,7 @@ void mui_DisplayLine_t(int param_1,int param_2,int param_3)
       OutRect._12_4_ = (&DAT_003af39c)[param_1 * 6] + DAT_003af6a4;
       OutRect._20_4_ = (&DAT_003af3a4)[param_1 * 6];
       mui_outputxy_t(DAT_003af29c,OutRect._8_4_,OutRect._12_4_,(gh_u1)DAT_003af6a8,DAT_003af6ac
-                     ,&DAT_003af6b0);
+                     ,(gh_byte *)(gh_byte *)&DAT_003af6b0);
     }
     iVar2 = DAT_003af380;
     uVar1 = DAT_003af37c;
@@ -59,6 +59,6 @@ void mui_DisplayLine_t(int param_1,int param_2,int param_3)
   OutRect._12_4_ = (&DAT_003af39c)[param_1 * 6] + DAT_003af6a4;
   OutRect._20_4_ = (&DAT_003af3a4)[param_1 * 6];
   mui_outputxy_t(DAT_003af29c,OutRect._8_4_,OutRect._12_4_,(gh_u1)DAT_003af6a8,DAT_003af6ac,
-                 &DAT_003af6b0);
+                 (gh_byte *)&DAT_003af6b0);
   return;
 }

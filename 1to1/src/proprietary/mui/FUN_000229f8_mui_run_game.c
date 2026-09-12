@@ -47,15 +47,15 @@ gh_u4 mui_run_game(char *param_1)
   }
   SoundClose(0);
   DisplayThumbnailflag = DisplayThumbnailflag & 0xfe;
-  SoundPlayer._0_4_ = 0;
-  SoundPlayer._36_4_ = 0;
+  (SoundPlayer_blob)._0_4_ = 0;
+  (SoundPlayer_blob)._36_4_ = 0;
   while (DisplayThumbnailflag != 0) {
     usleep(1000);
   }
   memset(DAT_003af29c,0,DAT_003af2a4 * DAT_003af2a0 * 2);
   ForceFlashCount = 0;
   dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
-  uVar3 = GetWorkPath();
+  uVar3 = (gh_u4)GetWorkPath();
   sprintf(acStack_62c,"%s/recent.lst",uVar3);
   pFVar2 = fopen(acStack_62c,"rb");
   if (pFVar2 == (FILE *)0x0) {
@@ -248,20 +248,20 @@ LAB_00022d70:
   }
   else {
     FilePreEmu(acStack_52c);
-    uVar3 = Core_Load(acStack_52c,iVar8);
+    uVar3 = Core_Load(acStack_52c,(char *)iVar8);
   }
   Soundplayflag = 3;
-  iVar8 = pthread_create(apStack_6ac,(pthread_attr_t *)0x0,mui_SoundplayThread,(void *)0x0);
+  iVar8 = pthread_create(apStack_6ac,(pthread_attr_t *)0x0,(void *(*)(void *))mui_SoundplayThread,(void *)0x0);
   if (iVar8 != 0) {
     RARCH_LOG("can\'t create mui_SoundplayThread process thread \r\n");
   }
   DisplayThumbnailflag = 1;
-  iVar8 = pthread_create(apStack_6ac,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+  iVar8 = pthread_create(apStack_6ac,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
   if (iVar8 != 0) {
     RARCH_LOG("can\'t create mui_DisplayThread process thread \r\n");
   }
   usleep(1000);
-  SoundPlay(0,mui_MenuMusic);
+  SoundPlay(0,(int *)mui_MenuMusic);
   dispmeninfo();
   return uVar3;
 }

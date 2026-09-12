@@ -23,7 +23,7 @@ gh_u4 spi_driver_init(void)
   gh_u1 uVar10;
   gh_u4 local_120;
   gh_u4 local_11c;
-  gh_u4 local_118;
+  gh_u32_bytes_t local_118;  /* 原厂：本地 4B 槽，既作整数又作字节视图(_1_1_/_2_1_) */
   gh_u4 local_114;
   gh_byte local_110 [20];
   gh_byte local_fc [4];
@@ -32,12 +32,12 @@ gh_u4 spi_driver_init(void)
   
   local_11c = 0;
   local_120 = 0x9f;
-  sfc_request(&local_120,0,&local_118,3);
-  uVar6 = local_118 & 0xff;
-  spi_id._0_1_ = (gh_byte)local_118;
-  spi_id._1_1_ = local_118._1_1_;
-  spi_id._2_1_ = local_118._2_1_;
-  if (uVar6 == 0x85 || (uVar6 == 0xb || ((local_118 & 0xef) == 200 || uVar6 == 0x20))) {
+  sfc_request(&local_120,0,&local_118._u32,3);
+  uVar6 = local_118._u32 & 0xff;
+  (spi_id_blob)._0_1_ = (gh_byte)local_118._u32;
+  (spi_id_blob)._1_1_ = local_118._1_1_;
+  (spi_id_blob)._2_1_ = local_118._2_1_;
+  if (uVar6 == 0x85 || (uVar6 == 0xb || ((local_118._u32 & 0xef) == 200 || uVar6 == 0x20))) {
     if (local_118._2_1_ == '\x18') {
       FlashSize = 0x1000000;
 LAB_002c41fc:
@@ -50,7 +50,7 @@ LAB_002c41fc:
 LAB_002c42cc:
       local_11c = 0;
       local_120 = 0x484b;
-      sfc_request(&local_120,0,&local_118,8);
+      sfc_request(&local_120,0,&local_118._u32,8);
       pbVar4 = (gh_byte *)&UniqueID;
       pbVar3 = (gh_byte *)&local_118;
       do {
@@ -88,7 +88,7 @@ LAB_002c4360:
 LAB_002c4220:
       local_11c = 0;
       local_120 = (gh_uint)CONCAT11(0x48,uVar10);
-      sfc_request(&local_120,uVar5,&local_118,0x10);
+      sfc_request(&local_120,uVar5,&local_118._u32,0x10);
       pbVar4 = (gh_byte *)&UniqueID;
       pbVar3 = (gh_byte *)&local_118;
       do {
@@ -99,11 +99,11 @@ LAB_002c4220:
       } while (pbVar7 != local_110);
     }
     if ((gh_byte)spi_id == 0xb) {
-      sflash_read_security_data(&local_118,0x100);
+      sflash_read_security_data(&local_118._u32,0x100);
       goto LAB_002c40e0;
     }
   }
-  sflash_read_security_data(&local_118,0x2000);
+  sflash_read_security_data(&local_118._u32,0x2000);
 LAB_002c40e0:
   printf("ROM Size:%08X CRC32:%04X ",FlashSize,local_118);
   printf("Update time:");
@@ -114,7 +114,7 @@ LAB_002c40e0:
   else {
     uVar5 = 0x1000;
   }
-  sflash_read_security_data(&local_118,uVar5);
+  sflash_read_security_data(&local_118._u32,uVar5);
   iVar9 = 0;
   pbVar3 = &DAT_002dee30;
   iVar8 = 0;

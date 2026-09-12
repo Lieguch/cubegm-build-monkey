@@ -16,20 +16,20 @@ void SaveKeyMappingConfigFile(void)
   FILE *__s;
   char acStack_90 [128];
   
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   sprintf(acStack_90,"%ssaves",uVar1);
   iVar2 = access(acStack_90,0);
   if (iVar2 != 0) {
     mkdir(acStack_90,0x1ed);
   }
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   iVar2 = gameType();
   sprintf(acStack_90,"%ssaves/%s",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4));
   iVar2 = access(acStack_90,0);
   if (iVar2 != 0) {
     mkdir(acStack_90,0x1ed);
   }
-  uVar1 = GetWorkPath();
+  uVar1 = (gh_u4)GetWorkPath();
   iVar2 = gameType();
   sprintf(acStack_90,"%ssaves/%s/%s.scf",uVar1,*(gh_u4 *)(ArchivePath + iVar2 * 4),RomName);
   RARCH_LOG("Save %s\n",acStack_90);

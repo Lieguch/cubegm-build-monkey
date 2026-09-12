@@ -33,7 +33,7 @@ gh_u4 Mp3DecodeLoop(int param_1)
   iVar1 = piVar4[6];
   while( true ) {
     while( true ) {
-      iVar2 = MP3FindSyncWord(iVar2,iVar1);
+      iVar2 = MP3FindSyncWord((gh_byte *)iVar2,iVar1);
       if (-1 < iVar2) break;
       if (*(int *)(SoundPlayer + param_1 * 0x24 + 0x14) == 0) {
         SoundClose(param_1,piVar4 + 1);

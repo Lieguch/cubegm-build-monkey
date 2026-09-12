@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void init_user_joy_key_mask(int param_1,gh_u4 param_2)
+void init_user_joy_key_mask(void *param_1,gh_u4 param_2)
 
 {
   gh_uint uVar1;

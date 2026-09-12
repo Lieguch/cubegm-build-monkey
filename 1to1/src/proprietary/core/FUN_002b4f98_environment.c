@@ -61,7 +61,7 @@ LAB_002b4fe0:
     else {
       if (param_1 != 0x1f) {
         if (((param_1 == 0xf) && (corecfg[0] != '\0')) &&
-           (get_value_from_items(*param_2,environment_str,corecfg,0x40), environment_str[0] != '\0')
+           (get_value_from_items((char *)*param_2,environment_str,corecfg,0x40), environment_str[0] != '\0')
            ) {
           param_2[1] = (gh_uint)environment_str;
           return 1;

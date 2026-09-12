@@ -40,7 +40,7 @@ gh_u4 mui_joystick_setting(void)
   DAT_003af27c = 0;
   local_194 = 0;
   iVar10 = 0;
-  puVar9 = &DAT_002dd88c;
+  puVar9 = DAT_002dd88c;
   local_190 = 0;
 LAB_0002d16c:
   if (DAT_003af2b8 == (int *)0x0) {
@@ -49,7 +49,7 @@ LAB_0002d16c:
   memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
          (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,6);
-  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,8);
+  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
   local_14c = DAT_003af828;
   local_13c = DAT_003af820;
   local_138 = DAT_003af824;
@@ -59,17 +59,17 @@ LAB_0002d16c:
   local_130 = DAT_003af824 + DAT_003af82c;
   local_140 = DAT_003af29c;
   local_12c = DAT_003af2a0 << 1;
-  local_158 = bimapFilebuffer;
+  local_158 = (gh_u4)bimapFilebuffer;
   puVar8 = (gh_uint *)(InputDeviceInfo + 0x6c);
   local_154 = 0;
   local_150 = 0;
-  blockcopy(&local_140,&local_158);
+  blockcopy((int *)&local_140,(int *)&local_158);
   OutRect._8_4_ = 0;
   OutRect._12_4_ = 0;
   iVar6 = 1;
   OutRect._16_4_ = 0x500;
   OutRect._20_4_ = 0x2d0;
-  mui_outputxy_t(DAT_003af29c,m_joysticktab._100_4_ + 0xf,m_joysticktab._104_4_,0x2a,0xffff,puVar9);
+  mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,0xffff,puVar9);
   puVar7 = m_joysticktab;
   do {
     while( true ) {
@@ -116,32 +116,32 @@ LAB_0002d38c:
     if (uVar1 < 0x401) {
       if (uVar1 == 0x40) {
         if (local_190 == 0) {
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           goto LAB_0002d454;
         }
         if (uVar3 != 0) {
           uVar3 = *(gh_uint *)(m_joysticktab + uVar3 * 0x84 + 0x78);
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           goto LAB_0002d454;
         }
         if (iVar10 < 3) {
           iVar10 = iVar10 + 1;
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           iVar6 = iVar10 * 6;
           puVar9 = *(gh_undef **)(p_name + iVar10 * 4);
         }
         else {
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
           iVar6 = iVar10 * 6;
           puVar9 = *(gh_undef **)(p_name + iVar10 * 4);
         }
 LAB_0002dbb4:
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,8);
+        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
         if ((local_194 & 0x10) == 0) {
-          DrawSelectBar(0x3afc44);
+          DrawSelectBar((int *)0x3afc44);
         }
         iVar4 = 1;
-        mui_outputxy_t(DAT_003af29c,m_joysticktab._100_4_ + 0xf,m_joysticktab._104_4_,0x2a,0x871c,
+        mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,0x871c,
                        puVar9);
         puVar8 = (gh_uint *)(InputDeviceInfo + iVar6 * 4 + 0x6c);
         puVar7 = m_joysticktab;
@@ -170,13 +170,13 @@ LAB_0002dbb4:
 LAB_0002da14:
             local_194 = local_194 + 1;
             if ((local_194 & 0x10) == 0) {
-              DrawSelectBar(0x3afc44);
+              DrawSelectBar((int *)0x3afc44);
             }
             else {
-              UnDrawSelectBar(0x3afc44,DAT_003af2b8,8);
+              UnDrawSelectBar((int *)0x3afc44,(int)DAT_003af2b8,8);
             }
-            mui_outputxy_t(DAT_003af29c,m_joysticktab._100_4_ + 0xf,m_joysticktab._104_4_,0x2a,
-                           0x871c,*(gh_u4 *)(p_name + iVar10 * 4));
+            mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,
+                           0x871c,(gh_byte *)*(gh_u4 *)(p_name + iVar10 * 4));
             uVar3 = local_194;
           }
           goto LAB_0002d4e0;
@@ -187,9 +187,9 @@ LAB_0002da14:
         }
 LAB_0002d9bc:
         DAT_003af27c = 0;
-        DrawSelectBar(0x3afc44);
-        mui_outputxy_t(DAT_003af29c,m_joysticktab._100_4_ + 0xf,m_joysticktab._104_4_,0x2a,0x871c,
-                       *(gh_u4 *)(p_name + iVar10 * 4));
+        DrawSelectBar((int *)0x3afc44);
+        mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,0x871c,
+                       (gh_byte *)*(gh_u4 *)(p_name + iVar10 * 4));
         uVar5 = 0;
 LAB_0002d4cc:
         local_194 = 2;
@@ -204,20 +204,20 @@ LAB_0002d4cc:
           }
           if (uVar3 == 0) {
             if (iVar10 == 0) {
-              puVar9 = &DAT_002dd88c;
-              SoundPlay(1,mui_Effect0);
+              puVar9 = DAT_002dd88c;
+              SoundPlay(1,(int *)mui_Effect0);
               iVar6 = 0;
             }
             else {
               iVar10 = iVar10 + -1;
-              SoundPlay(1,mui_Effect0);
+              SoundPlay(1,(int *)mui_Effect0);
               iVar6 = iVar10 * 6;
               puVar9 = *(gh_undef **)(p_name + iVar10 * 4);
             }
             goto LAB_0002dbb4;
           }
           uVar3 = *(gh_uint *)(m_joysticktab + uVar3 * 0x84 + 0x74);
-          SoundPlay(1,mui_Effect0);
+          SoundPlay(1,(int *)mui_Effect0);
         }
         else if (uVar1 == 0x20) {
           if (local_190 == 0) {
@@ -249,7 +249,7 @@ LAB_0002d4cc:
             local_190 = ~uVar3 >> 0x1f;
           }
 LAB_0002d444:
-          SoundPlay(1,mui_Effect1);
+          SoundPlay(1,(int *)mui_Effect1);
         }
       }
 LAB_0002d454:
@@ -257,15 +257,15 @@ LAB_0002d454:
 LAB_0002d468:
         if ((int)DAT_003af27c < 1) {
           if (DAT_003af27c == 0) {
-            UnDrawSelectBar(0x3afc44,DAT_003af2b8,8);
-            mui_outputxy_t(DAT_003af29c,m_joysticktab._100_4_ + 0xf,m_joysticktab._104_4_,0x2a,
-                           0xffff,*(gh_u4 *)(p_name + iVar10 * 4));
+            UnDrawSelectBar((int *)0x3afc44,(int)DAT_003af2b8,8);
+            mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,
+                           0xffff,(gh_byte *)*(gh_u4 *)(p_name + iVar10 * 4));
           }
         }
         else {
           iVar6 = iVar10 * 6;
 LAB_0002d6ac:
-          UnDrawSelectBar(DAT_003af27c * 0x84 + 0x3afc44,DAT_003af2b8,8);
+          UnDrawSelectBar((int *)(DAT_003af27c * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
           uVar5 = *(gh_uint *)(keyMapping + (DAT_003af27c + iVar6 + -1) * 4);
           if ((uVar5 & 0xffff0000) == 0) {
             iVar6 = DAT_003af27c * 0x84;
@@ -353,7 +353,7 @@ LAB_0002d57c:
       iVar4 = uVar3 + iVar10 * 6 + -1;
       if (*(int *)(keyMapping + iVar4 * 4) != iVar6) {
         *(int *)(keyMapping + iVar4 * 4) = iVar6;
-        UnDrawSelectBar(uVar5 * 0x84 + 0x3afc44,DAT_003af2b8,8);
+        UnDrawSelectBar((int *)(uVar5 * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
         DAT_003af27c = 0xffffffff;
         ChangeSeting = 1;
         if (uVar3 == 0xffffffff) goto LAB_0002d5f4;
@@ -364,7 +364,7 @@ LAB_0002d4c0:
         }
         else {
           DAT_003af27c = uVar3;
-          DrawSelectBar(uVar3 * 0x84 + 0x3afc44);
+          DrawSelectBar((int *)(uVar3 * 0x84 + 0x3afc44));
           uVar3 = *(gh_uint *)(keyMapping + (iVar10 * 6 + DAT_003af27c + -1) * 4);
           pcVar2 = local_128;
           if ((uVar3 & 0xffff0000) != 0) {
@@ -386,7 +386,7 @@ LAB_0002d848:
       uVar5 = DAT_003af27c;
       local_194 = local_194 + 1;
       if ((local_194 & 0x10) == 0) {
-        DrawSelectBar(uVar3 * 0x84 + 0x3afc44);
+        DrawSelectBar((int *)(uVar3 * 0x84 + 0x3afc44));
         uVar3 = DAT_003af27c;
         uVar1 = *(gh_uint *)(keyMapping + (DAT_003af27c + iVar10 * 6 + -1) * 4);
         pcVar2 = local_128;
@@ -399,7 +399,7 @@ LAB_0002d848:
         strcpy(pcVar2,*(char **)(KayName + uVar1 * 4));
       }
       else {
-        UnDrawSelectBar(uVar3 * 0x84 + 0x3afc44,DAT_003af2b8,8);
+        UnDrawSelectBar((int *)(uVar3 * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
         uVar3 = DAT_003af27c;
         uVar1 = *(gh_uint *)(keyMapping + (DAT_003af27c + iVar10 * 6 + -1) * 4);
         pcVar2 = local_128;

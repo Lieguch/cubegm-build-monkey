@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void SPI_Read_BUF(gh_u4 param_1,int param_2,int param_3)
+void SPI_Read_BUF(gh_u4 param_1,int param_2,gh_u1 *param_3)
 
 {
   gh_u1 uVar1;

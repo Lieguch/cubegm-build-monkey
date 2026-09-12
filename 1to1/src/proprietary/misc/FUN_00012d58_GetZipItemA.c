@@ -19,6 +19,6 @@ gh_u4 GetZipItemA(int *param_1,int param_2,ZIPENTRY *param_3)
     lasterrorU = 0x80000;
     return 0x80000;
   }
-  lasterrorU = TUnzip::Get((TUnzip *)param_1[1],param_2,param_3);
+  lasterrorU = XUnzip_Get((TUnzip *)param_1[1],param_2,param_3);
   return lasterrorU;
 }

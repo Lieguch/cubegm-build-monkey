@@ -13,9 +13,9 @@ void ReadJoystickThread(void)
 {
   do {
     ReadJoystickProc();
-    if ((joy_key._0_4_ != joytemp0) || (joy_key._4_4_ != joytemp1)) {
-      joytemp0 = joy_key._0_4_;
-      joytemp1 = joy_key._4_4_;
+    if ((joy_key_blob._0_4_ != joytemp0) || (joy_key_blob._4_4_ != joytemp1)) {
+      joytemp0 = joy_key_blob._0_4_;
+      joytemp1 = joy_key_blob._4_4_;
     }
     processvblank();
     usleep(15000);

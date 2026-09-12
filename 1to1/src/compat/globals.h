@@ -4116,7 +4116,7 @@ typedef struct {
 /* @0x003af0c8 undefined3 */ extern unsigned char RF_cal_data[3];
 /* @0x003af0cc undefined5 */ extern unsigned char BB_cal_data[5];
 /* @0x003af0d4 undefined1[384] */ extern unsigned char USB_Table[384];
-/* @0x003af254 undefined * */ extern unsigned int JOYSTICK_DEVNAME;
+/* @0x003af254 undefined * */ extern char * JOYSTICK_DEVNAME;  /* 修正：access((&X)[i]) → char* */
 /* @0x003af264 undefined4 */ extern unsigned int m_ui;
 /* @0x003af268 undefined4 */ extern unsigned int DAT_003af268;
 /* @0x003af26c undefined4 */ extern unsigned int DAT_003af26c;
@@ -4127,20 +4127,20 @@ typedef struct {
 /* @0x003af280 undefined4 */ extern unsigned int DAT_003af280;
 /* @0x003af284 undefined4 */ extern unsigned int DAT_003af284;
 /* @0x003af288 undefined4 */ extern unsigned int DAT_003af288;
-/* @0x003af28c undefined4 */ extern unsigned int DAT_003af28c;
-/* @0x003af290 undefined4 */ extern unsigned int DAT_003af290;
-/* @0x003af294 undefined4 */ extern unsigned int DAT_003af294;
-/* @0x003af298 undefined4 */ extern unsigned int DAT_003af298;
-/* @0x003af29c undefined4 */ extern unsigned int DAT_003af29c;
+/* retyped */ extern gh_u4 * DAT_003af28c;  /* 证据：DAT+1==+4B（ldrh [r3,#4]/[r3,#6]） */
+/* retyped */ extern gh_u4 * DAT_003af290;  /* 证据：同上代码模式 */
+/* retyped */ extern gh_u4 * DAT_003af294;  /* 证据：DAT+1==+4B（ldrh [r3,#4]） */
+/* retyped */ extern gh_u4 * DAT_003af298;  /* 证据：DAT+1==+4B（ldrh ip,[r3,#4]） */
+/* @0x003af29c undefined4 */ extern void * DAT_003af29c;  /* 修正：malloc/memset/dispFlip 缓冲 → 指针 */
 /* @0x003af2a0 undefined4 */ extern unsigned int DAT_003af2a0;
 /* @0x003af2a4 undefined4 */ extern unsigned int DAT_003af2a4;
-/* @0x003af2a8 undefined4 */ extern unsigned int DAT_003af2a8;
-/* @0x003af2ac undefined4 */ extern unsigned int DAT_003af2ac;
-/* @0x003af2b0 undefined4 */ extern unsigned int DAT_003af2b0;
-/* @0x003af2b4 undefined4 */ extern unsigned int DAT_003af2b4;
-/* @0x003af2b8 undefined4 */ extern unsigned int DAT_003af2b8;
-/* @0x003af2bc undefined4 */ extern unsigned int DAT_003af2bc;
-/* @0x003af2c0 undefined4 */ extern unsigned int DAT_003af2c0;
+/* retyped */ extern void * DAT_003af2a8;  /* 证据：free(DAT_003af2a8) → malloc 缓冲指针 */
+/* @0x003af2ac undefined4 */ extern gh_u1 * DAT_003af2ac;  /* 修正：按字节指针使用 */
+/* @0x003af2b0 undefined4 */ extern gh_u1 *  DAT_003af2b0;
+/* @0x003af2b4 undefined4 */ extern gh_u1 *  DAT_003af2b4;
+/* retyped */ extern gh_u4 * DAT_003af2b8;  /* 证据：同 DAT+1 代码模式 */
+/* @0x003af2bc undefined4 */ extern void * DAT_003af2bc;  /* 修正：承载 UI 缓冲指针(puVar12) */
+/* @0x003af2c0 undefined4 */ extern void * DAT_003af2c0;  /* 修正：承载字符串指针(pcVar4) */
 /* @0x003af30c undefined4 */ extern unsigned int DAT_003af30c;
 /* @0x003af310 undefined4 */ extern unsigned int DAT_003af310;
 /* @0x003af314 undefined4 */ extern unsigned int DAT_003af314;
@@ -4212,7 +4212,7 @@ typedef struct {
 /* @0x003af794 undefined4 */ extern unsigned int DAT_003af794;
 /* @0x003af798 undefined4 */ extern unsigned int DAT_003af798;
 /* @0x003af79c undefined4 */ extern unsigned int DAT_003af79c;
-/* @0x003af7a0 undefined4 */ extern unsigned int DAT_003af7a0;
+extern gh_blob_t DAT_003af7a0;  /* retyped: Ghidra _N_M_ 字段访问（与 af7a4/7a8/7ac/7b0 一致） */
 extern gh_blob_t DAT_003af7a4;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7a8;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7ac;  /* retyped: Ghidra _N_M_ 字段访问 */
@@ -4223,11 +4223,11 @@ extern gh_blob_t DAT_003af7bc;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c0;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c4;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7c8;  /* retyped: Ghidra _N_M_ 字段访问 */
-/* @0x003af7cc undefined4 */ extern unsigned int DAT_003af7cc;
+extern gh_u32_bytes_t DAT_003af7cc;  /* 既作 u32 整值又作 _N_1_ 字节视图 */
 extern gh_blob_t DAT_003af7d0;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7d4;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003af7d8 undefined2 */ extern unsigned short DAT_003af7d8;
-/* @0x003af7e0 undefined4 */ extern unsigned int DAT_003af7e0;
+extern gh_blob_t DAT_003af7e0;  /* retyped: Ghidra _N_M_ 字段访问（与兄弟一致） */
 extern gh_blob_t DAT_003af7e4;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7e8;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t DAT_003af7ec;  /* retyped: Ghidra _N_M_ 字段访问 */
@@ -4265,7 +4265,7 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003b014c undefined4 */ extern unsigned int DAT_003b014c;
 /* @0x003b0150 undefined4 */ extern unsigned int DAT_003b0150;
 /* @0x003b0154 undefined1[256] */ extern unsigned char user_joy_key_mask[256];
-/* @0x003b1ce4 undefined4 */ extern unsigned int fps0;
+/* @0x003b1ce4 undefined4 */ extern float fps0;  /* 修正：承载 vcvt.f32 结果，供 (double)fps0 使用 */
 /* @0x003b1ce8 undefined4 */ extern unsigned int sound_len;
 /* @0x003b1cec undefined4 */ extern unsigned int GameMenuHotKey;
 /* @0x003b1cf0 undefined4 */ extern unsigned int SaveDefaultStateKey;
@@ -4285,6 +4285,9 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003b1d2c pointer */ extern void * PTR_output_x_003b1d2c;
 /* @0x003b1d30 pointer */ extern void * PTR_output_y_003b1d30;
 /* @0x003b1d34 pointer */ extern void * PTR_asc2_1608_003b1d34;
+/* @0x002e0928 .rodata 1520B (symtab g O 000005f0) */ extern unsigned char asc2_1608[1520];
+/* @0x003b1e34 pointer */ extern void * PTR_default_core_list_003b1e34;
+/* @0x003b0254 .data 6800B (symtab g O 00001a90) */ extern unsigned char default_core_list[6800];
 /* @0x003b1d38 pointer */ extern void * PTR_scr_h_size_003b1d38;
 /* @0x003b1d3c pointer */ extern void * PTR_scr_data_003b1d3c;
 /* @0x003b1d40 pointer */ extern void * PTR_Rowspacing_003b1d40;
@@ -4551,22 +4554,22 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003b216c pointer */ extern void * PTR_nl_langinfo_003b216c;
 /* @0x003b2170 pointer */ extern void * PTR_raise_003b2170;
 /* @0x003b217c undefined1 */ extern unsigned char log_file_initialized;
-/* @0x003b2180 undefined4 */ extern unsigned int log_file_fp;
-/* @0x003b2184 undefined4 */ extern unsigned int shm;
+/* @0x003b2180 undefined4 */ extern FILE * log_file_fp;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
+/* retyped */ extern gh_u4 * shm;  /* 证据：shm+1 结果赋给 int* piVar1 */
 /* @0x003b2188 undefined4 */ extern unsigned int spi_printf_needflash;
-/* @0x003b218c undefined4 */ extern unsigned int scr_data;
+/* @0x003b218c undefined4 */ extern void * scr_data;  /* 修正：malloc/地址运算 → 指针 */
 /* @0x003b2190 undefined4 */ extern unsigned int soft_rotation;
 /* @0x003b2194 undefined4 */ extern unsigned int displayfps;
 /* @0x003b2198 undefined4 */ extern unsigned int DisplayThread;
-/* @0x003b219c undefined4 */ extern unsigned int CRU;
-/* @0x003b21a0 undefined4 */ extern unsigned int GRF;
-/* @0x003b21a4 undefined4 */ extern unsigned int GPIO0;
-/* @0x003b21a8 undefined4 */ extern unsigned int GPIO1;
-/* @0x003b21ac undefined4 */ extern unsigned int GPIO2;
+/* @0x003b219c undefined4 */ extern void * CRU;  /* 修正：mmap 返回 → 指针 */
+/* @0x003b21a0 undefined4 */ extern void * GRF;  /* 修正：mmap 返回 → 指针 */
+/* @0x003b21a4 undefined4 */ extern void * GPIO0;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
+/* @0x003b21a8 undefined4 */ extern void * GPIO1;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
+/* @0x003b21ac undefined4 */ extern void * GPIO2;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003b21b0 undefined1 */ extern unsigned char joy_key_tmp;
 /* @0x003b21c0 undefined4 */ extern unsigned int gpiosignal;
 /* @0x003b21c4 undefined4 */ extern unsigned int gpiofp;
-/* @0x003b21c8 undefined4 */ extern unsigned int handle;
+/* @0x003b21c8 undefined4 */ extern void * handle;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003b21cc undefined4 */ extern unsigned int DisplayThreadflag;
 /* @0x003b21d0 undefined1[24] */ extern unsigned char mutex[24];
 /* @0x003b21e8 undefined1[48] */ extern unsigned char cond[48];
@@ -4588,11 +4591,11 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc2c0 undefined4 */ extern unsigned int FilenameExt;
 /* @0x003bc2c4 undefined4 */ extern unsigned int tree;
 /* @0x003bc2c8 undefined4 */ extern unsigned int filelist_tree;
-/* @0x003bc2cc undefined4 */ extern unsigned int res_hz;
+/* retyped */ extern gh_u4 * res_hz;  /* ZIP 句柄（OpenZipU 返回值）*/
 /* @0x003bc2d0 undefined1[304] */ extern unsigned char ze[304];
 /* @0x003bc400 undefined4 */ extern unsigned int zr;
 /* @0x003bc404 undefined4 */ extern unsigned int mui_fast_lsit;
-/* @0x003bc408 undefined4 */ extern unsigned int m_search;
+/* retyped */ extern gh_u4 * m_search;  /* 证据：m_search=piVar9(int*) 且 m_search[3]=int */
 /* @0x003bc40c undefined4 */ extern unsigned int DisplayThumbnailflag;
 /* @0x003bc410 undefined4 */ extern unsigned int ForceFlashCount;
 /* @0x003bc414 undefined4 */ extern unsigned int diff_prev;
@@ -4604,17 +4607,17 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc4bc undefined1[4096] */ extern unsigned char fontbitmap[4096];
 /* @0x003bd4bc undefined1[32] */ extern unsigned char fontname[32];
-/* @0x003bd4dc undefined4 */ extern unsigned int fontbuffer;
+/* @0x003bd4dc undefined4 */ extern void * fontbuffer;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003bd4e0 undefined1[50000] */ extern unsigned char configitems[50000];
 /* @0x003c9830 undefined1[444] */ extern unsigned char m_menulog[444];
 /* @0x003c99ec undefined1[256] */ extern unsigned char path[256];
 /* @0x003c9aec undefined1[20480] */ extern unsigned char core_info_list[20480];
-/* @0x003ceaec undefined4 */ extern unsigned int hz;
+/* retyped */ extern gh_u4 * hz;  /* ZIP 句柄（OpenZipU 返回值）*/
 /* @0x003ceaf0 undefined1[2944] */ extern unsigned char SoundBuffer[2944];
-/* @0x003cf670 undefined4 */ extern unsigned int scrbuf;
+/* @0x003cf670 undefined4 */ extern void * scrbuf;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003cf674 undefined4 */ extern unsigned int Soundplayflag;
 /* @0x003cf678 undefined4 */ extern unsigned int errorcount;
-/* @0x003cf67c undefined4 */ extern unsigned int bimapFilebuffer;
+/* @0x003cf67c undefined4 */ extern void * bimapFilebuffer;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003cf680 undefined4 */ extern unsigned int USBJoy_debug;
 /* @0x003cf684 undefined4 */ extern unsigned int SPI_MODE;
 /* @0x003cf688 undefined1 */ extern unsigned char system_directory;
@@ -4623,7 +4626,7 @@ extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003cf98c undefined1[256] */ extern unsigned char user_joy_key_trubo[256];
 /* @0x003cfa8c undefined4 */ extern unsigned int rgb_565_buffer;
 /* @0x003cfa90 undefined4 */ extern unsigned int use_rgb_8888;
-/* @0x003cfa94 undefined4 */ extern unsigned int rotation_buff;
+/* @0x003cfa94 undefined4 */ extern void * rotation_buff;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003cfa98 undefined4 */ extern unsigned int rotation;
 /* @0x003cfa9c undefined4 */ extern unsigned int skipCounter;
 /* @0x003cfaa0 undefined4 */ extern unsigned int FrameCount0;
@@ -4632,7 +4635,7 @@ extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003cfaac undefined4 */ extern unsigned int ticks_ptr;
 /* @0x003cfab0 undefined4 */ extern unsigned int AutoRestoreKey;
 /* @0x003cfab4 undefined1 */ extern unsigned char _mxml_key_once;
-/* @0x003cfab8 undefined4 */ extern unsigned int g_sfc_reg;
+/* retyped */ extern gh_u4 * g_sfc_reg;  /* 证据：g_sfc_reg[8]/[4] 为 32 位寄存器 */
 /* @0x003cfabc undefined4 */ extern unsigned int FlashSize;
 /* @0x003cfac0 undefined8 */ extern unsigned long long UniqueID;
 /* @0x003cfac8 undefined1[16000] */ extern unsigned char corecfg[16000];
@@ -4683,7 +4686,7 @@ extern gh_blob_t this_frame;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e19cc undefined4 */ extern unsigned int Filetype;
 /* @0x003e19d0 undefined4 */ extern unsigned int FrameCount;
 /* @0x003e19d4 undefined4 */ extern unsigned int FrameSkip;
-/* @0x003e19d8 undefined4 */ extern unsigned int Frame_data;
+/* @0x003e19d8 undefined4 */ extern void * Frame_data;  /* 修正：帧缓冲指针（dispFlip 写入 / ScaleDisplay 读出） */
 /* @0x003e19dc undefined4 */ extern unsigned int Frame_height;
 /* @0x003e19e0 undefined4 */ extern unsigned int Frame_pitch;
 /* @0x003e19e4 undefined4 */ extern unsigned int Frame_width;
@@ -4696,17 +4699,17 @@ extern gh_blob_t this_frame;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1a00 undefined4 */ extern unsigned int Time_0;
 /* @0x003e1a04 undefined4 */ extern unsigned int Time_1;
 /* @0x003e1a08 undefined4 */ extern unsigned int USE_HDMI_OUT;
-/* @0x003e1a0c undefined4 */ extern unsigned int ZIP_BUF;
+/* @0x003e1a0c undefined4 */ extern void * ZIP_BUF;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003e1a10 undefined4 */ extern unsigned int ZIP_BUF_SIZE;
 /* @0x003e1a14 undefined4 */ extern unsigned int _SetDoubleBuffer;
-/* @0x003e1a18 undefined4 */ extern unsigned int _SetFrameSkip;
-/* @0x003e1a1c undefined4 */ extern unsigned int _retro_get_region;
-/* @0x003e1a20 undefined4 */ extern unsigned int _retro_is_support;
-/* @0x003e1a24 undefined4 */ extern unsigned int _retro_run;
-/* @0x003e1a28 undefined4 */ extern unsigned int _retro_serialize;
-/* @0x003e1a2c undefined4 */ extern unsigned int _retro_serialize_size;
-/* @0x003e1a30 undefined4 */ extern unsigned int _retro_set_device;
-/* @0x003e1a34 undefined4 */ extern unsigned int _retro_unserialize;
+/* @0x003e1a18 undefined4 */ extern gh_code * _SetFrameSkip;
+/* @0x003e1a1c undefined4 */ extern gh_code * _retro_get_region;
+/* @0x003e1a20 undefined4 */ extern gh_code * _retro_is_support;
+/* @0x003e1a24 undefined4 */ extern gh_code * _retro_run;
+/* @0x003e1a28 undefined4 */ extern gh_code * _retro_serialize;
+/* @0x003e1a2c undefined4 */ extern gh_code * _retro_serialize_size;
+/* @0x003e1a30 undefined4 */ extern gh_code * _retro_set_device;
+/* @0x003e1a34 undefined4 */ extern gh_code * _retro_unserialize;
 /* @0x003e1a3c undefined4 */ extern unsigned int disp_times;
 /* @0x003e1a40 undefined4 */ extern unsigned int fps;
 /* @0x003e1a44 undefined4 */ extern unsigned int fps_ptr;
@@ -4725,23 +4728,23 @@ extern gh_blob_t this_frame;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1a78 undefined4 */ extern unsigned int overtime1;
 /* @0x003e1a7c undefined4 */ extern unsigned int pal_ntsc;
 /* @0x003e1a80 undefined4 */ extern unsigned int pause_ret;
-/* @0x003e1a84 undefined4 */ extern unsigned int pf;
+/* @0x003e1a84 undefined4 */ extern gh_code * pf;
 /* @0x003e1a88 undefined4 */ extern unsigned int prev_time;
-/* @0x003e1a8c undefined4 */ extern unsigned int romfile;
-/* @0x003e1a90 undefined4 */ extern unsigned int scr_buf;
+/* @0x003e1a8c undefined4 */ extern void * romfile;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
+/* @0x003e1a90 undefined4 */ extern void * scr_buf;  /* 类型修正：指针误标(undefined4兜底→真实类型, ARM32 4B ABI不变) */
 /* @0x003e1a94 undefined4 */ extern unsigned int scr_h_size;
 /* @0x003e1a98 undefined4 */ extern unsigned int scr_v_size;
 /* @0x003e1a9c undefined4 */ extern unsigned int screen_w;
 /* @0x003e1aa0 undefined4 */ extern unsigned int screen_x;
-/* @0x003e1aa4 undefined4 */ extern unsigned int set_rotation;
+/* @0x003e1aa4 undefined4 */ extern gh_code * set_rotation;
 /* @0x003e1aa8 undefined4 */ extern unsigned int shmid;
-/* @0x003e1aac undefined4 */ extern unsigned int sound_driver_init;
-/* @0x003e1ab0 undefined4 */ extern unsigned int sound_driver_playframe;
+/* @0x003e1aac undefined4 */ extern gh_code * sound_driver_init;
+/* @0x003e1ab0 undefined4 */ extern gh_code * sound_driver_playframe;
 /* @0x003e1ab4 undefined4 */ extern unsigned int sound_times;
 /* @0x003e1ab8 undefined4 */ extern unsigned int video_driver_deinit;
-/* @0x003e1abc undefined4 */ extern unsigned int video_driver_frame;
-/* @0x003e1ac0 undefined4 */ extern unsigned int video_driver_get_size;
-/* @0x003e1ac4 undefined4 */ extern unsigned int video_driver_setting;
+/* @0x003e1abc undefined4 */ extern gh_code * video_driver_frame;
+/* @0x003e1ac0 undefined4 */ extern gh_code * video_driver_get_size;  /* dlsym 结果函数指针 */
+/* @0x003e1ac4 undefined4 */ extern gh_code * video_driver_setting;
 /* @0x003e1ac8 undefined3 */ extern unsigned char spi_id[3];
 extern gh_blob_t IR_JoyKey;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003e1ace undefined1 */ extern unsigned char ChannelIndex;
@@ -4771,13 +4774,16 @@ extern gh_blob_t IR_JoyKey;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* fallback */ extern unsigned char DAT_002dd88c[];
 /* fallback */ extern unsigned char DAT_002ddd74[];
 /* fallback */ extern unsigned char DAT_002e0d18[];
-/* fallback */ extern unsigned char DAT_003b0274[];
-/* fallback */ extern unsigned char DAT_003b0278[];
-/* fallback */ extern unsigned char DAT_003b0298[];
-/* fallback */ extern unsigned char DAT_003b02b8[];
-/* fallback */ extern unsigned char DAT_003b02bc[];
+/* fallback */ extern unsigned char DAT_003b0274[0x1F0]; /* 定长：供 X + n*0x44 与 X[i] 字节寻址 */
+/* fallback */ extern unsigned char DAT_003b0278[0x1EC]; /* 定长：供 X + n*0x44 与 X[i] 字节寻址 */
+/* fallback */ extern unsigned char DAT_003b0298[0x1CC]; /* 定长：供 X + n*0x44 与 X[i] 字节寻址 */
+/* fallback */ extern unsigned char DAT_003b02b8[0x1AC]; /* 定长：供 X + n*0x44 与 X[i] 字节寻址 */
+/* fallback */ extern unsigned char DAT_003b02bc[0x1A8]; /* 定长：供 X + n*0x44 与 X[i] 字节寻址 */
 /* fallback */ extern unsigned char UNK_000d2f00[];
 /* fallback */ extern unsigned char UNK_00118000[];
 /* fallback */ extern unsigned char UNK_002e0938[];
+
+/* 13 个数组全局的 _N_M_ 成员覆盖结构 + 指针 cast 宏（须在本头声明之后） */
+#include "named_array_blobs.h"
 
 #endif

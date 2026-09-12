@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 param_2,gh_u4 param_3)
+gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 *param_2,gh_u4 param_3)
 
 {
   int iVar1;
@@ -16,7 +16,7 @@ gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 param_2,gh_u4 param_3)
   if (param_1 == 0) {
     return 0xfffffffb;
   }
-  iVar1 = xmp3_UnpackFrameHeader(param_1,param_3);
+  iVar1 = xmp3_UnpackFrameHeader((int *)param_1,(char *)param_3);
   if ((iVar1 != -1) && (*(int *)(param_1 + 2000) == 3)) {
     MP3GetLastFrameInfo(param_1,param_2);
     return 0;

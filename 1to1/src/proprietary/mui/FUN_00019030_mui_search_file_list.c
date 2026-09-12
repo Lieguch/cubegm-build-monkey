@@ -81,7 +81,7 @@ LAB_00019144:
         local_100 = local_f0;
         local_fc = pbVar15;
         libiconv(uVar3,&local_100,&local_f8,&local_fc,&local_f4);
-        mui_extract_basepath(local_8c,pbVar15,100);
+        mui_extract_basepath((char *)local_8c,(char *)pbVar15,100);
         lVar4 = strtol((char *)local_8c,(char **)0x0,10);
         (&DAT_003b2320)[iVar13 * 0x101] = lVar4;
         iVar14 = IsShoucang(pbVar15);
@@ -228,6 +228,6 @@ LAB_000195cc:
       cVar8 = *pcVar5;
     } while (cVar8 != '\0');
   }
-  libiconv_close(uVar3);
+  libiconv_close((void *)uVar3);
   return iVar16;
 }

@@ -8,16 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 mui_LoadUIResource(gh_u4 *param_1,gh_u4 param_2)
+gh_u4 mui_LoadUIResource(gh_u4 **param_1,char *param_2)
 
 {
-  int iVar1;
+  gh_u4 *iVar1;
   gh_u4 uVar2;
   void *pvVar3;
   gh_u4 local_9c;
   char acStack_98 [128];
   
-  uVar2 = GetWorkPath();
+  uVar2 = (gh_u4)GetWorkPath();
   sprintf(acStack_98,"%s/%s",uVar2,(&m_ui)[m_ui + 0x16] + 0x20);
   res_hz = OpenZipU(acStack_98,0,2);
   if (res_hz != 0) {
@@ -27,7 +27,7 @@ gh_u4 mui_LoadUIResource(gh_u4 *param_1,gh_u4 param_2)
         free((void *)*param_1);
       }
       uVar2 = 1;
-      pvVar3 = malloc(ze._296_4_);
+      pvVar3 = malloc((ze_blob)._296_4_);
       iVar1 = res_hz;
       *param_1 = pvVar3;
       UnzipItem(iVar1,local_9c,pvVar3,0,3);

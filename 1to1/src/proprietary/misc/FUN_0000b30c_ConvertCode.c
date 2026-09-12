@@ -20,7 +20,7 @@ int ConvertCode(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4,
   
   local_18 = param_4;
   local_14[0] = param_3;
-  iVar1 = libiconv_open(param_2,param_1);
+  iVar1 = libiconv_open((gh_byte *)param_2,(gh_byte *)param_1);
   if (iVar1 == -1) {
     iVar2 = -1;
   }
@@ -44,7 +44,7 @@ int ConvertCode(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4,
       }
     }
     else {
-      libiconv_close(iVar1);
+      libiconv_close((void *)iVar1);
     }
   }
   return iVar2;

@@ -18,10 +18,10 @@ gh_u4 * OpenZipU(void *param_1,gh_uint param_2,gh_uint param_3)
   *(gh_u4 *)(this + 0x138) = 0xffffffff;
   *(gh_u4 *)this = 0;
   *(gh_u4 *)(this + 4) = 0xffffffff;
-  lasterrorU = TUnzip::Open(this,param_1,param_2,param_3);
+  lasterrorU = XUnzip_Open(this,param_1,param_2,param_3);
   if (lasterrorU == 0) {
     puVar1 = operator_new(8);
-    puVar1[1] = this;
+    puVar1[1] = (gh_u4)this;
     *puVar1 = 1;
     return puVar1;
   }

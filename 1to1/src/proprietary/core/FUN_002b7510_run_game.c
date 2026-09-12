@@ -14,7 +14,7 @@ gh_u4 run_game(char *param_1)
   char *pcVar1;
   int iVar2;
   FILE *__stream;
-  int iVar3;
+  gh_u4 *iVar3;
   int iVar4;
   size_t sVar5;
   gh_uint uVar6;
@@ -76,31 +76,31 @@ gh_u4 run_game(char *param_1)
 LAB_002b7664:
     uVar6 = Filetype & 0xffff;
     if (uVar6 == 4) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if (uVar6 == 8) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if (uVar6 == 2) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if (uVar6 == 0x400) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if ((uVar6 - 0x20 & 0xffffffdf) == 0) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if (uVar6 == 0x100) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
       uVar6 = Filetype & 0xffff;
     }
     if (uVar6 == 0x200) {
-      Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+      Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
     }
     if (ZIP_BUF != (void *)0x0) {
       free(ZIP_BUF);
@@ -132,14 +132,14 @@ LAB_002b7664:
       fclose(__stream);
       goto LAB_002b7664;
     }
-    extract_basepath(&local_158,param_1,100);
+    extract_basepath((char *)&local_158,param_1,100);
     sVar5 = strlen((char *)&local_158);
     builtin_strncpy((char *)((int)&local_158 + sVar5),"/gam",4);
     builtin_strncpy(acStack_154 + sVar5,"e.cf",4);
     (acStack_150 + sVar5)[0] = 'g';
     (acStack_150 + sVar5)[1] = '\0';
-    get_items_from_file(&local_158,items);
+    get_items_from_file((char *)&local_158,items);
   }
-  Core_Load(param_1,&DAT_003b0278 + iVar2 * 0x44);
+  Core_Load(param_1,DAT_003b0278 + iVar2 * 0x44);
   return 1;
 }

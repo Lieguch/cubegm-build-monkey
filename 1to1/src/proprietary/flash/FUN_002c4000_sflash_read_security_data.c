@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void sflash_read_security_data(gh_u4 param_1,gh_u4 param_2)
+void sflash_read_security_data(void *param_1,gh_u4 param_2)
 
 {
   gh_u4 local_10;
@@ -16,6 +16,6 @@ void sflash_read_security_data(gh_u4 param_1,gh_u4 param_2)
   
   local_c = 0;
   local_10 = 0x4848;
-  sfc_request(&local_10,param_2,param_1,0x100);
+  sfc_request(&local_10,param_2,(gh_uint *)param_1,0x100);
   return;
 }

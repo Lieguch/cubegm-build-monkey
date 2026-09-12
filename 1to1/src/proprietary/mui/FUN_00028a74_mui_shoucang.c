@@ -41,15 +41,15 @@ void mui_shoucang(void)
   local_4c0 = 0;
   local_4cc = 0;
   bVar1 = false;
-  uVar10 = m_menulog._320_4_;
+  uVar10 = (m_menulog_blob)._320_4_;
   uVar11 = 0;
-  uVar12 = m_menulog._316_4_;
-  DAT_003af278 = m_menulog._316_4_;
-  DAT_003af27c = m_menulog._320_4_;
-  m_menulog._0_4_ = DAT_003af26c;
+  uVar12 = (m_menulog_blob)._316_4_;
+  DAT_003af278 = (m_menulog_blob)._316_4_;
+  DAT_003af27c = (m_menulog_blob)._320_4_;
+  (m_menulog_blob)._0_4_ = DAT_003af26c;
 joined_r0x00028b18:
   if (DAT_003af2b4 == (gh_u1 *)0x0) {
-    uVar5 = GetWorkPath();
+    uVar5 = (gh_u4)GetWorkPath();
     sprintf(acStack_490,"%s/favorites.lst",uVar5);
     pFVar6 = fopen(acStack_490,"rb");
     if (pFVar6 == (FILE *)0x0) {
@@ -106,7 +106,7 @@ joined_r0x00028b18:
   mui_ReadJoystick();
   diff_prev = 0;
   m_time0 = GetTicks();
-  if ((joy_key._0_4_ & 0x8000) != 0) goto LAB_00028db0;
+  if ((joy_key_blob._0_4_ & 0x8000) != 0) goto LAB_00028db0;
 LAB_00028c20:
   if (uVar8 == 0) {
     uVar8 = mui_ReadJoystick();
@@ -173,7 +173,7 @@ LAB_00028c34:
             }
           }
         }
-        SoundPlay(1,mui_Effect1);
+        SoundPlay(1,(int *)mui_Effect1);
         goto LAB_00028c5c;
       }
       if ((int)uVar10 < DAT_003af394 + -1) {
@@ -186,7 +186,7 @@ LAB_00028c34:
         mui_do_file_list(uVar12,DAT_003af2b4);
       }
     }
-    SoundPlay(1,mui_Effect0);
+    SoundPlay(1,(int *)mui_Effect0);
     goto LAB_00028c5c;
   }
   if (uVar8 == 0x1000) {
@@ -208,7 +208,7 @@ LAB_00028c34:
     while( true ) {
       iVar7 = mui_ReadJoystick();
       if (iVar7 == 0x2000) {
-        uVar5 = GetWorkPath();
+        uVar5 = (gh_u4)GetWorkPath();
         sprintf(acStack_490,"%s/favorites.lst",uVar5);
         pFVar6 = fopen(acStack_490,"wb");
         if (pFVar6 != (FILE *)0x0) {
@@ -242,10 +242,10 @@ LAB_00028c34:
     if (uVar8 == 0x400) {
 LAB_00029470:
       DAT_003af26c = 2;
-      SoundPlay(1,mui_Effect1);
+      SoundPlay(1,(int *)mui_Effect1);
       if ((AutoRestoreKey & 8) != 0) {
-        m_menulog._316_4_ = uVar12;
-        m_menulog._320_4_ = uVar10;
+        (m_menulog_blob)._316_4_ = uVar12;
+        (m_menulog_blob)._320_4_ = uVar10;
         return;
       }
     }
@@ -253,10 +253,10 @@ LAB_00029470:
       if (uVar8 != 0x800) goto LAB_00028c5c;
 LAB_00028e28:
       DAT_003af26c = 4;
-      SoundPlay(1,mui_Effect1);
+      SoundPlay(1,(int *)mui_Effect1);
       if ((AutoRestoreKey & 8) != 0) {
-        m_menulog._316_4_ = uVar12;
-        m_menulog._320_4_ = uVar10;
+        (m_menulog_blob)._316_4_ = uVar12;
+        (m_menulog_blob)._320_4_ = uVar10;
       }
     }
     return;
@@ -277,12 +277,12 @@ LAB_00028eac:
     pcVar4 = (char *)SeletEmuCore(acStack_42c);
     if (pcVar4 == (char *)0x0) {
       DisplayThumbnailflag = 1;
-      pthread_create(&pStack_4ac,(pthread_attr_t *)0x0,mui_DisplayThumbnailThread,(void *)0x0);
+      pthread_create(&pStack_4ac,(pthread_attr_t *)0x0,(void *(*)(void *))mui_DisplayThumbnailThread,(void *)0x0);
     }
     else {
       if ((AutoRestoreKey & 8) != 0) {
-        m_menulog._316_4_ = uVar12;
-        m_menulog._320_4_ = uVar10;
+        (m_menulog_blob)._316_4_ = uVar12;
+        (m_menulog_blob)._320_4_ = uVar10;
         SaveMenuLog();
       }
       strcpy(acStack_128,pcVar4);
@@ -294,8 +294,8 @@ LAB_00028eac:
     ZIP_BUF = (void *)0x0;
     ZIP_BUF_SIZE = 0;
     if ((AutoRestoreKey & 8) != 0) {
-      uVar10 = m_menulog._320_4_;
-      uVar12 = m_menulog._316_4_;
+      uVar10 = (m_menulog_blob)._320_4_;
+      uVar12 = (m_menulog_blob)._316_4_;
     }
     DAT_003af278 = 0;
     DAT_003af27c = 0;
@@ -410,7 +410,7 @@ LAB_00028d5c:
         do {
           mui_WaitNMI();
           bVar1 = false;
-          if ((joy_key._0_4_ & 0x8000) == 0) goto LAB_00028c20;
+          if ((joy_key_blob._0_4_ & 0x8000) == 0) goto LAB_00028c20;
 LAB_00028db0:
           uVar3 = mui_ReadJoystick();
           if ((uVar3 & 0xffff7fff) == 0x20) goto LAB_00028e28;
@@ -435,14 +435,14 @@ LAB_000290e4:
     if (uVar8 != 0x2000) goto LAB_00028c5c;
 LAB_000293d4:
     if ((AutoRestoreKey & 8) != 0) {
-      m_menulog._316_4_ = uVar12;
-      m_menulog._320_4_ = uVar10;
+      (m_menulog_blob)._316_4_ = uVar12;
+      (m_menulog_blob)._320_4_ = uVar10;
       SaveMenuLog();
     }
     mui_run_game(&file_info_list + DAT_003af27c * 0x404);
     if ((AutoRestoreKey & 8) != 0) {
-      uVar10 = m_menulog._320_4_;
-      uVar12 = m_menulog._316_4_;
+      uVar10 = (m_menulog_blob)._320_4_;
+      uVar12 = (m_menulog_blob)._316_4_;
     }
     DAT_003af278 = 0;
     DAT_003af27c = 0;

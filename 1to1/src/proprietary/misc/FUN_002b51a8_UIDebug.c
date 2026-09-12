@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-void UIDebug(int param_1,int param_2,gh_u4 param_3,gh_uint param_4)
+void UIDebug(void *param_1,int param_2,gh_u4 param_3,gh_uint param_4)
 
 {
   int iVar1;
@@ -64,7 +64,7 @@ void UIDebug(int param_1,int param_2,gh_u4 param_3,gh_uint param_4)
     iVar11 = iVar11 * -2;
     do {
       iVar1 = (uVar9 - 0x20) * 0x10;
-      pbVar12 = &asc2_1608 + iVar1;
+      pbVar12 = asc2_1608 + iVar1;
       iVar10 = iVar6;
       iVar13 = iVar11;
       do {
@@ -84,7 +84,7 @@ void UIDebug(int param_1,int param_2,gh_u4 param_3,gh_uint param_4)
         pbVar12 = pbVar12 + 1;
         iVar13 = iVar13 + param_4 * -2;
         iVar10 = iVar10 + param_4 * 2;
-      } while (&UNK_002e0938 + iVar1 != pbVar12);
+      } while (UNK_002e0938 + iVar1 != pbVar12); /* 数组名衰变=同一地址；&arr 得指向不完整数组的指针，算术非法 */
       iVar11 = iVar11 + -0x10;
       iVar6 = iVar6 + 0x10;
       local_58 = (timeval *)((int)&local_58->tv_sec + 1);

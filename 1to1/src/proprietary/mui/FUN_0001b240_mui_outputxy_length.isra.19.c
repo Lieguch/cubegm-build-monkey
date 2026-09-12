@@ -15,7 +15,7 @@ int mui_outputxy_length_isra_19(int param_1,int param_2,gh_byte *param_3)
   gh_byte *pbVar2;
   gh_uint uVar3;
   gh_uint in_fpscr;
-  gh_u4 uVar4;
+  float uVar4;  /* 证据：结果直接喂 stbtt_ScaleForPixelHeight(float)，原为 vcvt.f32.u32 */
   float fVar5;
   float fVar6;
   gh_u4 local_50;
