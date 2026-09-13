@@ -31,6 +31,12 @@ import sys
 # 否则会把工厂的构造函数地址搬过来 → 指向错的代码；但符号仍要 PROVIDE 到段首。
 # SKIP_HEAD[section] = 跳过头部字节数（交由 CRT 提供，避免与 crt1.o 重复定义）
 SKIP_HEAD = {'.rodata': 4}
+# ★ 镜像段使用自定义名 .fimg_*：与编译产物的常规段（.rodata/.data/.bss）分离，
+#   这样链接脚本能把「工厂地址区」和「我们自己+libc 的段」放到不同地址，互不重叠。
+FIMG = {'.rodata': '.fimg_rodata',
+        '.data.rel.ro.local': '.fimg_data_rel_ro_local',
+        '.data': '.fimg_data',
+        '.bss': '.fimg_bss'}
 SEC_DEF = [('.rodata', 'a', 'progbits', None),
            ('.data.rel.ro.local', 'aw', 'progbits', None),
            ('.data', 'aw', 'progbits', None),
@@ -68,11 +74,20 @@ def load_globals(p):
 
 
 def load_missing(p):
+    """MISSING 名单加载：兼容两种格式
+      ① `MISSING<TAB>name`（link_audit 报告节选）
+      ② 裸名字一行一个（report/_undef_all.txt）
+    ★ 踩坑：只认格式①时，传裸名单会静默得到空列表 → 别名全部丢失（934→17）。"""
     out = []
     for line in open(p, encoding='utf-8', errors='replace'):
-        f = line.rstrip('\n').split('\t')
-        if len(f) >= 2 and f[0] == 'MISSING':
+        s = line.strip()
+        if not s or s.startswith('#') or s.startswith('/*'):
+            continue
+        f = s.split('\t')
+        if f[0] == 'MISSING' and len(f) >= 2:
             out.append(f[1])
+        elif len(f) == 1:
+            out.append(f[0])
     return out
 
 
@@ -156,7 +171,7 @@ def main():
     A('')
     for nm, fl, ty, _ in SEC_DEF:
         s = secs[nm]
-        A('\t.section %s,"%s",%%%s' % (nm, fl, ty))
+        A('\t.section %s,"%s",%%%s' % (FIMG[nm], fl, ty))
         A('\t.globl __f%s_base' % nm.replace('.', '_'))
         A('\t.type __f%s_base, %%object' % nm.replace('.', '_'))
         A('__f%s_base:' % nm.replace('.', '_'))
@@ -200,15 +215,34 @@ def main():
     B('')
     B('SECTIONS')
     B('{')
+    B('  /* ---- ① 工厂地址区（必须逐位一致：代码里烧死绝对地址）---- */')
     B('  . = 0x00008000;')
-    order = [('.plt', 0x9608), ('.text', 0x9b10), ('.rodata', 0x2dbca0),
-             ('.ARM.exidx', 0x3ad008), ('.data.rel.ro.local', 0x3ae5c4),
-             ('.init_array', 0x3aeed8), ('.fini_array', 0x3aeedc),
-             ('.data', 0x3af000), ('.got', 0x3b1cfc), ('.bss', 0x3b2178)]
-    for nm, vma in order:
-        B('  %s 0x%08x : { *(%s) *(%s.*) }' % (nm, vma, nm, nm))
-    B('  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) }')
+    # 工厂镜像段：只匹配 .fimg_*（我们自己/libc 的常规段不会落进来）
+    fimg_order = [('.fimg_rodata', 0x2dbca0),
+                  ('.fimg_data_rel_ro_local', 0x3ae5c4),
+                  ('.fimg_data', 0x3af000),
+                  ('.fimg_bss', 0x3b2178)]
+    for nm, vma in fimg_order:
+        B('  %s 0x%08x : { *(%s) }' % (nm, vma, nm))
+    B('')
+    B('  /* ---- ② 代码与运行时区（我们自己 + libc；地址自由，只要不与①重叠）---- */')
+    B('  .text 0x00009b10 : { *(.text) *(.text.*) *(.init) *(.fini) *(.plt) *(.plt.*) }')
+    B('  .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }')
+    B('  .rodata 0x00400000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }')
+    B('  .init_array ALIGN(4) : { PROVIDE_HIDDEN(__init_array_start = .); KEEP(*(.init_array)) KEEP(*(.init_array.*)) }')
+    B('  .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }')
+    B('  .data 0x01000000 : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }')
+    B('  .bss 0x02000000 : { *(.bss) *(.bss.*) *(COMMON) }')
+    B('  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }')
     B('}')
+    B('')
+    B('/* ---- ③ 链接期占位（未供应符号显式置 0，便于链出并校验段地址）----')
+    B(' * compress/uncompress：工厂从 libz.so.1 动态导入（NEEDED libz.so.1），试链环境无 libz')
+    B(' * UNK_*：位于工厂 .text 段内的只读常量，等 P3 三期 .text 精确镜像')
+    B(' * _init：真机构建由 CRT（crti.o）提供，此处占位仅供试链 */')
+    for ph in ('compress', 'uncompress', '_init',
+               'UNK_000d2f00', 'UNK_00118000', 'UNK_002e0938'):
+        B('%s = 0;' % ph)
     B('')
     B('/* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */')
     for sym, sec in sorted(LINKER_DEFINED.items()):

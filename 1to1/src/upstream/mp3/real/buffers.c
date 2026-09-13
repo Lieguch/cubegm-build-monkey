@@ -50,14 +50,17 @@
 #include "coder.h"
 
 #if USE_STATIC
-MP3DecInfo mp3DecInfo; 
-SubbandInfo sbi;
-IMDCTInfo mi;
-HuffmanInfo hi;
-DequantInfo di;
-ScaleFactorInfo sfi;
-SideInfo si;
-FrameHeader fh;
+/* 1:1：这些状态的存储由工厂数据镜像提供（工厂 symtab 均为 g O .bss：
+   mp3DecInfo@0x003dfffc / mi@0x003d99cc / hi@0x003dcdec / di@0x003e07ec /
+   fh@0x003e1830 / sbi,sfi,si 同区），此处仅作声明，避免与之重复定义。 */
+extern MP3DecInfo mp3DecInfo;
+extern SubbandInfo sbi;
+extern IMDCTInfo mi;
+extern HuffmanInfo hi;
+extern DequantInfo di;
+extern ScaleFactorInfo sfi;
+extern SideInfo si;
+extern FrameHeader fh;
 #else
 #include "stdlib.h" 
 #endif

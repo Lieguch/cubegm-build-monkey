@@ -53,6 +53,9 @@ LIBC_EXACT = {
     'dup', 'readlink', 'rewind', 'scandir', 'alphasort', 'stpcpy', 'bcmp',
     'futimens', 'utimensat', 'strcasecmp', 'strncasecmp', '__errno_location',
     'putc', 'getc', 'ungetc', 'setvbuf', 'setbuf', 'compress', 'uncompress', 'inflateInit',
+    'acos', 'asin', 'atan', 'ceilf', 'floorf', 'sqrtf', 'fabsf', 'powf', 'logf',
+    'pthread_getspecific', 'pthread_setspecific', 'pthread_key_create', 'pthread_key_delete',
+    'pthread_once', 'locale_charset', 'nl_langinfo', 'getc_unlocked', 'putc_unlocked',
     '__isoc99_sscanf', '__isoc99_scanf', 'isgraph', 'ispunct', 'iscntrl',
     'memchr', 'strcasestr', 'asprintf', 'vasprintf', 'fdopen', 'fileno',
 }

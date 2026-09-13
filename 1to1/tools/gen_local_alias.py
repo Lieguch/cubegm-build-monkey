@@ -53,18 +53,37 @@ def read_sections(p):
                 pass
     return secs
 
+def read_image_aliases(root='src/data/factory_image.S'):
+    """已由工厂镜像模块别名的符号名集合（避免重复定义）"""
+    names = set()
+    try:
+        for line in open(root, encoding='utf-8', errors='replace'):
+            s = line.strip()
+            if s.startswith('.set '):
+                rest = s[5:]
+                nm = rest.split(',')[0].strip()
+                if nm:
+                    names.add(nm)
+    except OSError:
+        pass
+    return names
+
+
 def main():
     symtab, linksyms, layout, outp = sys.argv[1:5]
     loc = read_symtab(symtab)
     undef = read_undefs(linksyms)
     secs = read_sections(layout)
+    already = read_image_aliases()
+    if already:
+        print('  已由 factory_image.S 覆盖 %d 个符号（跳过）' % len(already))
     # 只为「已镜像段」内的对象生成别名（未镜像段如 .init_array 由 CRT/链接器提供）
     MIRRORED = {'.rodata', '.data.rel.ro.local', '.data', '.bss'}
     # 手工补充：Ghidra 恢复名（非真实符号）→ 真实地址（工厂证据）
     # crc_table = _ZL9crc_table @0x002e01c4 (l O .rodata, 1024B) —— XUnzip.cpp 内嵌 zlib 的 CRC 表
     EXTRA = {'crc_table': ('.rodata', 0x002e01c4 - 0x002dbca0)}
-    hits = sorted(set(n for n in undef if n in loc and loc[n][2] in MIRRORED)
-                  | set(n for n in undef if n in EXTRA))
+    hits = sorted(set(n for n in undef if n in loc and loc[n][2] in MIRRORED and n not in already)
+                  | set(n for n in undef if n in EXTRA and n not in already))
     skipped = sorted(n for n in undef if n in loc and loc[n][2] not in MIRRORED)
     for n in skipped:
         print('  跳过 %s（段 %s 未镜像，由 CRT/链接器提供）' % (n, loc[n][2]))

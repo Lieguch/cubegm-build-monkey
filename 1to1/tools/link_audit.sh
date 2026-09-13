@@ -85,6 +85,15 @@ if [ "$ok" -gt 0 ]; then
     if [ -f "$XUPOBJ" ]; then
         $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$XUPOBJ")" >> "$ROOT/report/_link_syms.tsv" 2>/dev/null
     fi
+    # 上游组件对象（stb / mxml / mp3）：若缺失则先构建
+    UPOUT="$ROOT/build/upstream"
+    if [ -z "$(ls -A "$UPOUT"/*.o 2>/dev/null)" ]; then
+        echo "== 上游对象缺失，调用 build_upstream.sh =="
+        CC="$CC" PY="$PY" sh "$ROOT/tools/build_upstream.sh" "$UPOUT" >/dev/null 2>&1
+    fi
+    if [ -n "$(ls -A "$UPOUT"/*.o 2>/dev/null)" ]; then
+        $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$UPOUT")"/*.o >> "$ROOT/report/_link_syms.tsv" 2>/dev/null
+    fi
     # 工厂 LOCAL 数据对象别名：拼接镜像+别名后单文件汇编（.set 引用跨段基址需同 TU）
     LOCALS="$ROOT/src/data/factory_local.S"
     LOCOBJ="$ROOT/build/factory_local.o"   # 不放 build/obj/：那里的 *.o 会被上面的 glob 重复扫描

@@ -145,6 +145,59 @@
 **下一步（P3 二期）**：① XUnzip POSIX 移植 + `XUnzip_` 方法名映射；② 3 对同名局部符号按 TU 拆分；③ `.text` 精确逐函数布局（函数指针表依赖）；④ 完整链接 + `abi_check.py` 过门禁。
 ---
 
+### 2026-09-12 第七轮：★ P3 二期① XUnzip POSIX 移植（18/18 符号逐位命中）
+
+**工厂 XUnzip.cpp 变体画像（符号表取证，非猜测）**：
+
+| 事实 | 证据 |
+|---|---|
+| 编译单元名 `XUnzip.cpp`（工厂改名） | symtab `df *ABS* XUnzip.cpp` |
+| 只编 unzip.cpp，**未编 zip.cpp** | 无 `CreateZip/ZipAdd/deflate*` 符号 |
+| 保留 TUnzip 五方法 + FormatZipMessageU + GetZipItemW + FindZipItemW + IsZipHandleU + lu*/unz* + 内嵌 zlib 1.1.x | symtab 逐条比对 |
+| 纯 C++ 包装全删（OpenZip*/CloseZip/GetZipItem/FindZipItem/UnzipItem/OpenZipU 重载/CloseZipU） | 工厂改用自研 C 包装（即我们专有集里的 5 个 zip 文件） |
+| **密码支持全删**（无 Uupdate_keys/Udecrypt_byte/zdecode/EnsureDirectory；`unzOpenCurrentFile` 无 password 参） | symtab 缺失 + mangled 签名差异 |
+| `Find` 的 `ic` 为 **unsigned char**（mangled `h`，非 bool `b`）；DWORD = **unsigned int**（`j`） | `_ZN6TUnzip4FindEPKchPiP8ZIPENTRY` |
+| `ucrc32` 是 **C 链接**（`g F .text @0xfff4`） | 我方专有集里的 `FUN_0000fff4_ucrc32.c` 即为它 ✓ 口径不变 |
+| `crc_table` = `_ZL9crc_table`@0x2e01c4（C++ internal linkage，**grep `crc_table$` 匹配不到**） | Ghidra globals + 工厂 symtab |
+| `lasterrorU` = `ZRESULT lasterrorU=ZR_OK`（.bss 4B @0x3b221c） | 改为 extern，定义交工厂数据镜像 |
+
+**移植实现**：`src/upstream/xunzip/posix/{windows.h,tchar.h}` shim（CreateFile→open、SetFilePointer→lseek、GetFileType→FILE_TYPE_DISK、DosDateTimeToFileTime→自算 FILETIME、SetFileTime→futimens、DuplicateHandle→dup、`DECLARE_HANDLE` 宏还原 `struct HZIP__` 指纹）；unzip.cpp 工厂变体补丁（ic→uchar、lasterrorU extern、`#ifdef XUNZIP_KEEP_PLAIN_WRAPPERS` 剔除工厂不存在的包装、补 ZIPENTRYW + GetZipItemW/FindZipItemW）；反编译 C 改回**工厂真名**（`XUnzip_*`→`_ZN6TUnzip*`，`operator_new/delete`→`_Znwj/_ZdlPv`）。
+
+**结果**：`zig c++ -std=gnu++98` 编译出 XUnzip.o（168 KB），**18/18 关键 mangled 符号与工厂逐位一致**；双轨 213/213 保持 100%（零回归）。
+
+---
+
+### 2026-09-13 第八轮：★ P3 二期② 上游四组件编译接入（重复定义 0 / upstream 0）
+
+| 组件 | 定版 | 编译结果 |
+|---|---|---|
+| stb_truetype | v1.26 | `stb_truetype.o`（impl 单元 + 版本宏证据） |
+| mini-XML | v3.3.1 | 10 个 `mxml-*.o`（工厂 16 静态函数全集比对定版） |
+| Helix MP3 | RealNetworks fixpnt | 12 个 `mp3_*.o`（`STAT_PREFIX=xmp3`） |
+| GNU libiconv | **1.17（真源码，替换手写桩）** | `libiconv_iconv.o` + `libcharset.o` |
+| libcharset | 1.17 | `locale_charset` |
+
+**★ 关键认知：`src/upstream/libiconv/` 里那批文件是手写桩**（自称"简化版"，`iconv.c` 613 行）——1:1 不能用；已改抓 GNU libiconv 1.17 tarball，提取真 `lib/`（295 文件）+ 生成最小 `config.h`（含 `ICONV_CONST`）+ 替换 `iconv.h.in` 占位符。
+
+**★ 上游与工厂镜像的符号冲突及解法（三类）**：
+
+| 冲突 | 实例 | 解法 |
+|---|---|---|
+| 上游数据定义 vs 工厂镜像别名 | mp3 表 `xmp3_huffTable`/`xmp3_imfctWin`… 工厂为 **g O .rodata** 且已别名 | **跳过 3 个纯数据文件**（mp3tabs/trigtabs/hufftabs，零函数），表由镜像供应 |
+| 上游全局状态 | `mp3DecInfo/mi/hi/di/sbi/sfi/si/fh`（工厂 g O .bss） | buffers.c 内 **extern 化**（8 个） |
+| 上游版本标记 / 重名函数 | `_libiconv_version`（工厂 g O .data @0x3b1cf8）、`MP3GetNextFrameInfo`（工厂属专有区 @0x2b87f4） | iconv.c extern 化；mp3dec.c 侧 `-D` 改名 |
+
+**★ 本轮抓到的两个隐蔽陷阱**：
+1. **`.incbin` 双重 skip**：`factory_rodata.bin` 本身已跳过头部 4 字节，而 `.S` 又写了 `skip=4` → **GNU as 报错、clang 静默截断尾部 4 字节**（本地潜伏 bug，CI 才暴露）。已修：SKIP_HEAD 时输出纯 `.incbin`。
+2. **别名生成器重叠**：账本 `factory_globals.tsv` 同时含 g 与 l 对象（`m_ui`/`GPIO0` 实为 **l**）→ 两个生成器重复定义同一符号（曾致 1097 假重复）。已修：`gen_local_alias.py` 自动跳过 `factory_image.S` 已覆盖的名字（现仅 5 个别名 + `crc_table`）。
+   另：**`gen_data_module --missing` 必须传「全量 UNDEF」而非「分类后 MISSING」**（曾用 17 条重生成 → 934 别名退化），已固化为 `tools/regen_data.sh`。
+
+**审计结果**：**重复定义 0 ✅ / upstream 0 ✅**；MISSING 仅剩 3 个 `.text` 区间常量（`UNK_000d2f00`/`UNK_00118000`/`UNK_002e0938`）——它们位于 `.text` 段内的只读常量表，等 **P3 三期 `.text` 精确镜像**一并解决；libc 100 / libstdc++ 4 / eabi 6 均为运行时提供。
+
+**下一步（P3 三期）**：① `.text` 精确逐函数布局（复刻工厂函数地址，函数指针表/绝对地址依赖）；② 完整链接 → `abi_check.py` 门禁 → P5 行为差分 → P6 真机验收。
+
+---
+
 
 ### 2026-09-12 第六轮：★ PAT 通道打通 + CI 全绿（GCC 实测双轨 100%）
 

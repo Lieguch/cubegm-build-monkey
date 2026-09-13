@@ -1,613 +1,629 @@
-/* ============================================================
- * iconv.c - libiconv 字符编码转换库实现（简化版）
- * ============================================================
+/*
+ * Copyright (C) 1999-2008, 2011, 2016, 2018, 2020, 2022 Free Software Foundation, Inc.
+ * This file is part of the GNU LIBICONV Library.
  *
- * 原厂 libiconv 符号分析：636 个符号，859 KB
- * 支持：GBK, Big5, JIS, UTF-8 等 30+ 种字符集
+ * The GNU LIBICONV Library is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either version 2.1
+ * of the License, or (at your option) any later version.
  *
- * 本实现：简化版，支持基本编码转换
- * 目标：100% 还原原厂功能
- * ============================================================ */
+ * The GNU LIBICONV Library is distributed in the hope that it will be
+ * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with the GNU LIBICONV Library; see the file COPYING.LIB.
+ * If not, see <https://www.gnu.org/licenses/>.
+ */
 
-#include "iconv.h"
-#include <stdio.h>
+#include <iconv.h>
+
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
+#include "config.h"
+#include "localcharset.h"
 
-/* ---- 内部数据结构 ---- */
+#ifdef __CYGWIN__
+#include <cygwin/version.h>
+#endif
 
-/* 编码描述符 */
-typedef struct {
-    const char *tocode;      /* 目标编码 */
-    const char *fromcode;    /* 源编码 */
-} iconv_cd_t;
+#if ENABLE_EXTRA
+/*
+ * Consider all system dependent encodings, for any system,
+ * and the extra encodings.
+ */
+#define USE_AIX
+#define USE_OSF1
+#define USE_DOS
+#define USE_ZOS
+#define USE_EXTRA
+#else
+/*
+ * Consider those system dependent encodings that are needed for the
+ * current system.
+ */
+#ifdef _AIX
+#define USE_AIX
+#endif
+#if defined(__osf__) || defined(VMS)
+#define USE_OSF1
+#endif
+#if defined(__DJGPP__) || (defined(_WIN32) && (defined(_MSC_VER) || defined(__MINGW32__)))
+#define USE_DOS
+#endif
+/* Enable the EBCDIC encodings not only on z/OS but also on Linux/s390, for
+   easier interoperability between z/OS and Linux/s390.  */
+#if defined(__MVS__) || (defined(__linux__) && (defined(__s390__) || defined(__s390x__)))
+#define USE_ZOS
+#endif
+#endif
 
-/* ---- 辅助函数 ---- */
+/*
+ * Data type for general conversion loop.
+ */
+struct loop_funcs {
+  size_t (*loop_convert) (iconv_t icd,
+                          const char* * inbuf, size_t *inbytesleft,
+                          char* * outbuf, size_t *outbytesleft);
+  size_t (*loop_reset) (iconv_t icd,
+                        char* * outbuf, size_t *outbytesleft);
+};
 
-/* 检查字符串是否以指定前缀开头（不区分大小写） */
-static int starts_with_nocase(const char *str, const char *prefix)
+/*
+ * Converters.
+ */
+#include "converters.h"
+
+/*
+ * Transliteration tables.
+ */
+#include "cjk_variants.h"
+#include "translit.h"
+
+/*
+ * Table of all supported encodings.
+ */
+struct encoding {
+  struct mbtowc_funcs ifuncs; /* conversion multibyte -> unicode */
+  struct wctomb_funcs ofuncs; /* conversion unicode -> multibyte */
+  int oflags;                 /* flags for unicode -> multibyte conversion */
+};
+#define DEFALIAS(xxx_alias,xxx) /* nothing */
+enum {
+#define DEFENCODING(xxx_names,xxx,xxx_ifuncs1,xxx_ifuncs2,xxx_ofuncs1,xxx_ofuncs2) \
+  ei_##xxx ,
+#include "encodings.def"
+#ifdef USE_AIX
+# include "encodings_aix.def"
+#endif
+#ifdef USE_OSF1
+# include "encodings_osf1.def"
+#endif
+#ifdef USE_DOS
+# include "encodings_dos.def"
+#endif
+#ifdef USE_ZOS
+# include "encodings_zos.def"
+#endif
+#ifdef USE_EXTRA
+# include "encodings_extra.def"
+#endif
+#include "encodings_local.def"
+#undef DEFENCODING
+ei_for_broken_compilers_that_dont_like_trailing_commas
+};
+#include "flags.h"
+static struct encoding const all_encodings[] = {
+#define DEFENCODING(xxx_names,xxx,xxx_ifuncs1,xxx_ifuncs2,xxx_ofuncs1,xxx_ofuncs2) \
+  { xxx_ifuncs1,xxx_ifuncs2, xxx_ofuncs1,xxx_ofuncs2, ei_##xxx##_oflags },
+#include "encodings.def"
+#ifdef USE_AIX
+# include "encodings_aix.def"
+#endif
+#ifdef USE_OSF1
+# include "encodings_osf1.def"
+#endif
+#ifdef USE_DOS
+# include "encodings_dos.def"
+#endif
+#ifdef USE_ZOS
+# include "encodings_zos.def"
+#endif
+#ifdef USE_EXTRA
+# include "encodings_extra.def"
+#endif
+#undef DEFENCODING
+#define DEFENCODING(xxx_names,xxx,xxx_ifuncs1,xxx_ifuncs2,xxx_ofuncs1,xxx_ofuncs2) \
+  { xxx_ifuncs1,xxx_ifuncs2, xxx_ofuncs1,xxx_ofuncs2, 0 },
+#include "encodings_local.def"
+#undef DEFENCODING
+};
+#undef DEFALIAS
+
+/*
+ * Conversion loops.
+ */
+#include "loops.h"
+
+/*
+ * Alias lookup function.
+ * Defines
+ *   struct alias { int name; unsigned int encoding_index; };
+ *   const struct alias * aliases_lookup (const char *str, unsigned int len);
+ *   #define MAX_WORD_LENGTH ...
+ */
+#if defined _AIX
+# include "aliases_sysaix.h"
+#elif defined hpux || defined __hpux
+# include "aliases_syshpux.h"
+#elif defined __osf__
+# include "aliases_sysosf1.h"
+#elif defined __sun
+# include "aliases_syssolaris.h"
+#else
+# include "aliases.h"
+#endif
+
+/*
+ * System dependent alias lookup function.
+ * Defines
+ *   const struct alias * aliases2_lookup (const char *str);
+ */
+#if defined(USE_AIX) || defined(USE_OSF1) || defined(USE_DOS) || defined(USE_ZOS) || defined(USE_EXTRA) /* || ... */
+struct stringpool2_t {
+#define S(tag,name,encoding_index) char stringpool_##tag[sizeof(name)];
+#include "aliases2.h"
+#undef S
+};
+static const struct stringpool2_t stringpool2_contents = {
+#define S(tag,name,encoding_index) name,
+#include "aliases2.h"
+#undef S
+};
+#define stringpool2 ((const char *) &stringpool2_contents)
+static const struct alias sysdep_aliases[] = {
+#define S(tag,name,encoding_index) { (int)(long)&((struct stringpool2_t *)0)->stringpool_##tag, encoding_index },
+#include "aliases2.h"
+#undef S
+};
+#ifdef __GNUC__
+__inline
+#else
+#ifdef __cplusplus
+inline
+#endif
+#endif
+static const struct alias *
+aliases2_lookup (register const char *str)
 {
-    while (*prefix) {
-        if (tolower((unsigned char)*str) != tolower((unsigned char)*prefix)) {
-            return 0;
-        }
-        str++;
-        prefix++;
-    }
-    return 1;
+  const struct alias * ptr;
+  unsigned int count;
+  for (ptr = sysdep_aliases, count = sizeof(sysdep_aliases)/sizeof(sysdep_aliases[0]); count > 0; ptr++, count--)
+    if (!strcmp(str, stringpool2 + ptr->name))
+      return ptr;
+  return NULL;
+}
+#else
+#define aliases2_lookup(str)  NULL
+#define stringpool2  NULL
+#endif
+
+#if 0
+/* Like !strcasecmp, except that the both strings can be assumed to be ASCII
+   and the first string can be assumed to be in uppercase. */
+static int strequal (const char* str1, const char* str2)
+{
+  unsigned char c1;
+  unsigned char c2;
+  for (;;) {
+    c1 = * (unsigned char *) str1++;
+    c2 = * (unsigned char *) str2++;
+    if (c1 == 0)
+      break;
+    if (c2 >= 'a' && c2 <= 'z')
+      c2 -= 'a'-'A';
+    if (c1 != c2)
+      break;
+  }
+  return (c1 == c2);
+}
+#endif
+
+iconv_t iconv_open (const char* tocode, const char* fromcode)
+{
+  struct conv_struct * cd;
+  unsigned int from_index;
+  int from_wchar;
+  unsigned int to_index;
+  int to_wchar;
+  int transliterate;
+  int discard_ilseq;
+
+#include "iconv_open1.h"
+
+  cd = (struct conv_struct *) malloc(from_wchar != to_wchar
+                                     ? sizeof(struct wchar_conv_struct)
+                                     : sizeof(struct conv_struct));
+  if (cd == NULL) {
+    errno = ENOMEM;
+    return (iconv_t)(-1);
+  }
+
+#include "iconv_open2.h"
+
+  return (iconv_t)cd;
+invalid:
+  errno = EINVAL;
+  return (iconv_t)(-1);
 }
 
-/* UTF-8 编码 */
-static size_t utf8_encode(unsigned int codepoint, unsigned char *buf)
+size_t iconv (iconv_t icd,
+              ICONV_CONST char* * inbuf, size_t *inbytesleft,
+              char* * outbuf, size_t *outbytesleft)
 {
-    if (codepoint < 0x80) {
-        buf[0] = codepoint;
-        return 1;
-    } else if (codepoint < 0x800) {
-        buf[0] = 0xC0 | (codepoint >> 6);
-        buf[1] = 0x80 | (codepoint & 0x3F);
-        return 2;
-    } else if (codepoint < 0x10000) {
-        buf[0] = 0xE0 | (codepoint >> 12);
-        buf[1] = 0x80 | ((codepoint >> 6) & 0x3F);
-        buf[2] = 0x80 | (codepoint & 0x3F);
-        return 3;
-    } else {
-        buf[0] = 0xF0 | (codepoint >> 18);
-        buf[1] = 0x80 | ((codepoint >> 12) & 0x3F);
-        buf[2] = 0x80 | ((codepoint >> 6) & 0x3F);
-        buf[3] = 0x80 | (codepoint & 0x3F);
-        return 4;
-    }
+  conv_t cd = (conv_t) icd;
+  if (inbuf == NULL || *inbuf == NULL)
+    return cd->lfuncs.loop_reset(icd,outbuf,outbytesleft);
+  else
+    return cd->lfuncs.loop_convert(icd,
+                                   (const char* *)inbuf,inbytesleft,
+                                   outbuf,outbytesleft);
 }
 
-/* UTF-8 解码 */
-static size_t utf8_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+int iconv_close (iconv_t icd)
 {
-    if (len < 1) return 0;
-    
-    if (buf[0] < 0x80) {
-        *codepoint = buf[0];
-        return 1;
-    } else if ((buf[0] & 0xE0) == 0xC0) {
-        if (len < 2) return 0;
-        *codepoint = ((buf[0] & 0x1F) << 6) | (buf[1] & 0x3F);
-        return 2;
-    } else if ((buf[0] & 0xF0) == 0xE0) {
-        if (len < 3) return 0;
-        *codepoint = ((buf[0] & 0x0F) << 12) | 
-                     ((buf[1] & 0x3F) << 6) | 
-                     (buf[2] & 0x3F);
-        return 3;
-    } else if ((buf[0] & 0xF8) == 0xF0) {
-        if (len < 4) return 0;
-        *codepoint = ((buf[0] & 0x07) << 18) | 
-                     ((buf[1] & 0x3F) << 12) | 
-                     ((buf[2] & 0x3F) << 6) | 
-                     (buf[3] & 0x3F);
-        return 4;
-    }
-    
-    return 0;
+  conv_t cd = (conv_t) icd;
+  free(cd);
+  return 0;
 }
 
-/* GBK 解码（简化版，仅支持基本汉字） */
-static size_t gbk_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+#ifndef LIBICONV_PLUG
+
+/*
+ * Verify that a 'struct conv_struct' and a 'struct wchar_conv_struct' each
+ * fit in an iconv_allocation_t.
+ * If this verification fails, iconv_allocation_t must be made larger and
+ * the major version in LIBICONV_VERSION_INFO must be bumped.
+ * Currently 'struct conv_struct' has 21 integer/pointer fields, and
+ * 'struct wchar_conv_struct' additionally has an 'mbstate_t' field.
+ */
+typedef int verify_size_1[2 * (sizeof (struct conv_struct) <= sizeof (iconv_allocation_t)) - 1];
+typedef int verify_size_2[2 * (sizeof (struct wchar_conv_struct) <= sizeof (iconv_allocation_t)) - 1];
+
+int iconv_open_into (const char* tocode, const char* fromcode,
+                     iconv_allocation_t* resultp)
 {
-    if (len < 1) return 0;
-    
-    /* 单字节 ASCII */
-    if (buf[0] < 0x80) {
-        *codepoint = buf[0];
-        return 1;
-    }
-    
-    /* 双字节 GBK */
-    if (len < 2) return 0;
-    
-    /* 简化映射：直接返回 GBK 值作为 Unicode（不完全正确，但能工作） */
-    *codepoint = ((buf[0] & 0x7F) << 8) | (buf[1] & 0xFF);
-    return 2;
+  struct conv_struct * cd;
+  unsigned int from_index;
+  int from_wchar;
+  unsigned int to_index;
+  int to_wchar;
+  int transliterate;
+  int discard_ilseq;
+
+#include "iconv_open1.h"
+
+  cd = (struct conv_struct *) resultp;
+
+#include "iconv_open2.h"
+
+  return 0;
+invalid:
+  errno = EINVAL;
+  return -1;
 }
 
-/* GBK 编码（简化版） */
-static size_t gbk_encode(unsigned int codepoint, unsigned char *buf)
+int iconvctl (iconv_t icd, int request, void* argument)
 {
-    if (codepoint < 0x80) {
-        buf[0] = codepoint;
-        return 1;
-    }
-    
-    /* 简化映射：直接截取 */
-    buf[0] = (codepoint >> 8) & 0x7F;
-    buf[1] = codepoint & 0xFF;
-    return 2;
+  conv_t cd = (conv_t) icd;
+  switch (request) {
+    case ICONV_TRIVIALP:
+      *(int *)argument =
+        ((cd->lfuncs.loop_convert == unicode_loop_convert
+          && cd->iindex == cd->oindex)
+         || cd->lfuncs.loop_convert == wchar_id_loop_convert
+         ? 1 : 0);
+      return 0;
+    case ICONV_GET_TRANSLITERATE:
+      *(int *)argument = cd->transliterate;
+      return 0;
+    case ICONV_SET_TRANSLITERATE:
+      cd->transliterate = (*(const int *)argument ? 1 : 0);
+      return 0;
+    case ICONV_GET_DISCARD_ILSEQ:
+      *(int *)argument = cd->discard_ilseq;
+      return 0;
+    case ICONV_SET_DISCARD_ILSEQ:
+      cd->discard_ilseq = (*(const int *)argument ? 1 : 0);
+      return 0;
+    case ICONV_SET_HOOKS:
+      if (argument != NULL) {
+        cd->hooks = *(const struct iconv_hooks *)argument;
+      } else {
+        cd->hooks.uc_hook = NULL;
+        cd->hooks.wc_hook = NULL;
+        cd->hooks.data = NULL;
+      }
+      return 0;
+    case ICONV_SET_FALLBACKS:
+      if (argument != NULL) {
+        cd->fallbacks = *(const struct iconv_fallbacks *)argument;
+      } else {
+        cd->fallbacks.mb_to_uc_fallback = NULL;
+        cd->fallbacks.uc_to_mb_fallback = NULL;
+        cd->fallbacks.mb_to_wc_fallback = NULL;
+        cd->fallbacks.wc_to_mb_fallback = NULL;
+        cd->fallbacks.data = NULL;
+      }
+      return 0;
+    default:
+      errno = EINVAL;
+      return -1;
+  }
 }
 
-/* Big5 解码（简化版） */
-static size_t big5_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+/* An alias after its name has been converted from 'int' to 'const char*'. */
+struct nalias { const char* name; unsigned int encoding_index; };
+
+static int compare_by_index (const void * arg1, const void * arg2)
 {
-    if (len < 1) return 0;
-    
-    /* 单字节 ASCII */
-    if (buf[0] < 0x80) {
-        *codepoint = buf[0];
-        return 1;
-    }
-    
-    /* 双字节 Big5 */
-    if (len < 2) return 0;
-    
-    /* 简化映射 */
-    *codepoint = ((buf[0] & 0xFF) << 8) | (buf[1] & 0xFF);
-    return 2;
+  const struct nalias * alias1 = (const struct nalias *) arg1;
+  const struct nalias * alias2 = (const struct nalias *) arg2;
+  return (int)alias1->encoding_index - (int)alias2->encoding_index;
 }
 
-/* Big5 编码（简化版） */
-static size_t big5_encode(unsigned int codepoint, unsigned char *buf)
+static int compare_by_name (const void * arg1, const void * arg2)
 {
-    if (codepoint < 0x80) {
-        buf[0] = codepoint;
-        return 1;
-    }
-    
-    /* 简化映射 */
-    buf[0] = (codepoint >> 8) & 0xFF;
-    buf[1] = codepoint & 0xFF;
-    return 2;
+  const char * name1 = *(const char * const *)arg1;
+  const char * name2 = *(const char * const *)arg2;
+  /* Compare alphabetically, but put "CS" names at the end. */
+  int sign = strcmp(name1,name2);
+  if (sign != 0) {
+    sign = ((name1[0]=='C' && name1[1]=='S') - (name2[0]=='C' && name2[1]=='S'))
+           * 4 + (sign >= 0 ? 1 : -1);
+  }
+  return sign;
 }
 
-/* ---- SJIS (Shift-JIS) 解码/编码 — 日文 ---- */
-
-/* SJIS 解码：Shift-JIS → Unicode */
-static size_t sjis_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
+void iconvlist (int (*do_one) (unsigned int namescount,
+                               const char * const * names,
+                               void* data),
+                void* data)
 {
-    if (len < 1) return 0;
-    
-    /* 单字节 ASCII */
-    if (buf[0] < 0x80) {
-        *codepoint = buf[0];
-        return 1;
+#define aliascount1  sizeof(aliases)/sizeof(aliases[0])
+#ifndef aliases2_lookup
+#define aliascount2  sizeof(sysdep_aliases)/sizeof(sysdep_aliases[0])
+#else
+#define aliascount2  0
+#endif
+#define aliascount  (aliascount1+aliascount2)
+  struct nalias aliasbuf[aliascount];
+  const char * namesbuf[aliascount];
+  size_t num_aliases;
+  {
+    /* Put all existing aliases into a buffer. */
+    size_t i;
+    size_t j;
+    j = 0;
+    for (i = 0; i < aliascount1; i++) {
+      const struct alias * p = &aliases[i];
+      if (p->name >= 0
+          && p->encoding_index != ei_local_char
+          && p->encoding_index != ei_local_wchar_t) {
+        aliasbuf[j].name = stringpool + p->name;
+        aliasbuf[j].encoding_index = p->encoding_index;
+        j++;
+      }
     }
-    
-    /* 双字节 Shift-JIS */
-    if (len < 2) return 0;
-    
-    unsigned char b1 = buf[0];
-    unsigned char b2 = buf[1];
-    
-    /* 片假名区域 (0xA1-0xDF) */
-    if (b1 >= 0xA1 && b1 <= 0xDF) {
-        unsigned int offset;
-        if (b1 <= 0xA4)
-            offset = (b1 - 0xA1) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
-        else if (b1 <= 0xA9)
-            offset = 4 * 94 + (b1 - 0xA5) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
-        else
-            offset = 4 * 94 + 5 * 94 + (b1 - 0xAA) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
-        *codepoint = 0x3000 + offset; /* 平假名片假名区域 */
-        return 2;
+#ifndef aliases2_lookup
+    for (i = 0; i < aliascount2; i++) {
+      aliasbuf[j].name = stringpool2 + sysdep_aliases[i].name;
+      aliasbuf[j].encoding_index = sysdep_aliases[i].encoding_index;
+      j++;
     }
-    
-    /* 汉字区域 (0xE0-0xFC) */
-    if (b1 >= 0xE0 && b1 <= 0xFC) {
-        unsigned int offset;
-        if (b1 < 0xE0) {
-            offset = 0x1F40 + (b1 - 0xE0) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
-        }
-        else {
-            offset = 0x4E00 + (b1 - 0xE0) * 94 + (b2 >= 0xE0 ? b2 - 0xE0 - 94 : b2 - 0xA1);
-        }
-        *codepoint = offset;
-        return 2;
+#endif
+    num_aliases = j;
+  }
+  /* Sort by encoding_index. */
+  if (num_aliases > 1)
+    qsort(aliasbuf, num_aliases, sizeof(struct nalias), compare_by_index);
+  {
+    /* Process all aliases with the same encoding_index together. */
+    size_t j;
+    j = 0;
+    while (j < num_aliases) {
+      unsigned int ei = aliasbuf[j].encoding_index;
+      size_t i = 0;
+      do
+        namesbuf[i++] = aliasbuf[j++].name;
+      while (j < num_aliases && aliasbuf[j].encoding_index == ei);
+      if (i > 1)
+        qsort(namesbuf, i, sizeof(const char *), compare_by_name);
+      /* Call the callback. */
+      if (do_one(i,namesbuf,data))
+        break;
     }
-    
-    /* 默认：直接映射 */
-    *codepoint = ((b1 & 0xFF) << 8) | (b2 & 0xFF);
-    return 2;
+  }
+#undef aliascount
+#undef aliascount2
+#undef aliascount1
 }
 
-/* SJIS 编码：Unicode → Shift-JIS */
-static size_t sjis_encode(unsigned int codepoint, unsigned char *buf)
+/*
+ * Table of canonical names of encodings.
+ * Instead of strings, it contains offsets into stringpool and stringpool2.
+ */
+static const unsigned short all_canonical[] = {
+#if defined _AIX
+# include "canonical_sysaix.h"
+#elif defined hpux || defined __hpux
+# include "canonical_syshpux.h"
+#elif defined __osf__
+# include "canonical_sysosf1.h"
+#elif defined __sun
+# include "canonical_syssolaris.h"
+#else
+# include "canonical.h"
+#endif
+#ifdef USE_AIX
+# if defined _AIX
+#  include "canonical_aix_sysaix.h"
+# else
+#  include "canonical_aix.h"
+# endif
+#endif
+#ifdef USE_OSF1
+# if defined __osf__
+#  include "canonical_osf1_sysosf1.h"
+# else
+#  include "canonical_osf1.h"
+# endif
+#endif
+#ifdef USE_DOS
+# include "canonical_dos.h"
+#endif
+#ifdef USE_ZOS
+# include "canonical_zos.h"
+#endif
+#ifdef USE_EXTRA
+# include "canonical_extra.h"
+#endif
+#if defined _AIX
+# include "canonical_local_sysaix.h"
+#elif defined hpux || defined __hpux
+# include "canonical_local_syshpux.h"
+#elif defined __osf__
+# include "canonical_local_sysosf1.h"
+#elif defined __sun
+# include "canonical_local_syssolaris.h"
+#else
+# include "canonical_local.h"
+#endif
+};
+
+const char * iconv_canonicalize (const char * name)
 {
-    if (codepoint < 0x80) {
-        buf[0] = codepoint;
-        return 1;
+  const char* code;
+  char buf[MAX_WORD_LENGTH+10+1];
+  const char* cp;
+  char* bp;
+  const struct alias * ap;
+  unsigned int count;
+  unsigned int index;
+  const char* pool;
+
+  /* Before calling aliases_lookup, convert the input string to upper case,
+   * and check whether it's entirely ASCII (we call gperf with option "-7"
+   * to achieve a smaller table) and non-empty. If it's not entirely ASCII,
+   * or if it's too long, it is not a valid encoding name.
+   */
+  for (code = name;;) {
+    /* Search code in the table. */
+    for (cp = code, bp = buf, count = MAX_WORD_LENGTH+10+1; ; cp++, bp++) {
+      unsigned char c = (unsigned char) *cp;
+      if (c >= 0x80)
+        goto invalid;
+      if (c >= 'a' && c <= 'z')
+        c -= 'a'-'A';
+      *bp = c;
+      if (c == '\0')
+        break;
+      if (--count == 0)
+        goto invalid;
     }
-    
-    /* 平假名/片假名区域 */
-    if (codepoint >= 0x3000 && codepoint < 0x3000 + 800) {
-        unsigned int offset = codepoint - 0x3000;
-        unsigned int row = offset / 94;
-        unsigned int col = offset % 94;
-        buf[0] = 0xA1 + row;
-        buf[1] = (col < 94) ? 0xA1 + col : 0xE1 + (col - 94);
-        return 2;
+    for (;;) {
+      if (bp-buf >= 10 && memcmp(bp-10,"//TRANSLIT",10)==0) {
+        bp -= 10;
+        *bp = '\0';
+        continue;
+      }
+      if (bp-buf >= 8 && memcmp(bp-8,"//IGNORE",8)==0) {
+        bp -= 8;
+        *bp = '\0';
+        continue;
+      }
+      break;
     }
-    
-    /* 汉字区域 */
-    if (codepoint >= 0x4E00) {
-        unsigned int offset = codepoint - 0x4E00;
-        unsigned int row = offset / 94;
-        unsigned int col = offset % 94;
-        if (row <= 54) {
-            buf[0] = 0xE0 + row;
-            buf[1] = (col < 94) ? 0xA1 + col : 0xE1 + (col - 94);
-            return 2;
-        }
+    if (buf[0] == '\0') {
+      code = locale_charset();
+      /* Avoid an endless loop that could occur when using an older version
+         of localcharset.c. */
+      if (code[0] == '\0')
+        goto invalid;
+      continue;
     }
-    
-    /* 默认：截取 */
-    buf[0] = (codepoint >> 8) & 0xFF;
-    buf[1] = codepoint & 0xFF;
-    return 2;
+    pool = stringpool;
+    ap = aliases_lookup(buf,bp-buf);
+    if (ap == NULL) {
+      pool = stringpool2;
+      ap = aliases2_lookup(buf);
+      if (ap == NULL)
+        goto invalid;
+    }
+    if (ap->encoding_index == ei_local_char) {
+      code = locale_charset();
+      /* Avoid an endless loop that could occur when using an older version
+         of localcharset.c. */
+      if (code[0] == '\0')
+        goto invalid;
+      continue;
+    }
+    if (ap->encoding_index == ei_local_wchar_t) {
+      /* On systems which define __STDC_ISO_10646__, wchar_t is Unicode.
+         This is also the case on native Woe32 systems and Cygwin >= 1.7, where
+         we know that it is UTF-16.  */
+#if (defined _WIN32 && !defined __CYGWIN__) || (defined __CYGWIN__ && CYGWIN_VERSION_DLL_MAJOR >= 1007)
+      if (sizeof(wchar_t) == 4) {
+        index = ei_ucs4internal;
+        break;
+      }
+      if (sizeof(wchar_t) == 2) {
+# if WORDS_LITTLEENDIAN
+        index = ei_utf16le;
+# else
+        index = ei_utf16be;
+# endif
+        break;
+      }
+#elif __STDC_ISO_10646__
+      if (sizeof(wchar_t) == 4) {
+        index = ei_ucs4internal;
+        break;
+      }
+      if (sizeof(wchar_t) == 2) {
+        index = ei_ucs2internal;
+        break;
+      }
+      if (sizeof(wchar_t) == 1) {
+        index = ei_iso8859_1;
+        break;
+      }
+#endif
+    }
+    index = ap->encoding_index;
+    break;
+  }
+  return all_canonical[index] + pool;
+ invalid:
+  return name;
 }
 
-/* ---- KSC5601 (韩文) 解码/编码 ---- */
+int _libiconv_version = _LIBICONV_VERSION;
 
-/* KSC5601 解码 */
-static size_t ksc5601_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
-{
-    if (len < 1) return 0;
-    
-    if (buf[0] < 0x80) {
-        *codepoint = buf[0];
-        return 1;
-    }
-    
-    if (len < 2) return 0;
-    
-    /* KSC5601 双字节：Jamo 区域映射到 Hangul Unicode */
-    unsigned char b1 = buf[0];
-    unsigned char b2 = buf[1];
-    
-    if (b1 >= 0x21 && b1 <= 0x7E && b2 >= 0x21 && b2 <= 0x7E) {
-        /* Hangul Jamo 区域 */
-        unsigned int idx = (b1 - 0x21) * 94 + (b2 - 0x21);
-        *codepoint = 0xAC00 + idx; /* Hangul Syllables */
-        return 2;
-    }
-    
-    *codepoint = ((b1 & 0xFF) << 8) | (b2 & 0xFF);
-    return 2;
-}
+#if defined __FreeBSD__ && !defined __gnu_freebsd__
+/* GNU libiconv is the native FreeBSD iconv implementation since 2002.
+   It wants to define the symbols 'iconv_open', 'iconv', 'iconv_close'.  */
+#define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+#define _strong_alias(name, aliasname) \
+  extern __typeof (name) aliasname __attribute__ ((alias (#name)));
+#undef iconv_open
+#undef iconv
+#undef iconv_close
+strong_alias (libiconv_open, iconv_open)
+strong_alias (libiconv, iconv)
+strong_alias (libiconv_close, iconv_close)
+#endif
 
-/* KSC5601 编码 */
-static size_t ksc5601_encode(unsigned int codepoint, unsigned char *buf)
-{
-    if (codepoint < 0x80) {
-        buf[0] = codepoint;
-        return 1;
-    }
-    
-    if (codepoint >= 0xAC00 && codepoint < 0xD7A4) {
-        unsigned int idx = codepoint - 0xAC00;
-        buf[0] = 0x21 + idx / 94;
-        buf[1] = 0x21 + idx % 94;
-        return 2;
-    }
-    
-    buf[0] = (codepoint >> 8) & 0xFF;
-    buf[1] = codepoint & 0xFF;
-    return 2;
-}
-
-/* ---- EUC-KR / KS_C_5601 别名处理 ---- */
-
-/* ---- CP932 (Windows 日文) — 与 SJIS 兼容 ---- */
-
-/* ---- UTF-16/UCS-2 支持 ---- */
-
-/* UTF-16 解码 (LE) */
-static size_t utf16le_decode(const unsigned char *buf, size_t len, unsigned int *codepoint)
-{
-    if (len < 2) return 0;
-    unsigned int cp = buf[0] | (buf[1] << 8);
-    if (cp >= 0xD800 && cp <= 0xDBFF && len >= 4) {
-        /* Surrogate pair */
-        unsigned int low = buf[2] | (buf[3] << 8);
-        *codepoint = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
-        return 4;
-    }
-    *codepoint = cp;
-    return 2;
-}
-
-/* UTF-16 编码 (LE) */
-static size_t utf16le_encode(unsigned int codepoint, unsigned char *buf)
-{
-    if (codepoint <= 0xFFFF) {
-        buf[0] = codepoint & 0xFF;
-        buf[1] = (codepoint >> 8) & 0xFF;
-        return 2;
-    }
-    codepoint -= 0x10000;
-    buf[0] = (0xD800 + (codepoint >> 10)) & 0xFF;
-    buf[1] = (0xD800 + (codepoint >> 10)) >> 8;
-    buf[2] = (0xDC00 + (codepoint & 0x3FF)) & 0xFF;
-    buf[3] = (0xDC00 + (codepoint & 0x3FF)) >> 8;
-    return 4;
-}
-
-/* ---- 核心转换函数 ---- */
-
-/* 执行转换 */
-static size_t do_iconv(iconv_t cd, 
-                        char **inbuf, size_t *inbytesleft,
-                        char **outbuf, size_t *outbytesleft)
-{
-    if (!cd || !inbuf || !inbytesleft || !outbuf || !outbytesleft) {
-        return ICONV_ERR;
-    }
-    
-    iconv_cd_t *icd = (iconv_cd_t *)cd;
-    
-    /* 检查编码 */
-    int from_utf8 = starts_with_nocase(icd->fromcode, "UTF-8") || 
-                    starts_with_nocase(icd->fromcode, "UTF8");
-    int to_utf8 = starts_with_nocase(icd->tocode, "UTF-8") || 
-                 starts_with_nocase(icd->tocode, "UTF8");
-    
-    int from_gbk = starts_with_nocase(icd->fromcode, "GBK") || 
-                   starts_with_nocase(icd->fromcode, "GB2312") ||
-                   starts_with_nocase(icd->fromcode, "GB18030");
-    int to_gbk = starts_with_nocase(icd->tocode, "GBK") || 
-                starts_with_nocase(icd->tocode, "GB2312") ||
-                starts_with_nocase(icd->tocode, "GB18030");
-    
-    int from_big5 = starts_with_nocase(icd->fromcode, "BIG5") || 
-                    starts_with_nocase(icd->fromcode, "BIG-5");
-    int to_big5 = starts_with_nocase(icd->tocode, "BIG5") || 
-                 starts_with_nocase(icd->tocode, "BIG-5");
-
-    /* 日文编码：SJIS, CP932, JIS, JISX0208, JISX0212 */
-    int from_sjis = starts_with_nocase(icd->fromcode, "SJIS") ||
-                    starts_with_nocase(icd->fromcode, "SHIFT") ||
-                    starts_with_nocase(icd->fromcode, "CP932") ||
-                    starts_with_nocase(icd->fromcode, "MS932") ||
-                    starts_with_nocase(icd->fromcode, "CP932");
-    int to_sjis = starts_with_nocase(icd->tocode, "SJIS") ||
-                  starts_with_nocase(icd->tocode, "SHIFT") ||
-                  starts_with_nocase(icd->tocode, "CP932") ||
-                  starts_with_nocase(icd->tocode, "MS932") ||
-                  starts_with_nocase(icd->tocode, "CP932");
-
-    /* 韩文编码：KSC5601, EUC-KR, KS_C_5601 */
-    int from_ksc = starts_with_nocase(icd->fromcode, "KSC") ||
-                   starts_with_nocase(icd->fromcode, "EUC-KR") ||
-                   starts_with_nocase(icd->fromcode, "KS_C_5601") ||
-                   starts_with_nocase(icd->fromcode, "KS_C_5601-1987");
-    int to_ksc = starts_with_nocase(icd->tocode, "KSC") ||
-                 starts_with_nocase(icd->tocode, "EUC-KR") ||
-                 starts_with_nocase(icd->tocode, "KS_C_5601") ||
-                 starts_with_nocase(icd->tocode, "KS_C_5601-1987");
-
-    /* 繁体中文变体：CNS11643, BIG5-HKSCS, HKSCS */
-    int from_cns = starts_with_nocase(icd->fromcode, "CNS") ||
-                   starts_with_nocase(icd->fromcode, "BIG5-HKSCS") ||
-                   starts_with_nocase(icd->fromcode, "HKSCS");
-    int to_cns = starts_with_nocase(icd->tocode, "CNS") ||
-                 starts_with_nocase(icd->tocode, "BIG5-HKSCS") ||
-                 starts_with_nocase(icd->tocode, "HKSCS");
-
-    /* UTF-16 */
-    int from_utf16 = starts_with_nocase(icd->fromcode, "UTF-16") ||
-                     starts_with_nocase(icd->fromcode, "UCS-2") ||
-                     starts_with_nocase(icd->fromcode, "UTF16") ||
-                     starts_with_nocase(icd->fromcode, "UTF-16LE") ||
-                     starts_with_nocase(icd->fromcode, "UTF16LE");
-    int to_utf16 = starts_with_nocase(icd->tocode, "UTF-16") ||
-                   starts_with_nocase(icd->tocode, "UCS-2") ||
-                   starts_with_nocase(icd->tocode, "UTF16") ||
-                   starts_with_nocase(icd->tocode, "UTF-16LE") ||
-                   starts_with_nocase(icd->tocode, "UTF16LE");
-
-    /* Translit / ASCII / ISO-8859 / CP12xx / Mac / KOI8 (走 LATIN1 兜底) */
-    int from_translit = starts_with_nocase(icd->fromcode, "TRANSLIT") ||
-                        starts_with_nocase(icd->fromcode, "ISO-8859") ||
-                        starts_with_nocase(icd->fromcode, "ISO8859") ||
-                        starts_with_nocase(icd->fromcode, "LATIN") ||
-                        starts_with_nocase(icd->fromcode, "LATIN1") ||
-                        starts_with_nocase(icd->fromcode, "CP12") ||
-                        starts_with_nocase(icd->fromcode, "CP850") ||
-                        starts_with_nocase(icd->fromcode, "CP86") ||
-                        starts_with_nocase(icd->fromcode, "CP874") ||
-                        starts_with_nocase(icd->fromcode, "Mac") ||
-                        starts_with_nocase(icd->fromcode, "KOI8") ||
-                        starts_with_nocase(icd->fromcode, "HP-ROMAN") ||
-                        starts_with_nocase(icd->fromcode, "NEXTSTEP") ||
-                        starts_with_nocase(icd->fromcode, "TIS-620") ||
-                        starts_with_nocase(icd->fromcode, "VISCII") ||
-                        starts_with_nocase(icd->fromcode, "TCVN");
-    int to_translit = starts_with_nocase(icd->tocode, "TRANSLIT") ||
-                      starts_with_nocase(icd->tocode, "ISO-8859") ||
-                      starts_with_nocase(icd->tocode, "ISO8859") ||
-                      starts_with_nocase(icd->tocode, "LATIN") ||
-                      starts_with_nocase(icd->tocode, "LATIN1") ||
-                      starts_with_nocase(icd->tocode, "CP12") ||
-                      starts_with_nocase(icd->tocode, "CP850") ||
-                      starts_with_nocase(icd->tocode, "CP86") ||
-                      starts_with_nocase(icd->tocode, "CP874") ||
-                      starts_with_nocase(icd->tocode, "Mac") ||
-                      starts_with_nocase(icd->tocode, "KOI8") ||
-                      starts_with_nocase(icd->tocode, "HP-ROMAN") ||
-                      starts_with_nocase(icd->tocode, "NEXTSTEP") ||
-                      starts_with_nocase(icd->tocode, "TIS-620") ||
-                      starts_with_nocase(icd->tocode, "VISCII") ||
-                      starts_with_nocase(icd->tocode, "TCVN");
-
-    /* 日文扩展：EUC-JP / ISO-2022-JP (走 SJIS 兜底) */
-    int from_eucjp = starts_with_nocase(icd->fromcode, "EUC-JP") ||
-                     starts_with_nocase(icd->fromcode, "ISO-2022-JP") ||
-                     starts_with_nocase(icd->fromcode, "SHIFT_JIS");
-    int to_eucjp = starts_with_nocase(icd->tocode, "EUC-JP") ||
-                   starts_with_nocase(icd->tocode, "ISO-2022-JP") ||
-                   starts_with_nocase(icd->tocode, "SHIFT_JIS");
-
-    /* 中文扩展：CP936 / EUC-CN / HZ (走 GBK 兜底) */
-    int from_gbk_ext = starts_with_nocase(icd->fromcode, "CP936") ||
-                       starts_with_nocase(icd->fromcode, "EUC-CN") ||
-                       starts_with_nocase(icd->fromcode, "HZ") ||
-                       starts_with_nocase(icd->fromcode, "ISO-2022-CN");
-    int to_gbk_ext = starts_with_nocase(icd->tocode, "CP936") ||
-                     starts_with_nocase(icd->tocode, "EUC-CN") ||
-                     starts_with_nocase(icd->tocode, "HZ") ||
-                     starts_with_nocase(icd->tocode, "ISO-2022-CN");
-
-    /* 繁体中文扩展：CP950 / EUC-TW (走 Big5 兜底) */
-    int from_big5_ext = starts_with_nocase(icd->fromcode, "CP950") ||
-                        starts_with_nocase(icd->fromcode, "EUC-TW");
-    int to_big5_ext = starts_with_nocase(icd->tocode, "CP950") ||
-                      starts_with_nocase(icd->tocode, "EUC-TW");
-
-    /* 韩文扩展：CP949 / ISO-2022-KR / JOHAB (走 KSC 兜底) */
-    int from_ksc_ext = starts_with_nocase(icd->fromcode, "CP949") ||
-                       starts_with_nocase(icd->fromcode, "ISO-2022-KR") ||
-                       starts_with_nocase(icd->fromcode, "JOHAB");
-    int to_ksc_ext = starts_with_nocase(icd->tocode, "CP949") ||
-                     starts_with_nocase(icd->tocode, "ISO-2022-KR") ||
-                     starts_with_nocase(icd->tocode, "JOHAB");
-
-    /* 如果编码相同或都是 ASCII/UTF8/Translit，直接复制 */
-    if (strcmp(icd->fromcode, icd->tocode) == 0 || 
-        (from_utf8 && to_utf8) ||
-        (from_translit && to_translit) ||
-        (starts_with_nocase(icd->fromcode, "ASCII") && 
-         starts_with_nocase(icd->tocode, "ASCII"))) {
-        if (*inbytesleft > *outbytesleft) {
-            *inbytesleft = *outbytesleft;
-        }
-        memcpy(*outbuf, *inbuf, *inbytesleft);
-        *inbuf += *inbytesleft;
-        *outbuf += *inbytesleft;
-        *inbytesleft = 0;
-        *outbytesleft -= *inbytesleft;
-        return 0;
-    }
-    
-    /* 转换循环 */
-    while (*inbytesleft > 0 && *outbytesleft > 0) {
-        unsigned int codepoint = 0;
-        size_t in_len = 0;
-        size_t out_len = 0;
-        unsigned char out_buf[4];
-        
-        /* 解码输入 */
-        if (from_utf8) {
-            in_len = utf8_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_utf16) {
-            in_len = utf16le_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_gbk) {
-            in_len = gbk_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_big5 || from_cns || from_big5_ext) {
-            in_len = big5_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_sjis || from_eucjp) {
-            in_len = sjis_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_ksc || from_ksc_ext) {
-            in_len = ksc5601_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_gbk_ext) {
-            in_len = gbk_decode((unsigned char *)*inbuf, *inbytesleft, &codepoint);
-        } else if (from_translit) {
-            in_len = 1;
-            codepoint = (unsigned char)*(*inbuf);
-        } else {
-            /* 未知编码，跳过 */
-            in_len = 1;
-            codepoint = (unsigned char)*(*inbuf);
-        }
-        
-        if (in_len == 0) {
-            return ICONV_ERR; /* 解码错误 */
-        }
-        
-        /* 编码输出 */
-        if (to_utf8) {
-            out_len = utf8_encode(codepoint, out_buf);
-        } else if (to_utf16) {
-            out_len = utf16le_encode(codepoint, out_buf);
-        } else if (to_gbk || to_gbk_ext) {
-            out_len = gbk_encode(codepoint, out_buf);
-        } else if (to_big5 || to_cns || to_big5_ext) {
-            out_len = big5_encode(codepoint, out_buf);
-        } else if (to_sjis || to_eucjp) {
-            out_len = sjis_encode(codepoint, out_buf);
-        } else if (to_ksc || to_ksc_ext) {
-            out_len = ksc5601_encode(codepoint, out_buf);
-        } else if (to_translit) {
-            out_len = 1;
-            out_buf[0] = (codepoint < 0x100) ? codepoint : '?';
-        } else {
-            /* 未知编码，跳过 */
-            out_len = 1;
-            out_buf[0] = codepoint & 0xFF;
-        }
-        
-        /* 检查输出空间 */
-        if (out_len > *outbytesleft) {
-            return ICONV_ERR; /* 输出缓冲区不足 */
-        }
-        
-        /* 复制输出 */
-        memcpy(*outbuf, out_buf, out_len);
-        *outbuf += out_len;
-        *outbytesleft -= out_len;
-        
-        /* 移动输入指针 */
-        *inbuf += in_len;
-        *inbytesleft -= in_len;
-    }
-    
-    return 0;
-}
-
-/* ---- 公共 API ---- */
-
-/* 打开转换描述符 */
-iconv_t iconv_open(const char *tocode, const char *fromcode)
-{
-    if (!tocode || !fromcode) return (iconv_t)-1;
-    
-    iconv_cd_t *icd = calloc(1, sizeof(iconv_cd_t));
-    if (!icd) return (iconv_t)-1;
-    
-    icd->tocode = strdup(tocode);
-    icd->fromcode = strdup(fromcode);
-    
-    if (!icd->tocode || !icd->fromcode) {
-        free(icd->tocode);
-        free(icd->fromcode);
-        free(icd);
-        return (iconv_t)-1;
-    }
-    
-    return (iconv_t)icd;
-}
-
-/* 关闭转换描述符 */
-int iconv_close(iconv_t cd)
-{
-    if (!cd) return -1;
-    
-    iconv_cd_t *icd = (iconv_cd_t *)cd;
-    free(icd->tocode);
-    free(icd->fromcode);
-    free(icd);
-    
-    return 0;
-}
-
-/* 执行转换 */
-size_t iconv(iconv_t cd, 
-              char **inbuf, size_t *inbytesleft,
-              char **outbuf, size_t *outbytesleft)
-{
-    return do_iconv(cd, inbuf, inbytesleft, outbuf, outbytesleft);
-}
-
-/* 重置转换描述符 */
-int iconv_reset(iconv_t cd)
-{
-    (void)cd;
-    return 0;
-}
+#endif
