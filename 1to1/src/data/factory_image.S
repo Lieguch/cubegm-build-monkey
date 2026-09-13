@@ -6,7 +6,7 @@
 	.globl __f_rodata_base
 	.type __f_rodata_base, %object
 __f_rodata_base:
-	.incbin "factory_rodata.bin", 4, 0xd1358
+	.incbin "factory_rodata.bin"
 	.size __f_rodata_base, 0xd1358
 
 	.section .data.rel.ro.local,"aw",%progbits
@@ -31,43 +31,7 @@ __f_bss_base:
 	.size __f_bss_base, 0x2f95b
 
 /* ---- 符号别名 ---- */
-/* .rodata：737 个符号 */
-	.globl DAT_002dbcb4
-	.set DAT_002dbcb4, __f_rodata_base + 0x10
-	.globl DAT_002dbd74
-	.set DAT_002dbd74, __f_rodata_base + 0xd0
-	.globl DAT_002dbe58
-	.set DAT_002dbe58, __f_rodata_base + 0x1b4
-	.globl DAT_002dbe5c
-	.set DAT_002dbe5c, __f_rodata_base + 0x1b8
-	.globl DAT_002dbe60
-	.set DAT_002dbe60, __f_rodata_base + 0x1bc
-	.globl DAT_002dccf4
-	.set DAT_002dccf4, __f_rodata_base + 0x1050
-	.globl DAT_002dcd50
-	.set DAT_002dcd50, __f_rodata_base + 0x10ac
-	.globl DAT_002dcd5c
-	.set DAT_002dcd5c, __f_rodata_base + 0x10b8
-	.globl DAT_002dcd70
-	.set DAT_002dcd70, __f_rodata_base + 0x10cc
-	.globl DAT_002dcea4
-	.set DAT_002dcea4, __f_rodata_base + 0x1200
-	.globl DAT_002dcf4c
-	.set DAT_002dcf4c, __f_rodata_base + 0x12a8
-	.globl DAT_002dd508
-	.set DAT_002dd508, __f_rodata_base + 0x1864
-	.globl DAT_002dd64c
-	.set DAT_002dd64c, __f_rodata_base + 0x19a8
-	.globl DAT_002dd860
-	.set DAT_002dd860, __f_rodata_base + 0x1bbc
-	.globl DAT_002dd878
-	.set DAT_002dd878, __f_rodata_base + 0x1bd4
-	.globl DAT_002dd88c
-	.set DAT_002dd88c, __f_rodata_base + 0x1be8
-	.globl DAT_002ddd74
-	.set DAT_002ddd74, __f_rodata_base + 0x20d0
-	.globl DAT_002dee30
-	.set DAT_002dee30, __f_rodata_base + 0x318c
+/* .rodata：718 个符号 */
 	.globl _ZL6cplens
 	.set _ZL6cplens, __f_rodata_base + 0x31a8
 	.globl _ZL6cplext
@@ -112,8 +76,6 @@ __f_bss_base:
 	.set joy_key_mask, __f_rodata_base + 0x4c44
 	.globl asc2_1608
 	.set asc2_1608, __f_rodata_base + 0x4c84
-	.globl DAT_002e0d18
-	.set DAT_002e0d18, __f_rodata_base + 0x5074
 	.globl xmp3_sfBandTable
 	.set xmp3_sfBandTable, __f_rodata_base + 0x5274
 	.globl xmp3_slotTab
@@ -1507,9 +1469,7 @@ __f_bss_base:
 
 /* .data.rel.ro.local：0 个符号 */
 
-/* .data：163 个符号 */
-	.globl DAT_003af008
-	.set DAT_003af008, __f_data_base + 0x8
+/* .data：28 个符号 */
 	.globl running
 	.set running, __f_data_base + 0x18
 	.globl Rowspacing
@@ -1538,262 +1498,6 @@ __f_bss_base:
 	.set JOYSTICK_DEVNAME, __f_data_base + 0x254
 	.globl m_ui
 	.set m_ui, __f_data_base + 0x264
-	.globl DAT_003af268
-	.set DAT_003af268, __f_data_base + 0x268
-	.globl DAT_003af26c
-	.set DAT_003af26c, __f_data_base + 0x26c
-	.globl DAT_003af270
-	.set DAT_003af270, __f_data_base + 0x270
-	.globl DAT_003af274
-	.set DAT_003af274, __f_data_base + 0x274
-	.globl DAT_003af278
-	.set DAT_003af278, __f_data_base + 0x278
-	.globl DAT_003af27c
-	.set DAT_003af27c, __f_data_base + 0x27c
-	.globl DAT_003af280
-	.set DAT_003af280, __f_data_base + 0x280
-	.globl DAT_003af284
-	.set DAT_003af284, __f_data_base + 0x284
-	.globl DAT_003af288
-	.set DAT_003af288, __f_data_base + 0x288
-	.globl DAT_003af28c
-	.set DAT_003af28c, __f_data_base + 0x28c
-	.globl DAT_003af290
-	.set DAT_003af290, __f_data_base + 0x290
-	.globl DAT_003af294
-	.set DAT_003af294, __f_data_base + 0x294
-	.globl DAT_003af298
-	.set DAT_003af298, __f_data_base + 0x298
-	.globl DAT_003af29c
-	.set DAT_003af29c, __f_data_base + 0x29c
-	.globl DAT_003af2a0
-	.set DAT_003af2a0, __f_data_base + 0x2a0
-	.globl DAT_003af2a4
-	.set DAT_003af2a4, __f_data_base + 0x2a4
-	.globl DAT_003af2a8
-	.set DAT_003af2a8, __f_data_base + 0x2a8
-	.globl DAT_003af2ac
-	.set DAT_003af2ac, __f_data_base + 0x2ac
-	.globl DAT_003af2b0
-	.set DAT_003af2b0, __f_data_base + 0x2b0
-	.globl DAT_003af2b4
-	.set DAT_003af2b4, __f_data_base + 0x2b4
-	.globl DAT_003af2b8
-	.set DAT_003af2b8, __f_data_base + 0x2b8
-	.globl DAT_003af2bc
-	.set DAT_003af2bc, __f_data_base + 0x2bc
-	.globl DAT_003af2c0
-	.set DAT_003af2c0, __f_data_base + 0x2c0
-	.globl DAT_003af30c
-	.set DAT_003af30c, __f_data_base + 0x30c
-	.globl DAT_003af310
-	.set DAT_003af310, __f_data_base + 0x310
-	.globl DAT_003af314
-	.set DAT_003af314, __f_data_base + 0x314
-	.globl DAT_003af318
-	.set DAT_003af318, __f_data_base + 0x318
-	.globl DAT_003af31c
-	.set DAT_003af31c, __f_data_base + 0x31c
-	.globl DAT_003af320
-	.set DAT_003af320, __f_data_base + 0x320
-	.globl DAT_003af324
-	.set DAT_003af324, __f_data_base + 0x324
-	.globl DAT_003af328
-	.set DAT_003af328, __f_data_base + 0x328
-	.globl DAT_003af37c
-	.set DAT_003af37c, __f_data_base + 0x37c
-	.globl DAT_003af380
-	.set DAT_003af380, __f_data_base + 0x380
-	.globl DAT_003af384
-	.set DAT_003af384, __f_data_base + 0x384
-	.globl DAT_003af388
-	.set DAT_003af388, __f_data_base + 0x388
-	.globl DAT_003af38c
-	.set DAT_003af38c, __f_data_base + 0x38c
-	.globl DAT_003af390
-	.set DAT_003af390, __f_data_base + 0x390
-	.globl DAT_003af394
-	.set DAT_003af394, __f_data_base + 0x394
-	.globl DAT_003af398
-	.set DAT_003af398, __f_data_base + 0x398
-	.globl DAT_003af39c
-	.set DAT_003af39c, __f_data_base + 0x39c
-	.globl DAT_003af3a0
-	.set DAT_003af3a0, __f_data_base + 0x3a0
-	.globl DAT_003af3a4
-	.set DAT_003af3a4, __f_data_base + 0x3a4
-	.globl DAT_003af3a8
-	.set DAT_003af3a8, __f_data_base + 0x3a8
-	.globl DAT_003af3ac
-	.set DAT_003af3ac, __f_data_base + 0x3ac
-	.globl DAT_003af698
-	.set DAT_003af698, __f_data_base + 0x698
-	.globl DAT_003af69c
-	.set DAT_003af69c, __f_data_base + 0x69c
-	.globl DAT_003af6a0
-	.set DAT_003af6a0, __f_data_base + 0x6a0
-	.globl DAT_003af6a4
-	.set DAT_003af6a4, __f_data_base + 0x6a4
-	.globl DAT_003af6a8
-	.set DAT_003af6a8, __f_data_base + 0x6a8
-	.globl DAT_003af6ac
-	.set DAT_003af6ac, __f_data_base + 0x6ac
-	.globl DAT_003af6b0
-	.set DAT_003af6b0, __f_data_base + 0x6b0
-	.globl DAT_003af6b8
-	.set DAT_003af6b8, __f_data_base + 0x6b8
-	.globl DAT_003af6bc
-	.set DAT_003af6bc, __f_data_base + 0x6bc
-	.globl DAT_003af6c0
-	.set DAT_003af6c0, __f_data_base + 0x6c0
-	.globl DAT_003af6c4
-	.set DAT_003af6c4, __f_data_base + 0x6c4
-	.globl DAT_003af6c8
-	.set DAT_003af6c8, __f_data_base + 0x6c8
-	.globl DAT_003af6cc
-	.set DAT_003af6cc, __f_data_base + 0x6cc
-	.globl DAT_003af6d0
-	.set DAT_003af6d0, __f_data_base + 0x6d0
-	.globl DAT_003af6d4
-	.set DAT_003af6d4, __f_data_base + 0x6d4
-	.globl DAT_003af6d8
-	.set DAT_003af6d8, __f_data_base + 0x6d8
-	.globl DAT_003af6dc
-	.set DAT_003af6dc, __f_data_base + 0x6dc
-	.globl DAT_003af6e0
-	.set DAT_003af6e0, __f_data_base + 0x6e0
-	.globl DAT_003af6e4
-	.set DAT_003af6e4, __f_data_base + 0x6e4
-	.globl DAT_003af6e8
-	.set DAT_003af6e8, __f_data_base + 0x6e8
-	.globl DAT_003af6f0
-	.set DAT_003af6f0, __f_data_base + 0x6f0
-	.globl DAT_003af6f4
-	.set DAT_003af6f4, __f_data_base + 0x6f4
-	.globl DAT_003af6f8
-	.set DAT_003af6f8, __f_data_base + 0x6f8
-	.globl DAT_003af6fc
-	.set DAT_003af6fc, __f_data_base + 0x6fc
-	.globl DAT_003af700
-	.set DAT_003af700, __f_data_base + 0x700
-	.globl DAT_003af704
-	.set DAT_003af704, __f_data_base + 0x704
-	.globl DAT_003af708
-	.set DAT_003af708, __f_data_base + 0x708
-	.globl DAT_003af70f
-	.set DAT_003af70f, __f_data_base + 0x70f
-	.globl DAT_003af718
-	.set DAT_003af718, __f_data_base + 0x718
-	.globl DAT_003af71c
-	.set DAT_003af71c, __f_data_base + 0x71c
-	.globl DAT_003af720
-	.set DAT_003af720, __f_data_base + 0x720
-	.globl DAT_003af724
-	.set DAT_003af724, __f_data_base + 0x724
-	.globl DAT_003af728
-	.set DAT_003af728, __f_data_base + 0x728
-	.globl DAT_003af72c
-	.set DAT_003af72c, __f_data_base + 0x72c
-	.globl DAT_003af730
-	.set DAT_003af730, __f_data_base + 0x730
-	.globl DAT_003af734
-	.set DAT_003af734, __f_data_base + 0x734
-	.globl DAT_003af738
-	.set DAT_003af738, __f_data_base + 0x738
-	.globl DAT_003af73c
-	.set DAT_003af73c, __f_data_base + 0x73c
-	.globl DAT_003af740
-	.set DAT_003af740, __f_data_base + 0x740
-	.globl DAT_003af744
-	.set DAT_003af744, __f_data_base + 0x744
-	.globl DAT_003af748
-	.set DAT_003af748, __f_data_base + 0x748
-	.globl DAT_003af74c
-	.set DAT_003af74c, __f_data_base + 0x74c
-	.globl DAT_003af788
-	.set DAT_003af788, __f_data_base + 0x788
-	.globl DAT_003af78c
-	.set DAT_003af78c, __f_data_base + 0x78c
-	.globl DAT_003af790
-	.set DAT_003af790, __f_data_base + 0x790
-	.globl DAT_003af794
-	.set DAT_003af794, __f_data_base + 0x794
-	.globl DAT_003af798
-	.set DAT_003af798, __f_data_base + 0x798
-	.globl DAT_003af79c
-	.set DAT_003af79c, __f_data_base + 0x79c
-	.globl DAT_003af7a0
-	.set DAT_003af7a0, __f_data_base + 0x7a0
-	.globl DAT_003af7a4
-	.set DAT_003af7a4, __f_data_base + 0x7a4
-	.globl DAT_003af7a8
-	.set DAT_003af7a8, __f_data_base + 0x7a8
-	.globl DAT_003af7ac
-	.set DAT_003af7ac, __f_data_base + 0x7ac
-	.globl DAT_003af7b0
-	.set DAT_003af7b0, __f_data_base + 0x7b0
-	.globl DAT_003af7b4
-	.set DAT_003af7b4, __f_data_base + 0x7b4
-	.globl DAT_003af7b8
-	.set DAT_003af7b8, __f_data_base + 0x7b8
-	.globl DAT_003af7bc
-	.set DAT_003af7bc, __f_data_base + 0x7bc
-	.globl DAT_003af7c0
-	.set DAT_003af7c0, __f_data_base + 0x7c0
-	.globl DAT_003af7c4
-	.set DAT_003af7c4, __f_data_base + 0x7c4
-	.globl DAT_003af7c8
-	.set DAT_003af7c8, __f_data_base + 0x7c8
-	.globl DAT_003af7cc
-	.set DAT_003af7cc, __f_data_base + 0x7cc
-	.globl DAT_003af7d0
-	.set DAT_003af7d0, __f_data_base + 0x7d0
-	.globl DAT_003af7d4
-	.set DAT_003af7d4, __f_data_base + 0x7d4
-	.globl DAT_003af7d8
-	.set DAT_003af7d8, __f_data_base + 0x7d8
-	.globl DAT_003af7e0
-	.set DAT_003af7e0, __f_data_base + 0x7e0
-	.globl DAT_003af7e4
-	.set DAT_003af7e4, __f_data_base + 0x7e4
-	.globl DAT_003af7e8
-	.set DAT_003af7e8, __f_data_base + 0x7e8
-	.globl DAT_003af7ec
-	.set DAT_003af7ec, __f_data_base + 0x7ec
-	.globl DAT_003af7f0
-	.set DAT_003af7f0, __f_data_base + 0x7f0
-	.globl DAT_003af7f4
-	.set DAT_003af7f4, __f_data_base + 0x7f4
-	.globl DAT_003af7f8
-	.set DAT_003af7f8, __f_data_base + 0x7f8
-	.globl DAT_003af7fc
-	.set DAT_003af7fc, __f_data_base + 0x7fc
-	.globl DAT_003af800
-	.set DAT_003af800, __f_data_base + 0x800
-	.globl DAT_003af804
-	.set DAT_003af804, __f_data_base + 0x804
-	.globl DAT_003af808
-	.set DAT_003af808, __f_data_base + 0x808
-	.globl DAT_003af820
-	.set DAT_003af820, __f_data_base + 0x820
-	.globl DAT_003af824
-	.set DAT_003af824, __f_data_base + 0x824
-	.globl DAT_003af828
-	.set DAT_003af828, __f_data_base + 0x828
-	.globl DAT_003af82c
-	.set DAT_003af82c, __f_data_base + 0x82c
-	.globl DAT_003af830
-	.set DAT_003af830, __f_data_base + 0x830
-	.globl DAT_003af834
-	.set DAT_003af834, __f_data_base + 0x834
-	.globl DAT_003af838
-	.set DAT_003af838, __f_data_base + 0x838
-	.globl DAT_003af83c
-	.set DAT_003af83c, __f_data_base + 0x83c
-	.globl DAT_003af840
-	.set DAT_003af840, __f_data_base + 0x840
-	.globl DAT_003af844
-	.set DAT_003af844, __f_data_base + 0x844
 	.globl m_movetab
 	.set m_movetab, __f_data_base + 0x848
 	.globl m_joysticktab
@@ -1806,22 +1510,10 @@ __f_bss_base:
 	.set P1_Table, __f_data_base + 0x104c
 	.globl turbo_delay
 	.set turbo_delay, __f_data_base + 0x1128
-	.globl DAT_003b012c
-	.set DAT_003b012c, __f_data_base + 0x112c
 	.globl user_joy_key_mask
 	.set user_joy_key_mask, __f_data_base + 0x1154
 	.globl default_core_list
 	.set default_core_list, __f_data_base + 0x1254
-	.globl DAT_003b0274
-	.set DAT_003b0274, __f_data_base + 0x1274
-	.globl DAT_003b0278
-	.set DAT_003b0278, __f_data_base + 0x1278
-	.globl DAT_003b0298
-	.set DAT_003b0298, __f_data_base + 0x1298
-	.globl DAT_003b02b8
-	.set DAT_003b02b8, __f_data_base + 0x12b8
-	.globl DAT_003b02bc
-	.set DAT_003b02bc, __f_data_base + 0x12bc
 	.globl fps0
 	.set fps0, __f_data_base + 0x2ce4
 	.globl sound_len
@@ -1835,7 +1527,7 @@ __f_bss_base:
 	.globl _libiconv_version
 	.set _libiconv_version, __f_data_base + 0x2cf8
 
-/* .bss：194 个符号 */
+/* .bss：189 个符号 */
 	.globl completed.10349
 	.set completed.10349, __f_bss_base + 0x0
 	.globl log_file_initialized
@@ -1884,16 +1576,6 @@ __f_bss_base:
 	.set lasterrorU, __f_bss_base + 0xa4
 	.globl file_info_list
 	.set file_info_list, __f_bss_base + 0xa8
-	.globl DAT_003b2320
-	.set DAT_003b2320, __f_bss_base + 0x1a8
-	.globl DAT_003b2324
-	.set DAT_003b2324, __f_bss_base + 0x1ac
-	.globl DAT_003b23a4
-	.set DAT_003b23a4, __f_bss_base + 0x22c
-	.globl DAT_003b2424
-	.set DAT_003b2424, __f_bss_base + 0x2ac
-	.globl DAT_003b24a4
-	.set DAT_003b24a4, __f_bss_base + 0x32c
 	.globl FilenameExt
 	.set FilenameExt, __f_bss_base + 0xa148
 	.globl tree

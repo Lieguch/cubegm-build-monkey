@@ -166,7 +166,9 @@ def main():
             A('\t.space 0x%x' % s['size'])
         else:
             if nm in SKIP_HEAD:
-                A('\t.incbin "factory_%s.bin", %d, 0x%x' % (bl, SKIP_HEAD[nm], s['size'] - SKIP_HEAD[nm]))
+                # ★ bin 文件本身已跳过 SKIP_HEAD 字节（gen 时 blob=elf[off+skip:off+size]），
+                #   此处不能再 skip —— 否则 GNU as 报错、clang 静默截断尾部 4 字节
+                A('\t.incbin "factory_%s.bin"' % bl)
             else:
                 A('\t.incbin "factory_%s.bin"' % bl)
         A('\t.size __f%s_base, 0x%x' % (nm.replace('.', '_'), s['size'] - s.get('_skip', 0)))
