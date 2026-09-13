@@ -62,6 +62,12 @@ LIBC_EXACT = {
 # libstdc++ 供应（工厂 UNDEF 同款：operator new/delete 及数组变体）
 LIBSTDCXX = {'_Znwj', '_ZdlPv', '_Znaj', '_ZdaPv', '_ZnwjRKSt9nothrow_t', '_ZdlPvm'}
 # CRT 供应（crt1.o / crtbegin.o）
+# GCC -D_FORTIFY_SOURCE / -fstack-protector 引入的 glibc 符号（CI 用 GCC 会大量出现）
+FORTIFY = {'__assert_fail', '__stack_chk_fail', '__stack_chk_guard', '__stack_chk_fail_local',
+           '__memcpy_chk', '__memset_chk', '__memmove_chk', '__strcpy_chk', '__strncpy_chk',
+           '__strcat_chk', '__stpcpy_chk', '__sprintf_chk', '__snprintf_chk', '__vsnprintf_chk',
+           '__printf_chk', '__fprintf_chk', '__vfprintf_chk', '__fread_chk', '__read_chk',
+           '__fgets_chk', '__gets_chk', '__fwrite_chk', '__syslog_chk'}
 CRT_SYMS = {'_init', '_fini', '__frame_dummy_init_array_entry',
             '__do_global_dtors_aux_fini_array_entry', '__libc_csu_init',
             '__libc_csu_fini', '_IO_stdin_used', '__data_start', '_edata',
@@ -129,6 +135,8 @@ def main():
             unresolved[s] = 'upstream'
         elif s in LIBSTDCXX:
             unresolved[s] = 'libstdc++'
+        elif s in FORTIFY:
+            unresolved[s] = 'libc'
         elif s in CRT_SYMS:
             unresolved[s] = 'crt'
         elif s in LIBC_EXACT or s.startswith(LIBC_PREFIX):
