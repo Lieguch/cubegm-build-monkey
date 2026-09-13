@@ -83,6 +83,26 @@ jobs:
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt
         continue-on-error: true
 
+      - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
+        run: |
+          cd 1to1
+          mkdir -p build/upstream
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
+
+      - name: P3 数据镜像重建（工厂镜像 + 别名 + 链接脚本）
+        run: |
+          cd 1to1
+          PY=python3 FACTORY_ELF=python3 sh tools/regen_data.sh || true
+        continue-on-error: true
+
+      - name: P3 完整链接（全部对象 + 工厂布局）+ ABI/布局门禁
+        run: |
+          cd 1to1
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          echo '--- ABI 门禁 ---'
+          python3 tools/abi_check.py build/rkgame.rebuilt.elf
+        continue-on-error: true
+
       - name: 上传报告
         if: always()
         uses: actions/upload-artifact@v4

@@ -222,8 +222,13 @@ def main():
                   ('.fimg_data_rel_ro_local', 0x3ae5c4),
                   ('.fimg_data', 0x3af000),
                   ('.fimg_bss', 0x3b2178)]
+    # ★ 带 SKIP_HEAD 的段：镜像内容已剔除头部，故 VMA 要 +skip（头部由 CRT 填，如 _IO_stdin_used）
+    skip_of = {'.fimg_rodata': SKIP_HEAD.get('.rodata', 0),
+               '.fimg_data_rel_ro_local': SKIP_HEAD.get('.data.rel.ro.local', 0),
+               '.fimg_data': SKIP_HEAD.get('.data', 0),
+               '.fimg_bss': SKIP_HEAD.get('.bss', 0)}
     for nm, vma in fimg_order:
-        B('  %s 0x%08x : { *(%s) }' % (nm, vma, nm))
+        B('  %s 0x%08x : { *(%s) }' % (nm, vma + skip_of.get(nm, 0), nm))
     B('')
     B('  /* ---- ② 代码与运行时区（我们自己 + libc；地址自由，只要不与①重叠）---- */')
     B('  .text 0x00009b10 : { *(.text) *(.text.*) *(.init) *(.fini) *(.plt) *(.plt.*) }')

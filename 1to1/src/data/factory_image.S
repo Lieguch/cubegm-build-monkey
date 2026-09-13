@@ -2,28 +2,28 @@
  * 每个段只放一份工厂原始镜像，全部符号（含 Ghidra DAT_x）以 .set 别名指向段内偏移。
  * 依据：段 VMA 必须与工厂一致（代码里烧死绝对地址）；DAT_x 不是工厂符号。 */
 
-	.section .rodata,"a",%progbits
+	.section .fimg_rodata,"a",%progbits
 	.globl __f_rodata_base
 	.type __f_rodata_base, %object
 __f_rodata_base:
 	.incbin "factory_rodata.bin"
 	.size __f_rodata_base, 0xd1358
 
-	.section .data.rel.ro.local,"aw",%progbits
+	.section .fimg_data_rel_ro_local,"aw",%progbits
 	.globl __f_data_rel_ro_local_base
 	.type __f_data_rel_ro_local_base, %object
 __f_data_rel_ro_local_base:
 	.incbin "factory_data_rel_ro_local.bin"
 	.size __f_data_rel_ro_local_base, 0x914
 
-	.section .data,"aw",%progbits
+	.section .fimg_data,"aw",%progbits
 	.globl __f_data_base
 	.type __f_data_base, %object
 __f_data_base:
 	.incbin "factory_data.bin"
 	.size __f_data_base, 0x2cfc
 
-	.section .bss,"aw",%nobits
+	.section .fimg_bss,"aw",%nobits
 	.globl __f_bss_base
 	.type __f_bss_base, %object
 __f_bss_base:
