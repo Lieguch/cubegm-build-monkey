@@ -89,16 +89,14 @@ jobs:
           mkdir -p build/upstream
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
 
-      - name: P3 数据镜像重建（工厂镜像 + 别名 + 链接脚本）
-        run: |
-          cd 1to1
-          PY=python3 FACTORY_ELF=python3 sh tools/regen_data.sh || true
-        continue-on-error: true
-
       - name: P3 完整链接（全部对象 + 工厂布局）+ ABI/布局门禁
         run: |
           cd 1to1
+          # 注：数据镜像/链接脚本的「重新生成」需工厂 ELF，只在本地执行（tools/regen_data.sh）；
+          #     CI 使用仓库内已提交的 src/data/factory_*.bin + factory_image.S + linker/factory.ld
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          echo '--- 布局门禁 ---'
+          python3 tools/verify_layout.py build/rkgame.rebuilt.elf ledger/factory_globals.tsv
           echo '--- ABI 门禁 ---'
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
         continue-on-error: true

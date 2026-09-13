@@ -232,6 +232,28 @@
 
 **新增工具**：`tools/ci_watch.py`（轮询 CI 至完成，失败时给出 job/step 级定位；artifact 下载需在 302 到 Azure 签名 URL 时**剥离 Authorization**）。
 
+
+### 2026-09-13 第九轮：★★ P3 完整链接打通（ABI PASS + 全局布局 98.5%）
+
+**上游四组件全部编译接入**（详见上节）+ 冲突三类解法落地 ⇒ 审计：**重复定义 0 / upstream 0 / MISSING 3**。
+
+**完整链接**（`tools/link_full.sh`，241 对象 + 工厂镜像）：
+
+| 指标 | 结果 |
+|---|---|
+| 产物 | `build/rkgame.rebuilt.elf`（17,010,068 B） |
+| **ABI 门禁** | **PASS**：e_type=EXEC / e_machine=ARM / e_flags=0x5000400 / interp=`/lib/ld-linux-armhf.so.3` |
+| **布局门禁** | **PASS**：全局符号 **191/194 = 98.5%**；局部 105/746（信息项） |
+| 可接受偏差（3） | `_IO_stdin_used`（CRT 内部，镜像跳过 4B）；`SoundBuffer`/`diff_prev`（**工厂同名双定义**，待按 TU 拆分） |
+
+**链接脚本重构**：工厂地址区（`.fimg_rodata`@0x2dbca4 / `.fimg_data_rel_ro_local`@0x3ae5c4 / `.fimg_data`@0x3af000 / `.fimg_bss`@0x3b2178）与运行时区（`.text`@0x9b10 / `.rodata`@0x400000 / `.data`@0x1000000 / `.bss`@0x2000000）分离 —— 使 libc 的段不挤进工厂地址区。
+★ 关键：**带 SKIP_HEAD 的镜像段 VMA 必须 +skip**，否则全部 .rodata 符号系统性 Δ-4。
+★ 链接期占位 `compress/uncompress/_init/UNK_* = 0` 写在链接脚本内（工厂从 libz.so.1 动态导入 / 等 .text 镜像）——**显式置 0，不造假实现**。
+
+**下一步**：① 同名双定义按 TU 拆分；② `.text` 常量镜像（3 个 `UNK_*`）；③ P4 → P5 行为差分 → P6 真机验收。
+
+---
+
 ## 零之一、历史阶段（2026-09-12 第一轮：宽松 86.4% → 100%）
 
 ### 2026-09-12 进度（本地，未推送）
