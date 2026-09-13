@@ -1,0 +1,251 @@
+=== rkgame rebuild starting ===
+--- rkgame session start ---[DBG] log path = /tmp/sdcard/cubegm/rkgame.log
+P: ENTRY: _rkgame_start()
+P: MAIN: begin
+-1726182508 D: [RK-I] rkgame v1.7.0 (rebuild, v12 language 1:1 + wqw diag + thumb neg-cache)
+
+-1726182507 D: [RK-I] heartbeat: signal handlers installed (SIGTERM/SIGINT/SIGALRM/SIGCHLD, SA_RESTART)
+Ý@
+P: PATH: get_executable_path
+-1726182507 D: [RK-I] work_path = /tmp/sdcard/cubegm/
+uage 1:1 + wqw diag + thumb neg-c
+-1726182507 D: [RK-I] rom_base_path = /tmp/sdcard/
+m/
+uage 1:1 + wqw diag + thumb neg-c
+-1726182504 D: [RK-I] driver.so not found at /tmp/sdcard/cubegm/driver.so (audio/display will use fallback)
+
+-1726182504 D: [RK-I] LD_LIBRARY_PATH = /tmp/sdcard/cubegm/lib/:/home/runner/arm-root/lib/arm-linux-gnueabihf
+
+-1726182504 D: [RK-I] heartbeat: writing to /tmp/sdcard/cubegm/heartbeat
+
+-1726182503 D: [RK-I] heartbeat: found shm shmid=0 size=4096 uid=1001 nattch=0 atime=1789275173 ctime=1789275173
+ÿ?øÀÿ?Èÿ?”éÿ?´Ý@
+-1726182503 D: [RK-I] heartbeat: found shm shmid=1 size=8 uid=1001 nattch=0 atime=1789275173 ctime=1789275173
+73
+ÿ?øÀÿ?Èÿ?”éÿ?´Ý@
+-1726182503 D: [RK-I] heartbeat: 2 shm segment(s) found â€” icube likely uses shm heartbeat; next step is to reverse-engineer its message format
+ÿ?
+
+-1726182503 D: [RK-I] heartbeat: attached to existing shm key=0x4d2 shmid=1
+gm/heartbeat
+
+-1726182503 D: [RK-I] heartbeat: shm attached at 0x3de08000, shm[0]=1 shm[1]=0
+˜Âÿ?
+-1726182499 D: [RK-I] heartbeat: heartbeat thread started successfully
+hm[1]=0
+˜Âÿ?
+-1726182499 D: [RK-I] heartbeat: heartbeat thread started (20ms interval)
+
+P: CFG: config_load
+-1726182499 D: [RK-D] [main] calling GetConfig()
+ started successfully
+hm[1]=0
+˜Âÿ?
+-1726182499 D: [RK-I] config_init: 22 items initialized
+
+-1726182499 D: [RK-D] config_load: trying /tmp/sdcard/cubegm/setting.xml
+
+-1726182498 D: [RK-W] config_load: cannot open /tmp/sdcard/cubegm/setting.xml, using defaults
+
+-1726182498 D: [RK-D] config_load: trying setting.xml
+card/cubegm/setting.xml, using defaults
+
+-1726182498 D: [RK-W] config_load: cannot open setting.xml, using defaults
+ml, using defaults
+
+-1726182498 D: [RK-W] GetConfig: no setting.xml found, using defaults
+2499 D: [RK-D] [main] calling GetConfig()
+ started successfully
+hm[1]=0
+˜Âÿ?
+H¿ÿ2_Âÿ?H¿ÿ?
+-1726182497 D: [RK-D] [main] GetConfig returned rc=-1
+ted successfully
+hm[1]=0
+˜Âÿ?
+-1726182497 D: [RK-E] config_load: no config file in /tmp/sdcard/cubegm/
+ÿ?(ä@T
+-1726182497 D: [RK-D] [main] legacy_config_parse done
+ted successfully
+hm[1]=0
+˜Âÿ?
+-1726182497 D: [RK-I] load_cores_config_xml: /tmp/sdcard/cubegm/cores/config.xml not found (OK, using hardcoded table)
+sfully
+hm[1]=0
+˜Âÿ?
+W
+-1726182497 D: [RK-I] LoadMenuLog: /tmp/sdcard/cubegm/menu.log not found, initialized defaults (444B binary)
+found (OK, using hardcoded table)
+sfully
+hm[1]=0
+˜Âÿ?
+W
+-1726182495 D: [RK-I] dispmeninfo: MemTotal=15988 MB, MemFree=11862 MB, MemAvailable=14994 MB, Buffers=87 MB, Cached=3280 MB
+
+-1726182495 D: [RK-I] dispmeninfo: DRM not ready
+ MB, MemFree=11862 MB, MemAvailable=14994 MB, Buffers=87 MB, Cached=3280 MB
+
+-1726182495 D: [RK-I] sfc_init: stub (no SFC hardware; libretro core handles emulation)
+÷ü>€ã%@
+-1726182495 D: [RK-I] spi_driver_init: stub (no SPI hardware on RK3036G rebuild path)
+)
+÷ü>€ã%@
+-1726182495 D: [RK-I] InitRFJoystick: stub (no RF hardware; USB via evdev + inotify)
+
+)
+÷ü>€ã%@
+-1726182495 D: [RK-I] autorunfile = 
+o RF hardware; USB via evdev + inotify)
+
+)
+÷ü>€ã%@
+P: DISP: disp_init
+-1726182494 D: [RK-E] disp_init: /dev/dri/card0: No such file or directory
+
+-1726182494 D: [RK-I] disp_init: DRM/KMS unavailable (rc=-1), log-only mode
+SSAGES/libc.mo
+-1726182494 D: [RK-E] font_init: cannot open font.ttf (tried /tmp/sdcard/cubegm/ and /mnt/sdcard/cubegm/font.ttf)
+ D: [RK-I] disp_init: DRM/KMS unavailable (rc=-1), log-only mode
+SSAGES/libc.mo
+û7Àÿ?7Àÿ?X¿ÿ?÷Âÿ?X¿ÿ?
+-1726182494 D: [RK-I] font_init: font unavailable (rc=-1), using 5x7 bitmap fallback
+bc.mo
+-1726182494 D: [RK-I] select_ui_zip: setting.xml not found, using ui_en.zip
+
+-1726182494 D: [RK-I] ui_init: root.dat not found at /tmp/sdcard/cubegm/root.dat
+
+-1726182494 D: [RK-E] ui_zip_open: cannot open /tmp/sdcard/cubegm/ui_en.zip
+ºÿ?L@¸ÿ?ÀÅÿ?µÿ?
+-1726182494 D: [RK-E] ui_init: cannot open /tmp/sdcard/cubegm/ui_en.zip
+root.dat
+
+-1726182494 D: [RK-I] ui_init: UI unavailable (rc=-1), using simple bitmap menu
+back
+bc.mo
+-1726182494 D: [RK-I] ui_menu_init: category=0 game=0
+ailable (rc=-1), using simple bitmap menu
+back
+bc.mo
+-1726182494 D: [RK-I] ui_type_init: 9 categories loaded
+gory=0 game=0
+ailable (rc=-1), using simple bitmap menu
+back
+bc.mo
+-1726182494 D: [RK-I] m_ui_init: all 14 UI modules initialized
+using simple bitmap menu
+back
+bc.mo
+-1726182493 D: [RK-E] ui_zip_open: cannot open /tmp/sdcard/cubegm/resource.cpd
+
+-1726182493 D: [RK-I] cpd_load_resource: /tmp/sdcard/cubegm/resource.cpd not found or not valid ZIP
+
+-1726182493 D: [RK-I] cpd_load_resource: resource.cpd unavailable, falling back to ui_*.zip
+
+-1726182493 D: [RK-E] ui_zip_open: cannot open /tmp/sdcard/cubegm/UI_Res.cpd
+
+-1726182493 D: [RK-I] cpd_load_ui_res: /tmp/sdcard/cubegm/UI_Res.cpd not found or not valid ZIP
+
+-1726182493 D: [RK-I] cpd_load_ui_res: UI_Res.cpd unavailable
+ble, falling back to ui_*.zip
+
+-1726182493 D: [RK-I] cpd_report: resource.cpd loaded=0
+i_res: UI_Res.cpd unavailable
+ble, falling back to ui_*.zip
+
+-1726182493 D: [RK-I] cpd_report: UI_Res.cpd loaded=0 (bg_count=0)
+falling back to ui_*.zip
+
+P: AUDIO: audio_init
+-1726182493 D: [RK-I] audio_init: using driver.so sound_driver_init (factory interface)
+ng back to ui_*.zip
+
+-1726182493 D: [RK-I] audio_init: driver.so handle not available, audio disabled
+rface)
+ng back to ui_*.zip
+
+-1726182493 D: [RK-I] audio_set_volume: 80
+lable, audio disabled
+rface)
+ng back to ui_*.zip
+
+P: SRAM: sram_init
+-1726182493 D: [RK-I] sram_init: dir=/sdcard/cubegm/saves interval=10s
+
+ng back to ui_*.zip
+
+P: JOY: joy_init
+-1726182493 D: [RK-I] joy_init: initializing
+it: dir=/sdcard/cubegm/saves interval=10s
+
+ng back to ui_*.zip
+
+-1726182493 D: [RK-I] joy_inotify_init: watching /dev/input (wd=1)
+/saves interval=10s
+
+ng back to ui_*.zip
+
+-1726182493 D: [RK-E] ui_zip_open: cannot open /tmp/sdcard/cubegm/joystick.zip
+
+-1726182493 D: [RK-I] joy_load_joystick_zip: /tmp/sdcard/cubegm/joystick.zip not found (using built-in profiles)
+
+-1726182493 D: [RK-I] joy_autodetect: scanning /dev/input/
+èÀÿ? ä@@I@´Ý@
+-1726182492 D: [RK-I] joy_autodetect: found 0 devices
+put/
+èÀÿ? ä@@I@´Ý@
+-1726182492 D: [RK-I] joy_init: 0 device(s) ready
+
+/saves interval=10s
+
+ng back to ui_*.zipxÁÿ?çÂÿ?xÁÿ?
+-1726182492 D: [RK-I] load_filelist_xml: /tmp/sdcard/cubegm/cores/filelist.xml not found (OK, will use fallback)
+¦jóQ
+-1726182492 D: [RK-I] try_load_from_root_dat: root.dat not found (tried /tmp/sdcard/root.dat and /tmp/sdcard/cubegm/root.dat)
+2494 D: [RK-E] font_init: cannot open font.ttf (t·â%@DÛü> ½ÿ?Iù@DÛü> ½ÿ?¨¼ÿ?¸¼ÿ?çÂÿ?¸¼ÿ?
+-1726182491 D: [RK-I] game_list_load: total 0 games (root.dat=0, dirs=0)
+tmp/sdcard/root.dat and /tmp/sdcard/cubegm/root.dat)
+2494 D: [RK-E] font_init: cannot open font.ttf (t·â%@DÛü> ½ÿ?Iù@DÛü> ½ÿ?¨¼ÿ?¸¼ÿ?çÀÿ?¸¼ÿ?
+-1726182491 D: [RK-I] game_list: no games found (will scan on demand)
+
+
+ng back to ui_*.zipxÁÿ?çÂÿ?xÁÿ?
+-1726182491 D: [RK-I] main_menu: entering menu (DRM ready=0)
+ demand)
+
+
+ng back to ui_*.zipxÁÿ?çÂÿ?xÁÿ?
+-1726182491 D: [RK-I] main_menu: entering interactive menu loop
+mand)
+
+
+ng back to ui_*.zipxÁÿ?çÂÿ?xÁÿ?
+-1726182491 D: [RK-I] P1-3: TYPE bucket 000 local=0 â†’ no game (empty), stay
+0Ãÿ?hÁÿ?
+-1726181490 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726180489 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726179488 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726178487 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726177486 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726176485 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726175484 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726174482 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726173481 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726172480 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726171479 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726170478 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726169477 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
+-1726168475 D: [RK-I] main_menu: still active (no autorun configured), waiting for Phase 4 UI, redraws=0
+
