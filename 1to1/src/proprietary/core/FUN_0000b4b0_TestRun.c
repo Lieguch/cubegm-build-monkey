@@ -40,7 +40,7 @@ void TestRun(void)
   __ptr = malloc(0x1c2000);
   frame_time_last = GetTick();
   iVar4 = 0;
-  diff_prev = 0;
+  diff_prev_global = 0;
   pvVar2 = local_98;
   do {
     while( true ) {

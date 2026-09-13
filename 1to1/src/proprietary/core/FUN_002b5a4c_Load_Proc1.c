@@ -26,9 +26,9 @@ gh_bool Load_Proc1(char *param_1)
   errorcount = 0;
   InitKeyMapping0fEmuType();
   if (*param_1 != '\0') {
-    handle = dlopen(param_1,2);
+    handle_emurun = dlopen(param_1,2);
   }
-  if (handle != 0) {
+  if (handle_emurun != 0) {
     iVar1 = run_process("retro_set_video_refresh",(gh_code *)DrawFrame);
     if ((((iVar1 != 0) &&
          (iVar1 = run_process("retro_set_audio_sample_batch",(gh_code *)PlayFrame), iVar1 != 0)) &&

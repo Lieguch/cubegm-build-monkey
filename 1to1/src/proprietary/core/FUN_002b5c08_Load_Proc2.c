@@ -21,15 +21,15 @@ void Load_Proc2(void)
   gh_uint uVar8;
   int local_50;
   
-  _retro_get_region = (gh_code *)dlsym(handle,"retro_get_region");
+  _retro_get_region = (gh_code *)dlsym(handle_emurun,"retro_get_region");
   if (_retro_get_region == (gh_code *)0x0) {
     RARCH_LOG("find retro_get_region process fail \n");
     return;
   }
   pal_ntsc = (*_retro_get_region)();
   RARCH_LOG("pal_ntsc:%d\n",pal_ntsc);
-  uVar3 = handle;
-  _retro_run = (gh_code *)dlsym(handle,"retro_run");
+  uVar3 = handle_emurun;
+  _retro_run = (gh_code *)dlsym(handle_emurun,"retro_run");
   _SetFrameSkip = (gh_code *)dlsym(uVar3,"SetFrameSkip");
   if (_SetFrameSkip != (gh_code *)0x0) {
     RARCH_LOG("find _SetFrameSkip process\n");
@@ -45,7 +45,7 @@ void Load_Proc2(void)
   gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
   inTimeVal_blob._0_4_ = (int)outTimeVal;
   inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
-  diff_prev = 0;
+  diff_prev_global = 0;
   local_50 = 0;
   initialTicks = (int)outTimeVal * 1000 + outTimeVal_blob._4_4_ / 1000;
   if (pal_ntsc == 0) {
@@ -65,13 +65,13 @@ void Load_Proc2(void)
 LAB_002b60a4:
         run_process("retro_unload_game",0);
         run_process("retro_deinit",0);
-        dlclose(handle);
+        dlclose(handle_emurun);
         return;
       }
       gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
       inTimeVal_blob._0_4_ = (int)outTimeVal;
       inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
-      diff_prev = 0;
+      diff_prev_global = 0;
       FrameCount0 = 0;
       skipCounter = 0;
       FrameCount = 0;
@@ -137,7 +137,7 @@ LAB_002b5f64:
       gettimeofday((timeval *)&outTimeVal,(__timezone_ptr_t)0x0);
       inTimeVal_blob._0_4_ = (int)outTimeVal;
       inTimeVal_blob._4_4_ = outTimeVal_blob._4_4_;
-      diff_prev = 0;
+      diff_prev_global = 0;
       FrameCount0 = 0;
       skipCounter = 0;
       FrameCount = 0;

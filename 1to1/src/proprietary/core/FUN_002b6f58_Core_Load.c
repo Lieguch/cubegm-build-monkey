@@ -28,17 +28,17 @@ gh_u4 Core_Load(char *param_1,char *param_2)
   memset(corecfg,0,16000);
   get_items_from_file(acStack_120,corecfg);
   sprintf(acStack_120,"%s/cores/%s",work_path,param_2);
-  handle = dlopen(acStack_120,2);
-  if (handle == 0) {
+  handle_emurun = dlopen(acStack_120,2);
+  if (handle_emurun == 0) {
     RARCH_LOG("open %s fail\n",acStack_120);
     return 0;
   }
-  _retro_is_support = (gh_code *)dlsym(handle,"retro_is_support");
+  _retro_is_support = (gh_code *)dlsym(handle_emurun,"retro_is_support");
   if (_retro_is_support != (gh_code *)0x0) {
     iVar1 = (*_retro_is_support)(param_1);
     if (iVar1 < 0) {
       RARCH_LOG("unsupport this game rom\n");
-      dlclose(handle);
+      dlclose(handle_emurun);
       return 0;
     }
     RARCH_LOG("support this game rom\n");
@@ -50,7 +50,7 @@ gh_u4 Core_Load(char *param_1,char *param_2)
   run_process("retro_set_progress_callback",(gh_code *)progress);
   strcpy(fileName,param_1);
   if ((short)Filetype == 0x800) {
-    _retro_set_device = (gh_code *)dlsym(handle,"retro_set_controller_port_device");
+    _retro_set_device = (gh_code *)dlsym(handle_emurun,"retro_set_controller_port_device");
     if (_retro_set_device == (gh_code *)0x0) {
       RARCH_LOG("find retro_set_controller_port_device process fail \n");
     }
@@ -72,7 +72,7 @@ gh_u4 Core_Load(char *param_1,char *param_2)
   game_blob._0_4_ = fileName;
   game_blob._4_4_ = ZIP_BUF;
   game_blob._8_4_ = ZIP_BUF_SIZE;
-  pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
+  pcVar2 = (gh_code *)dlsym(handle_emurun,"retro_load_game");
   if (pcVar2 == (gh_code *)0x0) {
     RARCH_LOG("find retro_load_game process fail \n");
   }
@@ -82,7 +82,7 @@ gh_u4 Core_Load(char *param_1,char *param_2)
     if (iVar1 == 0) {
       run_process("retro_unload_game",0);
       run_process("retro_deinit",0);
-      dlclose(handle);
+      dlclose(handle_emurun);
     }
     else {
       Load_Proc2();

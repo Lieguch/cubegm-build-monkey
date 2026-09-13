@@ -46,8 +46,8 @@ gh_u4 FBA_Load(char *param_1)
     do {
       while( true ) {
         sprintf(acStack_128,"%s/cores/%s",work_path);
-        handle = dlopen(acStack_128,2);
-        if (handle != 0) break;
+        handle_emurun = dlopen(acStack_128,2);
+        if (handle_emurun != 0) break;
         uVar2 = (gh_u4)dlerror();
         RARCH_LOG("open %s fail,%s \n",acStack_128,uVar2);
         ppcVar4 = ppcVar4 + 1;
@@ -55,7 +55,7 @@ gh_u4 FBA_Load(char *param_1)
           return 0;
         }
       }
-      _retro_is_support = (gh_code *)dlsym(handle,"retro_is_support");
+      _retro_is_support = (gh_code *)dlsym(handle_emurun,"retro_is_support");
       if (((_retro_is_support != (gh_code *)0x0) && (iVar1 = (*_retro_is_support)(param_1), -1 < iVar1)
           ) && (iVar1 = Load_Proc1(DAT_002dbcb4), iVar1 != 0)) {
         run_process("retro_set_progress_callback",(gh_code *)progress);
@@ -63,7 +63,7 @@ gh_u4 FBA_Load(char *param_1)
         game_blob._4_4_ = 0;
         game_blob._8_4_ = 0;
         progress_stepcount = 0;
-        pcVar3 = (gh_code *)dlsym(handle,"retro_load_game");
+        pcVar3 = (gh_code *)dlsym(handle_emurun,"retro_load_game");
         if ((pcVar3 != (gh_code *)0x0) && (iVar1 = (*pcVar3)(game), iVar1 != 0)) {
           RARCH_LOG("use %s to run %s\n",acStack_128,fileName);
           Load_Proc2();
@@ -83,7 +83,7 @@ gh_u4 FBA_Load(char *param_1)
         run_process("retro_deinit",0);
       }
       RARCH_LOG("%s unsupport.\n",acStack_128);
-      dlclose(handle);
+      dlclose(handle_emurun);
       ppcVar4 = ppcVar4 + 1;
     } while (**ppcVar4 != '\0');
   }

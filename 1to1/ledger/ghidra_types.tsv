@@ -5759,3 +5759,5 @@ DATA	.debug_frame::0000009c	fde_.debug_frame::0000009c	dword	4
 DATA	.debug_str::00000000	s_long_long_int_.debug_str__00000000	string	14
 DATA	.symtab::00000000	Elf32_Sym_ARRAY_.symtab__00000000	Elf32_Sym[2615]	41840
 DATA	_elfSectionHeaders::00000000	Elf32_Shdr_ARRAY__elfSectionHeaders__00000000	Elf32_Shdr[42]	1680
+DATA	003cf988	handle_emurun	undefined4	4
+DATA	003e1a38	diff_prev_global	undefined4	4

@@ -29,7 +29,7 @@ gh_u4 PCSX_Load(char *param_1)
     game_blob._0_4_ = fileName;
     game_blob._4_4_ = 0;
     game_blob._8_4_ = 0;
-    pcVar2 = (gh_code *)dlsym(handle,"retro_load_game");
+    pcVar2 = (gh_code *)dlsym(handle_emurun,"retro_load_game");
     if (pcVar2 == (gh_code *)0x0) {
       RARCH_LOG("find retro_load_game process fail \n");
     }

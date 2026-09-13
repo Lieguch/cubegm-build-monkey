@@ -18,9 +18,9 @@ void WaitNMI(void)
   
   while( true ) {
     lVar4 = GetTick();
-    lVar1 = lVar4 + CONCAT44(((int)diff_prev >> 0x1f) -
-                             (frame_time_last_blob._4_4_ + (gh_uint)(diff_prev < (gh_uint)frame_time_last)),
-                             diff_prev - (gh_uint)frame_time_last);
+    lVar1 = lVar4 + CONCAT44(((int)diff_prev_global >> 0x1f) -
+                             (frame_time_last_blob._4_4_ + (gh_uint)(diff_prev_global < (gh_uint)frame_time_last)),
+                             diff_prev_global - (gh_uint)frame_time_last);
     uVar2 = (gh_uint)lVar1;
     iVar3 = (int)((gh_ulonglong)lVar1 >> 0x20);
     if ((int)-(iVar3 + (gh_uint)(16000 < uVar2)) < 0 !=
@@ -28,6 +28,6 @@ void WaitNMI(void)
     usleep(1000);
   }
   frame_time_last = lVar4;
-  diff_prev = uVar2 - 0x411b;
+  diff_prev_global = uVar2 - 0x411b;
   return;
 }

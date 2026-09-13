@@ -4784,6 +4784,12 @@ extern gh_blob_t IR_JoyKey;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* fallback */ extern unsigned char UNK_002e0938[];
 
 /* 13 个数组全局的 _N_M_ 成员覆盖结构 + 指针 cast 宏（须在本头声明之后） */
+/* ============================================================
+ * ★ 补丁区（由 tools/patch_globals_extra.py 幂等注入）
+ *   gen_compat.py 只生成上面的主块，本区是它覆盖不到的必要补充。
+ * ============================================================ */
+/* @0x003cf988 undefined4 */ extern void * handle_emurun;   /* EmuRun.c 的 static handle（dlopen 句柄） */
+/* @0x003e1a38 undefined4 */ extern unsigned int diff_prev_global;  /* 全局份（经 GOT 引用） */
 #include "named_array_blobs.h"
 
 #endif

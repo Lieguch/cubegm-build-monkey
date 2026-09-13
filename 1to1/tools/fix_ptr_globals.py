@@ -3,7 +3,9 @@ path = 'src/compat/globals.h'
 lines = open(path, encoding='utf-8').read().splitlines()
 
 # 12 个纯指针全局（idx=0 且 cast=0，强证据）：
-names = {"log_file_fp","GPIO0","GPIO1","GPIO2","handle",
+# + handle_emurun：EmuRun.c 那一份 handle（= dlopen 返回值，0x3cf988），与 os_windows_rk.c
+#   的 handle(0x3b21c8) 同名不同物，P3 二期④ 拆分为独立名字，类型同为 void*。
+names = {"log_file_fp","GPIO0","GPIO1","GPIO2","handle","handle_emurun",
          "fontbuffer","scrbuf","bimapFilebuffer","rotation_buff",
          "ZIP_BUF","romfile","scr_buf"}
 # 精确类型（证据）：log_file_fp 持有 stderr/fopen 结果 + vfprintf 实参 → FILE*；

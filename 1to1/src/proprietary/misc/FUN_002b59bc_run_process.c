@@ -11,7 +11,7 @@
 gh_u4 run_process(char *param_1,gh_code *param_2)
 
 {
-  pf = (gh_code *)dlsym(handle,param_1);
+  pf = (gh_code *)dlsym(handle_emurun,param_1);
   if (pf == (gh_code *)0x0) {
     RARCH_LOG("find %s process fail \n",param_1);
     return 0;

@@ -41,6 +41,22 @@ SEC_DEF = [('.rodata', 'a', 'progbits', None),
            ('.data.rel.ro.local', 'aw', 'progbits', None),
            ('.data', 'aw', 'progbits', None),
            ('.bss', 'aw', 'nobits', None)]
+
+# ★ 重名符号拆分（P3 二期④）。同名两份：一份是某 TU 的 static，一份是全局。
+#   归属由 tools/xref_scan.py 的指令级交叉引用 + tools/dup_assign.py 的 TU 投票实测确定
+#   （报告 report/xref_dup.txt / report/dup_assign.tsv）。此处补「非主名」那一份的别名。
+#
+#   | 名字          | 主名(globals.h)          | 拆分别名            | 依据 |
+#   | handle        | 0x3b21c8 os_windows_rk.c | 0x3cf988 EmuRun.c   | 4 vs 17 个引用函数 |
+#   | diff_prev     | 0x3bc414 ui_jkt.c        | 0x3e1a38 GLOBAL     | 15 static vs 4 经 GOT |
+#   | SoundBuffer   | 0x3ceaf0 ui_jkt.c        | 0x3e1944 GLOBAL     | 全局份零引用（DEAD）|
+#   | ArchivePath   | 0x3ae610 ui_jkt.c        | 0x3e18d4 GLOBAL     | 全局份零引用（DEAD）|
+SPLIT_ALIASES = {
+    'handle_emurun':      (0x3cf988, '.bss'),
+    'diff_prev_global':   (0x3e1a38, '.bss'),
+    'SoundBuffer_global': (0x3e1944, '.bss'),
+    'ArchivePath_global': (0x3e18d4, '.bss'),
+}
 # 由链接器生成（不占独立空间）
 LINKER_DEFINED = {'__frame_dummy_init_array_entry': '.init_array',
                   '__do_global_dtors_aux_fini_array_entry': '.fini_array'}
@@ -204,6 +220,16 @@ def main():
             A('\t.set %s, __f%s_base + 0x%x' % (name, nm.replace('.', '_'), off))
             total += 1
         A('')
+    A('/* ---- 重名符号拆分别名（P3 二期④）----')
+    A(' * 依据：tools/xref_scan.py（A32 PIC 指令级交叉引用）+ tools/dup_assign.py（TU 归属）')
+    A(' * 实测报告见 report/xref_dup.txt。同名两份分属不同编译单元，合并会造成静默语义错位。 */')
+    for alt in sorted(SPLIT_ALIASES):
+        addr, sec = SPLIT_ALIASES[alt]
+        off = addr - secs[sec]['addr'] - SKIP_HEAD.get(sec, 0)
+        A('\t.globl %s' % alt)
+        A('\t.set %s, __f%s_base + 0x%x' % (alt, sec.replace('.', '_'), off))
+        total += 1
+    A('')
     open(os.path.join(datadir, 'factory_image.S'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 
     # ---- 链接脚本 ----

@@ -8,10 +8,21 @@ verify_layout.py — P3 布局校验：重建 ELF 的数据符号地址 vs 工�
   · 局部（l）符号 —— **信息项**：内部链接（static）对象，外部不可见；我们的编译单元
     自带私有副本（zlib/mp3/mxml 的常量表等），地址不同不影响行为，仅作统计。
 
-已知可接受偏差（在报告中显式列出）：
-  · `_IO_stdin_used`：glibc CRT 内部对象，镜像按设计跳过头部 4 字节（由 CRT 提供）
-  · `SoundBuffer` / `diff_prev` / `handle`：工厂存在**同名双定义**（分属不同编译单元），
-    单一符号无法同时落在两个地址 → P3 三期按 TU 拆分
+★ 重名符号（P3 二期④，2026-09-13）
+----------------------------------
+工厂 4 个名字各存在**同名的两份**（分属不同编译单元）。我们按「实测 TU 归属」拆成
+不同符号名（见 tools/xref_scan.py / tools/dup_assign.py，报告 report/xref_dup.txt），
+本脚本据此把账本的每个 (名字,地址) 映射到我们 ELF 中对应的那个符号：
+
+  账本条目                     我们的符号              归属（实测）
+  handle        @0x3b21c8  →  handle                 os_windows_rk.c static（4 个函数）
+  handle        @0x3cf988  →  handle_emurun          EmuRun.c static（17 个函数）
+  diff_prev     @0x3bc414  →  diff_prev              ui_jkt.c static（15 个函数）
+  diff_prev     @0x3e1a38  →  diff_prev_global       GLOBAL（4 个函数经 GOT）
+  SoundBuffer   @0x3ceaf0  →  SoundBuffer            ui_jkt.c static（AudioProcess）
+  SoundBuffer   @0x3e1944  →  SoundBuffer_global     GLOBAL（实测零引用 = DEAD）
+  ArchivePath   @0x3ae610  →  ArchivePath            ui_jkt.c static（4 个函数）
+  ArchivePath   @0x3e18d4  →  ArchivePath_global     GLOBAL（实测零引用 = DEAD）
 
 输入： <rebuilt.elf> <factory_globals.tsv>
 退出码：0 = 全局符号全部一致；2 = 有全局偏差
@@ -24,11 +35,20 @@ import collections
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
+# 账本 (名字, 地址) → 我们 ELF 里的符号名
+ALIAS = {
+    ('handle', 0x3b21c8): 'handle',
+    ('handle', 0x3cf988): 'handle_emurun',
+    ('diff_prev', 0x3bc414): 'diff_prev',
+    ('diff_prev', 0x3e1a38): 'diff_prev_global',
+    ('SoundBuffer', 0x3ceaf0): 'SoundBuffer',
+    ('SoundBuffer', 0x3e1944): 'SoundBuffer_global',
+    ('ArchivePath', 0x3ae610): 'ArchivePath',
+    ('ArchivePath', 0x3e18d4): 'ArchivePath_global',
+}
+# 已知不可镜像的 CRT 内部对象
 ACCEPT = {
-    '_IO_stdin_used': 'CRT 内部对象（镜像跳过头部 4B）',
-    'SoundBuffer': '工厂同名双定义（0x3ceaf0 / 0x3e1944）',
-    'diff_prev': '工厂同名双定义（0x3bc414 / 0x3e1a38）',
-    'handle': '工厂同名双定义（0x3b21c8 / 0x3cf988）',
+    '_IO_stdin_used': 'glibc CRT 内部对象（镜像按设计跳过头部 4B，由 crtbegin 提供）',
 }
 
 
@@ -81,28 +101,34 @@ def main():
 
     stat = collections.defaultdict(lambda: [0, 0, 0])
     bad_g, bad_l, miss = [], [], []
+    split_hits = []
     for name, addr, bind in want:
         k = 'g' if bind == 'g' else 'l'
-        v = got.get(name)
+        sym = ALIAS.get((name, addr), name)
+        if sym != name:
+            split_hits.append((name, addr, sym))
+        v = got.get(sym)
         if v is None:
+            if name in ACCEPT:
+                continue
             stat[k][2] += 1
-            miss.append((name, addr, bind))
+            miss.append((sym, addr, bind))
         elif v == addr:
             stat[k][0] += 1
         else:
             stat[k][1] += 1
-            (bad_g if k == 'g' else bad_l).append((name, addr, v))
+            (bad_g if k == 'g' else bad_l).append((sym, addr, v))
 
     L = []
     A = L.append
-    A('=' * 66)
+    A('=' * 70)
     A('P3 布局校验：%s' % os.path.basename(elf))
-    A('=' * 66)
-    A('账本符号数 : %d' % len(want))
+    A('=' * 70)
+    A('账本符号数 : %d    （其中重名拆分条目 %d）' % (len(want), len(split_hits)))
     A('')
-    A('%-8s %8s %8s %8s' % ('绑定', '一致', '偏差', '缺失'))
+    A('%-10s %8s %8s %8s' % ('绑定', '一致', '偏差', '缺失'))
     for k, label in (('g', '全局 g'), ('l', '局部 l')):
-        A('%-8s %8d %8d %8d' % (label, stat[k][0], stat[k][1], stat[k][2]))
+        A('%-10s %8d %8d %8d' % (label, stat[k][0], stat[k][1], stat[k][2]))
     tot_g = sum(stat['g'])
     tot_l = sum(stat['l'])
     A('')
@@ -111,6 +137,12 @@ def main():
     A('  局部符号命中率 : %.1f%%  (%d/%d)   信息项（内部链接对象无外部契约）'
       % (100.0 * stat['l'][0] / max(1, tot_l), stat['l'][0], tot_l))
     A('')
+    if split_hits:
+        A('--- 重名拆分映射（账本 → 我们的符号）---')
+        for n, a, s in sorted(split_hits, key=lambda x: x[1]):
+            ok = '一致' if got.get(s) == a else ('缺失' if s not in got else '偏差')
+            A('  %-14s @0x%08x  →  %-20s %s' % (n, a, s, ok))
+        A('')
 
     real_bad = [x for x in bad_g if x[0] not in ACCEPT]
     if bad_g:

@@ -2225,3 +2225,15 @@ __f_bss_base:
 	.globl joy_key_Temp
 	.set joy_key_Temp, __f_bss_base + 0x2f95a
 
+/* ---- 重名符号拆分别名（P3 二期④）----
+ * 依据：tools/xref_scan.py（A32 PIC 指令级交叉引用）+ tools/dup_assign.py（TU 归属）
+ * 实测报告见 report/xref_dup.txt。同名两份分属不同编译单元，合并会造成静默语义错位。 */
+	.globl ArchivePath_global
+	.set ArchivePath_global, __f_bss_base + 0x2f75c
+	.globl SoundBuffer_global
+	.set SoundBuffer_global, __f_bss_base + 0x2f7cc
+	.globl diff_prev_global
+	.set diff_prev_global, __f_bss_base + 0x2f8c0
+	.globl handle_emurun
+	.set handle_emurun, __f_bss_base + 0x1d810
+

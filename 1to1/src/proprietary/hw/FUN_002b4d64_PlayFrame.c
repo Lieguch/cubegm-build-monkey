@@ -21,7 +21,7 @@ gh_u4 PlayFrame(gh_u4 param_1,gh_u4 param_2)
   iVar1 = ((local_18.tv_sec - local_20.tv_sec) * 1000000 + local_18.tv_usec) - local_20.tv_usec;
   if (8000 < iVar1) {
     gettimeofday((timeval *)&inTimeVal,(__timezone_ptr_t)0x0);
-    diff_prev = 0;
+    diff_prev_global = 0;
     RARCH_LOG("Emurun [%d.%06d] ++++ Sound play timer over %dus ++++\n",local_18.tv_sec,
               local_18.tv_usec,iVar1);
   }

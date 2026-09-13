@@ -250,7 +250,61 @@
 ★ 关键：**带 SKIP_HEAD 的镜像段 VMA 必须 +skip**，否则全部 .rodata 符号系统性 Δ-4。
 ★ 链接期占位 `compress/uncompress/_init/UNK_* = 0` 写在链接脚本内（工厂从 libz.so.1 动态导入 / 等 .text 镜像）——**显式置 0，不造假实现**。
 
-**下一步**：① 同名双定义按 TU 拆分；② `.text` 常量镜像（3 个 `UNK_*`）；③ P4 → P5 行为差分 → P6 真机验收。
+**CI 实测复现**（commit `f6a0451f786f`，GCC 11）：`1to1-verify` success，P3 三步真正跑通 ——
+产物含 `verify_layout.txt`、`link_full_err.txt`（空）；**布局门禁 PASS：全局 191/194 = 98.5%**（与本地 zig 一致）；
+P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
+★ 两个 CI 专属坑：① `push_1to1.py` walk 范围必须含 **`linker/`**（否则 `cannot open linker script file`，被 `continue-on-error` 掩盖）；② GCC 默认 `-D_FORTIFY_SOURCE` 引入 20 个 `__*_chk` 符号 → 已归入 libc 分类。
+
+**下一步**：① 同名双定义按 TU 拆分（`handle`/`SoundBuffer`/`diff_prev`）；② `.text` 常量镜像（3 个 `UNK_*`）；③ P4 → P5 行为差分 → P6 真机验收。
+
+---
+
+### 2026-09-13 第十轮：★★ P3 二期④ 重名符号按 TU 拆分（全局命中率 98.5% → **99.5%**）
+
+**问题**：工厂有 4 个名字各存在**同名的两份**（分属不同编译单元）。别名生成器
+`syms.setdefault(name, …)` 按名去重 ⇒ 只保留第一份 ⇒ **另一份的所有引用指向错误地址 = 静默语义错误**。
+
+| 名字 | 主名（globals.h） | 另一份 | 实测引用分布 |
+|---|---|---|---|
+| `handle` | 0x3b21c8 `os_windows_rk.c` static | 0x3cf988 `EmuRun.c` static | **4 vs 17** 个函数 |
+| `diff_prev` | 0x3bc414 `ui_jkt.c` static | 0x3e1a38 **全局** | 15 直引 vs **4 经 GOT** |
+| `SoundBuffer` | 0x3ceaf0 `ui_jkt.c` static | 0x3e1944 全局 | 1 vs **0（DEAD）** |
+| `ArchivePath` | 0x3ae610 `ui_jkt.c` static | 0x3e18d4 全局 | 4（TU 推定）vs **0（DEAD）** |
+
+**新增工具（全部二进制实测，非推测）**
+
+| 工具 | 作用 |
+|---|---|
+| `tools/xref_scan.py` | A32 **PIC 指令级**交叉引用：还原 `ldr pc+add pc`→基址、GOT 中介访问、`ldr [pc,Rm]`、**「锚点+立即数偏移」直访内存**（地址从不进寄存器）、移位寄存器偏移；产出 `report/xref.json` |
+| `tools/dup_syms.py` | 从 symtab 的 `STT_FILE` 还原「符号 → 编译单元」，列出跨 TU 重名组 |
+| `tools/dup_assign.py` | 按「F 与 static 是否同 TU」判定归属（TU 多数票），产出 `report/dup_assign.tsv` |
+| `tools/apply_dup_split.py` | 按实测表改写 21 个 `.c` 的标识符（预演/`--write` 两档） |
+
+**落地**：拆成 `handle_emurun` / `diff_prev_global`（另两份 DEAD 也补别名以便账本对账）→
+`gen_data_module.py` 新增 `SPLIT_ALIASES` 幂等发射 `.set` → 只改需要改的 21 个 `.c`。
+
+| 门禁 | 结果 |
+|---|---|
+| 宽松/严格编译 | **213/213 = 100%**，假绿 **0** |
+| **ABI 门禁** | **PASS**（e_flags=0x5000400 / interp=`/lib/ld-linux-armhf.so.3`） |
+| **布局门禁** | **PASS：全局 193/194 = 99.5%**（↑98.5%），4 个拆分条目**全部一致** |
+| 剩余唯一偏差 | `_IO_stdin_used`（CRT 内部，镜像按设计跳过 4B） |
+
+★ **扫描器三大漏判陷阱（已全部修掉）**：① 数据处理立即数是 `imm8 ROR(2*rot)`
+（`add r2,r3,#2368` 的 imm12 读出是 0xD25）——取错则「基址+偏移」全落空；
+② `bl`/`cmp`/`b` **不写 Rd**，误当写 Rd 会清掉正在用的指针（`bl PlaySound` 吃掉 GOT 基址 ⇒ PlayFrame 整条漏判）；
+③ Ghidra 导出的 function `size` **越过下一函数** ⇒ 边界必须用「下一函数入口」。
+
+★ **生成头文件地雷（本轮最痛）**：`gen_compat.py` **不可单独重跑** ——
+它只生成主块，globals.h 还需要补丁区（`named_array_blobs.h` include + 4 条大对象/常量兜底 +
+2 条拆分声明）。漏掉会让通过率从 **100% 崩到 48%（103/213）**。
+已固化 `tools/gen_compat_all.sh`（gen_compat → normalize_types → fix_ptr_globals →
+patch_globals_extra → check_types）+ 幂等补丁 `tools/patch_globals_extra.py`。
+★ 同类坑：`str.partition` 的 **tail 不含分隔符** ⇒ 补丁把 `#include` 整行吃掉
+（症状 = 42 个文件报 `game_blob` 未声明）。
+
+**下一步**：① 行为差分（P5，`behav_diff.py`）打头；② `.text` 常量镜像（3 个 `UNK_*`）；
+③ 真机验收（P6）。
 
 ---
 
