@@ -116,6 +116,24 @@ def load_segments(path):
     return segs
 
 
+def read_factory_loads(tsv):
+    """读 ledger/factory_phdrs.tsv → [(va, memsz, flags, align), ...]（仅 PT_LOAD）。
+    返回 (loads, low_va, align)；文件不存在时返回 (None, None, None)。"""
+    if not tsv or not os.path.exists(tsv):
+        return None, None, None
+    loads = []
+    for line in open(tsv, encoding='utf-8', errors='replace'):
+        if line.startswith('#') or not line.strip():
+            continue
+        f = line.rstrip('\n').split('\t')
+        if len(f) < 7 or f[0] != 'LOAD':
+            continue
+        loads.append((int(f[2], 16), int(f[4]), int(f[5], 16), int(f[6], 16)))
+    if not loads:
+        return None, None, None
+    return loads, min(l[0] for l in loads), loads[0][3]
+
+
 def read_phdrs(path):
     """完整程序头表：[(type, off, vaddr, filesz, memsz, flags, align), ...]"""
     d = open(path, 'rb').read()
@@ -286,6 +304,38 @@ def main():
         if not any(lo <= addr and hi >= need for lo, hi in rsegs):
             best = max([hi for lo, hi in rsegs if lo <= addr] or [addr])
             short.append((name, addr + size, best, need - best))
+    # ---- 附加门禁：段保真度（★★ 真实差分抓到的第二条假分歧）----
+    # 工厂首个 PT_LOAD 从 0x8000 起（p_align=0x1000）⇒ 地址 [0,0x8000) 在工厂进程里是**空洞**。
+    # 若我们的 ELF 把首段放在 0x0（p_align=0x10000 时链接器会向下取整到 0），且该段可写，
+    # 那么「NULL 指针写」会**静默成功**而不是 SIGSEGV —— 实测 sunxi_gpio_set_cfgpin 里
+    # `*(u32*)(GPIO2+4) |= 8`（GPIO2=NULL）就走这条岔路，导致行为差分报出一条假分歧。
+    fleads, flow, falign = read_factory_loads(
+        os.path.join(os.path.dirname(ledger), 'factory_phdrs.tsv'))
+    seg_bad = []
+    if fleads:
+        for t, off, va, fsz, msz, fl, al in phdrs:
+            if t != 1 or not msz:
+                continue
+            if flow is not None and va < flow:
+                seg_bad.append(('低地址被映射', '0x%08x..0x%08x' % (va, va + msz),
+                                '工厂最低 LOAD 是 0x%08x（[0,0x%08x) 应是空洞）' % (flow, flow)))
+            if (fl & 2) and (fl & 1):
+                seg_bad.append(('RWX 段', '0x%08x..0x%08x' % (va, va + msz),
+                                '工厂没有任何 W∧X 的 LOAD'))
+            if falign and al != falign:
+                seg_bad.append(('LOAD 对齐不符', '0x%08x..0x%08x' % (va, va + msz),
+                                '工厂 p_align=0x%x，本产物 0x%x' % (falign, al)))
+        A('--- 段保真度门禁（地址空洞 / W^X / p_align，基准 = 工厂程序头台账）---')
+        A('  基准：工厂最低 LOAD 0x%08x、p_align 0x%x；LOAD 条数 %d vs 工厂 %d'
+          % (flow, falign, len([1 for x in phdrs if x[0] == 1 and x[4]]), len(fleads)))
+        A('  违规 %d 项' % len(seg_bad))
+        for kind, rng, why in seg_bad[:20]:
+            A('  [%-14s] %-22s %s' % (kind, rng, why))
+        A('')
+    else:
+        A('--- 段保真度门禁：跳过（未找到 factory_phdrs.tsv）---')
+        A('')
+
     A('--- 镜像尾部 slack 门禁（镜像区最后一段结束后必须仍有 ≥0x%x 已映射内存）---' % SLACK)
     A('  镜像节 %d 个（未尾段 %s）；slack 不足 %d 个'
       % (len(fimg_secs), real[-1][0] if real else '(无)', len(short)))
@@ -310,10 +360,11 @@ def main():
             A('  %-28s 工厂 0x%08x (%s)' % (n, a, bind))
         A('')
 
-    nfail = len(real_bad) + len(enc_bad) + len(unmapped) + len(bad_sec) + len(short)
+    nfail = (len(real_bad) + len(enc_bad) + len(unmapped) + len(bad_sec)
+             + len(short) + len(seg_bad))
     verdict = ('PASS' if nfail == 0
-               else 'FAIL（全局地址不符 %d / 命名自洽失败 %d / 越 LOAD 段 %d / 节未覆盖 %d / 镜像 slack 不足 %d）'
-                    % (len(real_bad), len(enc_bad), len(unmapped), len(bad_sec), len(short)))
+               else 'FAIL（全局地址不符 %d / 命名自洽失败 %d / 越 LOAD 段 %d / 节未覆盖 %d / 镜像 slack %d / 段保真 %d）'
+                    % (len(real_bad), len(enc_bad), len(unmapped), len(bad_sec), len(short), len(seg_bad)))
     A('结论: %s' % verdict)
     txt = '\n'.join(L) + '\n'
     sys.stdout.write(txt)

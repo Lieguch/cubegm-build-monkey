@@ -259,6 +259,75 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-14 第十八轮：★★★ 段保真度 —— 工厂「地址 0x8000 以下为空洞」被我们填上了
+
+第十七轮的 `.fimg_bss_pad` 修复**完全生效**（commit `5d7e74f7`，CI 实测）：
+
+| 事件行 | 修复前 | 修复后 |
+|---|---|---|
+| `directory:` / `appname:` | **空** | `/sdcard/cubegm/` / `rkgame` ✓ |
+| 第 4 行 | `open config.xml fail!` | `displayfps:0` ✓ |
+| driver.so 路径 | `/driver.so` | `/sdcard/cubegm//driver.so` ✓ |
+| **B1 退出码** | 139 vs 134 | **139 vs 139 PASS** ✓ |
+
+`*** stack smashing detected ***` 自己消失了 —— 它本就是空 work_path 的连锁后果。
+于是只剩 **一行** 差异：重建侧多打印 `RF_IC Test Fail !`。
+
+#### 一、这一行差异的根因：段权限/地址空洞不一致
+
+定位到具体函数：工厂在 `InitRFJoystick()` 的**第一次 GPIO 写**就崩了，而我们的版本走完了
+6 次 GPIO 操作 + 3 次 SPI_Write + `SPI_Read`，直到读回值不等于 0xa5 才打印。
+
+```
+sunxi_gpio_set_cfgpin(0,1) →  *(gh_uint *)(GPIO2 + 4) = ... | 8;
+   GPIO2 因 /dev/mem 打不开而保持 NULL ⇒ 写**地址 4**
+```
+
+程序头对比（决定性）：
+
+| | 首个 PT_LOAD | p_align | 地址 0..0x7fff | RWX 段 |
+|---|---|---|---|---|
+| **工厂** | `va=0x8000..0x3ad1ec` `fl=0x5(RX)` | **0x1000** | **空洞**（未映射） | 无 |
+| 我们（修复前·CI/GNU ld） | `va=0x0..0x4de8cc` `fl=0x7(**RWX**)` | **0x10000** | 已映射**且可写** | 有 |
+
+⇒ 工厂：写地址 4 → 立刻 SIGSEGV；我们：写地址 4 **静默成功**（还污染了镜像首字节）→ 继续跑。
+根因是 `p_align=0x10000` 让链接器把首段起点一路向下取整到 0。
+
+#### 二、修复与门禁
+
+1. **`-Wl,-z,max-page-size=0x1000`**（与工厂一致；工厂各 LOAD 都是 `al=0x1000`）。
+   本地实测：首段变成 `va=0x9000`（`off=0`，ELF 头随之映射在 0x9000 ⇒ `AT_PHDR` 仍有效），
+   **地址 0/4/0x7ffc/0x8000 全部变为未映射**，且**不再有 RWX 段**。
+2. **`tools/extract_factory_phdrs.py` + `ledger/factory_phdrs.tsv`**：把工厂的程序头
+   （地址/权限/对齐）固化成**基准台账**（结论：工厂最低 LOAD = 0x8000）。
+3. **`verify_layout.py` 新增「段保真度门禁」**（基准 = 上面的台账）：
+   ① 任何 LOAD 不得覆盖 `[0, 工厂最低 LOAD)`（地址空洞必须保留）；
+   ② 不得出现 `W ∧ X` 的 LOAD（工厂没有）；
+   ③ 每个 LOAD 的 `p_align` 必须等于工厂的 `0x1000`。
+
+**本地复测**：布局 **PASS**（全局 193/194、节覆盖 0、镜像 slack 0、**段保真 0**）、ABI **PASS**、`dyn_audit` **PASS**。
+
+#### 三、附带完成：构建标志与工厂对齐
+
+工厂的完整编译命令行就印在二进制里（`.comment`）：
+
+```
+GNU C11 6.2.0 -mabi=aapcs-linux -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8
+-mtls-dialect=gnu -g -O2 -std=gnu11 -fgnu89-inline -fmerge-all-constants
+-fno-stack-protector -frounding-math -fomit-frame-pointer
+```
+
+工厂里 `stack_chk` / `FORTIFY` / `__memcpy_chk` 出现次数**全是 0**。已给全部编译入口
+（`recon_build.sh` / `recon_local.sh` / `link_audit.sh` / `build_upstream.sh` / `link_full.sh`）
+统一加上 `-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0`（commit `f13063e1`），
+消除"工具链默认值差异"这一类假分歧。（`-O1` vs 工厂 `-O2` 仍是有意保留的差异：
+反编译产物在 `-O1` 下通过双轨门禁；T1 汇编等价需同款 GCC 6，已归档。）
+
+**下一步**：读 CI 的段保真门禁与行为差分 —— 预期 `RF_IC Test Fail !` 消失、B1/B2 全绿或
+再暴露**新的**真实分歧。
+
+---
+
 ### 2026-09-14 第十七轮：★★★ P5 首次真实差分 → 根因定位（镜像 `.bss` 之后无映射余量）
 
 观测链修好后，**同一轮 CI 立刻给出四条可行动分歧**（commit `3715d428`，`1to1-qemu-behav` failure，

@@ -58,9 +58,14 @@ WOBJS=""
 for o in $OBJS; do WOBJS="$WOBJS $(winpath "$o")"; done
 
 echo "== 链接 =="
+# ★ -z max-page-size=0x1000 与工厂一致（工厂各 LOAD 的 al=0x1000，首个 LOAD 从 0x8000 起）。
+#   默认 0x10000 会让链接器把首段起点向下取整到 0x0 ⇒ 地址 0..0x7fff 变成**已映射**；
+#   工厂那里是空洞 ⇒ NULL 写会静默成功而不是 SIGSEGV（真实差分抓到的假分歧）。
+#   注意：注释必须写在命令**之前** —— `\` 续行后的 `#` 不是注释，会作为参数传给编译器。
 # shellcheck disable=SC2086
 $CC $ARCH $FIDELITY -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
+    -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \
     $WOBJS -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
 rc=$?
