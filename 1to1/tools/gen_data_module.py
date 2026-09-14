@@ -51,6 +51,24 @@ SEC_DEF = [('.text', 'a', 'progbits', None),
 #    依据：工厂节表实测（.fini file off 0x2d3c98 / .rodata file off 0x2d3ca0）。
 MIRROR_END = {'.text': 0x2dbc98}
 
+# ★★ 镜像尾部 slack（页对齐的一整块零页）
+#   血泪（P5 第一轮真实差分）：工厂进程里 `.bss` 之后**紧邻堆**（brk 就落在 .bss 末尾的下一页，
+#   实测工厂 brk=0x003e2000、.bss 结束于 0x003e1ad3），所以「对 .bss 里的小缓冲区传一个大
+#   bufsiz」是安全的 —— 例：get_executable_path() 里 readlink("/proc/self/exe", work_path, 4096)，
+#   工厂 readlink 返回 21；而我们的重建产物把运行时区放到了 0x400000/0x5000000，brk 变成
+#   0x0503e000 ⇒ work_path+4096 的尾部落进**未映射空洞** ⇒ qemu（会校验整段 bufsiz）
+#   返回 -1 EFAULT ⇒ work_path 保持空 ⇒ directory/appname 空、路径全错、后续行为整体发散。
+#   ⇒ 在 .fimg_bss 之后补一页对齐的零填充段，恢复「bss 之后有已映射内存」这一进程镜像性质。
+#   （核引擎只在真正写入的字节上校验，qemu 更严格；补 slack 对两者都安全。）
+BSS_PAD = 0x10000          # 64 KiB
+
+
+def bss_pad_vma(secs):
+    """零填充段的 VMA：.fimg_bss 结束地址向上页对齐。"""
+    b = secs['.bss']
+    end = b['addr'] + b['size']
+    return (end + 0xFFF) & ~0xFFF
+
 # ★ 重名符号拆分（P3 二期④）。同名两份：一份是某 TU 的 static，一份是全局。
 #   归属由 tools/xref_scan.py 的指令级交叉引用 + tools/dup_assign.py 的 TU 投票实测确定
 #   （报告 report/xref_dup.txt / report/dup_assign.tsv）。此处补「非主名」那一份的别名。
@@ -222,6 +240,16 @@ def main():
                 A('\t.incbin "factory_%s.bin"' % bl)
         A('\t.size __f%s_base, 0x%x' % (nm.replace('.', '_'), s['size'] - s.get('_skip', 0)))
         A('')
+        if nm == '.bss':
+            # ★ 见文件头 BSS_PAD 注释：恢复「镜像 .bss 之后仍是已映射内存」这一性质。
+            A('\t/* ---- 镜像尾部 slack（%d 字节零填充，页对齐）---- */' % BSS_PAD)
+            A('\t.section .fimg_bss_pad,"aw",%progbits')
+            A('\t.globl __f_bss_pad_base')
+            A('\t.type __f_bss_pad_base, %object')
+            A('__f_bss_pad_base:')
+            A('\t.zero 0x%x' % BSS_PAD)
+            A('\t.size __f_bss_pad_base, 0x%x' % BSS_PAD)
+            A('')
     A('/* ---- 符号别名 ---- */')
     per_sec = {nm: [] for nm, _, _, _ in SEC_DEF}
     for name, (addr, sec) in sorted(syms.items(), key=lambda kv: (kv[1][1], kv[1][0])):
@@ -274,6 +302,8 @@ def main():
     for fname, sec in fimg_order:
         vma = secs[sec]['addr'] + SKIP_HEAD.get(sec, 0)
         B('  %s 0x%08x : { *(%s) }' % (fname, vma, fname))
+    # ★ 尾部 slack：见 BSS_PAD 注释（恢复「.bss 之后仍是已映射内存」的进程镜像性质）
+    B('  .fimg_bss_pad 0x%08x : { *(.fimg_bss_pad) }' % bss_pad_vma(secs))
     B('')
     B('  /* ---- ② ELF 元数据（地址无关；排在 ① 之后，避免挤进工厂地址区）---- */')
     B('  . = 0x00400000;')

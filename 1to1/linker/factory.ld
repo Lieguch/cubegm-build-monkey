@@ -11,6 +11,7 @@ SECTIONS
   .fimg_data_rel_ro_local 0x003ae5c4 : { *(.fimg_data_rel_ro_local) }
   .fimg_data 0x003af000 : { *(.fimg_data) }
   .fimg_bss 0x003b2178 : { *(.fimg_bss) }
+  .fimg_bss_pad 0x003e2000 : { *(.fimg_bss_pad) }
 
   /* ---- ② ELF 元数据（地址无关；排在 ① 之后，避免挤进工厂地址区）---- */
   . = 0x00400000;

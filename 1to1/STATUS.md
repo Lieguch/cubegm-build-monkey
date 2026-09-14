@@ -259,7 +259,78 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
-### 2026-09-14 第十五轮：★★ P5 观测口径修正 —— 「没有输出」是假象（4 个真问题）
+### 2026-09-14 第十七轮：★★★ P5 首次真实差分 → 根因定位（镜像 `.bss` 之后无映射余量）
+
+观测链修好后，**同一轮 CI 立刻给出四条可行动分歧**（commit `3715d428`，`1to1-qemu-behav` failure，
+但这是**有内容的** failure）：
+
+```
+参考端 factory: exit=139(SIGSEGV) stdout=13 行  binary sha=8ff3b4b70c253ff7
+重建端 rebuild: exit=134(SIGABRT) stdout=14 行  binary sha=af7e22fe72276163
+  [FAIL] B1 exit_code  139 vs 134
+  [FAIL] B2 events     13 vs 15 行
+  [PASS] B3/B4/B5/B6/B7   （新增/变更文件、menu.log sha 全部一致）
+```
+
+| # | 分歧 | 说明 |
+|---|---|---|
+| 1 | `directory:` / `appname:` **为空**（工厂是 `/sdcard/cubegm/` 和 `rkgame`） | **根因**，见下 |
+| 2 | 重建侧多出 `open config.xml fail!`，工厂侧是 `displayfps:0` | 同源：work_path 空 ⇒ `/setting.xml` 打不开，`GetConfig()` 走失败分支 |
+| 3 | `open driver.so fail, /driver.so`（工厂是 `/sdcard/cubegm//driver.so`） | 同源：`sprintf("%s/driver.so", work_path)` |
+| 4 | 重建侧多出 `RF_IC Test Fail !` + `*** stack smashing detected ***` | 待 #1 修好后复测 |
+
+#### 一、根因（strace 铁证）
+
+```
+工厂   : readlink("/proc/self/exe", 0x003e1498, 4096) = 21
+重建产物: readlink("/proc/self/exe", 0x003e1498, 4096) = -1 errno=14 (Bad address)
+```
+
+两侧 `work_path` 是**同一地址**（0x3e1498，镜像保证），但重建产物 **EFAULT**。
+
+排除「bss 没被映射」：重建产物在 `readlink` 之前已成功写 `autorunfile[0]='\0'`（该符号也在 `.fimg_bss` 内）
+并继续跑到打印 meminfo ⇒ **bss 映射正常**。
+
+真因 = **`work_path + 4096` 的尾部落进了未映射空洞**：
+
+| | `.bss` 结束 | 下一处已映射内存 | `work_path+4096`=0x3e2498 |
+|---|---|---|---|
+| 工厂 | 0x3e1ad3 | **堆，brk=0x3e2000（紧贴 .bss）** | 落在堆页内 ✓ |
+| 重建 | 0x3e1ad3 | 运行时区在 0x400000 / brk=0x0503e000 | 未映射 ✗ |
+
+即：**工厂进程天然具备「`.bss` 之后就是堆」的性质**（内核把 brk 放在最后一个 PT_LOAD 之后，
+而工厂的 `.bss` 就是最后一个）；我们的重建产物把运行时区排在镜像之后，brk 被推到了 0x503e000。
+内核的 `readlinkat` 只校验真正写入的字节（21），**qemu 校验整段 `bufsiz`（4096）** ⇒ 只有 qemu 下暴露。
+
+#### 二、修复 + 门禁补强
+
+1. **`.fimg_bss_pad`（64 KiB，页对齐，progbits 零填充）**：在镜像 `.bss` 之后补一段已映射的零页，
+   恢复「数据段之后仍有已映射内存」的进程镜像性质。副作用是好的：段 `filesz == memsz`，
+   连"加载器是否正确零填 bss"都不再依赖。（`gen_data_module.py` 生成 + 链接脚本自动排 VMA。）
+2. **`verify_layout.py` 新增三条**（此前 3 条门禁全 PASS 却漏掉了这个 bug）：
+   - **程序头全量表**（本地 lld 11 条 LOAD / CI binutils 5 条 —— 段划分完全不同，必须能看到原件）
+   - **节覆盖门禁**：SHF_ALLOC 节必须被某个 PT_LOAD 完整覆盖
+   - **镜像尾部 slack 门禁**：镜像区**最后一段**之后必须仍有 ≥4 KiB 已映射内存
+     （★ 口径只查最后一段：镜像内部段间空隙是工厂原版自己的布局，逐段要求会误报）
+3. 顺带核实：`GetConfig()` 的失败分支字符串**确实是** `open config.xml fail!`（0xa344 的 PC 相对链
+   解出 0x2dbcc8），我们的重建**没有**用错字符串（`open setting.xml fail!` 属于另外两个函数）。
+
+**本地复测**：布局门禁 **PASS**（全局 193/194 = 99.5%、节覆盖 0 未覆盖、镜像 slack 0 不足）、ABI **PASS**、
+`dyn_audit` **PASS**，`work_path+4096` 已落在 `0x003ae5c4..0x003f2000`。
+
+---
+
+### 2026-09-14 第十五轮：工厂侧「静默 exit=1」真因 = 文件权限
+
+宿主 `strace` 显示 qemu 只做了 4 个系统调用就退出、零报错；**加可执行位后立刻变成 guest 真的跑起来**。
+真因：`golden/factory.rkgame.bin` 由 git 检出 ⇒ 权限 **0644**（树条目 100644），而重建产物由编译产生 ⇒ 0755。
+qemu-user 对**不可执行**目标会走 `execve` 回退 → `EACCES` → **静默 exit 1**。
+⇒ 两侧运行前必须 `chmod +x`；并在 `push_1to1.py` 对该文件树条目标 **100755**（已实测 `mode=100755` 入库）。
+附带发现：`ioctl(1,TCGETS)=ENOTTY` ⇒ stdout 是管道 ⇒ glibc 全缓冲 ⇒ 崩溃现场输出丢失（→ 第十六轮修）。
+
+---
+
+### 2026-09-14 第十六轮：★★ P5 观测口径修正 —— 「没有输出」是假象（4 个真问题）
 
 上一轮拿到的是「工厂侧 rc=1、零输出、连 syscall 轨迹都没有」。本轮把它彻底查清，
 并修掉**四个会让差分假空洞 / 假失败 / 丢维度**的真问题。

@@ -116,6 +116,39 @@ def load_segments(path):
     return segs
 
 
+def read_phdrs(path):
+    """完整程序头表：[(type, off, vaddr, filesz, memsz, flags, align), ...]"""
+    d = open(path, 'rb').read()
+    phoff = struct.unpack_from('<I', d, 28)[0]
+    ents = struct.unpack_from('<H', d, 42)[0]
+    num = struct.unpack_from('<H', d, 44)[0]
+    out = []
+    for i in range(num):
+        o = phoff + i * ents
+        t, off, va, pa, fsz, msz, fl, al = struct.unpack_from('<8I', d, o)
+        out.append((t, off, va, fsz, msz, fl, al))
+    return out
+
+
+def read_sections(path):
+    """SHF_ALLOC 且 size>0 的节：[(name, addr, size, type, flags), ...]"""
+    d = open(path, 'rb').read()
+    e_shoff = struct.unpack_from('<I', d, 32)[0]
+    es = struct.unpack_from('<H', d, 46)[0]
+    n = struct.unpack_from('<H', d, 48)[0]
+    si = struct.unpack_from('<H', d, 50)[0]
+    stroff = struct.unpack_from('<I', d, e_shoff + si * es + 16)[0]
+    out = []
+    for i in range(n):
+        o = e_shoff + i * es
+        nm, typ, fl, addr, off, size, link, info, al, ent = struct.unpack_from('<10I', d, o)
+        e = d.index(b'\x00', stroff + nm)
+        name = d[stroff + nm:e].decode('utf-8', 'replace')
+        if (fl & 0x2) and size:
+            out.append((name, addr, size, typ, fl))
+    return out
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -207,6 +240,59 @@ def main():
         A('  %-28s 0x%08x 不在任何 LOAD 段内' % (nm, v))
     A('')
 
+    # ---- 程序头全量（本地 zig/lld 与 CI GCC/binutils 的段划分不同，必须能看到原件）----
+    phdrs = read_phdrs(elf)
+    rsegs = [(va, va + msz) for t, off, va, fsz, msz, fl, al in phdrs if t == 1 and msz]
+    TAG = {1: 'LOAD', 2: 'DYNAMIC', 3: 'INTERP', 4: 'NOTE', 6: 'PHDR',
+           0x6474e550: 'GNU_EH_FRAME', 0x6474e551: 'GNU_STACK',
+           0x6474e552: 'GNU_RELRO', 0x70000001: 'ARM_EXIDX'}
+    A('--- 程序头全量表（%d 条）---' % len(phdrs))
+    for t, off, va, fsz, msz, fl, al in phdrs:
+        A('  %-14s off=0x%08x va=0x%08x..0x%08x filesz=%-9d memsz=%-9d fl=0x%x al=0x%x'
+          % (TAG.get(t, hex(t)), off, va, va + msz, fsz, msz, fl, al))
+    A('')
+
+    # ---- 附加门禁：节覆盖（SHF_ALLOC 节必须完整落在某个 PT_LOAD 内）----
+    secs_alloc = read_sections(elf)
+    bad_sec = []
+    for name, addr, size, typ, fl in secs_alloc:
+        if not any(lo <= addr and addr + size <= hi for lo, hi in rsegs):
+            bad_sec.append((name, addr, size))
+    A('--- 节覆盖门禁（SHF_ALLOC 节必须完整落在某个 PT_LOAD 内）---')
+    A('  受检节 %d 个；未完全覆盖 %d 个' % (len(secs_alloc), len(bad_sec)))
+    for name, addr, size in bad_sec[:20]:
+        A('  %-24s 0x%08x..0x%08x (%d B) 未完全覆盖' % (name, addr, addr + size, size))
+    A('')
+
+    # ---- 附加门禁：镜像尾部 slack（★★ 真实差分抓到的地雷）----
+    # 工厂进程的 `.bss` 之后**紧邻堆**（brk 落在 .bss 末页：实测工厂 brk=0x003e2000，
+    # .bss 结束 0x003e1ad3），所以「往 .bss 里的小缓冲区传大 bufsiz」是安全的
+    # （例：readlink("/proc/self/exe", work_path, 4096)）。我们的重建产物把运行时区放到
+    # 0x400000/0x5000000，brk 变成 0x0503e000 ⇒ work_path+4096 的尾部落到**未映射空洞**，
+    # qemu 校验整段 bufsiz ⇒ EFAULT ⇒ work_path 全空、路径全错、行为整体发散。
+    # ⇒ 门禁：每个 .fimg_* 镜像之后必须仍有 ≥ SLACK 的已映射内存。
+    # 口径：只查**镜像区的最后一段**（工厂的 .bss）。内部各段之间的间隙是工厂原版就有的
+    # （例：工厂 .rodata 结束 0x3ad008 与 .data.rel.ro.local 0x3ae5c4 之间本就有一处空洞），
+    # 逐段要求 slack 会把"忠实复刻工厂布局"误判成缺陷。
+    # 真正必须成立的是：**镜像区末尾之后仍有 ≥SLACK 的已映射内存** —— 因为工厂进程里
+    # 紧接着 .bss 的是堆（brk），任何"往 .bss 里的小缓冲区传大 bufsiz"的调用都依赖它。
+    SLACK = 0x1000
+    fimg_secs = [x for x in secs_alloc if x[0].startswith('.fimg_')]
+    real = sorted([x for x in fimg_secs if x[0] != '.fimg_bss_pad'], key=lambda x: x[1])
+    short = []
+    if real:
+        name, addr, size, typ, fl = real[-1]
+        need = addr + size + SLACK
+        if not any(lo <= addr and hi >= need for lo, hi in rsegs):
+            best = max([hi for lo, hi in rsegs if lo <= addr] or [addr])
+            short.append((name, addr + size, best, need - best))
+    A('--- 镜像尾部 slack 门禁（镜像区最后一段结束后必须仍有 ≥0x%x 已映射内存）---' % SLACK)
+    A('  镜像节 %d 个（未尾段 %s）；slack 不足 %d 个'
+      % (len(fimg_secs), real[-1][0] if real else '(无)', len(short)))
+    for name, end, cov_to, lack in short[:20]:      # ★ 变量名勿用 miss：上层已有同名列表
+        A('  %-24s 结束 0x%08x 仅覆盖到 0x%08x（缺 %d B）' % (name, end, cov_to, lack))
+    A('')
+
     if bad_g:
         A('--- 全局偏差明细（%d）---' % len(bad_g))
         for n, a, b in bad_g[:40]:
@@ -224,16 +310,17 @@ def main():
             A('  %-28s 工厂 0x%08x (%s)' % (n, a, bind))
         A('')
 
-    verdict = ('PASS' if (not real_bad and not enc_bad and not unmapped)
-               else 'FAIL（全局地址不符 %d / 命名自洽失败 %d / 越 LOAD 段 %d）'
-                    % (len(real_bad), len(enc_bad), len(unmapped)))
+    nfail = len(real_bad) + len(enc_bad) + len(unmapped) + len(bad_sec) + len(short)
+    verdict = ('PASS' if nfail == 0
+               else 'FAIL（全局地址不符 %d / 命名自洽失败 %d / 越 LOAD 段 %d / 节未覆盖 %d / 镜像 slack 不足 %d）'
+                    % (len(real_bad), len(enc_bad), len(unmapped), len(bad_sec), len(short)))
     A('结论: %s' % verdict)
     txt = '\n'.join(L) + '\n'
     sys.stdout.write(txt)
     rep = os.path.join(ROOT, 'report', 'verify_layout.txt')
     os.makedirs(os.path.dirname(rep), exist_ok=True)
     open(rep, 'w', encoding='utf-8').write(txt)
-    return 0 if (not real_bad and not enc_bad and not unmapped) else 2
+    return 0 if nfail == 0 else 2
 
 
 if __name__ == '__main__':

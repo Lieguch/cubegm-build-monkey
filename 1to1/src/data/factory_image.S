@@ -37,6 +37,14 @@ __f_bss_base:
 	.space 0x2f95b
 	.size __f_bss_base, 0x2f95b
 
+	/* ---- 镜像尾部 slack（65536 字节零填充，页对齐）---- */
+	.section .fimg_bss_pad,"aw",%progbits
+	.globl __f_bss_pad_base
+	.type __f_bss_pad_base, %object
+__f_bss_pad_base:
+	.zero 0x10000
+	.size __f_bss_pad_base, 0x10000
+
 /* ---- 符号别名 ---- */
 /* .text：2 个符号 */
 	.globl UNK_000d2f00

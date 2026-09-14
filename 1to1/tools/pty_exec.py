@@ -105,8 +105,11 @@ def _run_pty(cmd, timeout):
                 fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
             except Exception:
                 pass
-            os.dup2(slave, 0)
-            os.dup2(slave, 1)                      # ★ 只接管 0/1，stderr 保持原样
+            os.dup2(slave, 1)                      # ★ 只接管 stdout；stderr 保持原样
+            # ★ 也**不接管 stdin**（early 版本这里还 dup2 了 fd0，是错的）：
+            #   若 stdin 指向 pty 而父进程从不写入，被测程序一读 stdin 就会**永久阻塞**
+            #   （pty 的 master 还开着 ⇒ 不会返回 EOF）⇒ 只能靠超时结束，
+            #   于是"双方都超时"被误当成行为一致。stdin 保持调用者原样（CI 里是 /dev/null）。
             if slave > 2:
                 os.close(slave)
             os.execvp(cmd[0], cmd)

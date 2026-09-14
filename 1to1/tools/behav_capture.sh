@@ -55,15 +55,17 @@ fi
 
 run_guest() {
     out="$1"; err="$2"
+    # stdin 固定为 /dev/null：让"被测程序读 stdin"立刻得到 EOF（确定性），
+    # 否则它会读到一个永不产生输入的 pty，永久阻塞到超时。
     if [ "$HAVE_PTY" = "1" ]; then
-        "$PY" "$HERE/pty_exec.py" --timeout "$TIMEOUT" "$BIN" $ARGS > "$out" 2> "$err"
+        "$PY" "$HERE/pty_exec.py" --timeout "$TIMEOUT" "$BIN" $ARGS < /dev/null > "$out" 2> "$err"
         return $?
     fi
     if command -v timeout >/dev/null 2>&1; then
-        timeout -s TERM "$TIMEOUT" "$BIN" $ARGS > "$out" 2> "$err"
+        timeout -s TERM "$TIMEOUT" "$BIN" $ARGS < /dev/null > "$out" 2> "$err"
         return $?
     fi
-    "$BIN" $ARGS > "$out" 2> "$err" &
+    "$BIN" $ARGS < /dev/null > "$out" 2> "$err" &
     p=$!; sleep "$TIMEOUT"; kill -TERM "$p" 2>/dev/null; wait "$p"; return $?
 }
 
