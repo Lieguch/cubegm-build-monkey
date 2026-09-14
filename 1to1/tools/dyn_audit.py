@@ -14,7 +14,7 @@
 
 检查项
 ------
-  A1 DT_INIT / DT_FINI 存在但值为 0 ⇒ FAIL（调用地址 0）
+  A1 DT_INIT / DT_FINI 存在但值为 0 ⇒ FAIL（glibc call_init 会跳到地址 0；可用 --allow-no-crti 降级）
   A2 DT_INIT_ARRAY / DT_FINI_ARRAY 已声明但对应 SZ == 0 ⇒ WARN（合法但值得记一笔）
   A3 符号 `_init` / `_fini` 为 ABS 0 ⇒ FAIL（裸赋值残留特征）
   A4 e_entry 必须落在可执行的 PT_LOAD 内 ⇒ FAIL
@@ -115,6 +115,9 @@ def main():
             if tag in TAG:
                 dyn.setdefault(TAG[tag], []).append(val)
 
+    # 2026-09-14 起 zig 是**交付工具链**（本地与 CI 同一套），故 DT_INIT=0 一律 FAIL。
+    # 仅在实验性构建里可用 --allow-no-crti 降级为 WARN。
+    allow_no_crti = '--allow-no-crti' in sys.argv
     has_init = bool(section(shs, '.init') and section(shs, '.init')['size'])
     has_fini = bool(section(shs, '.fini') and section(shs, '.fini')['size'])
 
@@ -130,8 +133,15 @@ def main():
             fails.append(tag)
             add('FAIL', tag, '= 0 但 %s 节存在 ⇒ 初始化链会调到地址 0' % secname)
         elif vals[0] == 0:
-            warns.append(tag)
-            add('WARN', tag, '= 0 且无 %s 节（本地 zig 无 crti.o，属工具链差异）' % secname)
+            # ★★ 2026-09-14 实测回归：把 CI 切到 zig 后 cri.o 缺失 ⇒ DT_INIT=0 ⇒
+            #    glibc call_init 跳地址 0 ⇒ **重建产物 0 行输出即 SIGSEGV**。
+            #    不再当"工具链差异"放行 —— zig 现在就是交付工具链，必须 FAIL。
+            if allow_no_crti:
+                warns.append(tag)
+                add('WARN', tag, '= 0（--allow-no-crti 放行；运行期会在 call_init 跳地址 0）')
+            else:
+                fails.append(tag)
+                add('FAIL', tag, '= 0 ⇒ glibc call_init 会跳到地址 0（需由 src/compat/crt_init.S 提供真实 .init/.fini）')
         else:
             add('PASS', tag, '= 0x%08x' % vals[0])
 
@@ -159,12 +169,12 @@ def main():
         if not found:
             add('INFO', '符号 ' + sname, '未定义（正常）')
         elif found[1] == 0xFFF1 and found[0] == 0:
-            if has_init:
-                fails.append(sname)
-                add('FAIL', '符号 ' + sname, '为 ABS 0 且 .init 存在 ⇒ 裸赋值残留，会生成 DT_INIT=0')
-            else:
+            if allow_no_crti:
                 warns.append(sname)
-                add('WARN', '符号 ' + sname, '为 ABS 0（无 crti.o 的本地构建，属工具链差异）')
+                add('WARN', '符号 ' + sname, '为 ABS 0（--allow-no-crti 放行）')
+            else:
+                fails.append(sname)
+                add('FAIL', '符号 ' + sname, '为 ABS 0 ⇒ 初始化链会被调到地址 0（链接期"置 0 占位"的残留特征）')
         else:
             add('PASS', '符号 ' + sname, '0x%08x shndx=%d' % found)
 

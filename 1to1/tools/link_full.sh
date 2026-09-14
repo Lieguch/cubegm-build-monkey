@@ -61,9 +61,20 @@ cat "$ROOT/src/data/factory_image.S" "$ROOT/src/data/factory_local.S" > "$ALLS"
 $CC $ARCH -c -I"$(winpath "$ROOT/src/data")" "$(winpath "$ALLS")" -o "$(winpath "$ROOT/build/factory_local.o")" \
   && echo "  factory_local.o 已重建" || { echo "  factory_local.o 汇编失败"; exit 1; }
 
+# ★★ 最小 CRT 初始化桩（_init/_fini）：zig **不提供 crti.o**（GCC 提供）。
+#   缺了它 ⇒ `_init` 未定义 ⇒ 若链接脚本里还留 `PROVIDE_HIDDEN(_init = 0)` 就会生成
+#   `DT_INIT = 0` ⇒ glibc 的 call_init 跳地址 0 ⇒ **任何输出之前 SIGSEGV**（CI 实测回归）。
+#   现在由 src/compat/crt_init.S 提供真实 .init/.fini 节；漏链它会**链接报错**（响亮失败）。
+CRTOBJ="$ROOT/build/crt_init.o"
+if [ ! -f "$CRTOBJ" ] || [ "$ROOT/src/compat/crt_init.S" -nt "$CRTOBJ" ]; then
+    $CC $ARCH -c "$(winpath "$ROOT/src/compat/crt_init.S")" -o "$(winpath "$CRTOBJ")" || { echo "!! FATAL crt_init.S 汇编失败" >&2; exit 4; }
+    echo "  crt_init.o 已编译"
+fi
+
 OBJS=""
 for o in "$ROOT"/build/obj/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
 [ -f "$CXXOBJ" ] && OBJS="$OBJS $CXXOBJ"
+[ -f "$CRTOBJ" ] && OBJS="$OBJS $CRTOBJ"
 for o in "$ROOT"/build/upstream/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
 [ -f "$ROOT/src/upstream/xunzip/XUnzip.o" ] && OBJS="$OBJS $ROOT/src/upstream/xunzip/XUnzip.o"
 [ -f "$ROOT/build/factory_local.o" ] && OBJS="$OBJS $ROOT/build/factory_local.o"

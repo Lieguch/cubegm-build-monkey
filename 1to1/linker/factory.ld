@@ -25,7 +25,6 @@ SECTIONS
   .gnu.version_r : { *(.gnu.version_r) }
   .rel.dyn : { *(.rel.dyn) }
   .rel.plt : { *(.rel.plt) }
-  .init : { *(.init) }
   .plt : { *(.plt) *(.plt.*) }
 
   /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）---- */
@@ -34,7 +33,7 @@ SECTIONS
   .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }
   .data 0x01000000 : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }
   .bss 0x02000000 : { *(.bss) *(.bss.*) *(COMMON) }
-  .text 0x05000000 : { *(.text) *(.text.*) *(.fini) }
+  .text 0x05000000 : { *(.init) *(.text) *(.text.*) *(.fini) }
   .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }
 }
@@ -59,8 +58,12 @@ SECTIONS
  *   .set 别名」真实供应（不再是 0 占位）——此前它们指向地址 0，是运行期地雷。
  * ★★ 血泪：`_init = 0;` 这种**普通赋值会压掉 crti.o 的真定义**，而 glibc 的
  *   __libc_start_main 会走 DT_INIT/初始化链 → 直接 blx 到 0 → SIGILL（si_addr≈0x20）。
- *   故所有"兜底"一律用 PROVIDE_HIDDEN，绝不用裸赋值。 */
-PROVIDE_HIDDEN(_init = 0);
+ *   故所有"兜底"一律用 PROVIDE_HIDDEN，绝不用裸赋值。
+ * ★★ 但 _init/_fini 连 PROVIDE 兜底也不能留：zig 无 crti.o 时会落到 0
+ *   ⇒ DT_INIT=0 ⇒ glibc call_init 跳地址 0 ⇒ 任何输出之前就 SIGSEGV。
+ *   正确做法：由 src/compat/crt_init.S 提供真实 .init/.fini 节。 */
+/* _init/_fini 由 src/compat/crt_init.S 真实提供（见该文件说明）。
+ * 此处**故意不再置 0**：漏链 crt_init.o 时要**链接报错**，而不是静默生成 DT_INIT=0。 */
 
 /* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */
 PROVIDE(__do_global_dtors_aux_fini_array_entry = ADDR(.fini_array));
