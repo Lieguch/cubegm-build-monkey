@@ -76,12 +76,34 @@ jobs:
           mkdir -p report
           CC=arm-linux-gnueabihf-gcc sh tools/recon_build.sh report/recon_build.txt
 
-      - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）
+      - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）★ 硬门禁
         run: |
           cd 1to1
           mkdir -p report
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt
-        continue-on-error: true
+          rc=0
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt || rc=$?
+          echo "link_audit 退出码 = $rc"
+          echo '--- 审计要点 ---'
+          grep -aE '重复定义|未解析引用|MISSING|upstream|结论' report/link_audit.txt | head -8
+          # ★ 硬断言：重复定义 与 MISSING 必须为 0
+          #   （此前本步骤带 continue-on-error: true，失败被静默掩盖 = 假绿）
+          python3 - <<'PY'
+          import re, sys
+          t = open('report/link_audit.txt', encoding='utf-8', errors='replace').read()
+          m = re.search(r'重复定义[^:：]*[:：]\s*(\d+)', t)
+          assert m, '无法解析「重复定义」计数'
+          dup = int(m.group(1))
+          miss = len([l for l in open('report/_link_missing.txt', encoding='utf-8', errors='replace')
+                      if l.startswith('MISSING')])
+          print('硬断言：重复定义=%d  MISSING=%d' % (dup, miss))
+          if dup != 0:
+              print('::error::重复定义 != 0')
+              sys.exit(1)
+          if miss != 0:
+              print('::error::MISSING != 0（未供应符号）')
+              sys.exit(1)
+          PY
+          [ "$rc" = "0" ] || exit "$rc"
 
       - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
         run: |
@@ -89,17 +111,36 @@ jobs:
           mkdir -p build/upstream
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
 
-      - name: P3 完整链接（全部对象 + 工厂布局）+ ABI/布局门禁
+      - name: P3 完整链接 + ABI/布局门禁 ★ 硬门禁
         run: |
           cd 1to1
           # 注：数据镜像/链接脚本的「重新生成」需工厂 ELF，只在本地执行（tools/regen_data.sh）；
           #     CI 使用仓库内已提交的 src/data/factory_*.bin + factory_image.S + linker/factory.ld
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          echo '--- 链接错误（应为空）---'
+          wc -c report/link_full_err.txt
           echo '--- 布局门禁 ---'
           python3 tools/verify_layout.py build/rkgame.rebuilt.elf ledger/factory_globals.tsv
           echo '--- ABI 门禁 ---'
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
-        continue-on-error: true
+
+      - name: 门禁汇总（写入 Job Summary）
+        if: always()
+        run: |
+          cd 1to1
+          {
+            echo '## 1to1 门禁汇总'
+            echo
+            echo '```'
+            grep -aE '语法通过率|类型正确率|假绿' report/recon_build.txt 2>/dev/null | head -4
+            echo
+            grep -aE '重复定义|未解析引用|MISSING|upstream|结论' report/link_audit.txt 2>/dev/null | head -8
+            echo
+            grep -aE '全局符号命中率|局部符号命中率|受检符号|越界符号|结论' report/verify_layout.txt 2>/dev/null
+            echo
+            echo "link_full_err 字节数: $(wc -c < report/link_full_err.txt 2>/dev/null || echo n/a)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: 上传报告
         if: always()
