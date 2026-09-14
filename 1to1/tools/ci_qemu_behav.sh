@@ -49,17 +49,17 @@ done
 # ---- 参考二进制"裸跑"诊断：不带 -strace/-E，看 qemu 自己报什么 ----
 # 来历：工厂二进制在探针里 10ms 内 exit=1、stdout/stderr 全空、连 syscall 轨迹都没有
 #       ⇒ 说明 qemu 在加载阶段就退出了，必须看它的**原始**报错（而不是 guest 的输出）。
+# ★ 注意：脚本跑在 `sh`(dash) 下，**没有** `${PIPESTATUS[@]}` 这个 bash 数组；
+#   要看管道左侧的退出码必须落临时文件，否则报 "Bad substitution" 直接中断整个脚本。
 echo "--- 参考二进制裸跑（无 -strace / 无 -E）---"
 ls -la "$FACTORY"
-set +e
-qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$FACTORY" 2>&1 | head -15
-echo "裸跑 rc=${PIPESTATUS[0]:-?}"
-set -e
+qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$FACTORY" > "$OUT/bare_factory.txt" 2>&1
+echo "裸跑 rc=$?"
+head -15 "$OUT/bare_factory.txt" 2>/dev/null || true
 echo "--- 对照：重建产物裸跑（同样无 -strace / 无 -E）---"
-set +e
-qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$REBUILD" 2>&1 | head -15
-echo "裸跑 rc=${PIPESTATUS[0]:-?}"
-set -e
+qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$REBUILD" > "$OUT/bare_rebuild.txt" 2>&1
+echo "裸跑 rc=$?"
+head -15 "$OUT/bare_rebuild.txt" 2>/dev/null || true
 echo
 
 # ---- 包装脚本：两侧仅「被测二进制」不同，其余全同；$3 为附加 qemu 参数 ----

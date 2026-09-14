@@ -297,14 +297,48 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 **下一轮待解（已有探针，等 CI 证据）**
 
-- 重建产物在 qemu 下 **SIGILL（退出码 132）**，`qemu: uncaught target signal 4 (Illegal instruction)`。
-  本地已排除：`e_entry=0x05000000` 落在 `.text` ✓；`__libc_start_main` 在 `.rel.plt` 中有 GOT 槽 ✓；
-  `_start` 的 GOT 相对取址链正确 ✓；`.plt` 条目 0x401040/0x401050… 合法（其 `d4d4d4d4` 是 **lld 的 UDF 填充**，不执行）✓。
-  ⇒ 需要运行时轨迹定位。已加探针：`-strace`（看到第几个 syscall 断）+ `-d in_asm`（崩溃前最后指令）。
-- 工厂二进制退出码 **1 且 stdout/stderr 全空、无日志** —— 需确认它是否在找 icube shm / `setting.xml` / `cores/`。
+#### ★★ 已定位并修复：`DT_INIT = 0`（这是"重建产物起不来"的真因）
 
-**下一步**：读探针输出 → 定位 SIGILL 指令 → 修链接脚本/编译选项 → 让两侧都产生可观测行为后，
-`behav_diff.py` 的 B0 非空洞前置检查才会放行。
+CI 探针（`-strace` + `-d in_asm`）给出决定性证据：
+```
+--- SIGILL {si_signo=SIGILL, si_code=2, si_addr=0x00000020} ---
+翻译级轨迹尾部：
+  0x3fe8d89c:  4798    blx  r3          ← r3 = *(r6) + r1，而 *(r6) == 0
+  IN: 0x00000000:  464c457f  undefined   ← 跳到地址 0，把 ELF 头当指令执行
+  IN: 0x00000020:  00509a94  ldrbeq r9, [r0], #-164   ← 到这里遇未定义指令 → SIGILL
+```
+**成因链**：链接脚本里写了**裸赋值** `_init = 0;`（本意只是"兜底占位"）→ 它**压掉了 crti.o 的真 `_init`**
+→ 链接器在 `.dynamic` 写下 **`DT_INIT = 0`** → glibc 的 `call_init` 见到 `DT_INIT` 就调用 → `blx` 到 0。
+又因为**非 PIE 时 vaddr 0 正是我们自己 ELF 头所在的 PT_LOAD（已映射）**，所以不是 SIGSEGV 而是 SIGILL。
+
+**修复**：所有兜底一律改成 `PROVIDE_HIDDEN(sym = 0)`（"别人定义了就不生效"）。
+CI（GCC 链了 crti.o）实测：`DT_INIT = 0x00401428`、`_init shndx=14`（真实 `.init` 节）⇒ **修复生效**。
+
+#### 新增静态门禁 `tools/dyn_audit.py`（**不需要 qemu** 就能拦住这类 bug）
+
+| 检查 | 判定 |
+|---|---|
+| `DT_INIT`/`DT_FINI` 存在但为 0 | FAIL（= 初始化链会调到地址 0） |
+| `_init`/`_fini` 被定义成 **ABS 0** | FAIL（裸赋值残留特征） |
+| `e_entry` 不在可执行 PT_LOAD 内 | FAIL |
+| `DT_*_ARRAY` 已声明但 SZ == 0 | WARN（C 程序无构造子时合法） |
+| `.rel.plt` 对应 GOT 槽静态值为 0 | WARN |
+
+★ 本地/CI 差异**条件判定**：本机 zig 不带 crti.o ⇒ 无 `.init` 节 ⇒ 判 WARN；
+CI 用 GCC 必然链 crti.o ⇒ 判 FAIL。同一条门禁两侧都给出正确结论。
+已接入 `1to1-verify`（**硬门禁**，已 success）+ qemu workflow + `link_full.sh`。
+
+**修复后的实测（commit `903e8bb8`）**
+
+| 项 | 结果 |
+|---|---|
+| `1to1-verify` | **success**（含 dyn_audit 硬门禁 PASS：`DT_INIT=0x00401428` / `_init shndx=14`） |
+| 重建产物在 qemu 下 | **从 SIGILL 前进到 `*** stack smashing detected ***`（SIGABRT, exit=134）** ⇒ CRT + `main()` 都跑起来了 |
+| `behav_diff.py` | 正确判 **INCONCLUSIVE(3)** —— B0 非空洞前置检查生效，拒绝"两侧都空"的假通过 |
+| 工厂二进制 | 仍在 **10 ms 内 exit=1、stdout/stderr 全空、连 syscall 轨迹都没有** ⇒ 说明 qemu 在**加载阶段**就退出，需看 qemu 原始报错（已加"裸跑"诊断） |
+
+**下一步**：① 读"裸跑"诊断 → 定位工厂二进制为何在 qemu 下加载即退（参考侧驱动起来，差分才有意义）；
+② 定位重建产物的 stack smashing（这是 1:1 保真度的**真实、可行动信号**：某个局部数组/结构尺寸与工厂不一致）。
 
 ---
 
