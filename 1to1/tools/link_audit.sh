@@ -31,7 +31,9 @@ case "$CC" in
   *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
   *)     ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic" ;;
 esac
-CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH"
+# ★ 与工厂对齐（见 recon_build.sh 顶部说明）：关掉 canary 与 FORTIFY
+FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH $FIDELITY"
 
 mkdir -p "$OBJD" "$(dirname "$REP")"
 rm -f "$OBJD"/*.o 2>/dev/null

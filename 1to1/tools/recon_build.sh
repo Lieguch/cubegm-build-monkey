@@ -19,8 +19,13 @@ CC="${CC:-arm-linux-gnueabihf-gcc}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REP="${1:-$ROOT/report/recon_build.txt}"
 SRCDIR="$ROOT/src/proprietary"
-CFLAGS="-c -O1 -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic"
-CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic"
+# ★ 与工厂二进制对齐的行为相关标志（工厂 .comment 里印着完整命令行：
+#   `... -fno-stack-protector ...`，且二进制中 stack_chk/FORTIFY/__memcpy_chk 出现次数均为 0）。
+#   Ubuntu 的 GCC 默认插 canary 并开 FORTIFY ⇒ 重建产物会 abort（*** stack smashing detected ***），
+#   那是工具链差异，不是代码差异 ⇒ 必须显式关掉，否则行为差分永远有一处假分歧。
+FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+CFLAGS="-c -O1 -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic $FIDELITY"
+CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic $FIDELITY"
 
 mkdir -p "$(dirname "$REP")"
 TMP="$(mktemp -d)"

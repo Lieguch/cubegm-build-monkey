@@ -17,6 +17,10 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CC="${CC:-arm-linux-gnueabihf-gcc}"
+# ★ 与工厂对齐（工厂 .comment 印着 `... -fno-stack-protector`；二进制里 stack_chk/FORTIFY 出现 0 次）。
+#   本地 zig 驱动会顺带链进 compiler_rt.ssp（symtab 里可见 compiler_rt.ssp.__stack_chk_guard）——
+#   那是**本地链接器行为**，CI 的 GCC 不会带；带上此标志可让两侧尽量一致。
+FIDELITY="${FIDELITY:--fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0}"
 OUT="${1:-$ROOT/build/rkgame.rebuilt.elf}"
 PY="${PY:-python}"
 
@@ -30,7 +34,7 @@ esac
 # 静态试链用的 libstdc++ 替身（operator new/delete）
 CXXOBJ="$ROOT/build/cxx_ops.o"
 if [ ! -f "$CXXOBJ" ] || [ "$ROOT/src/compat/cxx_ops.c" -nt "$CXXOBJ" ]; then
-    $CC -c -O1 -w $ARCH "$(winpath "$ROOT/src/compat/cxx_ops.c")" -o "$(winpath "$CXXOBJ")" 2>/dev/null \
+    $CC -c -O1 -w $ARCH $FIDELITY "$(winpath "$ROOT/src/compat/cxx_ops.c")" -o "$(winpath "$CXXOBJ")" 2>/dev/null \
       && echo "  cxx_ops.o 已编译"
 fi
 
@@ -55,7 +59,7 @@ for o in $OBJS; do WOBJS="$WOBJS $(winpath "$o")"; done
 
 echo "== 链接 =="
 # shellcheck disable=SC2086
-$CC $ARCH -no-pie \
+$CC $ARCH $FIDELITY -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
     -Wl,-z,undefs -Wl,--build-id=none \
     $WOBJS -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"

@@ -26,11 +26,13 @@ NROOT="$(cygpath -w "$ROOT" 2>/dev/null || echo "$ROOT")"
 # ★ CI 对齐铁律：CI 用 GCC(-w)——implicit-function-declaration / int-conversion 只是警告。
 #   Clang 默认把这两类升为 error，导致本地比 CI 更严（伪差）。必须显式降级为警告，
 #   使「本地失败集合」≈「CI 失败集合」。ABI 与错误判定以 CI 为准。
-CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=uninitialized -Wno-error=return-type -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat"
+# ★ 与工厂对齐（见 recon_build.sh 顶部说明）
+FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=uninitialized -Wno-error=return-type -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
 # ★ 严格口径：把 int-conversion / incompatible-pointer / implicit-int 升为 error。
 #   用于「消除假绿」——只有它通过，才代表类型真正正确（否则 FILE*/int 混用等会真崩）。
 #   只对宽松通过的文件重测，成本不翻倍。
-CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat"
+CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
 
 # zig 缓存 + 中间产物全放 C: 盘原生临时目录
 NTMP="C:/Users/Administrator/AppData/Local/Temp/zigcache1to1"
