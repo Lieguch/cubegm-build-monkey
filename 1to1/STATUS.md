@@ -259,6 +259,68 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-14 第十五轮：★★ P5 观测口径修正 —— 「没有输出」是假象（4 个真问题）
+
+上一轮拿到的是「工厂侧 rc=1、零输出、连 syscall 轨迹都没有」。本轮把它彻底查清，
+并修掉**四个会让差分假空洞 / 假失败 / 丢维度**的真问题。
+
+#### 一、四个真问题
+
+| # | 问题 | 症状 | 修复 |
+|---|---|---|---|
+| 1 | **日志文件名错了** | 真机日志是 `%s/menu.log`（`LoadMenuLog`/`SaveMenuLog` 里 `sprintf(acStack,"%s/menu.log",work_path)`）；仓库里**从来没有** `rkgame.log` ⇒ 采集永远 0 行 | `behav_capture.sh` 主看 `menu.log`（`rkgame.log` 仅兼容兜底），新增 `log_sha256_16` |
+| 2 | **stdout 被全缓冲吃掉** | `ioctl(1,TCGETS)=ENOTTY`（stdout 是管道）⇒ glibc 全缓冲；被测程序 `abort()`/被信号杀死 ⇒ 缓冲区**不 flush** ⇒ 连 `puts("rkgame v1.42")` 都没有 ⇒ "没有输出"是**假象** | 新增 `tools/pty_exec.py`：**只把 fd0/1 挂 pty**（行缓冲），**fd2 保持独立**（不像 `script(1)` 会把 qemu 自身报错混进 stdout） |
+| 3 | **两侧路径不同** | 工厂用 `get_executable_path()`（=`/proc/self/exe` 的目录）当 `work_path`，再拼出 `setting.xml` / `cores/config.xml` / `menu.log` / `joystick.zip` / `saves` / `states`。两个二进制各放各自目录 ⇒ `directory:` 行不同、能读到的资源也不同 ⇒ **比的是路径差异** | 两侧都从**同一绝对路径** `/sdcard/cubegm/rkgame` 运行：`tools/stage_sdcard_env.sh` 先铺环境+放二进制→跑→**重新铺环境**+放另一个二进制→再跑 |
+| 4 | **可执行位** | `golden/factory.rkgame.bin` 由 git 检出是 **0644**；qemu-user 对不可执行目标走 `execve` 回退 → `EACCES` → **静默 exit 1、零输出、零 syscall** | 运行前 `chmod +x`；并在 `push_1to1.py` 对该文件树条目标 **100755**（权限位是执行语义，不是元数据） |
+
+#### 二、新增最小真机环境 `golden/sdcard_min/`（355 KB，只读拷贝）
+
+`setting.xml`(819B) / `menu.log`(444B) / `favorites.lst` / `recent.lst` / `fileinfo` /
+`joystick.zip`(332KB) / `cores/config.xml`（**原厂格式** 3822B）+ `MANIFEST.sha256`（铺设时逐个核验）。
+不放大件（`ui_*.zip` 4.9MB、`font.ttf`、`resource.cpd`）—— 启动阶段走不到 `main_Menu()`。
+`joystick.zip` 必须放：`InitJoystick()` 会读它，正好检验我们重建的 unzip（`TUnzip`）。
+
+#### 三、判定维度加强（`behav_diff.py`）
+
+| 维度 | 规则 |
+|---|---|
+| **P0a** | 两侧 `workdir` 必须相同，否则 FAIL（比的是路径差异） |
+| **P0b** | 两侧二进制 sha **必须不同**（相同 = 拿同一份自比，无意义） |
+| **B0** | 参考侧**必须产生可观测行为**，否则 INCONCLUSIVE(3)。★ 判据用 `observed` 字段（stdout/stderr/新增/变更），**不能用 `log_lines`** —— 运行目录预置了 `menu.log`，`log_lines` 恒 ≥1 |
+| B1~B3 | 退出码 / 语义事件（`O|`stdout `E|`stderr `L|`日志）/ 新增文件路径 |
+| **B4 / B5** | 变更文件路径 / `menu.log` 内容 sha（两侧都有日志时） |
+| B6 / B7 | 帧缓冲哈希 / shm 心跳（两侧都可读时） |
+
+事件归一：剥 ANSI、`\r`、`0x…`→`ADDR`、≥3 位数字→`N`，并给每个源加前缀。
+
+#### 四、本机空跑验证（假 `qemu-arm-static` 垫片 + 假 guest，**不烧 CI 分钟**）
+
+空跑立刻又抓到两个自身缺陷（这正是它存在的意义）：
+
+5. ★ **探针污染基线快照**：`-strace` 探针先跑并可能新建/改写 `saves`/`states`/`menu.log`，
+   紧接着采集 ⇒ "前置快照"已含探针痕迹 ⇒ `new_files`/`changed_files` **永远为空**（静默丢一个维度）。
+   修复：探针跑完后**重新铺环境**再采集。
+6. ★ `"${PY:-python3}" … | tee "$OUT/behav_diff.txt"; rc=$?` —— POSIX sh **没有** `${PIPESTATUS[@]}`，
+   `rc` 拿到的是 **`tee`** 的退出码 ⇒ 门禁永远"成功"。改为落文件再 `cat`。
+
+分支用例（全部本地跑通）：
+
+| 用例 | 期望 | 实测 |
+|---|---|---|
+| 行为相同 / 字节不同 | 0 PASS | **0** ✓ |
+| 行为不同（退出码+事件） | 2 FAIL | **2** ✓ |
+| 参考侧完全静默 | 3 INCONCLUSIVE | **3** ✓ |
+| 两侧同一份二进制 | 2 FAIL（P0b） | **2** ✓ |
+| 重建侧新建文件 / 改 menu.log | 2 FAIL（B3 / B4+B5） | **2** ✓ |
+
+`pty_exec.py` 本身：退出码透传(3)、超时(124)、命令不存在(127)、**stderr 独立** 全部本机验过
+（本机无 `termios` ⇒ 走降级路径；CI 走 pty 路径）。
+
+**下一步**：推 CI，读「工厂侧到底跑到哪一步」——现在 stdout 不会再丢，`event` 序列里有
+`O|rkgame v1.42` / `O|directory:…` / `O|appname:…` / `GetConfig()` 的报错，差分才真正开始说话。
+
+---
+
 ### 2026-09-14 第十四轮：P5 qemu 行为差分接入（环境打通；被测程序仍在驱动中）
 
 **先决问题：qemu 在哪跑？**（用户提示「本机 / cnb.cool 都有 qemu 环境」，故彻底搜了一遍）
@@ -335,10 +397,38 @@ CI 用 GCC 必然链 crti.o ⇒ 判 FAIL。同一条门禁两侧都给出正确�
 | `1to1-verify` | **success**（含 dyn_audit 硬门禁 PASS：`DT_INIT=0x00401428` / `_init shndx=14`） |
 | 重建产物在 qemu 下 | **从 SIGILL 前进到 `*** stack smashing detected ***`（SIGABRT, exit=134）** ⇒ CRT + `main()` 都跑起来了 |
 | `behav_diff.py` | 正确判 **INCONCLUSIVE(3)** —— B0 非空洞前置检查生效，拒绝"两侧都空"的假通过 |
-| 工厂二进制 | 仍在 **10 ms 内 exit=1、stdout/stderr 全空、连 syscall 轨迹都没有** ⇒ 说明 qemu 在**加载阶段**就退出，需看 qemu 原始报错（已加"裸跑"诊断） |
+| 工厂二进制 | 仍在 **3 ms 内 exit=1、stdout/stderr 全空**，连"裸跑"（无 `-strace` / 无 `-E`）也一样 ⇒ **问题在 qemu 自身，不在 guest**（guest 一个 syscall 都没发）。已加宿主 `strace` 观察 qemu 进程 + 「加可执行位」「不带 `-cpu`」两条试探 |
 
-**下一步**：① 读"裸跑"诊断 → 定位工厂二进制为何在 qemu 下加载即退（参考侧驱动起来，差分才有意义）；
+**下一步**：① 读宿主 strace → 定位工厂二进制为何在 qemu 下**加载阶段**即退（参考侧驱动起来，差分才有意义）；
 ② 定位重建产物的 stack smashing（这是 1:1 保真度的**真实、可行动信号**：某个局部数组/结构尺寸与工厂不一致）。
+
+#### ★★ 工厂侧"静默 exit=1"也已定位（宿主 strace 一刀切开）
+
+宿主 `strace` 显示 qemu 进程自身只做了 4 个系统调用就退：
+```
+execve("/usr/bin/qemu-arm-static", [... "golden/factory.rkgame.bin"], ...)
+readlink("/proc/self/exe", ...)                              = 24
+openat(AT_FDCWD, "golden/factory.rkgame.bin", O_RDONLY)      = 3
+openat(AT_FDCWD, "/proc/sys/vm/mmap_min_addr", O_RDONLY)     = 4
+ioctl(1, TCGETS, ...)                                        = -1 ENOTTY
++++ exited with 1 +++            ← 零错误输出
+```
+**决定性对照实验：给该文件加可执行位后立刻变成 `rc=139`（guest 真的跑起来并 SIGSEGV）**。
+
+⇒ **真因：仓库检出的 `golden/factory.rkgame.bin` 权限是 `0644`（git 存的是 100644），
+而重建产物 `build/rkgame.rebuilt.elf` 是编译产生的 `0755`。** qemu-user 对**不可执行**的目标
+会走 `execve` 回退路径 → `EACCES` → **静默 exit 1**（连一行报错都没有）。这不是二进制的问题，
+**是我把"权限"当成了无关紧要的元数据**。
+
+**顺带解释"输出为空"**：qemu 的 `ioctl(1, TCGETS)=ENOTTY` 说明 stdout 是**管道**（非 tty）
+⇒ glibc 采用**全缓冲**；重建产物是 `abort()`（SIGABRT）退出的，**缓冲区不会 flush** ⇒
+`puts("rkgame v1.42")` 的内容丢失。参考侧同理。（下一轮可用 `script -qec` 造一个 pty 拿到行缓冲。）
+
+**下一轮要做的两件小事**（都很小，但都是"必须"）：
+1. 运行前对两侧都 `chmod +x`（并从 git 侧把该文件置为 100755）；
+2. 用 `script -qec` 或 `stdbuf -oL` 拿到可用的 stdout。
+
+之后再读两侧行为指纹，`behav_diff.py` 才会给出有意义的结论。
 
 ---
 

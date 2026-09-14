@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?> <autorun file="" driver="" /> <savestatehotkey>3072</savestatehotkey>
+<autorestore>03</autorestore> <config language="1" volume="8" /> <ui
+name="          " filename="ui_en.zip" gamelist="0" /> <ui
+name="          " filename="ui_cn.zip" gamelist="1" /> <ui
+name="          " filename="ui_sp.zip" gamelist="0" /> <ui
+name="          " filename="ui_ru.zip" gamelist="0" /> <ui
+name="          " filename="ui_ar.zip" gamelist="0" /> <ui
+name="          " filename="ui_po.zip" gamelist="0" /> <ui
+name="          " filename="ui_ko.zip" gamelist="0" /> <ui
+name="          " filename="ui_ge.zip" gamelist="0" /> <ui
+name="          " filename="ui_fr.zip" gamelist="0" /> <sound> <bgm
+file="Back_In_The_City.mp3" /> <effect0 file="chord.wav" /> <effect1
+file="Button1.wav" /> </sound>

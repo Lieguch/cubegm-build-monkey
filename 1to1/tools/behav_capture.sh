@@ -1,24 +1,30 @@
 #!/bin/sh
 # ============================================================
-# behav_capture.sh — 行为指纹采集器（P4 主门禁的采集端）
+# behav_capture.sh — 行为指纹采集器 v2（P5 主门禁的采集端）
 #
 # 在原厂二进制与重建产物上各跑一次，产出可比对的 JSON 行为指纹。
 # 可运行于：① 真机  ② CI 内 qemu-arm  ③ 任意 Linux arm 环境
 #
 # 用法:
-#   sh behav_capture.sh <binary> <label> <out.json> [args...]
-#   例:
-#     sh behav_capture.sh /sdcard/cubegm/rkgame        factory  factory.json
-#     sh behav_capture.sh /sdcard/cubegm/rkgame-1to1   rebuild  rebuild.json
-#     sh behav_capture.sh ./rkgame                     rebuild  ci.json   /JoystickTest
+#   sh behav_capture.sh <binary|wrapper> <label> <out.json> [args...]
 #
 # 采集维度（均与「100% 原厂功能」直接对应）:
-#   1. exit_code        各入口退出码
-#   2. log_events       rkgame.log 的**语义事件序列**（剥离时间戳/地址/长度）
-#   3. log_lines        日志行数（量级）
-#   4. writes           saves/ states/ 目录下文件路径 + 内容 sha256
-#   5. shm              icube 共享内存心跳可读性
-#   6. frames           帧缓冲采样哈希（若可读 /dev/fb0 或 DRM dump）
+#   1. exit_code        退出码（被信号杀死 = 128+signo）
+#   2. events           语义事件序列 = stdout(O|) + stderr(E|) + 设备日志(L|)
+#   3. log              menu.log 的 sha256 + 行数（真机日志名是 menu.log，**不是** rkgame.log）
+#   4. new_files        work 目录下新增文件（相对路径|sha256 前16）
+#   5. changed_files    已有文件但内容变了
+#   6. shm              icube 共享内存心跳可读性
+#   7. frames           帧缓冲采样哈希（若可读 /dev/fb0）
+#
+# ★ v2 相对 v1 的三处关键更正（每一处都会让差分**假失败/假空洞**）：
+#   a) 日志文件名：工厂用 `sprintf("%s/menu.log", work_path)`（LoadMenuLog/SaveMenuLog），
+#      仓库里从来没有 rkgame.log ⇒ v1 永远采到 0 行 ⇒ B0 非空洞检查永远 INCONCLUSIVE。
+#   b) stdout 必须在 **pty** 下采集：管道 ⇒ glibc 全缓冲 ⇒ 被信号杀死时缓冲区不 flush，
+#      崩溃现场输出全部丢失（实测 0 字节）。v2 用 tools/pty_exec.py（只接管 fd0/1，
+#      stderr 仍独立）。
+#   c) 快照范围：v1 只看 saves/ states/；v2 看整个 work 目录，这样 menu.log /
+#      *.dat / settings 的写入都能被看见。
 # ============================================================
 set -u
 
@@ -29,86 +35,190 @@ shift 3
 ARGS="$*"
 
 WORK="${CGM_WORK:-/sdcard/cubegm}"
-[ -d "$WORK" ] || WORK="${CGM_WORK:-/mnt/sdcard/cubegm}"
 RUNDIR="${CGM_RUNDIR:-/tmp/behav_$LABEL}"
 TIMEOUT="${CGM_TIMEOUT:-20}"
-LOGF="$WORK/rkgame.log"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PY="${PY:-python3}"
 
 rm -rf "$RUNDIR"; mkdir -p "$RUNDIR"
 
-# --- 基线快照：采集前记录 saves/states 现状 ---
+# --- 运行器：优先 pty_exec（行缓冲），否则退回 timeout ---
+#   ★ 用函数而不是 "$RUNNER" 多词变量：多词变量在路径含空格时会被拆词
+#     （「把多词命令塞进变量再展开」是本项目记录在案的坑）。
+HAVE_PTY=0
+if command -v "$PY" >/dev/null 2>&1 && "$PY" -c 'import termios' >/dev/null 2>&1; then
+    HAVE_PTY=1
+    echo "[capture] 使用 pty_exec（stdout 行缓冲；stderr 独立）"
+else
+    echo "[capture] 无 pty 可用（非 POSIX / 无 termios）⇒ 降级为普通执行；崩溃现场 stdout 可能丢失"
+fi
+
+run_guest() {
+    out="$1"; err="$2"
+    if [ "$HAVE_PTY" = "1" ]; then
+        "$PY" "$HERE/pty_exec.py" --timeout "$TIMEOUT" "$BIN" $ARGS > "$out" 2> "$err"
+        return $?
+    fi
+    if command -v timeout >/dev/null 2>&1; then
+        timeout -s TERM "$TIMEOUT" "$BIN" $ARGS > "$out" 2> "$err"
+        return $?
+    fi
+    "$BIN" $ARGS > "$out" 2> "$err" &
+    p=$!; sleep "$TIMEOUT"; kill -TERM "$p" 2>/dev/null; wait "$p"; return $?
+}
+
+# shellcheck disable=SC2086
+
+# --- 基线快照：整个 work 目录（路径统一转为相对路径 ⇒ 两侧绝对路径不同也仍可比）---
 snap() {
     d="$1"
     [ -d "$d" ] || return 0
-    find "$d" -type f 2>/dev/null | sort | while read -r f; do
+    find "$d" -type f 2>/dev/null | LC_ALL=C sort | while read -r f; do
         h=$(sha256sum "$f" 2>/dev/null | cut -c1-16)
-        echo "$f|$h"
+        s=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+        echo "${f#"$d"/}|$h|${s:-0}"
     done
 }
-snap "$WORK/saves"  > "$RUNDIR/pre_saves.txt"
-snap "$WORK/states" > "$RUNDIR/pre_states.txt"
+snap "$WORK" > "$RUNDIR/pre_all.txt"
 
-# --- 清日志，运行 ---
-: > "$LOGF" 2>/dev/null || true
-if command -v timeout >/dev/null 2>&1; then
-    timeout -s TERM "$TIMEOUT" "$BIN" $ARGS > "$RUNDIR/stdout.txt" 2> "$RUNDIR/stderr.txt"
-else
-    "$BIN" $ARGS > "$RUNDIR/stdout.txt" 2> "$RUNDIR/stderr.txt" &
-    P=$!; sleep "$TIMEOUT"; kill -TERM $P 2>/dev/null; wait $P
-fi
+# --- 运行 ---
+run_guest "$RUNDIR/stdout.txt" "$RUNDIR/stderr.txt"
 RC=$?
+echo "[capture] $LABEL 退出码 = $RC"
 
-# --- 采集 ---
-snap "$WORK/saves"  > "$RUNDIR/post_saves.txt"
-snap "$WORK/states" > "$RUNDIR/post_states.txt"
+# --- 后置快照 ---
+snap "$WORK" > "$RUNDIR/post_all.txt"
 
-# 日志语义事件：剥离时间戳前缀与十六进制地址/长度
-if [ -f "$LOGF" ]; then
-    sed -e 's/^[0-9]\+[mM][sS] //' \
-        -e 's/^\[[0-9: ]*\] //' \
-        -e 's/0x[0-9a-fA-F]\+/ADDR/g' \
-        -e 's/[0-9]\{3,\}/N/g' \
-        "$LOGF" | grep -a -E '\[RK-|^P:|^---|^===' | head -400 > "$RUNDIR/events.txt"
-    LOGLINES=$(wc -l < "$LOGF" 2>/dev/null || echo 0)
-else
-    : > "$RUNDIR/events.txt"; LOGLINES=0
+# --- 语义归一：剥掉 ANSI / CR / 十六进制地址 / 长数字（保留可读语义）---
+norm() {
+    LC_ALL=C sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' \
+        -e 's/\r//g' \
+        -e 's/0x[0-9a-fA-F]\{2,\}/ADDR/g' \
+        -e 's/[0-9]\{3,\}/N/g'
+}
+
+# --- 事件序列：O| stdout，E| stderr，L| menu.log ---
+: > "$RUNDIR/events.txt"
+if [ -s "$RUNDIR/stdout.txt" ]; then
+    norm < "$RUNDIR/stdout.txt" | LC_ALL=C grep -a '[^[:space:]]' | head -400 | sed 's/^/O|/' >> "$RUNDIR/events.txt"
+fi
+if [ -s "$RUNDIR/stderr.txt" ]; then
+    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
 fi
 
-# 帧缓冲采样：优先 fb0，其次 DRM dumb dump（尽力而为）
+# --- 设备日志（真机日志名 = menu.log；rkgame.log 仅作兼容兜底）---
+LOGNAME="none"; LOGLINES=0; LOGSHA="none"
+for cand in menu.log rkgame.log; do
+    if [ -f "$WORK/$cand" ]; then LOGNAME="$cand"; break; fi
+done
+if [ "$LOGNAME" != "none" ]; then
+    LOGLINES=$(wc -l < "$WORK/$LOGNAME" 2>/dev/null | tr -d ' '); LOGLINES=${LOGLINES:-0}
+    LOGSHA=$(sha256sum "$WORK/$LOGNAME" 2>/dev/null | cut -c1-16); LOGSHA=${LOGSHA:-none}
+    # 二进制日志里可打印的行（若有）也纳入事件，带 L| 前缀
+    if LC_ALL=C grep -aq '[[:print:]]\{8,\}' "$WORK/$LOGNAME" 2>/dev/null; then
+        LC_ALL=C grep -a '[[:print:]]\{8,\}' "$WORK/$LOGNAME" 2>/dev/null | head -200 | \
+            norm | sed 's/^/L|/' >> "$RUNDIR/events.txt"
+    fi
+fi
+EVENTS=$(wc -l < "$RUNDIR/events.txt" | tr -d ' '); EVENTS=${EVENTS:-0}
+
+# --- 新增/变更文件（相对路径）---
+: > "$RUNDIR/new_files.txt"; : > "$RUNDIR/changed_files.txt"
+LC_ALL=C awk -F'|' 'NR==FNR{p[$1]=$2; next}
+    { if (!($1 in p)) print $1"|"$2; else if (p[$1] != $2) print $1"|"$2 }' \
+    "$RUNDIR/pre_all.txt" "$RUNDIR/post_all.txt" > "$RUNDIR/all_diff.txt"
+LC_ALL=C awk -F'|' 'NR==FNR{p[$1]=1; next} !($1 in p){print}' \
+    "$RUNDIR/pre_all.txt" "$RUNDIR/all_diff.txt" > "$RUNDIR/new_files.txt"
+LC_ALL=C awk -F'|' 'NR==FNR{p[$1]=1; next} ($1 in p){print}' \
+    "$RUNDIR/pre_all.txt" "$RUNDIR/all_diff.txt" > "$RUNDIR/changed_files.txt"
+NEWN=$(wc -l < "$RUNDIR/new_files.txt" | tr -d ' '); NEWN=${NEWN:-0}
+CHGN=$(wc -l < "$RUNDIR/changed_files.txt" | tr -d ' '); CHGN=${CHGN:-0}
+
+STDOUTN=$(wc -l < "$RUNDIR/stdout.txt" 2>/dev/null | tr -d ' '); STDOUTN=${STDOUTN:-0}
+STDERRLN=$(wc -l < "$RUNDIR/stderr.txt" 2>/dev/null | tr -d ' '); STDERRLN=${STDERRLN:-0}
+
+# --- 帧缓冲采样（尽力而为）---
 FBHASH="none"
 if [ -r /dev/fb0 ]; then
     FBHASH=$(dd if=/dev/fb0 bs=4096 count=64 2>/dev/null | sha256sum | cut -c1-16)
 fi
 
-# shm 心跳
+# --- shm 心跳 ---
 SHM="0"
 if command -v ipcs >/dev/null 2>&1; then
     # ★ 踩坑：`grep -c` 在 0 命中时返回 1 且**已经**打印了 "0"，再加 `|| echo 0` 会输出两行
-    #   （"0\n0"）→ 下面拼出来的 JSON 里出现裸 `0` → json.load 直接崩。
-    #   必须去掉 `|| echo 0`，并做数值兜底。
+    #   （"0\n0"）→ 拼出的 JSON 里出现裸 `0` → json.load 直接崩。
     SHM=$(ipcs -m 2>/dev/null | grep -c '0x000004d2' || true)
     case "$SHM" in ''|*[!0-9]*) SHM=0 ;; esac
 fi
 
-# --- 输出 JSON ---
+# --- 被测对象身份（溯源用：两侧二进制不同，但环境必须相同）---
+BINSHA="none"
+REAL="${CGM_BIN_REAL:-$BIN}"
+if [ -f "$REAL" ]; then BINSHA=$(sha256sum "$REAL" 2>/dev/null | cut -c1-16); fi
+
+# --- 「本侧是否真的产生了可观测行为」 ---
+# ★ 只看 log_lines 是不行的：运行目录里**预置**了 menu.log（444 B，2 行），
+#   于是 log_lines 恒 ≥1，B0 非空洞检查永远不触发 ⇒ 假通过。
+#   真正算「行为」的只有：stdout / stderr / 新增文件 / 变更文件。
+OBSERVED=false
+if [ "$STDOUTN" -gt 0 ] || [ "$STDERRLN" -gt 0 ] || [ "$NEWN" -gt 0 ] || [ "$CHGN" -gt 0 ]; then
+    OBSERVED=true
+fi
+
+# --- JSON 输出（所有值先落变量，避免 shell 拼接产生非法 JSON）---
+json_quote() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+TMO=false
+[ "$RC" = "124" ] && TMO=true
+
 {
-  echo '{'
-  echo "  \"label\": \"$LABEL\","
-  echo "  \"binary\": \"$BIN\","
-  echo "  \"args\": \"$ARGS\","
-  echo "  \"exit_code\": $RC,"
-  echo "  \"log_lines\": $LOGLINES,"
-  echo "  \"shm_heartbeat\": $SHM,"
-  echo "  \"frame_hash\": \"$FBHASH\","
-  echo "  \"events\": ["
-  awk '{gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' n="$(wc -l < "$RUNDIR/events.txt")" "$RUNDIR/events.txt"
-  echo "  ],"
-  echo "  \"new_files\": ["
-  diff "$RUNDIR/pre_saves.txt" "$RUNDIR/post_saves.txt" 2>/dev/null | grep '^>' | sed 's/^> //' | \
-  { n=0; while read -r l; do n=$((n+1)); done; }
-  diff "$RUNDIR/pre_saves.txt" "$RUNDIR/post_saves.txt" 2>/dev/null | grep '^>' | sed 's/^> //' | awk '{gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' n="$(diff "$RUNDIR/pre_saves.txt" "$RUNDIR/post_saves.txt" 2>/dev/null | grep -c '^>')"
-  echo "  ]"
-  echo '}'
+    printf '{\n'
+    printf '  "label": "%s",\n' "$(printf '%s' "$LABEL" | json_quote)"
+    printf '  "binary": "%s",\n' "$(printf '%s' "$REAL" | json_quote)"
+    printf '  "binary_sha256_16": "%s",\n' "$BINSHA"
+    printf '  "wrapper": "%s",\n' "$(printf '%s' "$BIN" | json_quote)"
+    printf '  "args": "%s",\n' "$(printf '%s' "$ARGS" | json_quote)"
+    printf '  "workdir": "%s",\n' "$(printf '%s' "$WORK" | json_quote)"
+    printf '  "exit_code": %s,\n' "$RC"
+    printf '  "timed_out": %s,\n' "$TMO"
+    printf '  "observed": %s,\n' "$OBSERVED"
+    printf '  "log_file": "%s",\n' "$LOGNAME"
+    printf '  "log_lines": %s,\n' "$LOGLINES"
+    printf '  "log_sha256_16": "%s",\n' "$LOGSHA"
+    printf '  "stdout_lines": %s,\n' "$STDOUTN"
+    printf '  "stderr_lines": %s,\n' "$STDERRLN"
+    printf '  "shm_heartbeat": %s,\n' "$SHM"
+    printf '  "frame_hash": "%s",\n' "$FBHASH"
+    printf '  "events": [\n'
+    LC_ALL=C awk '{gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \
+        n="$EVENTS" "$RUNDIR/events.txt"
+    printf '  ],\n'
+    printf '  "new_files": [\n'
+    LC_ALL=C awk '{gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \
+        n="$NEWN" "$RUNDIR/new_files.txt"
+    printf '  ],\n'
+    printf '  "changed_files": [\n'
+    LC_ALL=C awk '{gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \
+        n="$CHGN" "$RUNDIR/changed_files.txt"
+    printf '  ]\n'
+    printf '}\n'
 } > "$OUT" 2>/dev/null
 
-echo "captured: $OUT (exit=$RC, log_lines=$LOGLINES, events=$(wc -l < "$RUNDIR/events.txt"))"
+# --- 自检：JSON 必须可解析（这类故障曾经静默了一整轮）---
+# ★ 用 stdin 喂进去而不是把路径交给 python：这样在「bash 路径风格 ≠ python 路径风格」
+#   的环境（如 Git Bash + Windows python）也不会误判成"JSON 非法"。
+if command -v "$PY" >/dev/null 2>&1; then
+    if [ ! -s "$OUT" ]; then
+        echo "FATAL 采集未产出文件或为空：$OUT"
+        exit 4
+    fi
+    if ! "$PY" -c 'import json,sys; json.loads(sys.stdin.read())' < "$OUT" 2>/dev/null; then
+        echo "FATAL 采集出的 JSON 非法：$OUT"
+        "$PY" -c 'import json,sys
+try: json.loads(sys.stdin.read())
+except Exception as e: print("   ", e)' < "$OUT" 2>/dev/null || true
+        exit 4
+    fi
+fi
+
+echo "captured: $OUT (exit=$RC, log=$LOGNAME/$LOGLINES 行, stdout=$STDOUTN 行, stderr=$STDERRLN 行, events=$EVENTS, new=$NEWN, changed=$CHGN)"
