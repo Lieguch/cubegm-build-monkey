@@ -62,6 +62,32 @@ echo "裸跑 rc=$?"
 head -15 "$OUT/bare_rebuild.txt" 2>/dev/null || true
 echo
 
+# ---- ★ 工厂侧 rc=1 且**零输出**（连 syscall 轨迹都没有）⇒ 问题在 qemu 自身而非 guest。
+#     用宿主 strace 观察 qemu 进程自己的系统调用，直接看它卡在哪一步退的。
+if command -v strace >/dev/null 2>&1; then
+    echo "--- 宿主 strace：qemu 自身为何退出（工厂二进制）---"
+    strace -f -e trace=openat,execve,mmap2,ioctl,readlink -o "$OUT/host_strace_factory.txt" \
+        qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$FACTORY" > /dev/null 2>&1
+    echo "rc=$?"
+    tail -25 "$OUT/host_strace_factory.txt" 2>/dev/null || true
+    echo "--- 对照：qemu 自身系统调用（重建产物，应该能正常加载）---"
+    strace -f -e trace=openat,execve,mmap2,ioctl,readlink -o "$OUT/host_strace_rebuild.txt" \
+        qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$REBUILD" > /dev/null 2>&1
+    echo "rc=$?"
+    tail -25 "$OUT/host_strace_rebuild.txt" 2>/dev/null || true
+    echo
+fi
+
+# ---- 试探：是否只是"缺可执行位"或"-cpu 选择"的问题（两条一次问清）----
+echo "--- 试探 A：给工厂二进制加可执行位后裸跑 ---"
+cp "$FACTORY" "$OUT/factory_exec_test.bin" && chmod +x "$OUT/factory_exec_test.bin"
+qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$OUT/factory_exec_test.bin" > "$OUT/bare_factory_exec.txt" 2>&1
+echo "rc=$?"; head -8 "$OUT/bare_factory_exec.txt" 2>/dev/null || true
+echo "--- 试探 B：不带 -cpu（用 qemu 默认 cpu 模型）---"
+qemu-arm-static -L "$SYSROOT" "$FACTORY" > "$OUT/bare_factory_nocpu.txt" 2>&1
+echo "rc=$?"; head -8 "$OUT/bare_factory_nocpu.txt" 2>/dev/null || true
+echo
+
 # ---- 包装脚本：两侧仅「被测二进制」不同，其余全同；$3 为附加 qemu 参数 ----
 mk_wrapper() {
     # $1 = 真实二进制   $2 = 包装脚本   $3 = 附加 qemu 参数（可空）
