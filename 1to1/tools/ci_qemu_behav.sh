@@ -46,6 +46,22 @@ for b in "$REBUILD" "$FACTORY"; do
     if [ ! -f "$b" ]; then echo "FATAL 缺少二进制: $b"; exit 1; fi
 done
 
+# ---- 参考二进制"裸跑"诊断：不带 -strace/-E，看 qemu 自己报什么 ----
+# 来历：工厂二进制在探针里 10ms 内 exit=1、stdout/stderr 全空、连 syscall 轨迹都没有
+#       ⇒ 说明 qemu 在加载阶段就退出了，必须看它的**原始**报错（而不是 guest 的输出）。
+echo "--- 参考二进制裸跑（无 -strace / 无 -E）---"
+ls -la "$FACTORY"
+set +e
+qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$FACTORY" 2>&1 | head -15
+echo "裸跑 rc=${PIPESTATUS[0]:-?}"
+set -e
+echo "--- 对照：重建产物裸跑（同样无 -strace / 无 -E）---"
+set +e
+qemu-arm-static -L "$SYSROOT" -cpu cortex-a7 "$REBUILD" 2>&1 | head -15
+echo "裸跑 rc=${PIPESTATUS[0]:-?}"
+set -e
+echo
+
 # ---- 包装脚本：两侧仅「被测二进制」不同，其余全同；$3 为附加 qemu 参数 ----
 mk_wrapper() {
     # $1 = 真实二进制   $2 = 包装脚本   $3 = 附加 qemu 参数（可空）
