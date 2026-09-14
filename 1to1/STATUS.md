@@ -259,6 +259,56 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-14 第二十轮：★★★ 设备兼容性硬伤修复（GLIBC 2.34 → **2.7**）+ libz 地雷
+
+本轮是「行为差分只跑到 13 行就全绿」这个盲区暴露出来的两类**真机阻断级**问题。
+
+**① GLIBC 下限（真机起不来）**
+
+| | 工厂 rkgame | 修复前（CI GCC 链接） | 修复后 |
+|---|---|---|---|
+| 需要的最高 GLIBC 标签 | **GLIBC_2.7** | **GLIBC_2.34**（还有 2.29/2.33） | **GLIBC_2.7** ✅ |
+
+设备侧证据（三条独立）：
+· `golden/factory.rkgame.bin` 的 `.dynstr` = `{GLIBC_2.4, GLIBC_2.7}`；
+· 设备 SD 上原厂 **ARM** 运行库（SDL / libz / libpng12 / freetype / libcrypto）最高只用 **GLIBC_2.16**
+  （同目录另有 MIPS 库，属另一机型，不可当 sysroot —— 与既有结论一致）；
+· rkgame 的 `.comment` = **GCC 6.2.0**，SD 上 `libstdc++.so.6.0.22`（GCC 5/6 时代）⇒ 设备 glibc 处于 **2.16~2.24** 区间。
+
+⇒ 要求 2.34 的产物在设备上必然 `version GLIBC_2.34 not found` 起不来。
+**修法**：链接改用 **zig + `-target arm-linux-gnueabihf.2.7`**（zig 0.16 支持在目标三元组里指定 glibc 版本。
+实测 `-target …2.7` 的产物 GLIBC 标签 = `{2.4, 2.6, 2.7}`）。附带收益：**自动带回 `libpthread.so.0` / `libdl.so.2`**
+（glibc 2.7 时代这两个是独立库）⇒ NEEDED 结构更贴近工厂。
+
+**② `compress`/`uncompress` 被绑成 ABS 0（存档/读档必崩）**
+
+它们被 `retro_save_state` / `retro_load_state`（及 `TestLibz0`）调用，而链接脚本里 `PROVIDE_HIDDEN(compress = 0)`
+把它们绑成 **ABS 0** ⇒ 调用即跳地址 0。工厂的取值方式 = 从 **libz.so.1 动态导入**（NEEDED libz.so.1）。
+
+**修法**：新建 `src/compat/zstub.c` —— **链接期桩 DSO**（SONAME=`libz.so.1`）。
+★ 为什么不直接链一个真实 `libz.so.1`：实测链接真实 DSO 会写下 `ZLIB_1.2.x` **符号版本需求**，
+而设备 SD 上原厂 ARM libz 导出的版本集是**非标准的**（`ZLIB_1.2.0 … ZLIB_1.2.12`）⇒ 可能 `version ZLIB_x not found`。
+桩**不含任何版本标签**，对任何 zlib 都安全。桩不打包、不在设备执行 —— 运行期由设备自己的 libz 解析。
+链接脚本里的 `PROVIDE_HIDDEN(compress/uncompress = 0)` 已**删除**。
+
+**③ 新增门禁（`tools/dyn_audit.py` A6/A7）**
+
+| 门禁 | 判定 | 现状 |
+|---|---|---|
+| **A6 ABS 0 的 FUNC/OBJECT 符号** | ⇒ **FAIL**（排除 `STT_FILE` 与 `_init`/`_fini`） | **0 个** ✅ |
+| **A7 GLIBC 版本上限 > 工厂** | ⇒ **FAIL**（设备上 version not found） | **2.7 ≤ 2.7** ✅ |
+| A7 NEEDED 结构差异 | ⇒ WARN（已知可接受差异单列） | 缺 `libstdc++.so.6`（operator new/delete 用自备 C shim，malloc 语义等价）、`libgcc_s.so.1`（纯 C 无展开需求） |
+
+**结果（本地 zig 全链路）**：NEEDED = `libz.so.1, libdl.so.2, libm.so.6, libpthread.so.0, libc.so.6`；
+**布局 PASS**（全局 193/194 = 99.5%）；**ABI PASS**；**dyn_audit PASS**（FAIL 0 / WARN 3）。
+
+**④ CI 与本地统一工具链**：两个 workflow 都改为 `pip install ziglang==0.16.0` →
+`CC=$ZIG cc` + 独立 `ZIG_GLOBAL_CACHE_DIR`（并发共享 cache 会 CacheCheckFailed）。
+⇒ 消除「GCC 链接 vs lld 链接」的段划分差异（那曾产出一次"假红"），也让 CI 产物的 GLIBC 下限与本地一致。
+（GCC/binutils 仍保留安装：`arm-linux-gnueabihf-gcc` 的 N3 ABI 对照步骤与 `objdump` 指纹步骤仍用它。）
+
+---
+
 ### 2026-09-14 第十九轮：★★★ P5 行为差分首次 PASS；门禁「假红」修正
 
 **CI（commit `f28630c5`）结果分裂，但两边都有信息量：**

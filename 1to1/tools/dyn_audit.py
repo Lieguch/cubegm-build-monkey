@@ -19,6 +19,8 @@
   A3 符号 `_init` / `_fini` 为 ABS 0 ⇒ FAIL（裸赋值残留特征）
   A4 e_entry 必须落在可执行的 PT_LOAD 内 ⇒ FAIL
   A5 `.rel.plt` 对应 GOT 槽静态值为 0 ⇒ WARN（可能被解析成 NULL 调用）
+  A6 ABS 0 的 FUNC/OBJECT 符号（"链接期占位"残留，调用即跳地址 0）⇒ FAIL
+  A7 GLIBC 版本上限 > 工厂 ⇒ FAIL（设备上 version not found）；NEEDED 结构差异 ⇒ WARN
 
 ★ 本地/CI 差异的处理（很重要）
   本机 zig 工具链**不链 crti.o**，故没有 `.init` 节、`_init` 只能落到兜底的 0。
@@ -30,8 +32,12 @@
 用法: python3 tools/dyn_audit.py <elf>
 退出码: 0 = 通过（可含 WARN）；2 = 有 FAIL
 """
+import os
+import re
 import struct
 import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TAG = {1: 'DT_NEEDED', 3: 'DT_PLTGOT', 7: 'DT_RELA', 12: 'DT_INIT', 13: 'DT_FINI',
        17: 'DT_REL', 20: 'DT_PLTREL', 23: 'DT_JMPREL', 25: 'DT_INIT_ARRAY',
@@ -188,6 +194,100 @@ def main():
         add('WARN', 'GOT 0 值槽', '%d 个（运行期可能被解析成 NULL 调用）' % zero)
     else:
         add('PASS', 'GOT 0 值槽', '0 个')
+
+    # ---- A6 ABS 0 的代码/数据符号（★★ 真实地雷：compress/uncompress 曾被绑成 ABS 0）----
+    #   ABS 0 的 FUNC/OBJECT 符号 = "链接期占位"的残留。调用它们即跳地址 0；而非 PIE 下
+    #   vaddr 0 往往已被首个 PT_LOAD 覆盖 ⇒ 表现为 SIGILL/SIGSEGV 而不是明确报错（极难查）。
+    #   实测：`compress`/`uncompress` 被 `retro_save_state`/`retro_load_state` 调用，
+    #   绑成 0 ⇒ 存档/读档必崩。修法 = 真实链接 libz.so.1（NEEDED libz.so.1，与工厂一致）。
+    #   排除 STT_FILE(4)（编译单元名，正常也是 ABS 0）与 _init/_fini（由 A3 单独判定）。
+    abs0 = []
+    for secname in ('.symtab', '.dynsym'):
+        sh2 = section(shs, secname)
+        if not sh2:
+            continue
+        strtab = shs[sh2['link']]['off']
+        ent = sh2['entsize'] or 16
+        for j in range(sh2['size'] // ent):
+            o = sh2['off'] + j * ent
+            nm_, val, sz, inf, oth, shx = struct.unpack_from('<IIIBBH', d, o)
+            if nm_ == 0 or shx != 0xFFF1 or val != 0:
+                continue
+            if (inf & 0xF) not in (1, 2):        # STT_OBJECT / STT_FUNC
+                continue
+            e = d.index(b'\x00', strtab + nm_)
+            nmx = d[strtab + nm_:e].decode('utf-8', 'replace')
+            if nmx in ('_init', '_fini'):
+                continue
+            abs0.append(nmx)
+    if abs0:
+        fails.append('abs0_placeholder')
+        add('FAIL', 'ABS 0 占位符号', '%d 个：%s（调用即跳地址 0）'
+            % (len(abs0), ', '.join(sorted(set(abs0))[:8])))
+    else:
+        add('PASS', 'ABS 0 占位符号', '0 个')
+
+    # ---- A7 设备兼容性：GLIBC 版本上限 + NEEDED 结构（基准 = 工厂二进制）----
+    #   ★★ 实测铁证：CI 的 Ubuntu 22.04 GCC 链接出的产物要求 GLIBC_2.29/2.33/2.34，
+    #      而工厂 rkgame 只要求 **GLIBC_2.7**（设备 SD 上原厂 ARM 运行库最高只用 2.16，
+    #      且 rkgame 编译于 GCC 6.2 时代）⇒ 产物拿到真机上会
+    #      `version GLIBC_2.34 not found` 直接起不来。这是 P6 真机验收的硬阻断。
+    #      修法：用 zig 的 `-target arm-linux-gnueabihf.2.7` 链接（见 tools/link_full.sh）。
+    fpath = None
+    if '--factory' in sys.argv:
+        i = sys.argv.index('--factory')
+        if i + 1 < len(sys.argv):
+            fpath = sys.argv[i + 1]
+    if fpath is None:
+        cand = os.path.join(ROOT, 'golden', 'factory.rkgame.bin')
+        if os.path.exists(cand):
+            fpath = cand
+    if fpath and os.path.exists(fpath):
+        fd, _, fshs, _ = parse(fpath)
+
+        def dyninfo(dd, shss):
+            need, gl = [], set()
+            dynsh, strsh = section(shss, '.dynamic'), section(shss, '.dynstr')
+            if dynsh and strsh:
+                for k in range(dynsh['size'] // 8):
+                    tag, val = struct.unpack_from('<iI', dd, dynsh['off'] + k * 8)
+                    if tag == 0:
+                        break
+                    if tag == 1:
+                        e = dd.index(b'\x00', strsh['off'] + val)
+                        need.append(dd[strsh['off'] + val:e].decode('utf-8', 'replace'))
+                blob = dd[strsh['off']:strsh['off'] + strsh['size']]
+                gl = {m.decode() for m in re.findall(rb'GLIBC_2\.\d+', blob)}
+            return need, gl
+
+        need_f, gl_f = dyninfo(fd, fshs)
+        need_o, gl_o = dyninfo(d, shs)
+        vkey = lambda s: tuple(int(x) for x in s.split('_')[1].split('.'))
+        maxf = max(gl_f, key=vkey) if gl_f else None
+        maxo = max(gl_o, key=vkey) if gl_o else None
+        if maxf and maxo and vkey(maxo) > vkey(maxf):
+            fails.append('glibc_floor')
+            add('FAIL', 'GLIBC 版本上限',
+                '本产物 %s > 工厂 %s ⇒ 设备上会 "version %s not found" 直接起不来'
+                % (maxo, maxf, maxo))
+        else:
+            add('PASS', 'GLIBC 版本上限', '本产物 %s ≤ 工厂 %s（可用）' % (maxo, maxf))
+
+        KNOWN_MISS = {
+            'libstdc++.so.6': 'operator new/delete 用自备 C shim（malloc 语义等价）',
+            'libgcc_s.so.1': '纯 C 构建无异常/栈展开需求',
+        }
+        miss = [x for x in need_f if x not in need_o]
+        extra = [x for x in need_o if x not in need_f]
+        unexplained = [x for x in miss if x not in KNOWN_MISS]
+        if unexplained or extra:
+            warns.append('needed_diff')
+            add('WARN', 'NEEDED 结构', '缺 %s；多 %s' % (miss, extra))
+        else:
+            add('PASS', 'NEEDED 结构',
+                '仅已知可接受差异（%s）' % (', '.join(sorted(miss)) or '无'))
+    else:
+        add('INFO', 'GLIBC/NEEDED 对比', '跳过（未找到工厂二进制；可用 --factory=路径 指定）')
 
     L = ['=' * 72,
          '动态段 / 初始化链自洽门禁：%s' % path.replace('\\', '/').split('/')[-1],

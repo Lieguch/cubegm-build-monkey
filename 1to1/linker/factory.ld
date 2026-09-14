@@ -39,8 +39,14 @@ SECTIONS
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }
 }
 
-/* ---- ③ 链接期占位（未供应符号显式置 0，便于链出并校验段地址）----
- * compress/uncompress：工厂从 libz.so.1 动态导入（NEEDED libz.so.1），试链环境无 libz
+/* ---- ③ 链接期占位 ----
+ * ★★ compress / uncompress：**不再占位**（此前 PROVIDE_HIDDEN(...=0) 把它们绑成 ABS 0）。
+ *   实测：这两个符号被 `retro_save_state` / `retro_load_state`（以及 TestLibz0）调用，
+ *   绑成 0 ⇒ 调用即跳地址 0 ⇒ SIGSEGV（存档/读档功能必崩）。
+ *   工厂的取值方式 = 从 `libz.so.1` **动态导入**（NEEDED libz.so.1）⇒ 现在改为
+ *   在 link_full.sh 里真实链接一个 ARM 版 libz.so.1（`LIBZ=<path>`），产物同样只记
+ *   NEEDED libz.so.1，运行期由设备自己的 libz 解析 —— 与工厂一致。
+ *   若找不到 libz.so.1，link_full.sh 会**显式报错退出**（绝不再静默置 0）。
  * _init：★ 只能用 PROVIDE_HIDDEN（"别人定义了就不生效"），**绝不能用裸赋值**。
  *   实测真因：裸赋值 `_init = 0;` 会压掉 crti.o 的真 `_init`，链接器于是在 .dynamic 写下
  *   `DT_INIT = 0`；glibc 的 call_init 照调不误 → `blx` 到地址 0（非 PIE 下 vaddr 0
@@ -54,8 +60,6 @@ SECTIONS
  * ★★ 血泪：`_init = 0;` 这种**普通赋值会压掉 crti.o 的真定义**，而 glibc 的
  *   __libc_start_main 会走 DT_INIT/初始化链 → 直接 blx 到 0 → SIGILL（si_addr≈0x20）。
  *   故所有"兜底"一律用 PROVIDE_HIDDEN，绝不用裸赋值。 */
-PROVIDE_HIDDEN(compress = 0);
-PROVIDE_HIDDEN(uncompress = 0);
 PROVIDE_HIDDEN(_init = 0);
 
 /* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */

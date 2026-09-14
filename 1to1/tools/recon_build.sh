@@ -24,8 +24,15 @@ SRCDIR="$ROOT/src/proprietary"
 #   Ubuntu 的 GCC 默认插 canary 并开 FORTIFY ⇒ 重建产物会 abort（*** stack smashing detected ***），
 #   那是工具链差异，不是代码差异 ⇒ 必须显式关掉，否则行为差分永远有一处假分歧。
 FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-CFLAGS="-c -O1 -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic $FIDELITY"
-CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic $FIDELITY"
+# ★ CC 自适应：**zig 的 gnueabihf 目标不支持 `-fno-pic`**（会报 unsupported），
+#   而 GCC 需要它。此前这里把 `-march=… -fno-pic` 写死，导致 CI 一旦改用 zig cc
+#   就会在编译步骤直接失败（本地用 recon_local.sh 因此没暴露）。
+case "$CC" in
+  *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
+  *)     ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic" ;;
+esac
+CFLAGS="-c -O1 -w -I$ROOT/src/compat $ARCH $FIDELITY"
+CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -I$ROOT/src/compat $ARCH $FIDELITY"
 
 mkdir -p "$(dirname "$REP")"
 TMP="$(mktemp -d)"
@@ -39,7 +46,10 @@ for f in "$SRCDIR"/*/*.c; do
     [ -f "$f" ] || continue
     total=$((total + 1))
     rel="${f#$ROOT/}"
-    if "$CC" $CFLAGS "$f" -o "$TMP/o.o" 2> "$TMP/err.txt"; then
+    # shellcheck disable=SC2086
+    # ★ 不能写成 "$CC"：CC 可能是多词命令（如 `<zig> cc`），加引号会被当成单个文件名
+    #   → `No such file or directory`（技能库第 28 条）。
+    if $CC $CFLAGS "$f" -o "$TMP/o.o" 2> "$TMP/err.txt"; then
         ok=$((ok + 1))
         echo "$rel" >> "$TMP/ok.txt"
     else
@@ -55,7 +65,8 @@ strict_ok=0
 : > "$TMP/strict_bad.txt"
 while IFS= read -r rel; do
     [ -n "$rel" ] || continue
-    if "$CC" $CFLAGS_STRICT "$ROOT/$rel" -o "$TMP/s.o" 2> "$TMP/serr.txt"; then
+    # shellcheck disable=SC2086
+    if $CC $CFLAGS_STRICT "$ROOT/$rel" -o "$TMP/s.o" 2> "$TMP/serr.txt"; then
         strict_ok=$((strict_ok + 1))
     else
         serr=$(grep -a -m3 -E 'error:' "$TMP/serr.txt" | head -c 300)

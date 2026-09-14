@@ -24,6 +24,21 @@ jobs:
           arm-linux-gnueabihf-gcc --version | head -1
           arm-linux-gnueabihf-objdump --version | head -1
 
+      - name: 安装 zig（与本地同一工具链 ⇒ GLIBC 下限可控、避免 GCC/lld 差异）
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          chmod +x "$ZIG"
+          echo "ZIG=$ZIG" >> "$GITHUB_ENV"
+          # ★ CC 必须用 zig：只有 `-target arm-linux-gnueabihf.<glibc版本>` 才能把产物的
+          #   GLIBC 下限钉到设备可用区间 —— 实测工厂 rkgame 只要 GLIBC_2.7，而 Ubuntu 22.04
+          #   的 GCC 会产出 GLIBC_2.29/2.33/2.34 ⇒ 拿到真机上 `version GLIBC_2.34 not found`
+          #   直接起不来。dyn_audit 的 A7 门禁专门拦这一条。
+          echo "CC=$ZIG cc" >> "$GITHUB_ENV"
+          # ★ 并发 zig 共用同一 global cache 会 CacheCheckFailed ⇒ 每 job 独立 cache
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zigcache" >> "$GITHUB_ENV"
+          "$ZIG" version
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'
@@ -74,14 +89,14 @@ jobs:
         run: |
           cd 1to1
           mkdir -p report
-          CC=arm-linux-gnueabihf-gcc sh tools/recon_build.sh report/recon_build.txt
+          sh tools/recon_build.sh report/recon_build.txt
 
       - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）★ 硬门禁
         run: |
           cd 1to1
           mkdir -p report
           rc=0
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt || rc=$?
+          PY=python3 sh tools/link_audit.sh report/link_audit.txt || rc=$?
           echo "link_audit 退出码 = $rc"
           echo '--- 审计要点 ---'
           grep -aE '重复定义|未解析引用|MISSING|upstream|结论' report/link_audit.txt | head -8
@@ -109,14 +124,14 @@ jobs:
         run: |
           cd 1to1
           mkdir -p build/upstream
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
+          PY=python3 sh tools/build_upstream.sh build/upstream
 
       - name: P3 完整链接 + ABI/布局门禁 ★ 硬门禁
         run: |
           cd 1to1
           # 注：数据镜像/链接脚本的「重新生成」需工厂 ELF，只在本地执行（tools/regen_data.sh）；
           #     CI 使用仓库内已提交的 src/data/factory_*.bin + factory_image.S + linker/factory.ld
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          PY=python3 sh tools/link_full.sh build/rkgame.rebuilt.elf
           echo '--- 链接错误（应为空）---'
           wc -c report/link_full_err.txt
           echo '--- 布局门禁 ---'

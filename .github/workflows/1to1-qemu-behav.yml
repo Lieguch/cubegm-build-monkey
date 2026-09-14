@@ -39,6 +39,16 @@ jobs:
           sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf strace
           arm-linux-gnueabihf-gcc --version | head -1
 
+      - name: 安装 zig（与本地同一工具链 ⇒ 重建产物的 GLIBC 下限可控）
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          chmod +x "$ZIG"
+          echo "ZIG=$ZIG" >> "$GITHUB_ENV"
+          echo "CC=$ZIG cc" >> "$GITHUB_ENV"
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zigcache" >> "$GITHUB_ENV"
+          "$ZIG" version
+
       - name: 建立 qemu-user + armhf sysroot
         run: sudo -E sh 1to1/tools/ci_qemu_env.sh /arm-root
 
@@ -54,10 +64,10 @@ jobs:
           mkdir -p report
           # link_audit.sh 是本仓库里唯一会把 src/proprietary/*.c 编译成 build/obj/*.o 的脚本；
           # 它自身的门禁结论由 1to1-verify 负责，这里只为拿对象，故 rc 不强判。
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt || \
+          PY=python3 sh tools/link_audit.sh report/link_audit.txt || \
             echo "[warn] link_audit 非零（对象已产出，继续）: rc=$?"
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
-          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          PY=python3 sh tools/build_upstream.sh build/upstream
+          PY=python3 sh tools/link_full.sh build/rkgame.rebuilt.elf
           echo '--- 动态段 / 初始化链自洽门禁（跑起来之前先静态拦一遍）---'
           python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
           echo '--- 被测二进制 ---'

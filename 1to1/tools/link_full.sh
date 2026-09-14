@@ -24,11 +24,28 @@ FIDELITY="${FIDELITY:--fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
 OUT="${1:-$ROOT/build/rkgame.rebuilt.elf}"
 PY="${PY:-python}"
 
+# ★★ glibc 版本下限 —— 设备兼容性的硬约束
+#   实测（golden/factory.rkgame.bin 的 .gnu.version_r / .dynstr）：工厂 rkgame 需要的最高
+#   GLIBC 标签 = **GLIBC_2.7**；设备 SD 上原厂 ARM 运行库（SDL/libz/libpng/freetype/libcrypto）
+#   最高只用到 GLIBC_2.16，且 rkgame 的 .comment 是 **GCC 6.2.0**（SD 上 libstdc++ = 6.0.22，
+#   GCC 5/6 时代）⇒ 设备 glibc 处于 2.16~2.24 区间。
+#   而 CI 的 Ubuntu 22.04 GCC 链接出的产物要求 **GLIBC_2.29/2.33/2.34** ⇒ 到设备上会
+#   `version GLIBC_2.34 not found` 直接起不来（这是 P6 真机验收的硬阻断）。
+#   zig cc 支持在目标三元组里指定 glibc 版本：`-target arm-linux-gnueabihf.2.7` ⇒ 产物只要求
+#   GLIBC_2.4/2.7（与工厂同级，向下兼容到任意 ≥2.7 的设备 glibc）。
+#   ⇒ 因此链接**必须**用 zig；用 GCC 时必须显式给 SYSROOT（否则 abi_check 的 GLIBC 门禁会 FAIL）。
+GLIBC_VER="${GLIBC_VER:-2.7}"
+
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 case "$CC" in
-  *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
-  *)     ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic" ;;
+  *zig*) ARCH="-target arm-linux-gnueabihf.${GLIBC_VER} -mfloat-abi=hard -mfpu=neon" ;;
+  *)     if [ -n "${SYSROOT:-}" ]; then
+             ARCH="--sysroot=$SYSROOT -march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic"
+         else
+             ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic"
+             echo "!! 警告：非 zig 链接且未给 SYSROOT ⇒ 产物的 GLIBC 下限 = 宿主 glibc（会远高于设备）" >&2
+         fi ;;
 esac
 
 # 静态试链用的 libstdc++ 替身（operator new/delete）
@@ -58,6 +75,29 @@ WOBJS=""
 for o in $OBJS; do WOBJS="$WOBJS $(winpath "$o")"; done
 
 echo "== 链接 =="
+# ★★ libz.so.1 —— 必须真实产生（不能再把 compress/uncompress 置 0）
+#   实测：这两个符号被 retro_save_state / retro_load_state 调用；绑成 ABS 0 ⇒ 调用即跳地址 0
+#   ⇒ 存档/读档必崩。工厂的取值方式 = 从 libz.so.1 **动态导入**（NEEDED libz.so.1）。
+#   ★ 做法：生成一个**链接期桩 DSO**（src/compat/zstub.c，SONAME=libz.so.1）。
+#     只让引用变成动态导入 ⇒ NEEDED 里出现 libz.so.1（与工厂一致），
+#     但**不绑死符号版本** —— 实测链接真实 libz 会写下 `ZLIB_1.2.x` 版本需求，
+#     而设备 SD 上原厂 ARM libz 的版本集是非标准的（ZLIB_1.2.0…1.2.12）⇒ 可能
+#     `version ZLIB_x not found`。桩没有任何版本标签，因此对任何 zlib 都安全。
+#     桩不打包、不在设备上执行：运行期由设备自己的 libz.so.1 解析。
+#   （LIBZ=<path> 可指定一个真实 libz 做对照实验，但**不要**用于交付产物。）
+STUBDIR="$ROOT/build/stub"
+mkdir -p "$STUBDIR"
+if [ -n "${LIBZ:-}" ]; then
+    echo "  [对照模式] 使用真实 libz：$LIBZ（注意会绑死符号版本，勿用于交付）"
+    LIBZ_W="$(winpath "$LIBZ")"
+else
+    $CC $ARCH -shared -fPIC -O1 -w -Wl,-soname,libz.so.1 \
+        "$(winpath "$ROOT/src/compat/zstub.c")" -o "$(winpath "$STUBDIR/libz.so.1")" \
+        || { echo "!! FATAL 生成 libz 桩失败" >&2; exit 3; }
+    LIBZ_W="$(winpath "$STUBDIR/libz.so.1")"
+    echo "  libz 桩 = build/stub/libz.so.1（SONAME=libz.so.1，不绑符号版本）"
+fi
+
 # ★ -z max-page-size=0x1000 与工厂一致（工厂各 LOAD 的 al=0x1000，首个 LOAD 从 0x8000 起）。
 #   默认 0x10000 会让链接器把首段起点向下取整到 0x0 ⇒ 地址 0..0x7fff 变成**已映射**；
 #   工厂那里是空洞 ⇒ NULL 写会静默成功而不是 SIGSEGV（真实差分抓到的假分歧）。
@@ -67,7 +107,7 @@ $CC $ARCH $FIDELITY -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
     -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \
-    $WOBJS -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
+    $WOBJS "$LIBZ_W" -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
 rc=$?
 echo "链接 rc=$rc"
 if [ -f "$OUT" ]; then
