@@ -83,7 +83,11 @@ fi
 # shm 心跳
 SHM="0"
 if command -v ipcs >/dev/null 2>&1; then
-    SHM=$(ipcs -m 2>/dev/null | grep -c '0x000004d2' || echo 0)
+    # ★ 踩坑：`grep -c` 在 0 命中时返回 1 且**已经**打印了 "0"，再加 `|| echo 0` 会输出两行
+    #   （"0\n0"）→ 下面拼出来的 JSON 里出现裸 `0` → json.load 直接崩。
+    #   必须去掉 `|| echo 0`，并做数值兜底。
+    SHM=$(ipcs -m 2>/dev/null | grep -c '0x000004d2' || true)
+    case "$SHM" in ''|*[!0-9]*) SHM=0 ;; esac
 fi
 
 # --- 输出 JSON ---
