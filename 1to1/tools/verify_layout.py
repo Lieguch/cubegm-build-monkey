@@ -187,12 +187,17 @@ def main():
     A('')
 
     # ---- 附加门禁：可映射性（符号值必须落在某个 PT_LOAD 内）----
+    # ★ 边界口径：PT_LOAD 的 [vaddr, vaddr+memsz) 是**左闭右开**，但链接器定义的段尾标记
+    #   （`__TMC_END__` / `_end` / `__bss_start` 等）按约定就落在「最后一字节之后」。
+    #   故判定用 `lo <= v <= hi`（含终点），仍然能抓住真正的地雷 —— 落在**空洞**里的地址
+    #   （例：曾把 UNK_* 置 0、或镜像尾部掉进无 LOAD 覆盖的缝隙）。实测该口径下
+    #   本地 0 越界、CI（GCC/binutils ld）也只有 `__TMC_END__` 这一个边界标记，现已消除误报。
     segs = load_segments(elf)
     unmapped = []
     for nm, v in got.items():
         if not v:
             continue
-        if not any(lo <= v < hi for lo, hi in segs):
+        if not any(lo <= v <= hi for lo, hi in segs):
             unmapped.append((nm, v))
     A('--- 可映射性门禁（符号值必须落在 PT_LOAD 内，否则运行期访问即段错）---')
     A('  PT_LOAD 段数 %d；覆盖 %s' % (len(segs),
