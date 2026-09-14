@@ -269,19 +269,23 @@ def scan(factory, funcs_path, out_json):
                     direct.append((b, hit))
 
         def probe(rn, off):
-            """以 reg_base[rn] 为基址、off 为偏移的一次访存 → 记录它落在哪个符号上。"""
+            """以 reg_base[rn] 为基址、off 为偏移的一次访存 → 记录它落在哪个符号上。
+               返回 GOT 目标的地址（若这次访存是在读 GOT 槽），供调用方继续跟踪
+               `ldr rd,[GOT,#off]` 之后 rd 变成「指向某数据的指针」这一情形。"""
             if rn not in reg_base:
-                return
+                return None
             b = reg_base[rn]
             t = (b + off) & M32
             if got_lo <= b < got_hi:
                 if t in got_slot:
                     v, names = got_slot[t]
                     gotrefs.append((t, v, names))
+                    return v
             elif not (got_lo <= t < got_hi):
                 hit = addr2sym.get(t)
                 if hit:
                     direct.append((t, hit))
+            return None
 
         ea = a
         end = min(nxt, t_hi)
@@ -385,7 +389,15 @@ def scan(factory, funcs_path, out_json):
                         if hit:
                             direct.append((t, hit))
                     elif off is not None:
-                        probe(rn, off)
+                        # ★ 若这次是「从 GOT 读指针」（ldr rd,[GOT,#off]），
+                        #   把读出的目标地址当作 rd 的新基址继续跟踪 ——
+                        #   否则 `base + 0x10` 这类落在未命名区域（UNK_xxxxxxxx）的引用会漏判。
+                        tgt = probe(rn, off)
+                        if tgt is not None and L and rd != 15 and tgt:
+                            reg_base[rd] = tgt & M32
+                            reg_const.pop(rd, None)
+                            ea += 4
+                            continue
                     if L and rd != 15:          # LDR 写 rd；STR 的 rd 是源，不清状态
                         reg_base.pop(rd, None)
                         reg_const.pop(rd, None)

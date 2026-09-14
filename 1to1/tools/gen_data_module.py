@@ -33,14 +33,23 @@ import sys
 SKIP_HEAD = {'.rodata': 4}
 # ★ 镜像段使用自定义名 .fimg_*：与编译产物的常规段（.rodata/.data/.bss）分离，
 #   这样链接脚本能把「工厂地址区」和「我们自己+libc 的段」放到不同地址，互不重叠。
-FIMG = {'.rodata': '.fimg_rodata',
+FIMG = {'.text': '.fimg_text',
+        '.rodata': '.fimg_rodata',
+        '.data.rel.ro_local': '.fimg_data_rel_ro_local',
         '.data.rel.ro.local': '.fimg_data_rel_ro_local',
         '.data': '.fimg_data',
         '.bss': '.fimg_bss'}
-SEC_DEF = [('.rodata', 'a', 'progbits', None),
+SEC_DEF = [('.text', 'a', 'progbits', None),
+           ('.rodata', 'a', 'progbits', None),
            ('.data.rel.ro.local', 'aw', 'progbits', None),
            ('.data', 'aw', 'progbits', None),
            ('.bss', 'aw', 'nobits', None)]
+
+# ★★ 工厂 .text 的**声明 size 越界**：0x9b10 + 0x2D21B8 = 0x2DBCC8，已经压到
+#    .fini(0x2dbc98) 与 .rodata(0x2dbca0) 上。镜像必须在上一个真实节之前收尾，
+#    否则会把 .fini/.rodata 的头 0x30 字节一起吞进 .fimg_text。
+#    依据：工厂节表实测（.fini file off 0x2d3c98 / .rodata file off 0x2d3ca0）。
+MIRROR_END = {'.text': 0x2dbc98}
 
 # ★ 重名符号拆分（P3 二期④）。同名两份：一份是某 TU 的 static，一份是全局。
 #   归属由 tools/xref_scan.py 的指令级交叉引用 + tools/dup_assign.py 的 TU 投票实测确定
@@ -61,6 +70,9 @@ SPLIT_ALIASES = {
 LINKER_DEFINED = {'__frame_dummy_init_array_entry': '.init_array',
                   '__do_global_dtors_aux_fini_array_entry': '.fini_array'}
 RE_DAT = re.compile(r'^DAT_([0-9a-fA-F]{6,8})$')
+# ★ UNK_<hex>：Ghidra 对「落在未命名区域」的地址起的合成名（工厂 .text 段内
+#   的只读数据表就是这种情况：实测 0xD2F00/0x118000 都是 .word 表，不是代码）。
+RE_UNK = re.compile(r'^UNK_([0-9a-fA-F]{6,8})$')
 
 
 def load_layout(p):
@@ -136,6 +148,12 @@ def main():
             raise SystemExit('layout 缺段 %s' % nm)
         secs[nm] = lay[nm]
 
+    # ★ 段声明 size 越界收口（.text 见 MIRROR_END 注释）
+    for _nm, _end in MIRROR_END.items():
+        _s = secs.get(_nm)
+        if _s and _s['addr'] + _s['size'] > _end:
+            _s['size'] = _end - _s['addr']
+
     def which_sec(addr, size=1):
         for nm, _, _, _ in SEC_DEF:
             s = secs[nm]
@@ -167,7 +185,7 @@ def main():
     for m in missing:
         if m in syms:
             continue
-        md = RE_DAT.match(m)
+        md = RE_DAT.match(m) or RE_UNK.match(m)
         if not md:
             unplaced.append(m)
             continue
@@ -244,35 +262,51 @@ def main():
     B('  /* ---- ① 工厂地址区（必须逐位一致：代码里烧死绝对地址）---- */')
     B('  . = 0x00008000;')
     # 工厂镜像段：只匹配 .fimg_*（我们自己/libc 的常规段不会落进来）
-    fimg_order = [('.fimg_rodata', 0x2dbca0),
-                  ('.fimg_data_rel_ro_local', 0x3ae5c4),
-                  ('.fimg_data', 0x3af000),
-                  ('.fimg_bss', 0x3b2178)]
-    # ★ 带 SKIP_HEAD 的段：镜像内容已剔除头部，故 VMA 要 +skip（头部由 CRT 填，如 _IO_stdin_used）
-    skip_of = {'.fimg_rodata': SKIP_HEAD.get('.rodata', 0),
-               '.fimg_data_rel_ro_local': SKIP_HEAD.get('.data.rel.ro.local', 0),
-               '.fimg_data': SKIP_HEAD.get('.data', 0),
-               '.fimg_bss': SKIP_HEAD.get('.bss', 0)}
-    for nm, vma in fimg_order:
-        B('  %s 0x%08x : { *(%s) }' % (nm, vma + skip_of.get(nm, 0), nm))
+    # ★ VMA 一律取「工厂节地址 + SKIP_HEAD」，不再手写常量 —— 节表变动也不会写错。
+    # ★ .fimg_text 覆盖整段工厂 .text（含其中 ~2.7MB 的只读数据表，如 UNK_000d2f00/
+    #   UNK_00118000）：实测这些地址无符号、无函数，是 Ghidra 的 UNK_<addr> 合成名，
+    #   只有「镜像 + .set 别名」能同时保证地址与字节都逐位一致。
+    fimg_order = [('.fimg_text', '.text'),
+                  ('.fimg_rodata', '.rodata'),
+                  ('.fimg_data_rel_ro_local', '.data.rel.ro.local'),
+                  ('.fimg_data', '.data'),
+                  ('.fimg_bss', '.bss')]
+    for fname, sec in fimg_order:
+        vma = secs[sec]['addr'] + SKIP_HEAD.get(sec, 0)
+        B('  %s 0x%08x : { *(%s) }' % (fname, vma, fname))
     B('')
-    B('  /* ---- ② 代码与运行时区（我们自己 + libc；地址自由，只要不与①重叠）---- */')
-    B('  .text 0x00009b10 : { *(.text) *(.text.*) *(.init) *(.fini) *(.plt) *(.plt.*) }')
-    B('  .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }')
-    B('  .rodata 0x00400000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }')
+    B('  /* ---- ② ELF 元数据（地址无关；排在 ① 之后，避免挤进工厂地址区）---- */')
+    B('  . = 0x00400000;')
+    B('  .interp : { *(.interp) }')
+    B('  .note.ABI-tag : { *(.note.ABI-tag) }')
+    B('  .hash : { *(.hash) }')
+    B('  .gnu.hash : { *(.gnu.hash) }')
+    B('  .dynsym : { *(.dynsym) }')
+    B('  .dynstr : { *(.dynstr) }')
+    B('  .gnu.version : { *(.gnu.version) }')
+    B('  .gnu.version_r : { *(.gnu.version_r) }')
+    B('  .rel.dyn : { *(.rel.dyn) }')
+    B('  .rel.plt : { *(.rel.plt) }')
+    B('  .init : { *(.init) }')
+    B('  .plt : { *(.plt) *(.plt.*) }')
+    B('')
+    B('  /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）---- */')
+    B('  .rodata 0x00410000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }')
     B('  .init_array ALIGN(4) : { PROVIDE_HIDDEN(__init_array_start = .); KEEP(*(.init_array)) KEEP(*(.init_array.*)) }')
     B('  .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }')
     B('  .data 0x01000000 : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }')
     B('  .bss 0x02000000 : { *(.bss) *(.bss.*) *(COMMON) }')
+    B('  .text 0x05000000 : { *(.text) *(.text.*) *(.fini) }')
+    B('  .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }')
     B('  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }')
     B('}')
     B('')
     B('/* ---- ③ 链接期占位（未供应符号显式置 0，便于链出并校验段地址）----')
     B(' * compress/uncompress：工厂从 libz.so.1 动态导入（NEEDED libz.so.1），试链环境无 libz')
-    B(' * UNK_*：位于工厂 .text 段内的只读常量，等 P3 三期 .text 精确镜像')
-    B(' * _init：真机构建由 CRT（crti.o）提供，此处占位仅供试链 */')
-    for ph in ('compress', 'uncompress', '_init',
-               'UNK_000d2f00', 'UNK_00118000', 'UNK_002e0938'):
+    B(' * _init：真机构建由 CRT（crti.o）提供，此处占位仅供试链')
+    B(' * ★ UNK_000d2f00 / UNK_00118000 / UNK_002e0938 已由「工厂 .text / .rodata 镜像 +')
+    B(' *   .set 别名」真实供应（不再是 0 占位）——此前它们指向地址 0，是运行期地雷。 */')
+    for ph in ('compress', 'uncompress', '_init'):
         B('%s = 0;' % ph)
     B('')
     B('/* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */')

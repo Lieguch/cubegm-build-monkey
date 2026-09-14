@@ -2,6 +2,13 @@
  * 每个段只放一份工厂原始镜像，全部符号（含 Ghidra DAT_x）以 .set 别名指向段内偏移。
  * 依据：段 VMA 必须与工厂一致（代码里烧死绝对地址）；DAT_x 不是工厂符号。 */
 
+	.section .fimg_text,"a",%progbits
+	.globl __f_text_base
+	.type __f_text_base, %object
+__f_text_base:
+	.incbin "factory_text.bin"
+	.size __f_text_base, 0x2d2188
+
 	.section .fimg_rodata,"a",%progbits
 	.globl __f_rodata_base
 	.type __f_rodata_base, %object
@@ -31,7 +38,13 @@ __f_bss_base:
 	.size __f_bss_base, 0x2f95b
 
 /* ---- 符号别名 ---- */
-/* .rodata：737 个符号 */
+/* .text：2 个符号 */
+	.globl UNK_000d2f00
+	.set UNK_000d2f00, __f_text_base + 0xc93f0
+	.globl UNK_00118000
+	.set UNK_00118000, __f_text_base + 0x10e4f0
+
+/* .rodata：738 个符号 */
 	.globl DAT_002dbcb4
 	.set DAT_002dbcb4, __f_rodata_base + 0x10
 	.globl DAT_002dbd74
@@ -112,6 +125,8 @@ __f_bss_base:
 	.set joy_key_mask, __f_rodata_base + 0x4c44
 	.globl asc2_1608
 	.set asc2_1608, __f_rodata_base + 0x4c84
+	.globl UNK_002e0938
+	.set UNK_002e0938, __f_rodata_base + 0x4c94
 	.globl DAT_002e0d18
 	.set DAT_002e0d18, __f_rodata_base + 0x5074
 	.globl xmp3_sfBandTable

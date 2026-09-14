@@ -26,14 +26,24 @@ verify_layout.py — P3 布局校验：重建 ELF 的数据符号地址 vs 工�
 
 输入： <rebuilt.elf> <factory_globals.tsv>
 退出码：0 = 全局符号全部一致；2 = 有全局偏差
+
+★ 附加门禁「命名自洽」（NAME_ENC）
+--------------------------------
+Ghidra 与我们的别名体系里，`UNK_<hex>` / `DAT_<hex>` 这类名字**把地址编进了名字**。
+因此有一条零成本的强不变式：**凡形如 `UNK_xxxxxxxx` / `DAT_xxxxxxxx` 的符号，
+其符号值必须等于 xxxxxxxx**。任何别名算错偏移都会在这里立刻暴露
+（例：UNK_000d2f00 曾因缺 .text 镜像而被链接脚本显式置 0 → 指向地址 0 的运行期地雷）。
 """
 import os
+import re
 import struct
 import sys
 import collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+NAME_ENC = re.compile(r'^(?:UNK|DAT)_([0-9a-fA-F]{6,8})$')
 
 # 账本 (名字, 地址) → 我们 ELF 里的符号名
 ALIAS = {
@@ -91,6 +101,21 @@ def read_elf_syms(path):
     return out
 
 
+def load_segments(path):
+    """PT_LOAD 的 [vaddr, vaddr+memsz) 区间 —— 运行期真正可访问的地址空间。"""
+    d = open(path, 'rb').read()
+    phoff = struct.unpack_from('<I', d, 28)[0]
+    ents = struct.unpack_from('<H', d, 42)[0]
+    num = struct.unpack_from('<H', d, 44)[0]
+    segs = []
+    for i in range(num):
+        o = phoff + i * ents
+        p_type, p_off, p_va, p_pa, p_fsz, p_msz, p_fl, p_al = struct.unpack_from('<8I', d, o)
+        if p_type == 1 and p_msz:                       # PT_LOAD
+            segs.append((p_va, p_va + p_msz))
+    return segs
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -145,6 +170,38 @@ def main():
         A('')
 
     real_bad = [x for x in bad_g if x[0] not in ACCEPT]
+
+    # ---- 附加门禁：命名自洽（名字里编码的地址 == 符号值）----
+    nenc, enc_bad = 0, []
+    for nm, v in got.items():
+        m = NAME_ENC.match(nm)
+        if m:
+            nenc += 1
+            want = int(m.group(1), 16)
+            if v != want:
+                enc_bad.append((nm, want, v))
+    A('--- 命名自洽门禁（UNK_/DAT_<hex> 的符号值必须 == 名字里的地址）---')
+    A('  受检符号 %d 个；不符 %d 个' % (nenc, len(enc_bad)))
+    for nm, want, v in enc_bad[:20]:
+        A('  %-28s 名字 0x%08x 实际 0x%08x Δ%+d' % (nm, want, v, v - want))
+    A('')
+
+    # ---- 附加门禁：可映射性（符号值必须落在某个 PT_LOAD 内）----
+    segs = load_segments(elf)
+    unmapped = []
+    for nm, v in got.items():
+        if not v:
+            continue
+        if not any(lo <= v < hi for lo, hi in segs):
+            unmapped.append((nm, v))
+    A('--- 可映射性门禁（符号值必须落在 PT_LOAD 内，否则运行期访问即段错）---')
+    A('  PT_LOAD 段数 %d；覆盖 %s' % (len(segs),
+                                    ', '.join('0x%08x..0x%08x' % s for s in segs[:6])))
+    A('  越界符号 %d 个' % len(unmapped))
+    for nm, v in unmapped[:20]:
+        A('  %-28s 0x%08x 不在任何 LOAD 段内' % (nm, v))
+    A('')
+
     if bad_g:
         A('--- 全局偏差明细（%d）---' % len(bad_g))
         for n, a, b in bad_g[:40]:
@@ -162,14 +219,16 @@ def main():
             A('  %-28s 工厂 0x%08x (%s)' % (n, a, bind))
         A('')
 
-    verdict = 'PASS' if not real_bad else 'FAIL（%d 个全局符号地址不符）' % len(real_bad)
+    verdict = ('PASS' if (not real_bad and not enc_bad and not unmapped)
+               else 'FAIL（全局地址不符 %d / 命名自洽失败 %d / 越 LOAD 段 %d）'
+                    % (len(real_bad), len(enc_bad), len(unmapped)))
     A('结论: %s' % verdict)
     txt = '\n'.join(L) + '\n'
     sys.stdout.write(txt)
     rep = os.path.join(ROOT, 'report', 'verify_layout.txt')
     os.makedirs(os.path.dirname(rep), exist_ok=True)
     open(rep, 'w', encoding='utf-8').write(txt)
-    return 0 if not real_bad else 2
+    return 0 if (not real_bad and not enc_bad and not unmapped) else 2
 
 
 if __name__ == '__main__':
