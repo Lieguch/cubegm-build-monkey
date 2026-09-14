@@ -259,6 +259,50 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-14 第十九轮：★★★ P5 行为差分首次 PASS；门禁「假红」修正
+
+**CI（commit `f28630c5`）结果分裂，但两边都有信息量：**
+
+| workflow | 结果 | 说明 |
+|---|---|---|
+| `1to1-qemu-behav` | **success** | **行为差分 B1–B7 全 PASS** |
+| `1to1-verify` | **failure** | 硬门禁「镜像尾部 slack」在 CI 报 1 项违规 |
+| `rkgame-rebuild` | success | — |
+
+**行为差分首次通过（观测窗口 13 行完全一致）：**
+
+```
+factory  binary=/sdcard/cubegm/rkgame  sha=8ff3b4b70c253ff7  exit=139  stdout=13 行  menu.log/2 行
+rebuild  binary=/sdcard/cubegm/rkgame  sha=e7c45aee70ed9a31  exit=139  stdout=13 行  menu.log/2 行
+[PASS] B1 exit_code 139 vs 139      [PASS] B2 events 13 vs 13
+[PASS] B3 new_files 0 vs 0          [PASS] B4 changed_files 0 vs 0
+[PASS] B5 log_sha d7c86a6f…(menu.log) vs 同
+⇒ 门禁结果: PASS (0 项失败)
+```
+
+两侧 stdout 逐行相同：`rkgame v1.42` / `directory:/sdcard/cubegm/` / `appname:rkgame` / `displayfps:0` /
+meminfo 8 行 / `open driver.so fail, /sdcard/cubegm//driver.so: …` / `Failed to initialize GPIO`
+⇒ 段保真修复**完全生效**（第十七/十八轮的两处修复都得到验证）。
+
+**门禁 FAIL 是「假红」而非产物缺陷**：CI(GNU ld) 把镜像区切成两条 LOAD ——
+`0x3ae5c4..0x3e1ad3`(.fimg_bss) 与 `0x3e2000..0x3f2000`(.fimg_bss_pad)。原门禁要求**单条** LOAD
+同时覆盖 `.fimg_bss` 末与 +0x1000 ⇒ 必然失败；而内核对 PT_LOAD 只按**页**授权，前一条尾部会被
+向上取整到 0x3e2000，与 pad **无缝相接** —— 这正是行为差分能 PASS 的原因。
+
+**修正**：`verify_layout.py` 新增「**运行期可访问区间 = 页对齐后的 LOAD 并集**」（`_paged_union` +
+`covered()`），slack 门禁改按并集判定，并在报告里打印该并集便于人工核对。
+**双向单元测试**（用 CI 的真实 LOAD 表）：修复后 `covered(.fimg_bss末, +4K)=True`；
+去掉 pad 段后 `=False` ⇒ 新口径**放行正确产物、仍拦住真实地雷**。
+本地复测：布局 **PASS**、ABI **PASS**、dyn_audit **PASS**（FAIL 0 / WARN 3）。
+
+**★ 下一轮已定位的风险（本轮新发现）**：`NEEDED` 列表不一致 ——
+工厂 = `libz.so.1, libdl.so.2, libm.so.6, libstdc++.so.6, libpthread.so.0, libgcc_s.so.1, libc.so.6`；
+我们的重建产物只有 `libm.so.6, libc.so.6`（`compress/uncompress` 仍是链接脚本内 `= 0` 占位）。
+当前不暴露只因为两侧都在 `Failed to initialize GPIO` 处就崩了；**一旦把执行驱动得更深（解压 UI 资源、
+读 joystick.zip）就会踩到**。⇒ 与「假硬件 shim 让两侧走得更深」一起处理。
+
+---
+
 ### 2026-09-14 第十八轮：★★★ 段保真度 —— 工厂「地址 0x8000 以下为空洞」被我们填上了
 
 第十七轮的 `.fimg_bss_pad` 修复**完全生效**（commit `5d7e74f7`，CI 实测）：

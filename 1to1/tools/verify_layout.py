@@ -270,6 +270,32 @@ def main():
           % (TAG.get(t, hex(t)), off, va, va + msz, fsz, msz, fl, al))
     A('')
 
+    # ---- ★★ 运行期可访问地址 = **页对齐后**的 LOAD 并集 ----
+    # 血泪（CI 实测）：GNU ld 会把镜像区切成多条 LOAD（.fimg_bss 0x3ae5c4..0x3e1ad3 与
+    # .fimg_bss_pad 0x3e2000..0x3f2000）。声明 memsz 之间存在 0x3e1ad3..0x3e2000 的"缝隙"，
+    # 但内核对 PT_LOAD 只按**页**授予访问权 ⇒ 前一条的尾部被向上取整到 0x3e2000，与 pad 无缝相接。
+    # 因此判定"某地址运行期可访问吗"必须按页对齐后的**并集**，而不是要求单条 LOAD 覆盖整段 ——
+    # 否则会把"运行期完全正常"的产物误判成缺陷（本轮 1to1-verify 就是这样红的）。
+    PAGE = 0x1000
+
+    def _paged_union(iv):
+        merged = []
+        for lo, hi in sorted((l & ~(PAGE - 1), (h + PAGE - 1) & ~(PAGE - 1)) for l, h in iv):
+            if merged and lo <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+            else:
+                merged.append((lo, hi))
+        return merged
+
+    cov = _paged_union(rsegs)
+    A('--- 运行期可访问区间（页对齐 + 并集合并，%d 段 → %d 区间）---' % (len(rsegs), len(cov)))
+    for lo, hi in cov:
+        A('  0x%08x..0x%08x  (%d B)' % (lo, hi, hi - lo))
+    A('')
+
+    def covered(a, b):
+        return any(lo <= a and b <= hi for lo, hi in cov)
+
     # ---- 附加门禁：节覆盖（SHF_ALLOC 节必须完整落在某个 PT_LOAD 内）----
     secs_alloc = read_sections(elf)
     bad_sec = []
@@ -301,8 +327,9 @@ def main():
     if real:
         name, addr, size, typ, fl = real[-1]
         need = addr + size + SLACK
-        if not any(lo <= addr and hi >= need for lo, hi in rsegs):
-            best = max([hi for lo, hi in rsegs if lo <= addr] or [addr])
+        # ★ 用「页对齐后的 LOAD 并集」（cov）判定，而不是单条 LOAD：见上面 _paged_union 说明
+        if not covered(addr + size, need):
+            best = max([hi for lo, hi in cov if lo <= addr + size] or [addr + size])
             short.append((name, addr + size, best, need - best))
     # ---- 附加门禁：段保真度（★★ 真实差分抓到的第二条假分歧）----
     # 工厂首个 PT_LOAD 从 0x8000 起（p_align=0x1000）⇒ 地址 [0,0x8000) 在工厂进程里是**空洞**。
