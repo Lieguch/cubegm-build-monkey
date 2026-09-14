@@ -1,0 +1,77 @@
+name: 1to1-qemu-behav
+
+# ============================================================
+# P5 行为差分门禁（独立 workflow）
+#
+# 为什么不并入 1to1-verify：
+#   · 1to1-verify 是「静态门禁」（编译 / 链接 / 布局 / ABI），状态应当是稳定可绿的；
+#   · 本 workflow 是「动态门禁」，需要 qemu + armhf sysroot + 运行期驱动，
+#     在把被测程序真正驱动起来之前它会**持续红**。
+#   把两者分开，才能保证「绿」始终等于「真的绿」——而不是靠 continue-on-error 掩盖。
+#   ★ 本 workflow 内**没有任何 continue-on-error**；INCONCLUSIVE(3) 同样判失败。
+#
+# 环境选型依据（见 tools/ci_qemu_env.sh 顶部注释）：
+#   sysroot 必须是 Ubuntu 22.04 armhf —— 与 CI 工具链同版本 glibc(2.35)，
+#   否则重建产物会 `version GLIBC_2.35 not found`。工厂 rkgame 只要 ≥2.7，向下兼容。
+# ============================================================
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '1to1/**'
+      - '.github/workflows/1to1-qemu-behav.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-behav:
+    name: P5 qemu 行为差分（factory vs rebuild）
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 ARM 交叉工具链
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          arm-linux-gnueabihf-gcc --version | head -1
+
+      - name: 建立 qemu-user + armhf sysroot
+        run: sudo -E sh 1to1/tools/ci_qemu_env.sh /arm-root
+
+      - name: 准备真机同款工作目录 /sdcard/cubegm
+        run: |
+          sudo mkdir -p /sdcard/cubegm/saves /sdcard/cubegm/states
+          sudo chown -R "$USER" /sdcard
+          ls -la /sdcard/cubegm
+
+      - name: 构建 1:1 重建产物（含 build/obj 对象）
+        run: |
+          cd 1to1
+          mkdir -p report
+          # link_audit.sh 是本仓库里唯一会把 src/proprietary/*.c 编译成 build/obj/*.o 的脚本；
+          # 它自身的门禁结论由 1to1-verify 负责，这里只为拿对象，故 rc 不强判。
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_audit.sh report/link_audit.txt || \
+            echo "[warn] link_audit 非零（对象已产出，继续）: rc=$?"
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
+          PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          echo '--- 被测二进制 ---'
+          ls -la build/rkgame.rebuilt.elf golden/factory.rkgame.bin
+
+      - name: 行为采集 + 差分 ★ 硬门禁
+        run: |
+          cd 1to1
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=20 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu
+
+      - name: 上传行为指纹与原始输出
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1to1-qemu-behav
+          path: 1to1/report/qemu/
+          if-no-files-found: warn

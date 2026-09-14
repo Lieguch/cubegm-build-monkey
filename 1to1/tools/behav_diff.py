@@ -29,6 +29,23 @@ def main():
     fails = []
     checks = []
 
+    # ---- B0 非空洞前置检查（★ 拒绝「两边都什么都没发生」的假通过）----
+    # 若参考侧（工厂）压根没跑起来（无日志、无事件），则两侧「一致地空」会
+    # 让 B1/B2/B3 全部 trivially PASS —— 那是**环境问题**，不是行为等价。
+    # 因此这种情况必须判为 INCONCLUSIVE（退出码 3），既不是 PASS 也不是 FAIL。
+    la = int(a.get('log_lines', 0) or 0)
+    ev_a = len(a.get('events', []))
+    if la < 1 and ev_a < 1:
+        print('=' * 64)
+        print('行为差分门禁  %s  vs  %s' % (a.get('label'), b.get('label')))
+        print('=' * 64)
+        print('  [INCONCLUSIVE] B0 参考侧（工厂）无任何可观测行为：')
+        print('      log_lines=%d  events=%d  exit_code=%s' % (la, ev_a, a.get('exit_code')))
+        print('  重建侧: log_lines=%d  events=%d  exit_code=%s'
+              % (b.get('log_lines', 0), len(b.get('events', [])), b.get('exit_code')))
+        print('  ⇒ 环境不足以驱动参考实现，本差分**无意义**（不是 PASS，也不是 FAIL）')
+        return 3
+
     def chk(name, ok, note=''):
         checks.append((name, ok, note))
         if not ok:
