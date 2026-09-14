@@ -63,6 +63,12 @@ rc=$?
 echo "链接 rc=$rc"
 if [ -f "$OUT" ]; then
     ls -la "$OUT"
+    echo "== 动态段 / 初始化链自洽 =="
+    # ★ 本地 zig 不链 crti.o ⇒ DT_INIT=0 属工具链差异（dyn_audit 会判 WARN 而非 FAIL）；
+    #   CI 用 GCC 必然链 crti.o ⇒ 若 DT_INIT=0 会直接判 FAIL。判定以 CI 为准。
+    $PY "$(winpath "$ROOT/tools/dyn_audit.py")" "$(winpath "$OUT")" \
+        > "$ROOT/report/dyn_audit.txt" 2>&1 || true
+    sed -n '1,20p' "$ROOT/report/dyn_audit.txt"
     echo "== 段地址核对 =="
     $PY "$(winpath "$ROOT/tools/verify_layout.py")" "$(winpath "$OUT")" \
         "$(winpath "$ROOT/ledger/factory_globals.tsv")" 2>/dev/null | head -24

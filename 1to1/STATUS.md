@@ -259,6 +259,55 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-14 第十四轮：P5 qemu 行为差分接入（环境打通；被测程序仍在驱动中）
+
+**先决问题：qemu 在哪跑？**（用户提示「本机 / cnb.cool 都有 qemu 环境」，故彻底搜了一遍）
+
+| 位置 | 结论 | 证据 |
+|---|---|---|
+| 本机 | **没有 qemu** | PATH 上 `qemu-arm/arm-static/system-arm…` 全无；`Program Files`/`Program Files (x86)`/`D:`/用户目录 5 层深 `find -iname "qemu*.exe"` 零命中；无 Docker；`wsl.exe` 被**安全策略黑名单**拦截（不可用） |
+| cnb.cool | **没有交互式 qemu 环境** | `cnb workspace list-workspaces` → 仅 2 个云原生开发环境（`lieguch/hello-cnb`、`lieguch/cubeGM`）**均为 `closed`**；CNB 侧的 qemu 是 **pipeline 阶段**（`lieguch/cubeGM/.cnb.yml` → `test-emu`）⇒ 本质仍是 CI |
+| GitHub Actions | ✅ **有先例可复用** | `cnb-rkgame-final/.github/workflows/build.yml` 的 `Setup qemu` + `Test (emu)`：ubuntu-22.04 + `qemu-user-static` + armhf sysroot |
+
+⇒ 按用户指示「都没有就提 CI」，落在 **GitHub Actions**。
+
+**新增（全部经本机预演，不烧 CI 分钟）**
+
+| 文件 | 作用 |
+|---|---|
+| `tools/fetch_armhf_sysroot.py` | 读 ports.ubuntu.com 的 `Packages.gz` 索引 → 解析 `Filename` → 直接下 `.deb` + 解包。**不碰任何 apt 状态**。带纯 Python（ar+tar+zstd）解包兜底，可在 Windows 上完整预演 |
+| `tools/ci_qemu_env.sh` | 装 `qemu-user-static` + 建 sysroot + **动态查找**校验 10 个运行库 |
+| `tools/ci_qemu_behav.sh` | 两侧同环境采集 + **运行时探针**（`-strace` syscall 轨迹 / `-d in_asm` 翻译级尾部）+ 差分 |
+| `.github/workflows/1to1-qemu-behav.yml` | **独立 workflow**（与静态门禁分离），内部**无 `continue-on-error`** |
+| `golden/factory.rkgame.bin` | 工厂二进制入库（3,921,108 B，sha256 `8ff3b4b7…`）—— 差分**必须两侧同环境各跑一次**，否则比的是环境差异 |
+
+**CI 首轮实测（commit `5e05448e`）**：环境 ✓ / 工作目录 ✓ / 构建 ✓ / 采集 ✓（**跑到了真正运行被测程序**），门禁 FAIL。
+
+**已修 3 个真问题**
+
+1. ★ `behav_capture.sh` 的 `SHM=$(ipcs … | grep -c … || echo 0)` —— `grep -c` 0 命中时**已输出 `0`**，
+   `|| echo 0` 再补一行 ⇒ JSON 里出现裸 `0` ⇒ `behav_diff.py` 的 `json.load` **直接崩**。
+   已修（只保留 `grep -c`，加数值兜底），并**本地复现**了新/旧两种输出对比。
+2. ★ **sysroot 不能用 apt 取**：`dpkg --add-architecture armhf` 后全局 `apt-get update` 会去
+   `security.ubuntu.com` 拉 `binary-armhf/Packages` → **404**（Ubuntu security 源没有 armhf）→ 返回 100 → 步骤挂。
+3. ★ **sysroot 必须与工具链同 glibc**：CI 是 Ubuntu 22.04(glibc **2.35**)；沿用先例的 Debian 9(2.24)
+   会让重建产物 `version GLIBC_2.35 not found`。工厂 rkgame 只要 ≥2.7，向下兼容。
+   （另：Ubuntu 22.04 armhf 的库**分两处** —— glibc/zlib 在 `lib/`，libstdc++/libdrm/libasound 在 `usr/lib/`，
+   故 `LD_LIBRARY_PATH` 两个都要给。）
+
+**下一轮待解（已有探针，等 CI 证据）**
+
+- 重建产物在 qemu 下 **SIGILL（退出码 132）**，`qemu: uncaught target signal 4 (Illegal instruction)`。
+  本地已排除：`e_entry=0x05000000` 落在 `.text` ✓；`__libc_start_main` 在 `.rel.plt` 中有 GOT 槽 ✓；
+  `_start` 的 GOT 相对取址链正确 ✓；`.plt` 条目 0x401040/0x401050… 合法（其 `d4d4d4d4` 是 **lld 的 UDF 填充**，不执行）✓。
+  ⇒ 需要运行时轨迹定位。已加探针：`-strace`（看到第几个 syscall 断）+ `-d in_asm`（崩溃前最后指令）。
+- 工厂二进制退出码 **1 且 stdout/stderr 全空、无日志** —— 需确认它是否在找 icube shm / `setting.xml` / `cores/`。
+
+**下一步**：读探针输出 → 定位 SIGILL 指令 → 修链接脚本/编译选项 → 让两侧都产生可观测行为后，
+`behav_diff.py` 的 B0 非空洞前置检查才会放行。
+
+---
+
 ### 2026-09-14 第十二轮：★ CI 治理 —— 清除「假绿」（门禁失败却报 success）
 
 **触发**：本轮新增的「可映射性门禁」在 CI 上 **FAIL**（`__TMC_END__` 越界），

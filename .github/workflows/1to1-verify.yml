@@ -121,6 +121,9 @@ jobs:
           wc -c report/link_full_err.txt
           echo '--- 布局门禁 ---'
           python3 tools/verify_layout.py build/rkgame.rebuilt.elf ledger/factory_globals.tsv
+          echo '--- 动态段 / 初始化链自洽门禁 ---'
+          # ★ 静态即可拦住「DT_INIT=0 → glibc call_init 调到地址 0 → SIGILL」这类致命 bug
+          python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
           echo '--- ABI 门禁 ---'
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
 

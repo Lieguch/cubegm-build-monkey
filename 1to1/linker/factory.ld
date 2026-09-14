@@ -40,12 +40,22 @@ SECTIONS
 
 /* ---- ③ 链接期占位（未供应符号显式置 0，便于链出并校验段地址）----
  * compress/uncompress：工厂从 libz.so.1 动态导入（NEEDED libz.so.1），试链环境无 libz
- * _init：真机构建由 CRT（crti.o）提供，此处占位仅供试链
+ * _init：★ 只能用 PROVIDE_HIDDEN（"别人定义了就不生效"），**绝不能用裸赋值**。
+ *   实测真因：裸赋值 `_init = 0;` 会压掉 crti.o 的真 `_init`，链接器于是在 .dynamic 写下
+ *   `DT_INIT = 0`；glibc 的 call_init 照调不误 → `blx` 到地址 0（非 PIE 下 vaddr 0
+ *   正是我们自己的 ELF 头，已映射）→ 跑到 0x20 处遇未定义指令 = SIGILL(si_addr=0x20)。
+ *   这就是重建产物在 qemu 下起不来的真因。改为 PROVIDE_HIDDEN 后，CI(GCC 链了 crti.o)
+ *   会采用 crti 的真 `_init`，DT_INIT 指向真实 .init 代码。
+ *   ⚠ 本地 zig 工具链不带 crti.o ⇒ 本地链接的 DT_INIT 仍会是 0；由 tools/dyn_audit.py
+ *   在 CI(GCC) 侧做硬门禁 —— 本地只作迭代，判定以 CI 为准。
  * ★ UNK_000d2f00 / UNK_00118000 / UNK_002e0938 已由「工厂 .text / .rodata 镜像 +
- *   .set 别名」真实供应（不再是 0 占位）——此前它们指向地址 0，是运行期地雷。 */
-compress = 0;
-uncompress = 0;
-_init = 0;
+ *   .set 别名」真实供应（不再是 0 占位）——此前它们指向地址 0，是运行期地雷。
+ * ★★ 血泪：`_init = 0;` 这种**普通赋值会压掉 crti.o 的真定义**，而 glibc 的
+ *   __libc_start_main 会走 DT_INIT/初始化链 → 直接 blx 到 0 → SIGILL（si_addr≈0x20）。
+ *   故所有"兜底"一律用 PROVIDE_HIDDEN，绝不用裸赋值。 */
+PROVIDE_HIDDEN(compress = 0);
+PROVIDE_HIDDEN(uncompress = 0);
+PROVIDE_HIDDEN(_init = 0);
 
 /* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */
 PROVIDE(__do_global_dtors_aux_fini_array_entry = ADDR(.fini_array));

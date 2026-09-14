@@ -58,6 +58,8 @@ jobs:
             echo "[warn] link_audit 非零（对象已产出，继续）: rc=$?"
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/build_upstream.sh build/upstream
           PY=python3 CC=arm-linux-gnueabihf-gcc sh tools/link_full.sh build/rkgame.rebuilt.elf
+          echo '--- 动态段 / 初始化链自洽门禁（跑起来之前先静态拦一遍）---'
+          python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
           echo '--- 被测二进制 ---'
           ls -la build/rkgame.rebuilt.elf golden/factory.rkgame.bin
 
