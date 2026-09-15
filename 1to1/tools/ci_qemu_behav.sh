@@ -161,6 +161,17 @@ run_side() {
 }
 
 run_side factory "$FACTORY"
+# ★ 确定性控制组：**同一份参考二进制再跑一遍**（默认开启，CGM_CONTROL=0 可关）。
+#   为什么要它：假硬件下若某次读失败，上层会打印**未初始化的栈缓冲** ⇒ 垃圾值取决于两份
+#   二进制各自的栈布局 ⇒ 拿它当"实现差异"是假的。控制组给出「参考实现自身可复现的前缀」，
+#   门禁只判这个前缀（详见 tools/behav_diff.py 的 B0c）。
+CONTROL_ARGS=""
+if [ "${CGM_CONTROL:-1}" = "1" ]; then
+    run_side control "$FACTORY"
+    CONTROL_ARGS="--control $OUT/behav_control.json"
+else
+    echo "!! CGM_CONTROL=0 ⇒ 本轮没有确定性控制组（门禁退化为全量严格比较）"
+fi
 run_side rebuild "$REBUILD"
 
 # 重建侧额外做一次翻译级探针（崩溃现场的最后指令）
@@ -185,7 +196,8 @@ echo "============================================================"
 # ★ 不用管道 + $?：POSIX sh 没有 ${PIPESTATUS[@]}，`cmd | tee f; rc=$?` 拿到的是 **tee** 的退出码
 #   ⇒ 门禁永远"成功"。落文件再 cat。
 set +e
-"${PY:-python3}" "$(winpath "$ROOT/tools/behav_diff.py")" "$OUT/behav_factory.json" "$OUT/behav_rebuild.json" --detail \
+# shellcheck disable=SC2086
+"${PY:-python3}" "$(winpath "$ROOT/tools/behav_diff.py")" "$OUT/behav_factory.json" "$OUT/behav_rebuild.json" $CONTROL_ARGS --detail \
     > "$OUT/behav_diff.txt" 2>&1
 rc=$?
 set -e
@@ -198,6 +210,11 @@ echo "behav_diff 退出码 = $rc"
     echo ""
     echo "- 参考端：\`$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print("%s sha=%s exit=%s stdout=%s"%(d["binary"],d["binary_sha256_16"],d["exit_code"],d["stdout_lines"]))' "$OUT/behav_factory.json" 2>/dev/null || echo "n/a")\`"
     echo "- 重建端：\`$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print("%s sha=%s exit=%s stdout=%s"%(d["binary"],d["binary_sha256_16"],d["exit_code"],d["stdout_lines"]))' "$OUT/behav_rebuild.json" 2>/dev/null || echo "n/a")\`"
+    if [ -f "$OUT/behav_control.json" ]; then
+        echo "- 控制端（同一份参考二进制复跑）：\`$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print("sha=%s exit=%s events=%d"%(d["binary_sha256_16"],d["exit_code"],len(d["events"])))' "$OUT/behav_control.json" 2>/dev/null || echo "n/a")\`"
+    else
+        echo "- 控制端：**未运行**（CGM_CONTROL=0）⇒ 无法区分实现差异与参考实现自身不确定"
+    fi
     echo ""
     echo '```'
     cat "$OUT/behav_diff.txt" 2>/dev/null | tail -30
