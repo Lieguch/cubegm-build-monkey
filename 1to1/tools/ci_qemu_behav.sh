@@ -38,6 +38,9 @@ GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
 EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-300}"   # -d exec 会显著拖慢 guest，给足时间
+# 帧探针要下的两个断点（地址取自当前链接；CI 侧 exec 轨迹已确认 epilogue=0x0501f5c4 一致）
+FUNC_ENTRY="${CGM_FUNC_ENTRY:-0x0501f2f0}"   # spi_driver_init 入口（prologue 前）
+FUNC_EPI="${CGM_FUNC_EPI:-0x0501f5c4}"       # 其 epilogue（`sub sp,fp,#28` 之前）
 
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 
@@ -179,6 +182,64 @@ exec_probe() {
         echo "   （未生成轨迹日志）"
     fi
 }
+# ---- 帧探针：在函数入口与 epilogue 各停一次，直接看帧内容 --------------------------------
+#   要回答的问题：`pop {…,pc}` 取到坏地址，究竟是
+#     ① **保存的 lr 槽被写坏**（帧基址仍对齐），还是
+#     ② **fp/栈指针被搞乱**（`sub sp,fp,#28` 算出了错的帧基址）。
+#   做法：入口处 dump sp/fp/lr（此时 sp = 调用者的 sp）；epilogue 处 dump —— 注意此时
+#        `sub sp,fp,#28` **尚未执行**，所以 `$sp` 就是**帧基址**，可以直接：
+#          · 看帧开头 0x00..0x2F（缓冲区首部）
+#          · 看帧+0x10C 起的保存寄存器区（r4,r5,r6,r7,r8,r9,sl,fp,lr）
+#          · 算 fp-帧基址（应恒为 0x128）
+#   一旦 dump 出来，①②立刻可分。
+frame_probe() {
+    label="$1"
+    [ "$label" = "rebuild" ] || { echo "   [skip] 帧探针只跑 rebuild（工厂侧终止状态已知）"; return 0; }
+    if ! command -v gdb-multiarch >/dev/null 2>&1; then
+        echo "   [skip] 无 gdb-multiarch"
+        return 0
+    fi
+    port=12347
+    wrap="$OUT/run_guest_fp_${label}.sh"
+    mk_wrap "$wrap" "-g $port"
+    fs="$OUT/frame_${label}.txt"
+    echo ""
+    echo "########## 帧探针 ${label}（断点 ${FUNC_ENTRY} / ${FUNC_EPI}）##########"
+    set +e
+    "$wrap" >/dev/null 2>&1 &
+    qpid=$!
+    sleep 3
+    timeout 240 gdb-multiarch -q -batch \
+        -ex "set confirm off" \
+        -ex "set pagination off" \
+        -ex "set sysroot $SYSROOT" \
+        -ex "file $GUEST" \
+        -ex "target remote localhost:$port" \
+        -ex "break *${FUNC_ENTRY}" \
+        -ex "break *${FUNC_EPI}" \
+        -ex "continue" \
+        -ex "echo \n=== [1] 进入 spi_driver_init（prologue 之前，sp = 调用者的 sp）===\n" \
+        -ex "info registers sp fp lr pc" \
+        -ex "x/8xw \$sp" \
+        -ex "continue" \
+        -ex "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n" \
+        -ex "info registers sp fp lr pc" \
+        -ex "x/12xw \$sp" \
+        -ex "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n" \
+        -ex "x/10xw \$sp+0x10c" \
+        -ex "echo \n--- fp - 帧基址（应 = 0x128 = 296）---\n" \
+        -ex "p/x \$fp-\$sp" \
+        -ex "continue" \
+        -ex "echo \n=== [3] 之后 ===\n" \
+        -ex "info registers sp fp lr pc" \
+        > "$fs" 2>&1
+    grc=$?
+    kill "$qpid" 2>/dev/null || true
+    wait "$qpid" 2>/dev/null || true
+    set -e
+    echo "   gdb 退出码 = $grc → $fs"
+    sed -n '1,90p' "$fs" 2>/dev/null || true
+}
 mk_wrap "$WRAP" ""
 WRAP_ST="$OUT/run_guest_strace.sh"; mk_wrap "$WRAP_ST" "-strace"
 WRAP_ASM="$OUT/run_guest_asm.sh";    mk_wrap "$WRAP_ASM" "-d in_asm -D $OUT/in_asm.log"
@@ -222,6 +283,7 @@ run_side() {
     probe "$label" "$WRAP_ST" "strace"
     bt_probe "$label"
     exec_probe "$label"
+    frame_probe "$label"
 
     echo ""
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"
