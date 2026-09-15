@@ -17,9 +17,12 @@
  * `InitRFJoystick()`，其中 `*(u32*)(GPIO2 + 4) |= 8` 而 `GPIO2 == NULL` ⇒ SIGSEGV。
  * 于是两侧的可观测窗口都只有 13 行 stdout，"等价"很浅。
  *
- * 做法（两个符号，判据都刻意收窄）
+ * 做法（三个措施，判据都刻意收窄）
  * ---------------------------------------------------------------
- * ① `open/open64/openat`：只把**设备节点**重定向到 `/dev/zero`
+ * ⓪ `constructor`：**栈投毒**（把 SP 下方 128 KiB 填成固定模式），让"未初始化读"在
+ *    两侧得到**同一个确定值**。否则两份二进制因栈帧布局不同（实测帧 0x10C vs 0x20），
+ *    未初始化读必然不同 ⇒ 假差异把门禁打红（详见第 ③ 节长注释）。
+ * ① `open/open64/openat`：只把**设备节点**重定向到 `/dev/zero`：只把**设备节点**重定向到 `/dev/zero`
  *    （白名单前缀：/dev/mem、/dev/fb、/dev/dri、/dev/input、/dev/sunxi、/dev/disp、
  *      /dev/cedar、/dev/spi、/dev/i2c）。其余路径（setting.xml / menu.log / *.so …）原样转发。
  *    为什么是 /dev/zero：O_RDONLY/O_RDWR 都能打开、读回 0、且可 mmap ⇒
@@ -145,8 +148,44 @@ int openat(int dirfd, const char *path, int flags, ...)
     return (int)syscall(SYS_openat, dirfd, path, flags, mode);
 }
 
-/* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */
-static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
+/* ---- ③ 栈「投毒」：让**未初始化读**变得可复现 -------------------------
+ *
+ * 为什么需要（P5 实测，控制组给出决定性证据）：
+ *   `spi_driver_init()` 在假硬件下会打印 `ROM Size:%08X CRC32:%04X Update time:…`
+ *   其中 CRC32 直接取自 `[sp+8]`、时间取自 `[sp+12]` —— 而这两个槽**没有任何初始化**：
+ *   它们本应由 `sfc_request()` 填入安全数据，假硬件下这次填不进去 ⇒ 打印的是
+ *   **上一层栈帧残留的垃圾**。
+ *   实测：原厂二进制跑两遍**完全一致**（20/20 行，自确定性成立），但重建产物打印出
+ *   不同的值，并因此在 2 行之前就崩 —— 因为两份二进制是**不同编译器**编的，栈帧布局
+ *   不同（实测 `spi_driver_init` 帧：原厂 0x10C / 重建 0x20）⇒ 残留垃圾必然不同。
+ *   这类差异**不是代码保真度信号**，却会把门禁打成红色，掩盖真正的信号。
+ *
+ * 做法：在 guest 里加一个**早于 `main`** 的构造函数（ELF constructor，`__libc_start_main`
+ *   初始化链会调用它），把当前栈指针往下的一大片区域统一填成固定模式 `0xA5`。
+ *   随后所有被复用的栈帧（包括 `spi_driver_init` 的 `[sp+8]/[sp+12]`）读到的都是
+ *   **同一个确定值**，于是"未初始化读"在两侧等价 —— 差异只剩真正的实现差异。
+ *   ★ 两侧加载**同一份** shim ⇒ 注入模式完全相同，比较依然公平。
+ *
+ * 安全性：只写当前 SP 以下、且留出 4 KiB 余量；qemu-user 默认线程栈 8 MiB，
+ *   向下写 128 KiB 不会越界。（构造时机在任何深调用之前，之后这些页就是"用过即废"的栈区。）
+ */
+#define POISON_BYTE   0xA5u
+#define POISON_GUARD  0x1000u          /* 留给自己这层帧 */
+#define POISON_SPAN   0x20000u         /* 往下 128 KiB */
+
+__attribute__((constructor)) static void shim_poison_stack(void)
+{
+    volatile unsigned char probe;
+    volatile unsigned char *p = &probe;
+    unsigned int i;
+
+    p -= POISON_GUARD;
+    for (i = 0; i < POISON_SPAN; i++) {
+        p[i] = (unsigned char)POISON_BYTE;
+    }
+}
+
+/* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
                        int fd, unsigned long off)
 {
     /* ARM 的 mmap2：off 以页为单位 */
