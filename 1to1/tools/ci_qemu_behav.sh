@@ -221,7 +221,7 @@ frame_probe() {
     mk_wrap "$wrap" "-g $port"
     fs="$OUT/frame_${label}.txt"
     echo ""
-    echo "########## 帧探针 ${label}（断点 ${FUNC_ENTRY} / ${FUNC_EPI}）##########"
+    echo "########## 帧探针 ${label}（入口 ${FUNC_ENTRY}；epilogue 候选 ${FUNC_EPIS}）##########"
     set +e
     "$wrap" >/dev/null 2>&1 &
     qpid=$!
