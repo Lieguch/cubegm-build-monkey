@@ -259,6 +259,80 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-15 第二十二轮：★★★★★ 行为差分**全等**（22/22 事件）+ 定位并修掉「callee 写坏调用者 fp」
+
+**里程碑**：`1to1-qemu-behav` 首次 **success**，且**不是前缀一致，而是整段全等**：
+
+```
+参考端 factory: exit=139  stdout=20 行  stderr=3 行
+重建端 rebuild: exit=139  stdout=20 行  stderr=3 行
+[PASS] B1 exit_code 139 vs 139        [PASS] B2 events 可判定前缀 22/22（重建侧共 22 行）
+[PASS] B3/B4 新增与变更文件 0 vs 0     [PASS] B5 menu.log sha 一致
+确定性控制：参考侧 22 行 / 控制侧 22 行 ⇒ 可复现前缀 = 全段
+门禁结果: PASS（0 项失败）   三个 workflow 全部 success
+```
+
+两侧 stdout **逐行相同**（仅 MemFree/MemAvailable/Buffers 随运行波动，已被归一化），
+含此前一直缺失的两行 `find sound_driver_deinit process fail` / `find video_driver_deinit process fail`，
+终止状态也一致：双方都在 `DeinitDisplay` 的 **`dlclose(NULL)`** 里 SIGSEGV（工厂侧 si_addr=0x19b）✓。
+
+#### 一、定位过程（都是可复现的运行时证据，不是猜）
+
+| 步骤 | 手段 | 得到的结论 |
+|---|---|---|
+| ① | `-d exec`（记录**每个被执行**的翻译块，含已缓存块） | 最后一个被执行块 = `spi_driver_init` 的 `sub sp,fp,#28`+`pop {…,pc}`，之后**再无任何块** ⇒ 是 `pop` 取到坏地址跳飞（不是坏访存）|
+| ② | qemu gdbstub + `gdb-multiarch` 取崩溃现场 | `pc=0xf2280500`（不可映射）、**`sp=0x40fff212` 未 4 字节对齐**、`handle=0` ⇒ 排除「dlsym 句柄为垃圾」|
+| ③ | shim 里加 `munmap` 探针（顺带读 guest 的 `handle`） | 重建侧**完全没有** `munmap(…,0x400)` 行 ⇒ 崩溃发生在 `sfc_uninit` **之前**（进程从未回到 main）|
+| ④ | gdb 断点：入口 / prologue 后 / 两次调用返回点 / epilogue | 入口 `fp=0x40fff210` → prologue 后 **`fp=0x40fff208` ✓** → 首次 `sflash_read_security_data` 返回后 **`fp=0x40fff20a` ✗（+2）**；保存的 lr 槽**完好** |
+| ⑤ | 指令级扫描两个 callee 里所有写 r11 的指令 | 只有标准 prologue/epilogue ⇒ 破坏来自**数据写**而非寄存器写 |
+
+#### 二、根因（逐位吻合）
+
+`sfc_request(param_1, …)` 里有一句：
+
+```c
+uVar2 = param_1[1] | 2;   param_1[1] = uVar2;    /* 设置「命令行第 2 个字」的 bit1 */
+```
+
+而 `sflash_read_security_data` 原是**两个独立标量** `local_10` / `local_c`，并传 `&local_10`。
+工厂原版是帧内**连续 8 字节的 2 字命令行**（`str lr,[sp]` + `str lr,[sp,#4]` ⇒ `cmd[0]=0x4848, cmd[1]=0`，`&cmd = sp`）。
+我们把两个标量交给编译器排布 ⇒ LLVM 排成「`local_10` 在高、`local_c` 在低」⇒ `&local_10 + 4` **越出这两个标量**，
+正好命中 `sflash` 帧里紧邻的**保存的 fp 槽**（内容 = 调用者的 `fp` = `0x40fff208`）⇒ `| 2` ⇒ **`0x40fff20a`** ✓（与实测完全一致）。
+该值随 `pop {fp,pc}` 回传给 `spi_driver_init` 的 r11 ⇒ 它的 epilogue `sub sp,fp,#28` 帧基址偏 2 字节 ⇒
+`pop {…,pc}` 按错位读栈，把「保存 lr 的高半字 + 下一字」拼成 `0xf2280500` ⇒ 跳飞 ✓✓。
+
+#### 三、修复（同一模式 8 处，全部改成 2 字数组）
+
+`gh_u4 cmd[2]`，`cmd[0]=<命令>`、`cmd[1]=<参数>`，传 `cmd`：
+`sflash_read_security_data` / `snor_write_en` / `spi_read` / `spi_write` /
+`sflash_write_security_data` / `sflash_erase_security_data` / `erase_sector` / `spi_driver_init`。
+修后 `sflash` 的代码生成与工厂**结构一致**（`cmd[0]`@sp+0、`cmd[1]`@sp+4、`&cmd=sp`、帧 8B）✓。
+
+#### 四、把这次踩的坑变成**永久门禁**（静态门禁全都拦不住它）
+
+- **帧不变式门禁**（`ci_qemu_behav.sh` 的帧探针，现已接成**硬失败**）：用 qemu gdbstub 在目标函数的
+  入口与 epilogue 各停一次，要求 **`fp - 帧基址 == 0x128`**（与 `sub sp,fp,#28` + 9 寄存器 push 自洽）。
+  实测越界 bug 会把该值变成 `0x12a` ⇒ 立刻红灯。
+- **断点地址动态化**：新增 `tools/find_func_marks.py`（从当前 ELF 现算入口与 epilogue），
+  避免硬编码地址随重链接漂移、把探针变成无意义输出。
+- 该门禁**不需要**任何静态符号信息即可捕获「callee 破坏调用者 fp」这一整类缺陷。
+
+#### 五、当前整体状态
+
+| 门禁 | 结果 |
+|---|---|
+| 宽松/严格编译 | 213/213 = 100%（假绿 0）|
+| 符号审计 | 重复定义 0 / MISSING 0 / upstream 0 |
+| ABI | PASS（e_flags=0x5000400、interp=/lib/ld-linux-armhf.so.3、GLIBC 上限 2.7 = 工厂）|
+| 布局 | PASS（全局符号 193/194 = 99.5%）|
+| 动态段/初始化链 | PASS（DT_INIT 真实、ABS0 = 0）|
+| **行为差分** | **PASS（22/22 全等，含终止状态）** |
+
+**下一步**：① 继续把观测窗口推深（当前窗口止于 `dlclose(NULL)`；若要覆盖 `main_Menu()` 需要 fake `driver.so`
+导出 `video/sound_driver_init` 等符号，或让 `dlopen` 成功）；② P5 做「多场景差分」（不同 `setting.xml`/`autorunfile`
+分支）；③ P6 真机验收（SD 部署 + 设备自写 `menu.log`）。
+
+---
 ### 2026-09-15 第二十一轮：★★★ 假硬件 shim 把观测窗口推深（13 → 20 行）+ 确定性控制组 + 门禁假 PASS 修补
 
 **目标**：让 qemu 下的可观测窗口不再停在最浅处（此前两侧都停在 `Failed to initialize GPIO` 之间的

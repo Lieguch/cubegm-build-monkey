@@ -38,19 +38,25 @@ GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
 EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-300}"   # -d exec 会显著拖慢 guest，给足时间
-# 帧探针要下的两个断点（地址取自当前链接；CI 侧 exec 轨迹已确认 epilogue=0x0501f5c4 一致）
-FUNC_ENTRY="${CGM_FUNC_ENTRY:-0x0501f2f0}"   # spi_driver_init 入口（prologue 前）
-FUNC_EPI="${CGM_FUNC_EPI:-0x0501f5c4}"       # 其 epilogue（`sub sp,fp,#28` 之前）
-# 二分定位用的中间断点（都在 spi_driver_init 内；用来判定 r11(fp) 是**哪一段**被改坏的）
-FUNC_POSTPRO="${CGM_FUNC_POSTPRO:-0x0501f2fc}"    # prologue 之后第一条指令
-FUNC_CALL1RET="${CGM_FUNC_CALL1RET:-0x0501f514}"  # 首次 sflash 调用返回点
-FUNC_IDRET="${CGM_FUNC_IDRET:-0x0501f31c}"        # 首个 sfc_request(ID 读 3B) 返回点
-FUNC_PRESFLASH="${CGM_FUNC_PRESFLASH:-0x0501f510}" # sflash(buf,0x2000) 调用前
-FUNC_CALL2RET="${CGM_FUNC_CALL2RET:-0x0501f558}"  # 末次 sflash 调用返回点（进校验循环前）
+# 帧探针的目标函数：入口/epilogue 地址**从当前 ELF 现算**（见 tools/find_func_marks.py）。
+#   ★ 不能硬编码：地址随每次重链接漂移，指到别的函数上会让探针静默失去意义。
+FRAME_TARGET="${CGM_FRAME_TARGET:-spi_driver_init}"
 
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 
 mkdir -p "$OUT"
+
+# ---- 帧探针的入口/epilogue：**现算**（硬编码会随重链接漂移）----
+FUNC_ENTRY=""; FUNC_EPI=""
+_marks=$("${PY:-python3}" "$(winpath "$ROOT/tools/find_func_marks.py")" \
+             "$(winpath "$ROOT/build/rkgame.rebuilt.elf")" "$FRAME_TARGET" 2>/dev/null || true)
+if [ -n "$_marks" ]; then
+    FUNC_ENTRY=$(printf '%s' "$_marks" | cut -d' ' -f1)
+    FUNC_EPI=$(printf '%s' "$_marks" | cut -d' ' -f2)
+    echo "  帧探针目标 $FRAME_TARGET：入口=$FUNC_ENTRY epilogue=$FUNC_EPI"
+else
+    echo "  [note] 取不到 $FRAME_TARGET 的入口/epilogue ⇒ 帧探针将跳过（不影响其他门禁）"
+fi
 
 # ---- 假硬件 shim（两侧同一绝对路径 ⇒ 差分仍公平）----
 #   见 tools/guest_shim/fake_mem.c。构建失败则**降级**为不带 shim 跑（并在报告里说明），
@@ -205,6 +211,10 @@ frame_probe() {
         echo "   [skip] 无 gdb-multiarch"
         return 0
     fi
+    if [ -z "$FUNC_ENTRY" ] || [ -z "$FUNC_EPI" ]; then
+        echo "   [skip] 未取到帧探针地址（find_func_marks.py 失败）"
+        return 0
+    fi
     port=12347
     wrap="$OUT/run_guest_fp_${label}.sh"
     mk_wrap "$wrap" "-g $port"
@@ -222,36 +232,22 @@ frame_probe() {
         -ex "file $GUEST" \
         -ex "target remote localhost:$port" \
         -ex "break *${FUNC_ENTRY}" \
-        -ex "break *${FUNC_POSTPRO}" \
-        -ex "break *${FUNC_CALL1RET}" \
-        -ex "break *${FUNC_IDRET}" \
-        -ex "break *${FUNC_PRESFLASH}" \
-        -ex "break *${FUNC_CALL2RET}" \
         -ex "break *${FUNC_EPI}" \
         -ex "continue" \
-        -ex "echo \n=== [1] 入口（push 之前）===\n" \
+        -ex "echo \n=== [1] 入口（push 之前，sp = 调用者的 sp）===\n" \
         -ex "info registers sp fp lr pc" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "x/8xw \$sp" \
         -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "continue" \
-        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
-        -ex "echo \n=== [last] 保存寄存器区：帧+0x10C 起（r4..fp,lr）===\n" \
+        -ex "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n" \
+        -ex "info registers sp fp lr pc" \
+        -ex "x/12xw \$sp" \
+        -ex "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n" \
         -ex "x/10xw \$sp+0x10c" \
-        -ex "echo \n=== [last] fp - 帧基址（应 = 0x128）===\n" \
+        -ex "echo \n--- ★ 帧不变式：fp - 帧基址 必须 = 0x128 ---\n" \
         -ex "p/x \$fp-\$sp" \
+        -ex "continue" \
+        -ex "echo \n=== [3] 之后 ===\n" \
+        -ex "info registers sp fp pc" \
         > "$fs" 2>&1
     grc=$?
     kill "$qpid" 2>/dev/null || true
@@ -259,6 +255,26 @@ frame_probe() {
     set -e
     echo "   gdb 退出码 = $grc → $fs"
     sed -n '1,90p' "$fs" 2>/dev/null || true
+
+    # ---- ★ 帧不变式**硬门禁** ----------------------------------------------------
+    #   实测过的真 bug：某个 callee 写了「命令行第 2 个字」，而调用方把它写成两个独立标量，
+    #   编译器把这两个标量排成「高地址在前」⇒ 那次写入越出标量、正好砸中调用者保存的 fp，
+    #   值变成 `fp | 2`。于是上层 epilogue 的 `sub sp,fp,#28` 算出错 2 字节的帧基址，
+    #   `pop {…,pc}` 按错位读栈 ⇒ 跳到 0xf2280500（不可映射）⇒ SIGSEGV。
+    #   该 bug 编译/链接/静态门禁全绿，只有这里能拦住 ⇒ 固化成门禁。
+    seat=$(grep -a '^\$1 = 0x' "$fs" 2>/dev/null | tail -1 | sed 's/^\$1 = //')
+    if [ -z "$seat" ]; then
+        echo "   [warn] 未取到 `fp - 帧基址` 的测量值（gdb 可能未停到 epilogue）⇒ 帧门禁跳过"
+        return 0
+    fi
+    if [ "$seat" = "0x128" ]; then
+        echo "   ✓ 帧不变式通过：fp - 帧基址 = $seat（= 0x128，与 epilogue 的 sub sp,fp,#28 自洽）"
+        return 0
+    fi
+    echo "   ✗ 帧不变式失败：fp - 帧基址 = $seat（应为 0x128）"
+    echo "      ⇒ 某个 callee 破坏了调用者的 fp；这类破坏会让 epilogue 读到错的帧并跳到坏地址，"
+    echo "        静态门禁无法发现，必须在此拦住。"
+    return 1
 }
 mk_wrap "$WRAP" ""
 WRAP_ST="$OUT/run_guest_strace.sh"; mk_wrap "$WRAP_ST" "-strace"
@@ -303,7 +319,7 @@ run_side() {
     probe "$label" "$WRAP_ST" "strace"
     bt_probe "$label"
     exec_probe "$label"
-    frame_probe "$label"
+    frame_probe "$label" || { echo "!! 帧不变式门禁 FAIL（详见上方 frame_${label}.txt）"; exit 1; }
 
     echo ""
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"
