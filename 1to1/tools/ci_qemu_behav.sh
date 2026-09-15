@@ -228,30 +228,33 @@ frame_probe() {
     sleep 3
     # ★ 用 gdb 命令**文件**（而不是一长串 -ex）：断点数量可变（epilogue 候选可能不止一个），
     #   且命令文件里不需要 shell 转义 `$sp` 之类，读起来也清楚。
+    # ★★ 必须用 `printf '%s\n'` 而不是 `echo`：**`echo` 会解释参数里的 `\n`**，
+    #    于是 gdb 里的 `echo \n=== … ===\n` 会被拆成两行，gdb 报
+    #    `Undefined command: ""`（实测踩过一整轮）。
     gc="$OUT/gdb_frame_${label}.cmds"
     {
-        echo "set confirm off"
-        echo "set pagination off"
-        echo "set sysroot $SYSROOT"
-        echo "file $GUEST"
-        echo "target remote localhost:$port"
-        echo "break *${FUNC_ENTRY}"
-        for a in $FUNC_EPIS; do echo "break *$a"; done
-        echo "continue"
-        echo "echo \n=== [1] 入口（push 之前，sp = 调用者的 sp）===\n"
-        echo "info registers sp fp lr pc"
-        echo "x/8xw \$sp"
-        echo "continue"
-        echo "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n"
-        echo "info registers sp fp lr pc"
-        echo "x/14xw \$sp"
-        echo "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n"
-        echo "x/10xw \$sp+0x10c"
-        echo "echo \n--- *** 帧不变式：fp - 帧基址 必须 = 0x128 *** ---\n"
-        echo "p/x \$fp-\$sp"
-        echo "continue"
-        echo "echo \n=== [3] 之后 ===\n"
-        echo "info registers sp fp pc"
+        printf '%s\n' "set confirm off"
+        printf '%s\n' "set pagination off"
+        printf '%s\n' "set sysroot $SYSROOT"
+        printf '%s\n' "file $GUEST"
+        printf '%s\n' "target remote localhost:$port"
+        printf '%s\n' "break *${FUNC_ENTRY}"
+        for a in $FUNC_EPIS; do printf '%s\n' "break *$a"; done
+        printf '%s\n' "continue"
+        printf '%s\n' 'echo \n=== [1] 入口（push 之前，sp = 调用者的 sp）===\n'
+        printf '%s\n' 'info registers sp fp lr pc'
+        printf '%s\n' 'x/8xw $sp'
+        printf '%s\n' "continue"
+        printf '%s\n' 'echo \n=== [2] epilogue（$sp 此刻 = 帧基址）===\n'
+        printf '%s\n' 'info registers sp fp lr pc'
+        printf '%s\n' 'x/14xw $sp'
+        printf '%s\n' 'echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n'
+        printf '%s\n' 'x/10xw $sp+0x10c'
+        printf '%s\n' 'echo \n--- *** 帧不变式：fp - 帧基址 必须 = 0x128 *** ---\n'
+        printf '%s\n' 'p/x $fp-$sp'
+        printf '%s\n' "continue"
+        printf '%s\n' 'echo \n=== [3] 之后 ===\n'
+        printf '%s\n' 'info registers sp fp pc'
     } > "$gc"
     timeout 240 gdb-multiarch -q -batch -x "$gc" > "$fs" 2>&1
     grc=$?
