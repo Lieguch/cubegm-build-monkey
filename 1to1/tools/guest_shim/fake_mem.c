@@ -72,6 +72,10 @@
 
 #define PHYS_OFF_MIN 0x00400000UL     /* 低于此偏移视为普通文件映射，原样转发 */
 
+/* SFC（SPI Flash 控制器）寄存器页的物理偏移 —— 见 ② 段长注释 */
+#define SFC_REG_OFF  0x10208000UL
+#define SFC_REG_MIN  0x400u          /* SFC 寄存器区长度（sfc_init 映射 0x400）*/
+
 /* ---- ① 设备节点重定向 ------------------------------------------------ */
 static const char *const DEV_PREFIX[] = {
     "/dev/mem", "/dev/fb", "/dev/dri", "/dev/input",
@@ -216,17 +220,57 @@ __attribute__((constructor)) static void shim_poison_stack(void)
     if (getenv("CGM_SHIM_VERBOSE") != NULL) {
         char buf[128];
         int n = snprintf(buf, sizeof(buf),
-                         "[shim] stack poison: frame=%u B x depth=%u = %u KiB, byte=0x%02X\n",
-                         (unsigned)POISON_FRAME, (unsigned)POISON_DEPTH,
+                         "[shim] active: poison=%u KiB(byte=0x%02X) sfc_seed@0x%08lX=%s\n",
                          (unsigned)(POISON_FRAME * POISON_DEPTH / 1024u),
-                         (unsigned)POISON_BYTE);
+                         (unsigned)POISON_BYTE, SFC_REG_OFF,
+                         "on");
         if (n > 0) {
             (void)write(2, buf, (size_t)(n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
         }
     }
 }
 
-/* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
+/* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */
+
+/* ★★ SFC（SPI Flash 控制器）寄存器页：把「传输永不完成」改成「传输完成、数据为 0」。
+ *
+ * 为什么必须做（P5 实测根因，有源码级证据）：
+ *   `src/proprietary/flash/FUN_002c43f8_sfc_init.c` 对 SFC 寄存器做
+ *       mmap(NULL, 0x400, RW, MAP_SHARED, fd, 0x10208000);
+ *   而 `sfc_request()`（0x2c39f0）的两条读路径都以**状态寄存器**为闸门：
+ *       · 字循环：`uVar1 = (reg[8] & 0x1fffff) >> 16; if (uVar1 == 0) { usleep(1); …超时 }`
+ *       · 尾字节：`if ((reg[8] & 0x1f0000) == 0) { …超时 }`
+ *   匿名零页里 `reg[8] == 0` ⇒ **永远超时** ⇒ 数据路径整段不执行、缓冲区**不被写入**
+ *   ⇒ 上层 `spi_driver_init()` 打印的 `CRC32:[sp+8]` / `Update time:[sp+12]` 读的是链上更早
+ *   代码留下的确定值；它对本二进制确定（控制组两遍一致），但两份二进制**必然不同**
+ *   ⇒ 变成一条「看起来像实现差异」的假分歧（实测：`CRC32:0000` vs `0003`）。
+ *   ★ 佐证：栈投毒加深到 766 KiB 后这两个值**完全不变** ⇒ 不是随机栈残留，是被写过的内存。
+ *
+ * 做法：只在**这一个**物理偏移上把匿名页预置成完成态：
+ *       reg[4] (0x10)   = 0           不忙
+ *       reg[8] (0x20)   = 0x00010000  已收到 1 个 word（bits16..20 ≠ 0 ⇒ 传输完成）
+ *       reg[9] (0x24)   = 0           不忙（末尾等待循环立即通过）
+ *       reg[0x42] (0x108) = 0         数据寄存器 = 0（假硬件没有真实闪存数据）
+ *   ⇒ 传输立即「完成」、写进缓冲区的字节全是 0 ⇒ 两侧读到同样的 0。
+ *   副作用（好）：不再有 10001 次 usleep 超时 ⇒ guest 明显更快。
+ *
+ * ★ 只认这一个偏移；其余物理映射仍是纯零页（保持「设备不存在」语义，避免误伤别的外设）。
+ */
+
+static void sfc_seed(void *p, size_t len)
+{
+    volatile unsigned int *r = (volatile unsigned int *)p;
+
+    if (len < SFC_REG_MIN) {
+        return;
+    }
+    r[4] = 0u;                    /* 忙标志：不忙 */
+    r[8] = 0x00010000u;           /* 状态：传输完成（1 word） */
+    r[9] = 0u;                    /* 状态：不忙 */
+    r[0x42] = 0u;                 /* 数据寄存器：0 */
+}
+
+static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
                        int fd, unsigned long off)
 {
     /* ARM 的 mmap2：off 以页为单位 */
@@ -243,6 +287,9 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
         void *p = sys_mmap2(NULL, len, PROT_READ | PROT_WRITE,
                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (p != MAP_FAILED) {
+            if (uoff == SFC_REG_OFF) {
+                sfc_seed(p, len);      /* 见上方长注释：让 SFC 传输「完成」而不是超时 */
+            }
             return p;
         }
         /* 匿名映射也失败 ⇒ 退回原语义，让上层自己去报错 */
