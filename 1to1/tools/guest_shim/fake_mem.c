@@ -19,10 +19,12 @@
  *
  * 做法（三个措施，判据都刻意收窄）
  * ---------------------------------------------------------------
- * ⓪ `constructor`：**栈投毒**（把 SP 下方 128 KiB 填成固定模式），让"未初始化读"在
+ * ⓪ `constructor`：**栈投毒**（把 SP 下方约 96 KiB 填成固定模式），让"未初始化读"在
  *    两侧得到**同一个确定值**。否则两份二进制因栈帧布局不同（实测帧 0x10C vs 0x20），
  *    未初始化读必然不同 ⇒ 假差异把门禁打红（详见第 ③ 节长注释）。
- * ① `open/open64/openat`：只把**设备节点**重定向到 `/dev/zero`：只把**设备节点**重定向到 `/dev/zero`
+ *    ★ 实现用**递归帧**填（每层 4 KiB × 24 层），**不做**「SP 减去一个大偏移再写」——
+ *      后者在 qemu-user 下会写到未映射区，实测把 guest 打成启动即 SIGSEGV（两侧 stdout 0 行）。
+ * ① `open/open64/openat`：只把**设备节点**重定向到 `/dev/zero`
  *    （白名单前缀：/dev/mem、/dev/fb、/dev/dri、/dev/input、/dev/sunxi、/dev/disp、
  *      /dev/cedar、/dev/spi、/dev/i2c）。其余路径（setting.xml / menu.log / *.so …）原样转发。
  *    为什么是 /dev/zero：O_RDONLY/O_RDWR 都能打开、读回 0、且可 mmap ⇒
@@ -161,28 +163,44 @@ int openat(int dirfd, const char *path, int flags, ...)
  *   这类差异**不是代码保真度信号**，却会把门禁打成红色，掩盖真正的信号。
  *
  * 做法：在 guest 里加一个**早于 `main`** 的构造函数（ELF constructor，`__libc_start_main`
- *   初始化链会调用它），把当前栈指针往下的一大片区域统一填成固定模式 `0xA5`。
+ *   初始化链会调用它），把当前栈指针往下约 96 KiB 的区域统一填成固定模式 `0xA5`。
  *   随后所有被复用的栈帧（包括 `spi_driver_init` 的 `[sp+8]/[sp+12]`）读到的都是
  *   **同一个确定值**，于是"未初始化读"在两侧等价 —— 差异只剩真正的实现差异。
  *   ★ 两侧加载**同一份** shim ⇒ 注入模式完全相同，比较依然公平。
  *
- * 安全性：只写当前 SP 以下、且留出 4 KiB 余量；qemu-user 默认线程栈 8 MiB，
- *   向下写 128 KiB 不会越界。（构造时机在任何深调用之前，之后这些页就是"用过即废"的栈区。）
+ * ★★ 实现方式很关键（这是一个**踩过的坑**）：
+ *   不能写「取当前 SP，减掉一个大偏移，再向下 memcpy 一片」—— qemu-user 对 guest 栈的
+ *   映射不像原生内核那样按需增长，那个地址可能**未映射**，一写就把 guest 打成启动即
+ *   SIGSEGV（实测：两侧 stdout 0 行、只剩 qemu 的 `uncaught target signal 11` 一行，
+ *   而这恰好会让"确定性前缀"退化成 1 行 ⇒ 门禁**假 PASS**）。
+ *   正确做法：**递归**。每层分配 4 KiB 的 volatile 数组并填满，递归 DEPTH 层再逐层返回。
+ *   这样每一页都是**正常栈增长**得到的（qemu 支持），返回后这些页就成为"被污染的废栈"，
+ *   供后续更深的调用复用。
  */
 #define POISON_BYTE   0xA5u
-#define POISON_GUARD  0x1000u          /* 留给自己这层帧 */
-#define POISON_SPAN   0x20000u         /* 往下 128 KiB */
+#define POISON_FRAME  4088u     /* 每层帧大小（略小于一页，避免叠加出界） */
+#define POISON_DEPTH  24u       /* 24 × 4 KiB ≈ 96 KiB 覆盖深度 */
+
+static void shim_poison_walk(unsigned int depth)
+{
+    volatile unsigned char buf[POISON_FRAME];
+    unsigned int i;
+
+    for (i = 0; i < POISON_FRAME; i++) {
+        buf[i] = (unsigned char)POISON_BYTE;
+    }
+    if (depth > 0u) {
+        shim_poison_walk(depth - 1u);
+    }
+    /* 让编译器无法把这一帧优化掉（volatile 已足够，这里再加一道读回） */
+    if (buf[0] != (unsigned char)POISON_BYTE && buf[0] == 0xFFu) {
+        return;
+    }
+}
 
 __attribute__((constructor)) static void shim_poison_stack(void)
 {
-    volatile unsigned char probe;
-    volatile unsigned char *p = &probe;
-    unsigned int i;
-
-    p -= POISON_GUARD;
-    for (i = 0; i < POISON_SPAN; i++) {
-        p[i] = (unsigned char)POISON_BYTE;
-    }
+    shim_poison_walk(POISON_DEPTH);
 }
 
 /* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */static void *sys_mmap2(void *addr, size_t len, int prot, int flags,

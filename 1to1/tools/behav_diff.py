@@ -119,22 +119,30 @@ def main():
 
     # ---- B0 非空洞前置检查（★ 拒绝「两边都什么都没发生」的假通过）----
     # ★ 不能用 log_lines 判断：运行目录里**预置**了 menu.log，log_lines 恒 ≥1。
-    #   以 behav_capture 写的显式 observed 字段为准（stdout/stderr/新增/变更文件）。
-    if 'observed' in a:
-        empty_a = not a.get('observed')
-    else:                                    # 兼容旧指纹
-        empty_a = (la < 1 and ev_a < 1 and so_a < 1)
-    if empty_a:
-        print('  [INCONCLUSIVE] B0 参考侧（工厂）无任何可观测行为：')
-        print('      observed=%s  log_lines=%d  events=%d  stdout_lines=%d  stderr_lines=%s  exit_code=%s'
-              % (a.get('observed'), la, ev_a, so_a, a.get('stderr_lines'), a.get('exit_code')))
-        print('  重建侧: observed=%s  log_lines=%d  events=%d  stdout_lines=%d  stderr_lines=%s  exit_code=%s'
-              % (b.get('observed'), b.get('log_lines', 0), len(b.get('events', [])),
-                 b.get('stdout_lines', 0), b.get('stderr_lines'), b.get('exit_code')))
+    # ★★ 也不能只看 observed：`observed` 把 **stderr** 也算进去，而 qemu 自身的
+    #    `uncaught target signal 11` 就是一行 stderr —— 于是"两侧都在启动瞬间崩掉、
+    #    一行业务输出都没有"会被判成 observed=True（实测踩到，且叠加确定性前缀后
+    #    变成了**假 PASS**）。⇒ 这里要求**真正的行为**：stdout 有行，或产生了新增/变更文件。
+    def real_obs(d):
+        return (int(d.get('stdout_lines', 0) or 0) > 0
+                or len(d.get('new_files', [])) > 0
+                or len(d.get('changed_files', [])) > 0)
+
+    if not real_obs(a):
+        print('  [INCONCLUSIVE] B0 参考侧（工厂）**没有真正的行为观测**：')
+        print('      stdout_lines=%s  新增文件=%s  变更文件=%s   （stderr_lines=%s 不计）'
+              % (a.get('stdout_lines'), len(a.get('new_files', [])),
+                 len(a.get('changed_files', [])), a.get('stderr_lines')))
+        print('      stderr: %s' % (a.get('stderr_sha256_16') or '(未记录)'))
+        print('  重建侧: stdout_lines=%s  新增文件=%s  变更文件=%s'
+              % (b.get('stdout_lines'), len(b.get('new_files', [])),
+                 len(b.get('changed_files', []))))
         print('  ⇒ 环境不足以驱动参考实现，本差分**无意义**（不是 PASS，也不是 FAIL）')
-        print('     排查方向：① 目标二进制是否可执行（chmod +x）；② stdout 是否被全缓冲吃掉；')
-        print('               ③ work 目录里的资源（setting.xml / cores/config.xml）是否就位。')
+        print('     排查方向：① 目标二进制是否可执行（chmod +x）；② 是否被 guest shim 打死在启动处；')
+        print('               ③ stdout 是否被全缓冲吃掉；④ work 目录资源是否就位。')
         return 3
+    if 'observed' not in a:                  # 兼容旧指纹：只做提示
+        print('  [note] 参考指纹缺 observed 字段（旧版本），已改用 stdout/新增/变更文件判定')
 
     # ---- B0c 确定性控制：求参考实现自身的**可复现前缀** ----
     ea, eb = a.get('events', []), b.get('events', [])
@@ -169,6 +177,17 @@ def main():
         print('-' * 68)
 
     # ---- B1..B7 ----
+    # ★ 可复现前缀必须包含**真正的 stdout 事件**：否则前缀会退化成「只有 qemu 自己的
+    #   `uncaught target signal 11` 一行」——此时"两侧一致"毫无意义（实测：guest 被 shim
+    #   打死在启动处，两侧 stdout 均为 0 行，前缀=1，门禁**假 PASS**）。
+    if det_prefix is not None and not any(x.startswith('O|') for x in ea[:det_prefix]):
+        print('  [INCONCLUSIVE] 可复现前缀（%d 行）里**不含任何 stdout 事件**：' % det_prefix)
+        for x in ea[:det_prefix]:
+            print('      %s' % x[:150])
+        print('  ⇒ 前缀已退化为「guest 启动即崩」的噪声行，本差分**无意义**（不是 PASS）')
+        print('     排查方向：① guest shim 是否把程序打死在启动处；② 目标二进制是否可执行；')
+        print('               ③ 参考二进制是否根本没有产出（环境不足）。')
+        return 3
     if exit_volatile:
         checks.append(('B1 exit_code', True, 'INFO（参考侧自身不确定：%s/%s；本次 %s vs %s）'
                        % (a.get('exit_code'), c.get('exit_code'),
