@@ -49,7 +49,9 @@
  * 且**工厂侧与重建侧加载同一份**，保证差分是"同一环境下比实现"。
  */
 #define _GNU_SOURCE
+#include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -58,6 +60,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 #ifndef __NR_mmap2
@@ -154,6 +157,387 @@ int openat(int dirfd, const char *path, int flags, ...)
         return raw_openat(tgt, flags, mode);
     }
     return (int)syscall(SYS_openat, dirfd, path, flags, mode);
+}
+
+/* ---- ③ SFC（SPI Flash 控制器）设备仿真 -------------------------------
+ *
+ * 目标：让 `spi_driver_init()` 的 flash 校验和通过（它返回非 0 时，main() 才会继续走
+ *       `UpdateROM → ShareMemCreat → XintiaoThread → main_Menu()` —— 菜单，重建量最大的一块）。
+ *
+ * 为什么必须做「**有状态设备**」而不是「一块静态内存页」：
+ *   · 读循环是 `*param_3 = g_sfc_reg[0x42]`（**同一个地址**反复读）
+ *     ⇒ 静态页每次返回同一个字 ⇒ 缓冲区内容必然 4 字节周期；
+ *   · 校验和是 `buf[k] == (KY[k] ^ v_k) + buf[k+0xc0]`，其中 KY（工厂 .rodata @0x002dee30
+ *     的 24 字节 = "aXDT8kluSPu6PvHIV2JhA1V4"）实测**不是** 4 字节周期
+ *     （KY[8]=0x53 vs KY[12]=0x50）⇒ 静态页下**数学上不可能通过**。
+ *     （已用「766 KiB 栈投毒」反证那两个值不是随机栈垃圾，而是被写过的确定性内存。）
+ *   ⇒ 唯一出路是逐字返回不同数据 ⇒ 需要**每次寄存器访问都能插手**。
+ *
+ * 做法：把 SFC 寄存器页设成 PROT_NONE，用 SIGSEGV 处理器按设备语义应答：
+ *   · 写 0x100（reg[0x40]，低16位=opcode、位16..29=字节数）⇒ 记录"这条命令"并复位 FIFO
+ *   · 写 0x104（reg[0x41]）= 地址                        ⇒ 记录"读/写哪个地址"
+ *   · 读 0x108（reg[0x42]）= 数据寄存器 ⇒ 每次返回 FIFO 的**下一个字**（逐字变化）
+ *   · 读 0x020（reg[8]）= 状态：位16..20 = 当前可读字数（真实 FIFO 语义）
+ *   · 读 0x010（reg[4]）= 忙标志：**恒 0**（"立刻空闲"，否则上层会空转 10000 次 usleep）
+ *   · 其余寄存器读写走影子数组（等价于"写下去没反应"的假外设）
+ *
+ * "这片 flash 里存的内容"由 sfc_dev_prepare() 按 (opcode, addr) 决定：
+ *   0x9f   @ —      → 芯片 ID {0x0b, 0x00, 0x18}（0x0b 让原厂走上它的 W25Q 分支）
+ *   0x485a @0x194   → 16 字节：前 8 = KY[0..7]、后 8 = 0
+ *                     ⇒ 代码算出 UniqueID[k] = buf[k] ^ buf[k+8] = KY[k]
+ *   0x4848 @0x100   → 全 0 ⇒ 打印 `ROM Size:01000000 CRC32:0000 Update time:1980-0-0 0:0:0`
+ *   0x4848 @0x000   → 256 字节，**按校验和方程反解**（见下）
+ *   其它            → 全 0
+ *
+ * ★ 反解（不硬编码结果，全部由 KY 现算，避免抄错）：
+ *     校验和：buf[k] == (KY[k] ^ v_k) + buf[k+0xc0]
+ *             v_k = UniqueID[k] = KY[k]      (k < 8)
+ *             v_k = buf[k-8]                 (k >= 8)
+ *     令 buf[0xc0..0xd7] = 0（+0 项消失），于是
+ *             k = 0..7  : buf[k] = KY[k] ^ KY[k]     = 0
+ *             k = 8..15 : buf[k] = KY[k] ^ buf[k-8]  = KY[k]
+ *             k = 16..23: buf[k] = KY[k] ^ KY[k-8]
+ *
+ * ★ 两侧加载**同一份** shim ⇒ 拿到同一片"假 flash" ⇒ 差分依然公平（设备是环境，不是实现）。
+ * ★ 回退开关：`CGM_SFC_MODE=seed` 退回旧的"静态种子页"行为（便于不改代码排查）。
+ */
+#define SFC_OFF_BUSY   0x010u    /* reg[4]  忙标志（读恒 0）*/
+#define SFC_OFF_STATUS 0x020u    /* reg[8]  状态：位 16..20 = 可读字数 */
+#define SFC_OFF_STAT2  0x024u    /* reg[9]  状态2 */
+#define SFC_OFF_CMD    0x100u    /* reg[0x40] 低16=opcode、位16..29=字节数 */
+#define SFC_OFF_ADDR   0x104u    /* reg[0x41] 地址 */
+#define SFC_OFF_DATA   0x108u    /* reg[0x42] 数据寄存器（FIFO）*/
+
+/* 工厂 .rodata @0x002dee30 的 24 字节校验密钥表（逐字节取自工厂镜像）*/
+static const unsigned char KY[24] = {
+    0x61, 0x58, 0x44, 0x54, 0x38, 0x6b, 0x6c, 0x75,
+    0x53, 0x50, 0x75, 0x36, 0x50, 0x76, 0x48, 0x49,
+    0x56, 0x32, 0x4a, 0x68, 0x41, 0x31, 0x56, 0x34
+};
+
+static volatile unsigned char *g_sfc_base;      /* 设备页基址（0 = 未装配）*/
+static unsigned int g_sfc_pagelen;              /* 受保护长度（按页取整）*/
+static int g_sfc_mode_device = 1;               /* 1 = 设备仿真；0 = 旧静态种子 */
+
+static unsigned char g_shadow[SFC_REG_MIN];     /* 其它寄存器影子 */
+static unsigned char g_pay[256];                 /* 当前请求的"flash 内容" */
+static unsigned int  g_pay_len;                  /* 有效字节数（0 = 无限 0）*/
+static unsigned int  g_pay_pos;
+static unsigned int  g_pay_zero = 1;
+static unsigned int  g_prepared;
+static unsigned int  g_opcode;
+static unsigned int  g_addr;
+static unsigned int  g_reqlen;
+static unsigned long g_faults, g_cmds, g_unhandled;
+static int           g_logged;
+static int           g_mode_ready;
+
+/* 前置声明（定义在后面的段落里）*/
+static void note(const char *fmt, ...);
+static void sfc_seed(void *p, size_t len);
+
+static void sfc_dev_prepare(void)
+{
+    unsigned int i;
+
+    if (g_prepared) {
+        return;
+    }
+    g_prepared = 1;
+    g_pay_pos  = 0;
+    g_pay_zero = 1;                 /* 默认：无限 0（不耗尽，避免上层空转等待）*/
+    g_pay_len  = 0;
+
+    if (g_opcode == 0x009f) {                       /* JEDEC ID */
+        g_pay_zero = 0;
+        g_pay[0] = 0x0b;                            /* 让原厂走 "id == 0x0b" 分支 */
+        g_pay[1] = 0x00;
+        g_pay[2] = 0x18;                            /* => FlashSize = 0x1000000 */
+        g_pay[3] = 0x00;
+        g_pay_len = 4;
+    } else if (g_opcode == 0x485a) {                /* 读 UniqueID（16 字节）*/
+        g_pay_zero = 0;
+        for (i = 0; i < 8; i++) {
+            g_pay[i] = KY[i];                       /* => UniqueID[k] = KY[k] */
+        }
+        for (i = 8; i < 16; i++) {
+            g_pay[i] = 0;
+        }
+        g_pay_len = 16;
+    } else if (g_opcode == 0x4848 && g_addr == 0x0000) {
+        g_pay_zero = 0;
+        memset(g_pay, 0, sizeof(g_pay));
+        for (i = 0; i < 8; i++) {
+            g_pay[i] = (unsigned char)(KY[i] ^ KY[i]);          /* = 0 */
+        }
+        for (i = 8; i < 24; i++) {
+            g_pay[i] = (unsigned char)(KY[i] ^ g_pay[i - 8]);   /* 反解出来的键 */
+        }
+        g_pay_len = 256;                            /* buf[0xc0..0xd7] 保持 0 */
+    }
+    /* 其它（含 0x4848 @0x100）：全 0 ⇒ 打印行与原窗口一致 */
+
+    if (g_logged < 24) {
+        note("[shim] sfc cmd op=%04x addr=%06x len=%u -> payload=%s(%u B)\n",
+             g_opcode, g_addr, g_reqlen,
+             g_pay_zero ? "zeros" : "flash", g_pay_len);
+        g_logged++;
+    }
+}
+
+static unsigned int sfc_fifo_avail(void)
+{
+    unsigned int rem;
+
+    if (!g_prepared || g_pay_zero) {
+        return 16;                  /* 无限 0：永远"有得读" */
+    }
+    rem = g_pay_len - g_pay_pos;
+    return rem == 0 ? 0 : ((rem + 3) / 4 > 16 ? 16 : (rem + 3) / 4);
+}
+
+static unsigned long sfc_fifo_next(unsigned int size)
+{
+    unsigned long v = 0;
+    unsigned int i;
+
+    sfc_dev_prepare();
+    for (i = 0; i < size; i++) {
+        unsigned char b = 0;
+        if (g_pay_pos < g_pay_len) {
+            b = g_pay[g_pay_pos++];
+        }
+        v |= (unsigned long)b << (8 * i);
+    }
+    return v;
+}
+
+static unsigned long sfc_dev_read(unsigned int off, unsigned int size)
+{
+    unsigned int wi = off >> 2, shift = (off & 3u) * 8u;
+    unsigned long w = 0, v = 0;
+    unsigned int i;
+
+    if (wi == (SFC_OFF_DATA >> 2)) {
+        return sfc_fifo_next(size);     /* 数据寄存器：按本次访问宽度推进 FIFO */
+    }
+    /* ★ 必须按「寄存器字 + 字节偏移」应答：实测重建侧读状态用的是
+     *   `ldrh r1,[r0,#34]`（reg[8] 的**上半字** = 可读字数）与 `ldrb r1,[r0,#34]`，
+     *   而不是整字读 0x20。只认精确偏移会让这些访问拿到 0 ⇒ FIFO 永远"没数据" ⇒ 上层空转超时。*/
+    switch (wi) {
+        case SFC_OFF_BUSY >> 2:   w = 0; break;                                   /* 忙标志：恒 0 */
+        case SFC_OFF_STATUS >> 2: w = (unsigned long)sfc_fifo_avail() << 16; break;
+        case SFC_OFF_STAT2 >> 2:  w = 0; break;
+        default:
+            if (wi < sizeof(g_shadow) / 4u) {
+                w = (unsigned long)g_shadow[wi * 4]
+                  | ((unsigned long)g_shadow[wi * 4 + 1] << 8)
+                  | ((unsigned long)g_shadow[wi * 4 + 2] << 16)
+                  | ((unsigned long)g_shadow[wi * 4 + 3] << 24);
+            }
+            break;
+    }
+    w >>= shift;
+    for (i = 0; i < size && i < 4u; i++) {
+        v |= ((w >> (8 * i)) & 0xffu) << (8 * i);
+    }
+    return v;
+}
+
+static void sfc_dev_write(unsigned int off, unsigned long val, unsigned int size)
+{
+    unsigned int i;
+
+    if (off == SFC_OFF_CMD) {                       /* 新命令：复位 FIFO */
+        g_opcode   = (unsigned int)(val & 0xffffu);
+        g_reqlen   = (unsigned int)((val >> 16) & 0x3fffu);
+        g_prepared = 0;
+        g_pay_pos  = 0;
+        g_cmds++;
+        return;
+    }
+    if (off == SFC_OFF_ADDR) {
+        g_addr = (unsigned int)val;
+        return;
+    }
+    if ((unsigned long)off + size <= (unsigned long)sizeof(g_shadow)) {
+        for (i = 0; i < size; i++) {
+            g_shadow[off + i] = (unsigned char)((val >> (8 * i)) & 0xffu);
+        }
+    }
+}
+
+/* --- 寄存器取/存：用**具名字段**（不按结构布局做指针算术，跨 ABI 更安全）--- */
+static void regs_load(mcontext_t *m, unsigned long *R)
+{
+    R[0]  = m->arm_r0;   R[1]  = m->arm_r1;   R[2]  = m->arm_r2;   R[3]  = m->arm_r3;
+    R[4]  = m->arm_r4;   R[5]  = m->arm_r5;   R[6]  = m->arm_r6;   R[7]  = m->arm_r7;
+    R[8]  = m->arm_r8;   R[9]  = m->arm_r9;   R[10] = m->arm_r10;
+    R[11] = m->arm_fp;   R[12] = m->arm_ip;   R[13] = m->arm_sp;
+    R[14] = m->arm_lr;   R[15] = m->arm_pc;
+}
+
+static void regs_store(mcontext_t *m, const unsigned long *R)
+{
+    m->arm_r0 = R[0];   m->arm_r1 = R[1];   m->arm_r2 = R[2];   m->arm_r3 = R[3];
+    m->arm_r4 = R[4];   m->arm_r5 = R[5];   m->arm_r6 = R[6];   m->arm_r7 = R[7];
+    m->arm_r8 = R[8];   m->arm_r9 = R[9];   m->arm_r10 = R[10];
+    m->arm_fp = R[11];  m->arm_ip = R[12];  m->arm_sp = R[13];
+    m->arm_lr = R[14];  m->arm_pc = R[15];
+}
+
+static void sfc_fault(int sig, siginfo_t *si, void *vctx)
+{
+    ucontext_t *uc = (ucontext_t *)vctx;
+    mcontext_t *m  = &uc->uc_mcontext;
+    unsigned long addr = (unsigned long)si->si_addr;
+    unsigned long R[16];
+    unsigned int ins, off, L, I, P, U, W, Rn, Rd, size, wb, mask;
+    unsigned long v;
+
+    if (!(g_sfc_base && addr >= (unsigned long)g_sfc_base
+          && addr < (unsigned long)g_sfc_base + g_sfc_pagelen)) {
+        note("[shim] SFC: fault @%08lx 不在设备页 (base=%p) —— 交回默认处理\n",
+             addr, (void *)g_sfc_base);
+        signal(sig, SIG_DFL);
+        return;                     /* 返回后同一指令再次缺址 ⇒ 真正崩掉（保持原语义）*/
+    }
+
+    g_faults++;
+    ins = *(volatile unsigned int *)m->arm_pc;
+    off = (unsigned int)(addr - (unsigned long)g_sfc_base);
+    regs_load(m, R);
+
+    /* --- 块传送 LDM/STM（bits 27..25 == 100）：设备侧用不到，读到就给 0 --- */
+    if ((ins & 0x0E000000u) == 0x08000000u) {
+        unsigned int rl = ins & 0xffffu, i;
+        if (ins & (1u << 20)) {
+            for (i = 0; i < 16; i++) {
+                if ((rl >> i) & 1u) {
+                    R[i] = 0;
+                }
+            }
+        }
+        g_unhandled++;
+        regs_store(m, R);
+        m->arm_pc += 4;
+        return;
+    }
+
+    /* --- 半字 / 有符号字节传送（bit4=1 且 bits27..25==000）--- */
+    if ((ins & 0x0E000000u) == 0 && (ins & 0x90u) == 0x90u) {
+        L = (ins >> 20) & 1u; Rn = (ins >> 16) & 0xFu; Rd = (ins >> 12) & 0xFu;
+        P = (ins >> 24) & 1u; U = (ins >> 23) & 1u; W = (ins >> 21) & 1u;
+        size = ((ins >> 5) & 1u) ? 2u : 1u;          /* H=1 → 半字；H=0（S=1）→ 有符号字节 */
+        wb = (P == 0) || W;
+        if (L) {
+            v = sfc_dev_read(off, size);
+            if ((ins >> 6) & 1u) {                   /* S=1：LDRSB / LDRSH → 符号扩展 */
+                if (size == 2u) {
+                    v = (unsigned long)(long)(short)(v & 0xffffu);
+                } else {
+                    v = (unsigned long)(long)(signed char)(v & 0xffu);
+                }
+            }
+            R[Rd] = v;
+        } else {
+            v = R[Rd] & (size == 2 ? 0xffffu : 0xffu);
+            sfc_dev_write(off, v, size);
+        }
+        if (wb && Rn != 15) {
+            unsigned long doff = (ins & (1u << 22))
+                               ? R[ins & 0xFu]                                  /* 寄存器偏移 */
+                               : (unsigned long)(((ins >> 4) & 0xF0u) | (ins & 0xFu)); /* imm4H:imm4L */
+            R[Rn] = U ? R[Rn] + doff : R[Rn] - doff;
+        }
+        regs_store(m, R);
+        m->arm_pc += 4;
+        return;
+    }
+
+    /* --- 单寄存器传送（bits 27..26 == 01）--- */
+    if ((ins & 0x0C000000u) != 0x04000000u) {
+        g_unhandled++;
+        note("[shim] SFC: 未识别指令 @%08x = %08x（off=%x）—— 跳过\n",
+             (unsigned int)m->arm_pc, ins, off);
+        m->arm_pc += 4;
+        return;
+    }
+
+    I = (ins >> 25) & 1u; P = (ins >> 24) & 1u; U = (ins >> 23) & 1u;
+    size = (ins & (1u << 22)) ? 1u : 4u;             /* B=1 → 字节 */
+    W = (ins >> 21) & 1u; L = (ins >> 20) & 1u;
+    Rn = (ins >> 16) & 0xFu; Rd = (ins >> 12) & 0xFu;
+    wb = (P == 0) || W;
+
+    if (L) {
+        v = sfc_dev_read(off, size);
+        mask = (size == 4) ? 0xffffffffu : 0xffu;
+        R[Rd] = v & mask;
+    } else {
+        v = R[Rd] & ((size == 4) ? 0xffffffffu : 0xffu);
+        sfc_dev_write(off, v, size);
+    }
+
+    if (wb && Rn != 15) {                            /* 写回（P=0 或 W=1）*/
+        unsigned long doff;
+        if (I) {
+            doff = (unsigned long)(ins & 0xFFFu);
+        } else {
+            unsigned int rm = ins & 0xFu, sh = (ins >> 7) & 0x1Fu, ty = (ins >> 5) & 3u;
+            doff = R[rm];
+            if (sh) {
+                if (ty == 0)      doff = (doff << (32 - sh)) >> (32 - sh);
+                else if (ty == 1) doff = (doff >> sh) | (doff << (32 - sh));
+                else if (ty == 2) doff = (unsigned long)((long)doff >> sh);
+                else              doff = (doff >> sh) | ((doff & 1u) ? (0xFFFFFFFFu << (32 - sh)) : 0);
+            }
+        }
+        R[Rn] = U ? R[Rn] + doff : R[Rn] - doff;
+    }
+
+    if (L && Rd == 15) {                             /* 读入 pc = 分支：不再 +4 */
+        regs_store(m, R);
+        return;
+    }
+    regs_store(m, R);
+    m->arm_pc += 4;
+}
+
+static void sfc_disarm(void)
+{
+    g_sfc_base = 0;
+    g_sfc_pagelen = 0;
+}
+
+/* 装配设备：把刚映射到的页设成 PROT_NONE，并装 SIGSEGV/SIGBUS 处理器 */
+static void sfc_arm_device(void *p, size_t len)
+{
+    struct sigaction sa;
+    unsigned long page = 0x1000;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = sfc_fault;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    (void)sigaction(SIGSEGV, &sa, NULL);
+    (void)sigaction(SIGBUS, &sa, NULL);
+
+    g_sfc_base = (volatile unsigned char *)p;
+    g_sfc_pagelen = (unsigned int)(((len + page - 1) / page) * page);
+    memset(g_shadow, 0, sizeof(g_shadow));
+    g_prepared = 0;
+    g_opcode = 0;
+    g_addr = 0;
+    if (syscall(__NR_mprotect, p, (size_t)g_sfc_pagelen, PROT_NONE) != 0) {
+        note("[shim] SFC: mprotect(PROT_NONE) 失败 errno=%d — 退回静态种子页\n", errno);
+        g_sfc_base = 0;
+        g_sfc_pagelen = 0;
+        sfc_seed(p, len);
+        return;
+    }
+    note("[shim] SFC 设备仿真已装配 base=%p len=0x%x（每次寄存器访问由 SIGSEGV 处理器应答）\n",
+         (void *)p, g_sfc_pagelen);
 }
 
 /* ---- ③ 栈「投毒」：让**未初始化读**变得可复现 -------------------------
@@ -288,7 +672,16 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (p != MAP_FAILED) {
             if (uoff == SFC_REG_OFF) {
-                sfc_seed(p, len);      /* 见上方长注释：让 SFC 传输「完成」而不是超时 */
+                if (!g_mode_ready) {           /* CGM_SFC_MODE=seed 可回退旧行为 */
+                    const char *md = getenv("CGM_SFC_MODE");
+                    g_sfc_mode_device = !(md && md[0] == 's' && md[1] == 'e');
+                    g_mode_ready = 1;
+                }
+                if (g_sfc_mode_device) {
+                    sfc_arm_device(p, len);    /* 变成"有状态设备"（见 ③ 段长注释）*/
+                } else {
+                    sfc_seed(p, len);          /* 旧行为：静态种子页 */
+                }
             }
             return p;
         }
@@ -336,7 +729,16 @@ static void note(const char *fmt, ...)
 
 int munmap(void *addr, size_t len)
 {
-    long r = syscall(__NR_munmap, addr, len);
+    long r;
+
+    /* 设备页被解除映射后必须"撤防"，否则处理器会把普通缺址当成设备访问 */
+    if (g_sfc_base && (unsigned long)addr >= (unsigned long)g_sfc_base
+        && (unsigned long)addr < (unsigned long)g_sfc_base + g_sfc_pagelen) {
+        note("[shim] SFC 设备撤防（munmap %p）：faults=%lu cmds=%lu unhandled=%lu\n",
+             addr, g_faults, g_cmds, g_unhandled);
+        sfc_disarm();
+    }
+    r = syscall(__NR_munmap, addr, len);
 
     /* 只报告 sfc_init 那一次映射（0x400），避免噪声 */
     if (len == 0x400) {
