@@ -21,8 +21,10 @@ gh_u4 spi_driver_init(void)
   int iVar8;
   int iVar9;
   gh_u1 uVar10;
-  gh_u4 local_120;
-  gh_u4 local_11c;
+  gh_u4 cmd[2];  /* ★★ 原厂：命令行是**连续的 2 个字**（cmd[0]=命令，cmd[1]=参数，sfc_request 会对 cmd[1] 置 bit1）。
+   *    必须写成数组：拆成两个相邻标量时，编译器可以按任意顺序摆放，`cmd[0]+4` 就可能越出这对
+   *    标量、砸到帧里别的东西 —— 实测把调用者保存的 fp 打成了 fp|2，导致上层 `sub sp,fp,#28`
+   *    算出错帧、`pop {…,pc}` 跳到坏地址。工厂原版是 `str lr,[sp]` + `str lr,[sp,#4]`，即帧内 8B 数组。 */
   /* ★★ 原厂这里是**同一块安全数据缓冲的前两个字**（Ghidra 把它拆成了两个独立标量）：
    *    · `sflash_read_security_data(&sb.sec[0], 0x2000)` ⇒ 把安全数据整块读进 &buf[0]；
    *    · `printf("… CRC32:%04X ", …, sb.sec[0])` ⇒ 打印 buf[0]；
@@ -66,9 +68,9 @@ gh_u4 spi_driver_init(void)
   gh_byte *local_f8  = (gh_byte *)&sb.sec[0] + 0x20;
   gh_byte *local_58  = (gh_byte *)&sb.sec[0] + 0xc0;   /* 仅文档用途（代码经 pbVar4[0xc0] 访问） */
   
-  local_11c = 0;
-  local_120 = 0x9f;
-  sfc_request(&local_120,0,&sb.sec[0]._u32,3);
+  cmd[1] = 0;
+  cmd[0] = 0x9f;
+  sfc_request(cmd,0,&sb.sec[0]._u32,3);
   uVar6 = sb.sec[0]._u32 & 0xff;
   (spi_id_blob)._0_1_ = (gh_byte)sb.sec[0]._u32;
   (spi_id_blob)._1_1_ = sb.sec[0]._1_1_;
@@ -84,9 +86,9 @@ LAB_002c41fc:
         goto LAB_002c4220;
       }
 LAB_002c42cc:
-      local_11c = 0;
-      local_120 = 0x484b;
-      sfc_request(&local_120,0,&sb.sec[0]._u32,8);
+      cmd[1] = 0;
+      cmd[0] = 0x484b;
+      sfc_request(cmd,0,&sb.sec[0]._u32,8);
       pbVar4 = (gh_byte *)&UniqueID;
       pbVar3 = (gh_byte *)&sb.sec[0];
       do {
@@ -122,9 +124,9 @@ LAB_002c4360:
       uVar5 = 0x194;
       uVar10 = 0x5a;
 LAB_002c4220:
-      local_11c = 0;
-      local_120 = (gh_uint)CONCAT11(0x48,uVar10);
-      sfc_request(&local_120,uVar5,&sb.sec[0]._u32,0x10);
+      cmd[1] = 0;
+      cmd[0] = (gh_uint)CONCAT11(0x48,uVar10);
+      sfc_request(cmd,uVar5,&sb.sec[0]._u32,0x10);
       pbVar4 = (gh_byte *)&UniqueID;
       pbVar3 = (gh_byte *)&sb.sec[0];
       do {
