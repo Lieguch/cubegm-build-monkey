@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""find_func_marks.py — 从一个 ELF 里取出某个函数的「入口」与「epilogue」地址。
+"""find_func_marks.py — 从一个 ELF 里取出某函数的「入口」与**所有** epilogue 地址。
 
 为什么需要它：
-  `tools/ci_qemu_behav.sh` 的「帧探针」要在 RKGAME 的函数入口与 epilogue 各下一个 gdb 断点，
+  `tools/ci_qemu_behav.sh` 的「帧探针」要在 RKGAME 的某函数入口与 epilogue 各下一个 gdb 断点，
   用来校验 **fp(r11) 在函数执行期间必须不变**（实测：某个 callee 把调用者的 fp 写成 `fp|2`，
   上层于是用错的 `fp` 算帧基址，`pop {…,pc}` 跳到坏地址）。
-  这两个地址**会随每次重链接漂移** —— 早期版本把它们硬编码，代码一改就指到别的函数上，
-  探针的输出会静默变成无意义（甚至误报）。本工具让它们始终从当前 ELF 现算。
+  这两个地址**会随每次重链接漂移**；硬编码会指到别的函数上，让探针静默失去意义。
+
+★ 必须返回**全部** epilogue 候选：一个函数体里可能有多条返回路径，各自带一份
+  `sub sp, fp, #N` + `pop {…,pc}`。只押"最后一条"会押错路径（实测踩过：断点永不命中，
+  探针只测到入口的 `fp-sp`，得出无意义的 0）。
 
 判定方法：
-  · 入口   = 符号表里该函数的值；
-  · epilogue = 函数体内**最后一条** `sub sp, fp, #N`（ARM: 0xE24BD0xx，fp=r11）。
-    编译产物里这是标准尾段；取最后一条可跳过中间的其它分支。
-    为稳妥，再校验：它必须落在 [入口, 入口+size) 内，且其前一条是非分支指令。
+  · 入口 = 符号表里该函数的值；
+  · epilogue 候选 = 函数体内所有满足「`sub sp, fp, #imm`（0xE24BD0xx）或 `mov sp, fp`（0xE1A0D00B）」
+    且**紧跟**一条含 pc 的 `pop/ldm` 的位置。要求"紧跟"，可排除字面量池里凑巧同形的数据字。
+
+输出:
+  第 1 行 = 入口地址；之后每行一个 epilogue 候选地址（十六进制）。
+  取不到时退出码 3（调用方据此跳过探针）。
 
 用法:
   python find_func_marks.py <elf> <funcname>
-  →  stdout 打印两行：<entry_hex> <epilogue_hex>
-     取不到时退出码 3（调用方可据此跳过探针）。
 """
 import struct
 import sys
@@ -43,7 +47,8 @@ def load(path):
 
 def find_sym(d, secs, name):
     st = secs['.symtab']
-    stra = struct.unpack_from('<I', d, 32)[0] + st['link'] * struct.unpack_from('<H', d, 46)[0] + 16
+    es = struct.unpack_from('<H', d, 46)[0]
+    stra = struct.unpack_from('<I', d, 32)[0] + st['link'] * es + 16
     stroff = struct.unpack_from('<I', d, stra)[0]
     ent = st['entsz'] or 16
     for j in range(st['size'] // ent):
@@ -72,18 +77,36 @@ def main():
         sys.stderr.write('符号不在 .text 内\n')
         return 3
 
-    epi = None
-    for ea in range(entry, entry + size - 4, 4):
-        ins = struct.unpack_from('<I', d, to + (ea - ta))[0]
-        # 两种等价的「恢复 sp」形态，编译器视寄存器分配择一：
-        #   `sub sp, fp, #imm`（0xE24BD0xx，通常 imm=0x1c）
-        #   `mov sp, fp`      （0xE1A0D00B）
-        if (ins & 0xFFFFF000) == 0xE24BD000 or ins == 0xE1A0D00B:
-            epi = ea
-    if epi is None:
-        sys.stderr.write('函数体内未找到 `sub sp, fp, #imm` / `mov sp, fp`（可能未使用帧指针）\n')
+    def word(ea):
+        if ea + 4 > ta + tsz:
+            return None
+        return struct.unpack_from('<I', d, to + (ea - ta))[0]
+
+    def is_pop_pc(ins):
+        if ins is None:
+            return False
+        if (ins >> 24) != 0xE8:            # ldm/ldmib/... 单寄存器版
+            return False
+        if ((ins >> 20) & 1) != 1:         # L=1
+            return False
+        return bool((ins & 0xFFFF) >> 15)  # register list 含 pc
+
+    cands = []
+    for ea in range(entry, entry + size, 4):
+        ins = word(ea)
+        if ins is None:
+            break
+        sub_fp = (ins & 0xFFFFF000) == 0xE24BD000
+        mov_fp = (ins == 0xE1A0D00B)
+        if (sub_fp or mov_fp) and is_pop_pc(word(ea + 4)):
+            cands.append(ea)
+    if not cands:
+        sys.stderr.write('未找到「恢复 sp + pop 含 pc」的 epilogue\n')
         return 3
-    print('0x%08x 0x%08x' % (entry, epi))
+
+    print('0x%08x' % entry)
+    for a in cands:
+        print('0x%08x' % a)
     return 0
 
 

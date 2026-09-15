@@ -47,13 +47,14 @@ QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 mkdir -p "$OUT"
 
 # ---- 帧探针的入口/epilogue：**现算**（硬编码会随重链接漂移）----
-FUNC_ENTRY=""; FUNC_EPI=""
+FUNC_ENTRY=""; FUNC_EPIS=""
 _marks=$("${PY:-python3}" "$(winpath "$ROOT/tools/find_func_marks.py")" \
              "$(winpath "$ROOT/build/rkgame.rebuilt.elf")" "$FRAME_TARGET" 2>/dev/null || true)
 if [ -n "$_marks" ]; then
-    FUNC_ENTRY=$(printf '%s' "$_marks" | cut -d' ' -f1)
-    FUNC_EPI=$(printf '%s' "$_marks" | cut -d' ' -f2)
-    echo "  帧探针目标 $FRAME_TARGET：入口=$FUNC_ENTRY epilogue=$FUNC_EPI"
+    # 第 1 行 = 入口；其余行 = **全部** epilogue 候选（多个返回路径各有一份 `sub sp,fp,#N`+`pop {…,pc}`）
+    FUNC_ENTRY=$(printf '%s\n' "$_marks" | sed -n '1p')
+    FUNC_EPIS=$(printf '%s\n' "$_marks" | sed -n '2,$p' | tr '\n' ' ')
+    echo "  帧探针目标 $FRAME_TARGET：入口=$FUNC_ENTRY  epilogue 候选=[ $FUNC_EPIS ]"
 else
     echo "  [note] 取不到 $FRAME_TARGET 的入口/epilogue ⇒ 帧探针将跳过（不影响其他门禁）"
 fi
@@ -211,7 +212,7 @@ frame_probe() {
         echo "   [skip] 无 gdb-multiarch"
         return 0
     fi
-    if [ -z "$FUNC_ENTRY" ] || [ -z "$FUNC_EPI" ]; then
+    if [ -z "$FUNC_ENTRY" ] || [ -z "$FUNC_EPIS" ]; then
         echo "   [skip] 未取到帧探针地址（find_func_marks.py 失败）"
         return 0
     fi
@@ -225,30 +226,34 @@ frame_probe() {
     "$wrap" >/dev/null 2>&1 &
     qpid=$!
     sleep 3
-    timeout 240 gdb-multiarch -q -batch \
-        -ex "set confirm off" \
-        -ex "set pagination off" \
-        -ex "set sysroot $SYSROOT" \
-        -ex "file $GUEST" \
-        -ex "target remote localhost:$port" \
-        -ex "break *${FUNC_ENTRY}" \
-        -ex "break *${FUNC_EPI}" \
-        -ex "continue" \
-        -ex "echo \n=== [1] 入口（push 之前，sp = 调用者的 sp）===\n" \
-        -ex "info registers sp fp lr pc" \
-        -ex "x/8xw \$sp" \
-        -ex "continue" \
-        -ex "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n" \
-        -ex "info registers sp fp lr pc" \
-        -ex "x/12xw \$sp" \
-        -ex "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n" \
-        -ex "x/10xw \$sp+0x10c" \
-        -ex "echo \n--- ★ 帧不变式：fp - 帧基址 必须 = 0x128 ---\n" \
-        -ex "p/x \$fp-\$sp" \
-        -ex "continue" \
-        -ex "echo \n=== [3] 之后 ===\n" \
-        -ex "info registers sp fp pc" \
-        > "$fs" 2>&1
+    # ★ 用 gdb 命令**文件**（而不是一长串 -ex）：断点数量可变（epilogue 候选可能不止一个），
+    #   且命令文件里不需要 shell 转义 `$sp` 之类，读起来也清楚。
+    gc="$OUT/gdb_frame_${label}.cmds"
+    {
+        echo "set confirm off"
+        echo "set pagination off"
+        echo "set sysroot $SYSROOT"
+        echo "file $GUEST"
+        echo "target remote localhost:$port"
+        echo "break *${FUNC_ENTRY}"
+        for a in $FUNC_EPIS; do echo "break *$a"; done
+        echo "continue"
+        echo "echo \n=== [1] 入口（push 之前，sp = 调用者的 sp）===\n"
+        echo "info registers sp fp lr pc"
+        echo "x/8xw \$sp"
+        echo "continue"
+        echo "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n"
+        echo "info registers sp fp lr pc"
+        echo "x/14xw \$sp"
+        echo "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n"
+        echo "x/10xw \$sp+0x10c"
+        echo "echo \n--- *** 帧不变式：fp - 帧基址 必须 = 0x128 *** ---\n"
+        echo "p/x \$fp-\$sp"
+        echo "continue"
+        echo "echo \n=== [3] 之后 ===\n"
+        echo "info registers sp fp pc"
+    } > "$gc"
+    timeout 240 gdb-multiarch -q -batch -x "$gc" > "$fs" 2>&1
     grc=$?
     kill "$qpid" 2>/dev/null || true
     wait "$qpid" 2>/dev/null || true
@@ -263,8 +268,12 @@ frame_probe() {
     #   `pop {…,pc}` 按错位读栈 ⇒ 跳到 0xf2280500（不可映射）⇒ SIGSEGV。
     #   该 bug 编译/链接/静态门禁全绿，只有这里能拦住 ⇒ 固化成门禁。
     seat=$(grep -a '^\$1 = 0x' "$fs" 2>/dev/null | tail -1 | sed 's/^\$1 = //')
-    if [ -z "$seat" ]; then
-        echo "   [warn] 未取到 `fp - 帧基址` 的测量值（gdb 可能未停到 epilogue）⇒ 帧门禁跳过"
+    hits=$(grep -ac '^Breakpoint ' "$fs" 2>/dev/null || true)
+    case "$hits" in ''|*[!0-9]*) hits=0 ;; esac
+    # 必须**真的停到过 epilogue**（= 命中 2 个断点）才判定；否则只能说明没测到，
+    # 不能当成失败（否则探针自身的问题会变成假红，那和假绿一样昂贵）。
+    if [ "$hits" -lt 2 ] || [ -z "$seat" ]; then
+        echo "   [warn] 未停到 epilogue（命中断点 $hits 个；测量值='${seat}'）⇒ 帧门禁**无法判定**，跳过"
         return 0
     fi
     if [ "$seat" = "0x128" ]; then
