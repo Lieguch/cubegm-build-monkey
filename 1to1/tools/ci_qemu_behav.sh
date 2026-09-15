@@ -41,6 +41,10 @@ EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-300}"   # -d exec 会显著拖慢 guest，给�
 # 帧探针要下的两个断点（地址取自当前链接；CI 侧 exec 轨迹已确认 epilogue=0x0501f5c4 一致）
 FUNC_ENTRY="${CGM_FUNC_ENTRY:-0x0501f2f0}"   # spi_driver_init 入口（prologue 前）
 FUNC_EPI="${CGM_FUNC_EPI:-0x0501f5c4}"       # 其 epilogue（`sub sp,fp,#28` 之前）
+# 二分定位用的中间断点（都在 spi_driver_init 内；用来判定 r11(fp) 是**哪一段**被改坏的）
+FUNC_POSTPRO="${CGM_FUNC_POSTPRO:-0x0501f2fc}"    # prologue 之后第一条指令
+FUNC_CALL1RET="${CGM_FUNC_CALL1RET:-0x0501f514}"  # 首次 sflash 调用返回点
+FUNC_CALL2RET="${CGM_FUNC_CALL2RET:-0x0501f558}"  # 末次 sflash 调用返回点（进校验循环前）
 
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 
@@ -216,22 +220,34 @@ frame_probe() {
         -ex "file $GUEST" \
         -ex "target remote localhost:$port" \
         -ex "break *${FUNC_ENTRY}" \
+        -ex "break *${FUNC_POSTPRO}" \
+        -ex "break *${FUNC_CALL1RET}" \
+        -ex "break *${FUNC_CALL2RET}" \
         -ex "break *${FUNC_EPI}" \
         -ex "continue" \
-        -ex "echo \n=== [1] 进入 spi_driver_init（prologue 之前，sp = 调用者的 sp）===\n" \
+        -ex "echo \n=== [1] 入口（push 之前）===\n" \
         -ex "info registers sp fp lr pc" \
-        -ex "x/8xw \$sp" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
         -ex "continue" \
-        -ex "echo \n=== [2] epilogue（\$sp 此刻 = 帧基址）===\n" \
-        -ex "info registers sp fp lr pc" \
-        -ex "x/12xw \$sp" \
-        -ex "echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "continue" \
+        -ex "printf \"[stop] pc=%08x fp=%08x sp=%08x lr=%08x\n\", \$pc, \$fp, \$sp, \$lr" \
+        -ex "echo \n=== [last] 保存寄存器区：帧+0x10C 起（r4..fp,lr）===\n" \
         -ex "x/10xw \$sp+0x10c" \
-        -ex "echo \n--- fp - 帧基址（应 = 0x128 = 296）---\n" \
+        -ex "echo \n=== [last] fp - 帧基址（应 = 0x128）===\n" \
         -ex "p/x \$fp-\$sp" \
-        -ex "continue" \
-        -ex "echo \n=== [3] 之后 ===\n" \
-        -ex "info registers sp fp lr pc" \
         > "$fs" 2>&1
     grc=$?
     kill "$qpid" 2>/dev/null || true
