@@ -258,6 +258,12 @@ frame_probe() {
         printf '%s\n' "set sysroot $SYSROOT"
         printf '%s\n' "file $GUEST"
         printf '%s\n' "target remote localhost:$port"
+        # ★★ 必须让 gdb **放行** SIGSEGV/SIGBUS 给 guest：假硬件 shim 把 SFC 寄存器页设成了
+        #    PROT_NONE，每次寄存器访问都会由 guest 自己的处理器应答 —— 但 gdb 默认在 SIGSEGV
+        #    上 **stop**，于是"第一次停下"变成设备缺页（而不是函数入口）⇒ `$fp-$sp` 量到 0x18
+        #    这种无意义值 ⇒ 帧门禁**假红**（实测：整轮连差分组都没跑到）。
+        printf '%s\n' "handle SIGSEGV nostop noprint pass"
+        printf '%s\n' "handle SIGBUS nostop noprint pass"
         printf '%s\n' "break *${FUNC_ENTRY}"
         for a in $FUNC_EPIS; do printf '%s\n' "break *$a"; done
         printf '%s\n' "continue"
@@ -351,7 +357,6 @@ run_side() {
     probe "$label" "$WRAP_ST" "strace"
     bt_probe "$label"
     exec_probe "$label"
-    frame_probe "$label" || { echo "!! 帧不变式门禁 FAIL（详见上方 frame_${label}.txt）"; exit 1; }
 
     echo ""
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"
@@ -438,4 +443,12 @@ echo "behav_diff 退出码 = $rc"
     echo "退出码：$rc（0=PASS，2=FAIL，3=INCONCLUSIVE）"
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
 
+# ★ 帧不变式门禁放在差分**之后**（次级门禁）：差分是主门禁，绝不能因为次级探针出问题而
+#   拿不到差分结论（实测事故：gdb 在 SIGSEGV 上停住 → 量到无意义的 `fp-sp` → 帧门禁假红
+#   → 整轮连 behav_diff.txt 都没生成）。
+if [ "$rc" -eq 0 ]; then
+    frame_probe rebuild || { echo "!! 帧不变式门禁 FAIL（详见上方 frame_rebuild.txt）"; exit 1; }
+else
+    echo "[note] 差分 rc=$rc（非 0）⇒ 跳过帧不变式门禁：先看主门禁结论"
+fi
 exit $rc
