@@ -36,7 +36,8 @@ jobs:
       - name: 安装 ARM 交叉工具链
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf strace
+          # gdb-multiarch：用于回溯探针（取真实崩溃点与调用栈）
+          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf strace gdb-multiarch
           arm-linux-gnueabihf-gcc --version | head -1
 
       - name: 安装 zig（与本地同一工具链 ⇒ 重建产物的 GLIBC 下限可控）

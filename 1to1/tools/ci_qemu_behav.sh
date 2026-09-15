@@ -100,6 +100,56 @@ exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\
 EOF
     chmod +x "$1"
 }
+
+# ---- 回溯探针：qemu 的 gdbstub + gdb-multiarch ⇒ 取**真实崩溃点与调用栈** ----
+#   来历：行为差分只剩 1 项时，`-strace` 只能说明"崩在哪个 syscall 之后"，
+#   `-d in_asm` 的尾部只到"最后被翻译的块"（已翻译代码里的坏访存不会再记一行），
+#   于是无法区分「已翻译代码里的坏访存」与「跳到了坏地址」。gdb 直接给 pc/lr/返回栈。
+#   两侧都取 ⇒ 工厂侧（已知终止于 dlclose(NULL)）可作对照基线。
+bt_probe() {
+    label="$1"
+    if ! command -v gdb-multiarch >/dev/null 2>&1; then
+        echo "   [skip] 无 gdb-multiarch，跳过回溯探针（apt install gdb-multiarch 可启用）"
+        return 0
+    fi
+    port=12345
+    [ "$label" = "rebuild" ] && port=12346
+    wrap="$OUT/run_guest_bt_${label}.sh"
+    mk_wrap "$wrap" "-g $port"
+    bs="$OUT/bt_${label}.txt"
+    echo ""
+    echo "########## 回溯探针 ${label}（qemu gdbstub :$port）##########"
+    set +e
+    "$wrap" >/dev/null 2>&1 &
+    qpid=$!
+    sleep 3
+    timeout 240 gdb-multiarch -q -batch \
+        -ex "set confirm off" \
+        -ex "set pagination off" \
+        -ex "set sysroot $SYSROOT" \
+        -ex "file $GUEST" \
+        -ex "target remote localhost:$port" \
+        -ex "continue" \
+        -ex "echo \n=== 崩溃现场 ===\n" \
+        -ex "info registers pc sp lr r0 r1 r2 r3 r4" \
+        -ex "bt" \
+        -ex "x/6i \$pc-12" \
+        -ex "x/8xw \$sp" \
+        -ex "echo \n=== 关键全局（guest 非 PIE，地址即链接地址）===\n" \
+        -ex "x/1xw 0x003b21c8" \
+        -ex "x/1xw 0x003cfab8" \
+        -ex "echo \n=== lr 指向的调用点 ===\n" \
+        -ex "x/4i \$lr-16" \
+        -ex "info symbol \$pc" \
+        -ex "info symbol \$lr" \
+        > "$bs" 2>&1
+    grc=$?
+    kill "$qpid" 2>/dev/null || true
+    wait "$qpid" 2>/dev/null || true
+    set -e
+    echo "   gdb 退出码 = $grc（0 = 正常取到现场）→ $bs"
+    sed -n '1,70p' "$bs" 2>/dev/null || true
+}
 mk_wrap "$WRAP" ""
 WRAP_ST="$OUT/run_guest_strace.sh"; mk_wrap "$WRAP_ST" "-strace"
 WRAP_ASM="$OUT/run_guest_asm.sh";    mk_wrap "$WRAP_ASM" "-d in_asm -D $OUT/in_asm.log"
@@ -141,6 +191,7 @@ run_side() {
     ls -la "$GUEST"
 
     probe "$label" "$WRAP_ST" "strace"
+    bt_probe "$label"
 
     echo ""
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"

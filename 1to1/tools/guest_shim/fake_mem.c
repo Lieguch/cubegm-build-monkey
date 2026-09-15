@@ -296,3 +296,54 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
     }
     return sys_mmap2(addr, len, prot, flags, fd, uoff);
 }
+
+/* ---- ④ 崩溃定位探针：munmap 处的状态快照 ---------------------------- */
+/* 来历（P5 最后一处未解分歧）：行为差分只剩「重建侧少打印两行
+ *   `find *_driver_deinit process fail`」。已有事实：
+ *     · 重建侧 stdout 有 ROM 行、exit=139，工厂侧多两行后才崩；
+ *     · `-strace` 显示重建侧在 `close(sfc fd)` 之后、`sfc_uninit()` 的
+ *       `munmap(…, 0x400)` **之前**就崩了；
+ *     · `-d in_asm` 尾部停在 `spi_driver_init` 的 `pop {…, pc}`（说明它**已返回**）；
+ *     · si_addr=0xf2280500 落在"已翻译代码"里 ⇒ 老块不会再被 in_asm 记录。
+ *   于是只剩两个候选：
+ *     ① 返回地址被破坏 ⇒ `pop {…,pc}` 跳到坏地址（那样就永远回不到 main，也就不会有 munmap）；
+ *     ② 回到 main 后 `dlsym(handle, "sound_driver_deinit")` 的 `handle` 是垃圾
+ *        （工厂里 `handle` 位于 `.bss`，值为 0）。
+ *   本探针把这两条路都变成**可观测事件**：
+ *     · 若重建侧**看不到** sfc_uninit 的 munmap 行 ⇒ ① 成立；
+ *     · 若看得到、且 `handle` 不是 0 ⇒ ② 成立。
+ *
+ *   ★ 便利条件：guest 是**非 PIE**，`.bss` 就加载在链接地址上 ⇒ shim 可直接读
+ *     `*(void **)0x003b21c8` 拿到那个 `handle`（两侧都有这个符号，地址相同）。
+ *   两侧加载同一份 shim ⇒ 差分依然公平。 */
+
+#define GUEST_ADDR_handle    0x003b21c8u   /* run_process/InitDisplay/InitSound/DeinitDisplay 引用的 handle */
+#define GUEST_ADDR_g_sfc_reg 0x003cfab8u
+
+static void note(const char *fmt, ...)
+{
+    char buf[256];
+    va_list ap;
+    int n;
+
+    va_start(ap, fmt);
+    n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n > 0) {
+        (void)write(2, buf, (size_t)(n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
+    }
+}
+
+int munmap(void *addr, size_t len)
+{
+    long r = syscall(__NR_munmap, addr, len);
+
+    /* 只报告 sfc_init 那一次映射（0x400），避免噪声 */
+    if (len == 0x400) {
+        note("[shim] munmap(addr,0x400)=%ld handle=%p g_sfc_reg=%p\n",
+             r,
+             *(void *volatile *)GUEST_ADDR_handle,
+             *(void *volatile *)GUEST_ADDR_g_sfc_reg);
+    }
+    return (int)r;
+}
