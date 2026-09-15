@@ -47,16 +47,20 @@ QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 mkdir -p "$OUT"
 
 # ---- 帧探针的入口/epilogue：**现算**（硬编码会随重链接漂移）----
-FUNC_ENTRY=""; FUNC_EPIS=""
+FUNC_ENTRY=""; FUNC_EPIS=""; EXP_DIFF=""; SAVED_OFF=""
 _marks=$("${PY:-python3}" "$(winpath "$ROOT/tools/find_func_marks.py")" \
              "$(winpath "$ROOT/build/rkgame.rebuilt.elf")" "$FRAME_TARGET" 2>/dev/null || true)
 if [ -n "$_marks" ]; then
-    # 第 1 行 = 入口；其余行 = **全部** epilogue 候选（多个返回路径各有一份 `sub sp,fp,#N`+`pop {…,pc}`）
-    FUNC_ENTRY=$(printf '%s\n' "$_marks" | sed -n '1p')
-    FUNC_EPIS=$(printf '%s\n' "$_marks" | sed -n '2,$p' | tr '\n' ' ')
-    echo "  帧探针目标 $FRAME_TARGET：入口=$FUNC_ENTRY  epilogue 候选=[ $FUNC_EPIS ]"
+    # key=value：entry / expdiff / savedoff / regs / epi（epi 可多行）
+    # ★★ 期望差值 `expdiff` 由 prologue **现算**（push 个数 + `add fp,sp,#M` + `sub sp,sp,#N` ⇒ M+N），
+    #    绝不写死常量：实测写死 0x128，而改了一处局部变量后帧形状变成 0x130 ⇒ 门禁**假红**。
+    FUNC_ENTRY=$(printf '%s\n' "$_marks" | sed -n 's/^entry=//p')
+    EXP_DIFF=$(printf '%s\n' "$_marks"  | sed -n 's/^expdiff=//p')
+    SAVED_OFF=$(printf '%s\n' "$_marks" | sed -n 's/^savedoff=//p')
+    FUNC_EPIS=$(printf '%s\n' "$_marks" | sed -n 's/^epi=//p' | tr '\n' ' ')
+    echo "  帧探针目标 $FRAME_TARGET：入口=$FUNC_ENTRY  epilogue 候选=[ $FUNC_EPIS ]  期望 fp-帧基址=$EXP_DIFF"
 else
-    echo "  [note] 取不到 $FRAME_TARGET 的入口/epilogue ⇒ 帧探针将跳过（不影响其他门禁）"
+    echo "  [note] 取不到 $FRAME_TARGET 的帧形状 ⇒ 帧探针将跳过（不影响其他门禁）"
 fi
 
 # ---- 假硬件 shim（两侧同一绝对路径 ⇒ 差分仍公平）----
@@ -212,7 +216,7 @@ frame_probe() {
         echo "   [skip] 无 gdb-multiarch"
         return 0
     fi
-    if [ -z "$FUNC_ENTRY" ] || [ -z "$FUNC_EPIS" ]; then
+    if [ -z "$FUNC_ENTRY" ] || [ -z "$FUNC_EPIS" ] || [ -z "$EXP_DIFF" ]; then
         echo "   [skip] 未取到帧探针地址（find_func_marks.py 失败）"
         return 0
     fi
@@ -248,9 +252,9 @@ frame_probe() {
         printf '%s\n' 'echo \n=== [2] epilogue（$sp 此刻 = 帧基址）===\n'
         printf '%s\n' 'info registers sp fp lr pc'
         printf '%s\n' 'x/14xw $sp'
-        printf '%s\n' 'echo \n--- 保存寄存器区：帧+0x10C 起（r4..fp,lr）---\n'
-        printf '%s\n' 'x/10xw $sp+0x10c'
-        printf '%s\n' 'echo \n--- *** 帧不变式：fp - 帧基址 必须 = 0x128 *** ---\n'
+        printf '%s\n' "echo \n--- 保存寄存器区：fp-$SAVED_OFF 起（r4..fp,lr）---\n"
+        printf '%s\n' "x/16xw \$fp-$SAVED_OFF"
+        printf '%s\n' "echo \n--- *** 帧不变式：fp - 帧基址 必须 = $EXP_DIFF *** ---\n"
         printf '%s\n' 'p/x $fp-$sp'
         printf '%s\n' "continue"
         printf '%s\n' 'echo \n=== [3] 之后 ===\n'
@@ -279,11 +283,11 @@ frame_probe() {
         echo "   [warn] 未停到 epilogue（命中断点 $hits 个；测量值='${seat}'）⇒ 帧门禁**无法判定**，跳过"
         return 0
     fi
-    if [ "$seat" = "0x128" ]; then
-        echo "   ✓ 帧不变式通过：fp - 帧基址 = $seat（= 0x128，与 epilogue 的 sub sp,fp,#28 自洽）"
+    if [ "$seat" = "$EXP_DIFF" ]; then
+        echo "   ✓ 帧不变式通过：fp - 帧基址 = $seat（= prologue 现算的 expdiff）"
         return 0
     fi
-    echo "   ✗ 帧不变式失败：fp - 帧基址 = $seat（应为 0x128）"
+    echo "   ✗ 帧不变式失败：fp - 帧基址 = $seat（应为 $EXP_DIFF）"
     echo "      ⇒ 某个 callee 破坏了调用者的 fp；这类破坏会让 epilogue 读到错的帧并跳到坏地址，"
     echo "        静态门禁无法发现，必须在此拦住。"
     return 1
