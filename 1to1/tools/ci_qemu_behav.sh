@@ -37,6 +37,7 @@ winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else pr
 GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
+EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-300}"   # -d exec 会显著拖慢 guest，给足时间
 
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 
@@ -139,7 +140,7 @@ bt_probe() {
         -ex "x/1xw 0x003b21c8" \
         -ex "x/1xw 0x003cfab8" \
         -ex "echo \n=== lr 指向的调用点 ===\n" \
-        -ex "x/4i \$lr-16" \
+        -ex "x/12i \$lr-40" \
         -ex "info symbol \$pc" \
         -ex "info symbol \$lr" \
         > "$bs" 2>&1
@@ -149,6 +150,34 @@ bt_probe() {
     set -e
     echo "   gdb 退出码 = $grc（0 = 正常取到现场）→ $bs"
     sed -n '1,70p' "$bs" 2>/dev/null || true
+}
+
+# ---- 执行轨迹探针：`-d exec` 记录**每一个被执行的翻译块**（含已缓存块）----
+#   为什么需要它：`-d in_asm` 只在"新翻译一个块"时写一行，所以**已缓存块里的坏访存/
+#   坏跳转不会留下痕迹**（实测：日志尾部停在 spi_driver_init 的 `pop {…,pc}`，
+#   之后跳到哪去了一无所知）。`-d exec` 每次执行都记一行 ⇒ 最后几行就是真实执行路径。
+exec_probe() {
+    label="$1"
+    wrap="$OUT/run_guest_exec_${label}.sh"
+    log="$OUT/exec_${label}.log"
+    mk_wrap "$wrap" "-d exec -D $log"
+    echo ""
+    echo "########## 执行轨迹探针 ${label}（-d exec，上限 ${EXEC_TIMEOUT}s）##########"
+    set +e
+    timeout "$EXEC_TIMEOUT" "$wrap" >/dev/null 2>&1
+    prc=$?
+    set -e
+    echo "   退出码 = $prc"
+    if [ -f "$log" ]; then
+        echo "   原始轨迹行数 = $(wc -l < "$log" 2>/dev/null)"
+        # 只保留尾部（原始日志很大，不放进制品）
+        tail -800 "$log" > "$OUT/exec_tail_${label}.txt"
+        rm -f "$log"
+        echo "--- 尾部 40 行（每行 = 一个被执行翻译块的入口 pc）---"
+        tail -40 "$OUT/exec_tail_${label}.txt"
+    else
+        echo "   （未生成轨迹日志）"
+    fi
 }
 mk_wrap "$WRAP" ""
 WRAP_ST="$OUT/run_guest_strace.sh"; mk_wrap "$WRAP_ST" "-strace"
@@ -192,6 +221,7 @@ run_side() {
 
     probe "$label" "$WRAP_ST" "strace"
     bt_probe "$label"
+    exec_probe "$label"
 
     echo ""
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"
