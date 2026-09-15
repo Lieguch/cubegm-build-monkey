@@ -1,0 +1,2514 @@
+=== rkgame-rebuild ===
+CC=arm-linux-gnueabihf-gcc
+SYSROOT=/home/runner/arm-root
+--- DRM/KMS probe ---
+  DEV_DIR=/home/runner/arm-root/usr/lib/arm-linux-gnueabihf
+  SYSROOT/usr/include=/home/runner/arm-root/usr/include
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm.so.2.4.0
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_amdgpu.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_etnaviv.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_exynos.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_freedreno.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_nouveau.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_omap.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_radeon.so
+/home/runner/arm-root/usr/lib/arm-linux-gnueabihf/libdrm_tegra.so
+  libdrm files above
+/home/runner/arm-root/usr/include/xf86drm.h
+/home/runner/arm-root/usr/include/xf86drmMode.h
+  DRM headers above
+DRM/KMS support: enabled
+  libdl.so -> ../../../lib/arm-linux-gnueabihf/libdl.so.2 (relative, OK)
+  libm.so -> ../../../lib/arm-linux-gnueabihf/libm.so.6 (relative, OK)
+  libpthread.so -> ../../../lib/arm-linux-gnueabihf/libpthread.so.0 (relative, OK)
+libgcc: /usr/lib/gcc-cross/arm-linux-gnueabihf/11/libgcc.a
+--- Building ---
+src/main.c:28: warning: "_GNU_SOURCE" redefined
+   28 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/main.c: In function ‘main_menu’:
+src/main.c:521:12: warning: unused variable ‘last_redraw’ [-Wunused-variable]
+  521 |     time_t last_redraw    = 0;
+      |            ^~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/main.c:33:
+In function ‘strncpy’,
+    inlined from ‘main’ at src/main.c:1041:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 1023 bytes from a string of length 1023 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘main’ at src/main.c:1048:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 127 bytes from a string of length 127 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.c: In function ‘main’:
+src/main.c:716:61: warning: ‘%s’ directive output may be truncated writing up to 599 bytes into a region of size 512 [-Wformat-truncation=]
+  716 |                         snprintf(fb_path, sizeof(fb_path), "%s", full);
+      |                                                             ^~   ~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/main.c:31:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin_snprintf’ output between 1 and 600 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/main.c:33:
+In function ‘strncpy’,
+    inlined from ‘main_menu’ at src/main.c:842:29,
+    inlined from ‘main’ at src/main.c:1130:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 127 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/core.c:5: warning: "_GNU_SOURCE" redefined
+    5 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/core.c: In function ‘core_load’:
+src/core.c:146:31: warning: passing argument 1 of ‘ctx.retro_set_environment’ from incompatible pointer type [-Wincompatible-pointer-types]
+  146 |     ctx.retro_set_environment(retro_get_env_cb);
+      |                               ^~~~~~~~~~~~~~~~
+      |                               |
+      |                               void * (*)(void *, unsigned int,  void *)
+src/core.c:146:31: note: expected ‘void (*)(unsigned int,  void *)’ but argument is of type ‘void * (*)(void *, unsigned int,  void *)’
+At top level:
+src/core.c:45:12: warning: ‘retro_pixel_format_cb’ defined but not used [-Wunused-function]
+   45 | static int retro_pixel_format_cb(unsigned fmt)
+      |            ^~~~~~~~~~~~~~~~~~~~~
+src/core.c: In function ‘retro_get_env_cb’:
+src/core.c:318:65: warning: ‘saves/’ directive output may be truncated writing 6 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  318 |             snprintf(save_directory, sizeof(save_directory), "%ssaves/", work_path);
+      |                                                                 ^~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 7 and 518 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c:311:69: warning: ‘core/’ directive output may be truncated writing 5 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  311 |             snprintf(system_directory, sizeof(system_directory), "%score/", work_path);
+      |                                                                     ^~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 6 and 517 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c: In function ‘core_load’:
+src/core.c:65:37: warning: ‘/cores/’ directive output may be truncated writing 7 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+   65 |     snprintf(path, sizeof(path), "%s/cores/%s.cfg", work_path, core_name);
+      |                                     ^~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 12 or more bytes (assuming 523) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/core.c:78:37: warning: ‘/cores/’ directive output may be truncated writing 7 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+   78 |     snprintf(path, sizeof(path), "%s/cores/%s", work_path, core_name);
+      |                                     ^~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core.c:6:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 8 or more bytes (assuming 519) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/evdev.c:33: warning: "_GNU_SOURCE" redefined
+   33 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/evdev.c:170: warning: "KEY_UP" redefined
+  170 | #define KEY_UP      (1 << 0)   /* 0x01 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:178: note: this is the location of the previous definition
+  178 | #define KEY_UP                  103
+      | 
+src/evdev.c:171: warning: "KEY_DOWN" redefined
+  171 | #define KEY_DOWN    (1 << 1)   /* 0x02 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:183: note: this is the location of the previous definition
+  183 | #define KEY_DOWN                108
+      | 
+src/evdev.c:172: warning: "KEY_LEFT" redefined
+  172 | #define KEY_LEFT    (1 << 2)   /* 0x04 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:180: note: this is the location of the previous definition
+  180 | #define KEY_LEFT                105
+      | 
+src/evdev.c:173: warning: "KEY_RIGHT" redefined
+  173 | #define KEY_RIGHT   (1 << 3)   /* 0x08 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:181: note: this is the location of the previous definition
+  181 | #define KEY_RIGHT               106
+      | 
+src/evdev.c:174: warning: "KEY_A" redefined
+  174 | #define KEY_A       (1 << 4)   /* 0x10 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:105: note: this is the location of the previous definition
+  105 | #define KEY_A                   30
+      | 
+src/evdev.c:175: warning: "KEY_B" redefined
+  175 | #define KEY_B       (1 << 5)   /* 0x20 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:123: note: this is the location of the previous definition
+  123 | #define KEY_B                   48
+      | 
+src/evdev.c:176: warning: "KEY_X" redefined
+  176 | #define KEY_X       (1 << 6)   /* 0x40 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:120: note: this is the location of the previous definition
+  120 | #define KEY_X                   45
+      | 
+src/evdev.c:177: warning: "KEY_Y" redefined
+  177 | #define KEY_Y       (1 << 7)   /* 0x80 */
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:96: note: this is the location of the previous definition
+   96 | #define KEY_Y                   21
+      | 
+src/evdev.c:183: warning: "KEY_SELECT" redefined
+  183 | #define KEY_SELECT  (1 << 13)
+      | 
+In file included from /usr/arm-linux-gnueabihf/include/linux/input.h:18,
+                 from src/evdev.c:44:
+/usr/arm-linux-gnueabihf/include/linux/input-event-codes.h:423: note: this is the location of the previous definition
+  423 | #define KEY_SELECT              0x161
+      | 
+src/evdev.c: In function ‘joy_load_joystick_zip’:
+src/evdev.c:491:27: warning: passing argument 1 of ‘joy_apply_tokens’ discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  491 |         joy_apply_tokens(p->button_map, tokens, pout);
+      |                          ~^~~~~~~~~~~~
+src/evdev.c:395:40: note: expected ‘uint32_t *’ {aka ‘unsigned int *’} but argument is of type ‘const uint32_t *’ {aka ‘const unsigned int *’}
+  395 | static void joy_apply_tokens(uint32_t *btn_map,
+      |                              ~~~~~~~~~~^~~~~~~
+At top level:
+src/evdev.c:280:23: warning: ‘token_to_key’ defined but not used [-Wunused-const-variable=]
+  280 | static const uint32_t token_to_key[17] = {
+      |                       ^~~~~~~~~~~~
+src/evdev.c: In function ‘joy_load_joystick_zip.isra’:
+src/evdev.c:426:37: warning: ‘joystick.zip’ directive output may be truncated writing 12 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  426 |     snprintf(path, sizeof(path), "%sjoystick.zip", work_path);
+      |                                     ^~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/evdev.c:34:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 13 and 524 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/evdev.c:36:
+In function ‘strncpy’,
+    inlined from ‘joy_open’ at src/evdev.c:583:5:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 63 bytes from a string of length 127 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/evdev.c: In function ‘joy_autodetect’:
+src/evdev.c:629:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 53 [-Wformat-truncation=]
+  629 |             snprintf(path, sizeof(path), "/dev/input/%s", name);
+      |                                                      ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/evdev.c:34:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 12 and 267 bytes into a destination of size 64
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/sram.c:26: warning: "_GNU_SOURCE" redefined
+   26 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/sram.c: In function ‘sstate_build_path’:
+src/sram.c:389:18: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  389 |     char *name = slash ? slash + 1 : (char *)rom_path;
+      |                  ^~~~~
+src/sram.c: In function ‘sstate_has_slot’:
+src/sram.c:529:5: warning: implicit declaration of function ‘build_sstate_path’ [-Wimplicit-function-declaration]
+  529 |     build_sstate_path(path, sizeof(path), slot);
+      |     ^~~~~~~~~~~~~~~~~
+At top level:
+src/sram.c:105:14: warning: ‘sram_flush_thread_fn’ defined but not used [-Wunused-function]
+  105 | static void *sram_flush_thread_fn(void *arg)
+      |              ^~~~~~~~~~~~~~~~~~~~
+src/sram.c:70:13: warning: ‘sram_snapshot_and_signal’ defined but not used [-Wunused-function]
+   70 | static void sram_snapshot_and_signal(void)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~
+src/sram.c:46:21: warning: ‘g_flush_thread’ defined but not used [-Wunused-variable]
+   46 | static pthread_t    g_flush_thread;
+      |                     ^~~~~~~~~~~~~~
+src/sram.c: In function ‘sram_build_path’:
+src/sram.c:253:20: warning: ‘/’ directive output may be truncated writing 1 byte into a region of size between 0 and 511 [-Wformat-truncation=]
+  253 |              "%s/%s/%s.srm", save_directory, dir_name, file_base);
+      |                    ^
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/sram.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 7 or more bytes (assuming 518) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/debug.c:19: warning: "_GNU_SOURCE" redefined
+   19 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/debug.c: In function ‘dbg_init’:
+src/debug.c:325:28: warning: implicit declaration of function ‘getenv’ [-Wimplicit-function-declaration]
+  325 |     const char *env_path = getenv("RKGAME_WORK_PATH");
+      |                            ^~~~~~
+src/debug.c:325:28: warning: initialization of ‘const char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+src/debug.c:320:11: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  320 |     (void)write(2, banner, 32);
+      |           ^~~~~~~~~~~~~~~~~~~~
+src/debug.c:374:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  374 |         write(2, banner, 32);
+      |         ^~~~~~~~~~~~~~~~~~~~
+src/debug.c:378:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  378 |         write(g_log_fd, banner, 32);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c:380:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  380 |         write(g_log_fd, header, 28);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c:386:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  386 |         write(2, stbuf, n);
+      |         ^~~~~~~~~~~~~~~~~~
+src/debug.c:394:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  394 |         write(2, stbuf, n);
+      |         ^~~~~~~~~~~~~~~~~~
+src/debug.c: In function ‘crash_handler’:
+src/debug.c:155:5: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  155 |     write(fd, buf, n);
+      |     ^~~~~~~~~~~~~~~~~
+src/debug.c:163:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  163 |         write(fd, buf, n);
+      |         ^~~~~~~~~~~~~~~~~
+src/debug.c:187:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  187 |             write(fd, buf, n);
+      |             ^~~~~~~~~~~~~~~~~
+src/debug.c:190:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  190 |         write(fd, buf, 1);
+      |         ^~~~~~~~~~~~~~~~~
+src/debug.c:199:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  199 |             write(fd, e->text, e->len);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~
+src/debug.c: In function ‘dbg_close’:
+src/debug.c:417:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  417 |         write(g_log_fd, footer, 28);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/dbg_overlay.c:31: warning: "_GNU_SOURCE" redefined
+   31 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/dbg_overlay.c: In function ‘log_ts’:
+src/dbg_overlay.c:203:9: warning: unused variable ‘len’ [-Wunused-variable]
+  203 |     int len = snprintf((char[]) {0}, 0, fmt, ap);  /* dummy */
+      |         ^~~
+src/dbg_overlay.c: In function ‘dbg_overlay_render’:
+src/dbg_overlay.c:451:18: warning: passing argument 1 of ‘render_panel’ from incompatible pointer type [-Wincompatible-pointer-types]
+  451 |     render_panel(lines, n);
+      |                  ^~~~~
+      |                  |
+      |                  char (*)[128]
+src/dbg_overlay.c:329:38: note: expected ‘const char **’ but argument is of type ‘char (*)[128]’
+  329 | static void render_panel(const char *lines[], int line_count)
+      |                          ~~~~~~~~~~~~^~~~~~~
+src/dbg_overlay.c: In function ‘dbg_overlay_auto_init’:
+src/dbg_overlay.c:518:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  518 |             write(g_log_fd, buf, len);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+src/dbg_overlay.c:531:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  531 |             write(g_log_fd, buf, len);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+src/dbg_overlay.c: In function ‘log_write’:
+src/dbg_overlay.c:191:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  191 |         write(g_log_fd, buf, len);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~
+src/dbg_overlay.c: In function ‘log_ts’:
+src/dbg_overlay.c:218:13: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  218 |             write(g_log_fd, buf, prefix_len + msg_len);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/dbg_overlay.c: In function ‘dbg_overlay_auto_shutdown’:
+src/dbg_overlay.c:555:9: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  555 |         write(g_log_fd, "=== rkgame debug overlay STOPPED ===\n", 37);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/disp.c: In function ‘drm_find_connector’:
+src/disp.c:223:9: warning: variable ‘best’ set but not used [-Wunused-but-set-variable]
+  223 |     int best = -1;
+      |         ^~~~
+src/disp.c: In function ‘disp_initscr_present’:
+src/disp.c:622:11: warning: unused variable ‘sy’ [-Wunused-variable]
+  622 |     float sy = (float)g_fb_h / (float)INITSCR_H;
+      |           ^~
+src/disp.c:621:11: warning: unused variable ‘sx’ [-Wunused-variable]
+  621 |     float sx = (float)g_fb_w / (float)INITSCR_W;
+      |           ^~
+src/disp.c: In function ‘disp_game_present’:
+src/disp.c:684:26: warning: implicit declaration of function ‘g_initscr_ready’; did you mean ‘disp_initscr_ready’? [-Wimplicit-function-declaration]
+  684 |     if (!g_game_mode || !g_initscr_ready()) {
+      |                          ^~~~~~~~~~~~~~~
+      |                          disp_initscr_ready
+src/heartbeat.c:5: warning: "_GNU_SOURCE" redefined
+    5 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/core_table.c: In function ‘load_cores_config_xml’:
+src/core_table.c:239:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  239 |     fread(buf, 1, (size_t)fsize, fp);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/core_table.c:31:
+In function ‘strncpy’,
+    inlined from ‘SeletEmuCore’ at src/core_table.c:352:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 127 bytes from a string of length 14239 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/core_table.c: In function ‘SeletEmuCore’:
+src/core_table.c:361:32: warning: ‘%s’ directive output may be truncated writing up to 14239 bytes into a region of size 249 [-Wformat-truncation=]
+  361 |                      "%s/cores/%s", work_path, bn);
+      |                                ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/core_table.c:30:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 8 or more bytes (assuming 14247) into a destination of size 256
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/font.c: In function ‘font_draw_text’:
+src/font.c:191:21: warning: implicit declaration of function ‘disp_draw_pixel’; did you mean ‘disp_draw_text’? [-Wimplicit-function-declaration]
+  191 |                     disp_draw_pixel(px, py, color);
+      |                     ^~~~~~~~~~~~~~~
+      |                     disp_draw_text
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/ui_zip.c:20:
+In function ‘strncpy’,
+    inlined from ‘ui_zip_list’ at src/ui_zip.c:327:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui.c: In function ‘select_ui_zip’:
+src/ui.c:85:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   85 |     fread(buf, 1, (size_t)fsize, fp);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui.c: In function ‘try_load_root_dat_bg’:
+src/ui.c:318:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  318 |     fread(magic, 1, 4, fp);
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+src/ui.c: In function ‘ui_draw_page.part.0’:
+src/ui.c:816:53: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 114 [-Wformat-truncation=]
+  816 |         snprintf(info, sizeof(info), "File Browser: %s", g_cfg.filebrowser[0] ? g_cfg.filebrowser : "(none)");
+      |                                                     ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 15 and 270 bytes into a destination of size 128
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui.c:747:60: warning: ‘]’ directive output may be truncated writing 1 byte into a region of size between 0 and 127 [-Wformat-truncation=]
+  747 |                 snprintf(core_line, sizeof(core_line), "[%s]", ge->core);
+      |                                                            ^
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 3 and 130 bytes into a destination of size 128
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui.c:626:47: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 124 [-Wformat-truncation=]
+  626 |         snprintf(status, sizeof(status), "UI: %s  (%dx%d bg, %d/%d pages)",
+      |                                               ^~
+  627 |                  g_ui_zip_name, pg->width, pg->height, loaded_pages, UI_PAGE_COUNT);
+      |                  ~~~~~~~~~~~~~                 
+src/ui.c:626:42: note: directive argument in the range [0, 2147483647]
+  626 |         snprintf(status, sizeof(status), "UI: %s  (%dx%d bg, %d/%d pages)",
+      |                                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 26 and 310 bytes into a destination of size 128
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui.c:636:50: warning: ‘%s’ directive output may be truncated writing up to 1023 bytes into a region of size 119 [-Wformat-truncation=]
+  636 |             snprintf(cfg, sizeof(cfg), "autorun: %s", g_cfg.autorun_path);
+      |                                                  ^~   ~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 10 and 1033 bytes into a destination of size 128
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/ui.c:29:
+In function ‘strncpy’,
+    inlined from ‘ui_init’ at src/ui.c:467:5:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui.c: In function ‘ui_init’:
+src/ui.c:470:45: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 89 and 600 [-Wformat-truncation=]
+  470 |     snprintf(zip_path, sizeof(zip_path), "%s%s", work_path, zip_name);
+      |                                             ^~              ~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui.c:27:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 1 and 767 bytes into a destination of size 600
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/audio.c:75:14: warning: ‘g_sfx_path’ defined but not used [-Wunused-variable]
+   75 | static char  g_sfx_path[256] = "";
+      |              ^~~~~~~~~~
+src/game_list.c:20: warning: "_GNU_SOURCE" redefined
+   20 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/game_list.c:518:16: warning: "/*" within comment [-Wcomment]
+  518 |  *   <PLATFORM>/*.zip     = 单游戏 ROM（可直接加载）
+      |                 
+src/game_list.c: In function ‘game_list_load’:
+src/game_list.c:686:21: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  686 |                     fread(buf, 1, fsize, fp);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘load_filelist_xml’:
+src/game_list.c:274:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  274 |     fread(buf, 1, fsize, fp);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/game_list.c:23:
+In function ‘strncpy’,
+    inlined from ‘game_list_parse_csv.part.0’ at src/game_list.c:208:13:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 511 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_parse_csv.part.0’ at src/game_list.c:231:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 511 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_parse_csv.part.0’ at src/game_list.c:235:13:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘game_list_load’:
+src/game_list.c:251:39: warning: ‘/cores/filelist.xml’ directive output may be truncated writing 19 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  251 |     snprintf(path, sizeof(path), "%s%s/cores/filelist.xml",
+      |                                       ^~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 20 and 531 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/game_list.c:255:39: warning: ‘cores/filelist.xml’ directive output may be truncated writing 18 bytes into a region of size between 0 and 512 [-Wformat-truncation=]
+  255 |     snprintf(path, sizeof(path), "%s%scores/filelist.xml", work_path,
+      |                                       ^~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 19 and 531 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/game_list.c:23:
+In function ‘strncpy’,
+    inlined from ‘load_filelist_xml’ at src/game_list.c:316:13,
+    inlined from ‘game_list_load’ at src/game_list.c:626:5:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 511 bytes from a string of length 511 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘load_filelist_xml’ at src/game_list.c:317:13,
+    inlined from ‘game_list_load’ at src/game_list.c:626:5:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 127 bytes from a string of length 127 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_load’ at src/game_list.c:639:21:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 511 bytes from a string of length 511 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_load’ at src/game_list.c:658:21:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 511 bytes from a string of length 511 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘game_list_load’:
+src/game_list.c:533:41: warning: ‘root.dat’ directive output may be truncated writing 8 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  533 |         snprintf(path, sizeof(path), "%sroot.dat", bases[b]);
+      |                                         ^~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 9 and 520 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/game_list.c:23:
+In function ‘strncpy’,
+    inlined from ‘game_list_populate_from_filelist’ at src/game_list.c:387:9,
+    inlined from ‘game_list_load’ at src/game_list.c:699:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 511 bytes from a string of length 163839 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_populate_from_filelist’ at src/game_list.c:393:9,
+    inlined from ‘game_list_load’ at src/game_list.c:699:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 163839 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_populate_from_filelist’ at src/game_list.c:398:9,
+    inlined from ‘game_list_load’ at src/game_list.c:699:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘game_list_populate_from_filelist’ at src/game_list.c:399:9,
+    inlined from ‘game_list_load’ at src/game_list.c:699:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘game_list_load’:
+src/game_list.c:407:45: warning: ‘%s’ directive output may be truncated writing up to 163839 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  407 |             snprintf(full, sizeof(full), "%s%s", rom_base_path, name);
+      |                                             ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 1 and 164351 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/game_list.c:23:
+In function ‘strncpy’,
+    inlined from ‘scan_directory’ at src/game_list.c:483:9,
+    inlined from ‘game_list_load’ at src/game_list.c:722:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘scan_directory’ at src/game_list.c:486:9,
+    inlined from ‘game_list_load’ at src/game_list.c:722:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘game_list_save_recent’:
+src/game_list.c:872:37: warning: ‘recent.lst’ directive output may be truncated writing 10 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  872 |     snprintf(path, sizeof(path), "%srecent.lst", work_path);
+      |                                     ^~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 11 and 522 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/game_list.c: In function ‘game_list_save_favorites’:
+src/game_list.c:886:37: warning: ‘favorites.lst’ directive output may be truncated writing 13 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  886 |     snprintf(path, sizeof(path), "%sfavorites.lst", work_path);
+      |                                     ^~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/game_list.c:21:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 14 and 525 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/keymap.c: In function ‘SaveKeyMappingConfigFile’:
+src/keymap.c:116:44: warning: ‘%s’ directive output may be truncated writing up to 127 bytes into a region of size between 82 and 593 [-Wformat-truncation=]
+  116 |     snprintf(path, sizeof(path), "%skeymap_%s", work_path, g_current_core);
+      |                                            ^~              ~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/keymap.c:19:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 8 and 646 bytes into a destination of size 600
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/thumbnail.c: In function ‘thumb_extract_nth’:
+src/thumbnail.c:251:23: warning: variable ‘offset’ set but not used [-Wunused-but-set-variable]
+  251 |     int w = 0, h = 0, offset = 0;
+      |                       ^~~~~~
+src/thumbnail.c: In function ‘thumb_build_dat_path.constprop.isra’:
+src/thumbnail.c:138:41: warning: ‘.dat’ directive output may be truncated writing 4 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+  138 |         snprintf(out, out_size, "%s%s/%s.dat", bases[i], basepath, basepath);
+      |                                         ^~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/thumbnail.c:25:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 6 or more bytes (assuming 517) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/thumbnail.c:143:37: warning: ‘.dat’ directive output may be truncated writing 4 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+  143 |     snprintf(out, out_size, "%s%s/%s.dat",
+      |                                     ^~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/thumbnail.c:25:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output 6 or more bytes (assuming 517) into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/thumbnail.c:27:
+In function ‘strncpy’,
+    inlined from ‘thumb_extract_nth’ at src/thumbnail.c:272:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 511 bytes from a string of length 527 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘thumb_miss_add’ at src/thumbnail.c:78:9,
+    inlined from ‘thumb_extract_nth’ at src/thumbnail.c:245:9:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 527 bytes from a string of length 527 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui_menu.c: In function ‘ui_menu_draw’:
+src/ui_menu.c:95:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   95 |         font_draw_text(cat, 20, y, 0x00ff00);
+      |                        ^~~
+      |                        |
+      |                        char *
+In file included from src/ui_menu.c:16:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_menu.c:95:33: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   95 |         font_draw_text(cat, 20, y, 0x00ff00);
+      |                                 ^
+      |                                 |
+      |                                 int
+In file included from src/ui_menu.c:16:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_menu.c:104:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  104 |             font_draw_text("Games:", 20, y, 0xffffff);
+      |                            ^~~~~~~~
+      |                            |
+      |                            char *
+In file included from src/ui_menu.c:16:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_menu.c:104:42: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  104 |             font_draw_text("Games:", 20, y, 0xffffff);
+      |                                          ^
+      |                                          |
+      |                                          int
+In file included from src/ui_menu.c:16:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_menu.c:108:36: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  108 |                 game_entry_t *ge = game_list_get(i);
+      |                                    ^~~~~~~~~~~~~
+src/ui_menu.c:114:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  114 |                 font_draw_text(line, 20, y + (i - scroll) * 22,
+      |                                ^~~~
+      |                                |
+      |                                char *
+In file included from src/ui_menu.c:16:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_menu.c:114:44: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  114 |                 font_draw_text(line, 20, y + (i - scroll) * 22,
+      |                                          ~~^~~~~~~~~~~~~~~~~~~
+      |                                            |
+      |                                            int
+In file included from src/ui_menu.c:16:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_menu.c:121:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  121 |         font_draw_text("A=Launch  B=Back  L/R=Category  U/D=Browse",
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_menu.c:16:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_menu.c:122:28: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  122 |                        20, y, 0x888888);
+      |                            ^
+      |                            |
+      |                            int
+In file included from src/ui_menu.c:16:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_menu.c:113:49: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 157 [-Wformat-truncation=]
+  113 |                 snprintf(line, sizeof(line), "%s%s", prefix, name);
+      |                                                 ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_menu.c:20:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 4 and 259 bytes into a destination of size 160
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_setting.c: In function ‘ui_setting_draw’:
+src/ui_setting.c:95:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   95 |         font_draw_text("Settings", 20, y, 0x00ff00);
+      |                        ^~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_setting.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_setting.c:95:40: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   95 |         font_draw_text("Settings", 20, y, 0x00ff00);
+      |                                        ^
+      |                                        |
+      |                                        int
+In file included from src/ui_setting.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_setting.c:107:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  107 |             font_draw_text(line, 20, y + i * 28,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_setting.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_setting.c:107:40: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  107 |             font_draw_text(line, 20, y + i * 28,
+      |                                      ~~^~~~~~~~
+      |                                        |
+      |                                        int
+In file included from src/ui_setting.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_setting.c:110:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  110 |         font_draw_text("A=Save  B=Cancel  L/R=Adjust  U/D=Select",
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_setting.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_setting.c:111:39: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  111 |                        20, y + 5 * 28 + 10, 0x888888);
+      |                            ~~~~~~~~~~~^~~~
+      |                                       |
+      |                                       int
+In file included from src/ui_setting.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_setting.c: In function ‘ui_setting_init’:
+src/ui_setting.c:26:63: warning: ‘%s’ directive output may be truncated writing up to 511 bytes into a region of size 128 [-Wformat-truncation=]
+   26 |     snprintf(s_setting.save_dir, sizeof(s_setting.save_dir), "%s",
+      |                                                               ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_setting.c:12:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin_snprintf’ output between 1 and 512 bytes into a destination of size 128
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_setting.c: In function ‘ui_setting_draw’:
+src/ui_setting.c:106:54: warning: ‘%s’ directive output may be truncated writing up to 127 bytes into a region of size 67 [-Wformat-truncation=]
+  106 |             else snprintf(line, sizeof(line), "%s%s: %s", prefix, labels[i], s_setting.save_dir);
+      |                                                      ^~                      ~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_setting.c:12:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 14 and 141 bytes into a destination of size 80
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_search.c: In function ‘ui_search_tick’:
+src/ui_search.c:41:32: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   41 |             game_entry_t *ge = game_list_get(0);
+      |                                ^~~~~~~~~~~~~
+src/ui_search.c: In function ‘ui_search_draw’:
+src/ui_search.c:60:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   60 |         font_draw_text("Search", 20, y, 0x00ff00);
+      |                        ^~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_search.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search.c:60:38: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   60 |         font_draw_text("Search", 20, y, 0x00ff00);
+      |                                      ^
+      |                                      |
+      |                                      int
+In file included from src/ui_search.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search.c:66:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   66 |         font_draw_text(box, 20, y, 0xffffff);
+      |                        ^~~
+      |                        |
+      |                        char *
+In file included from src/ui_search.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search.c:66:33: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   66 |         font_draw_text(box, 20, y, 0xffffff);
+      |                                 ^
+      |                                 |
+      |                                 int
+In file included from src/ui_search.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search.c:74:36: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   74 |                 game_entry_t *ge = game_list_get(i);
+      |                                    ^~~~~~~~~~~~~
+src/ui_search.c:76:38: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   76 |                     font_draw_text(ge->name, 20, y + results * 24, 0xffffff);
+      |                                    ~~^~~~~~
+      |                                      |
+      |                                      char *
+In file included from src/ui_search.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search.c:76:52: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   76 |                     font_draw_text(ge->name, 20, y + results * 24, 0xffffff);
+      |                                                  ~~^~~~~~~~~~~~~~
+      |                                                    |
+      |                                                    int
+In file included from src/ui_search.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search.c:81:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   81 |                 font_draw_text("(no results)", 20, y, 0x888888);
+      |                                ^~~~~~~~~~~~~~
+      |                                |
+      |                                char *
+In file included from src/ui_search.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search.c:81:52: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   81 |                 font_draw_text("(no results)", 20, y, 0x888888);
+      |                                                    ^
+      |                                                    |
+      |                                                    int
+In file included from src/ui_search.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search.c:85:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   85 |         font_draw_text("A=Search  B=Back  L=Delete", 20, y, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_search.c:9:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search.c:85:58: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   85 |         font_draw_text("A=Search  B=Back  L=Delete", 20, y, 0x888888);
+      |                                                          ^
+      |                                                          |
+      |                                                          int
+In file included from src/ui_search.c:9:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search.c:65:38: warning: ‘%s’ directive output may be truncated writing up to 63 bytes into a region of size 59 [-Wformat-truncation=]
+   65 |         snprintf(box, sizeof(box), "|%s        |", s_search.query);
+      |                                      ^~            ~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_search.c:12:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 11 and 74 bytes into a destination of size 60
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_recent.c: In function ‘ui_recent_draw’:
+src/ui_recent.c:46:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Recent Games", 20, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_recent.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_recent.c:46:44: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Recent Games", 20, y, 0x00ff00);
+      |                                            ^
+      |                                            |
+      |                                            int
+In file included from src/ui_recent.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_recent.c:51:36: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   51 |                 game_entry_t *ge = game_list_get(i);
+      |                                    ^~~~~~~~~~~~~
+src/ui_recent.c:55:17: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   55 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~
+src/ui_recent.c:11:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+   10 | #include <string.h>
+  +++ |+#include <stdio.h>
+   11 | 
+src/ui_recent.c:55:17: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   55 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~
+src/ui_recent.c:55:17: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_recent.c:56:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   56 |                 font_draw_text(line, 20, y + (i - s_recent.cursor) * 24,
+      |                                ^~~~
+      |                                |
+      |                                char *
+In file included from src/ui_recent.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_recent.c:56:44: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   56 |                 font_draw_text(line, 20, y + (i - s_recent.cursor) * 24,
+      |                                          ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                            |
+      |                                            int
+In file included from src/ui_recent.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_recent.c:60:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   60 |         font_draw_text("A=Launch  B=Back  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_recent.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_recent.c:60:71: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   60 |         font_draw_text("A=Launch  B=Back  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                                                            ~~~~~~~~~~~^~~~
+      |                                                                       |
+      |                                                                       int
+In file included from src/ui_recent.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_recent.c:55:49: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 137 [-Wformat-truncation=]
+   55 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                                                 ^~
+src/ui_recent.c:55:17: note: ‘snprintf’ output between 4 and 259 bytes into a destination of size 140
+   55 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui_shoucang.c: In function ‘ui_shoucang_draw’:
+src/ui_shoucang.c:46:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Favorites", 20, y, 0x00ff00);
+      |                        ^~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_shoucang.c:46:41: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Favorites", 20, y, 0x00ff00);
+      |                                         ^
+      |                                         |
+      |                                         int
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_shoucang.c:52:36: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   52 |                 game_entry_t *ge = game_list_get(i);
+      |                                    ^~~~~~~~~~~~~
+src/ui_shoucang.c:56:17: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   56 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~
+src/ui_shoucang.c:11:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+   10 | #include <string.h>
+  +++ |+#include <stdio.h>
+   11 | 
+src/ui_shoucang.c:56:17: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   56 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~
+src/ui_shoucang.c:56:17: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_shoucang.c:57:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   57 |                 font_draw_text(line, 20, y + fav_count * 24,
+      |                                ^~~~
+      |                                |
+      |                                char *
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_shoucang.c:57:44: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   57 |                 font_draw_text(line, 20, y + fav_count * 24,
+      |                                          ~~^~~~~~~~~~~~~~~~
+      |                                            |
+      |                                            int
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_shoucang.c:62:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   62 |                 font_draw_text("(no favorites)", 20, y, 0x888888);
+      |                                ^~~~~~~~~~~~~~~~
+      |                                |
+      |                                char *
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_shoucang.c:62:54: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   62 |                 font_draw_text("(no favorites)", 20, y, 0x888888);
+      |                                                      ^
+      |                                                      |
+      |                                                      int
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_shoucang.c:64:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   64 |         font_draw_text("A=Launch  B=Back  X=Fav  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_shoucang.c:64:78: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   64 |         font_draw_text("A=Launch  B=Back  X=Fav  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                                                                   ~~~~~~~~~~~^~~~
+      |                                                                              |
+      |                                                                              int
+In file included from src/ui_shoucang.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_shoucang.c:56:49: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 137 [-Wformat-truncation=]
+   56 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                                                 ^~
+src/ui_shoucang.c:56:17: note: ‘snprintf’ output between 4 and 259 bytes into a destination of size 140
+   56 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : "(unnamed)");
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui_save_state.c: In function ‘ui_save_state_draw’:
+src/ui_save_state.c:46:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Save State", 200, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_save_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_save_state.c:46:43: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Save State", 200, y, 0x00ff00);
+      |                                           ^
+      |                                           |
+      |                                           int
+In file included from src/ui_save_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_save_state.c:52:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   52 |             font_draw_text(line, 200, y + i * 28,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_save_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_save_state.c:52:41: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   52 |             font_draw_text(line, 200, y + i * 28,
+      |                                       ~~^~~~~~~~
+      |                                         |
+      |                                         int
+In file included from src/ui_save_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_save_state.c:55:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   55 |         font_draw_text("A=Save  B=Cancel  L/R=Select", 200, y + 5 * 28 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_save_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_save_state.c:55:72: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   55 |         font_draw_text("A=Save  B=Cancel  L/R=Select", 200, y + 5 * 28 + 10, 0x888888);
+      |                                                             ~~~~~~~~~~~^~~~
+      |                                                                        |
+      |                                                                        int
+In file included from src/ui_save_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_load_state.c: In function ‘ui_load_state_draw’:
+src/ui_load_state.c:44:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   44 |         font_draw_text("Load State", 200, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_load_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_load_state.c:44:43: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   44 |         font_draw_text("Load State", 200, y, 0x00ff00);
+      |                                           ^
+      |                                           |
+      |                                           int
+In file included from src/ui_load_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_load_state.c:50:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   50 |             font_draw_text(line, 200, y + i * 28,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_load_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_load_state.c:50:41: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   50 |             font_draw_text(line, 200, y + i * 28,
+      |                                       ~~^~~~~~~~
+      |                                         |
+      |                                         int
+In file included from src/ui_load_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_load_state.c:53:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   53 |         font_draw_text("A=Load  B=Cancel  L/R=Select", 200, y + 5 * 28 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_load_state.c:7:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_load_state.c:53:72: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   53 |         font_draw_text("A=Load  B=Cancel  L/R=Select", 200, y + 5 * 28 + 10, 0x888888);
+      |                                                             ~~~~~~~~~~~^~~~
+      |                                                                        |
+      |                                                                        int
+In file included from src/ui_load_state.c:7:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_config_save.c: In function ‘SaveLanguageSetting’:
+src/ui_config_save.c:175:19: warning: assignment discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  175 |         val_start = lang + 1;                 /* 跳过开引号 */
+      |                   ^
+src/ui_config_save.c:177:19: warning: assignment discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  177 |         val_start = lang;                     /* 无引号形式 */
+      |                   ^
+src/ui_config_save.c: In function ‘SaveSetting’:
+src/ui_config_save.c:110:37: warning: ‘setting.xml’ directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  110 |     snprintf(path, sizeof(path), "%ssetting.xml", work_path);
+      |                                     ^~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_config_save.c:13:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 12 and 523 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_config_save.c: In function ‘SaveLanguageSetting’:
+src/ui_config_save.c:135:37: warning: ‘setting.xml’ directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  135 |     snprintf(path, sizeof(path), "%ssetting.xml", work_path);
+      |                                     ^~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_config_save.c:13:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 12 and 523 bytes into a destination of size 512
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_video_setting.c: In function ‘ui_video_setting_draw’:
+src/ui_video_setting.c:46:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Video Settings", 150, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_video_setting.c:46:47: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   46 |         font_draw_text("Video Settings", 150, y, 0x00ff00);
+      |                                               ^
+      |                                               |
+      |                                               int
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_video_setting.c:49:9: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   49 |         snprintf(line, sizeof(line), "Refresh: %d Hz", s_v.refresh);
+      |         ^~~~~~~~
+src/ui_video_setting.c:9:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+    8 | #include <string.h>
+  +++ |+#include <stdio.h>
+    9 | 
+src/ui_video_setting.c:49:9: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   49 |         snprintf(line, sizeof(line), "Refresh: %d Hz", s_v.refresh);
+      |         ^~~~~~~~
+src/ui_video_setting.c:49:9: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_video_setting.c:50:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   50 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                        ^~~~
+      |                        |
+      |                        char *
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_video_setting.c:50:35: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   50 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                                   ^
+      |                                   |
+      |                                   int
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_video_setting.c:52:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   52 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                        ^~~~
+      |                        |
+      |                        char *
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_video_setting.c:52:35: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   52 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                                   ^
+      |                                   |
+      |                                   int
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_video_setting.c:54:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   54 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                        ^~~~
+      |                        |
+      |                        char *
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_video_setting.c:54:35: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   54 |         font_draw_text(line, 150, y, 0xffffff); y += 28;
+      |                                   ^
+      |                                   |
+      |                                   int
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_video_setting.c:55:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   55 |         font_draw_text("B=Back  L/R=Rotate", 150, y + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_video_setting.c:55:53: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   55 |         font_draw_text("B=Back  L/R=Rotate", 150, y + 10, 0x888888);
+      |                                                   ~~^~~~
+      |                                                     |
+      |                                                     int
+In file included from src/ui_video_setting.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_setting.c: In function ‘ui_joystick_setting_draw’:
+src/ui_joystick_setting.c:45:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   45 |         font_draw_text("Joystick Mapping", 20, y, 0x00ff00); y += 30;
+      |                        ^~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_setting.c:45:48: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   45 |         font_draw_text("Joystick Mapping", 20, y, 0x00ff00); y += 30;
+      |                                                ^
+      |                                                |
+      |                                                int
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_setting.c:50:13: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   50 |             snprintf(line, sizeof(line), "%s%s -> Button %d", prefix, btns[i], s_js.cursor);
+      |             ^~~~~~~~
+src/ui_joystick_setting.c:9:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+    8 | #include <string.h>
+  +++ |+#include <stdio.h>
+    9 | 
+src/ui_joystick_setting.c:50:13: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   50 |             snprintf(line, sizeof(line), "%s%s -> Button %d", prefix, btns[i], s_js.cursor);
+      |             ^~~~~~~~
+src/ui_joystick_setting.c:50:13: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_joystick_setting.c:51:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   51 |             font_draw_text(line, 20, y + i * 24,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_setting.c:51:40: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   51 |             font_draw_text(line, 20, y + i * 24,
+      |                                      ~~^~~~~~~~
+      |                                        |
+      |                                        int
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_setting.c:54:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   54 |         font_draw_text("A=Save  B=Back  U/D=Btn  L/R=Profile", 20, y + 12 * 24 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_setting.c:54:80: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   54 |         font_draw_text("A=Save  B=Back  U/D=Btn  L/R=Profile", 20, y + 12 * 24 + 10, 0x888888);
+      |                                                                    ~~~~~~~~~~~~^~~~
+      |                                                                                |
+      |                                                                                int
+In file included from src/ui_joystick_setting.c:4:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search_file_list.c: In function ‘ui_search_file_list_open’:
+src/ui_search_file_list.c:19:16: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   19 |     if (query) snprintf(s_sfl.query, sizeof(s_sfl.query), "%s", query);
+      |                ^~~~~~~~
+src/ui_search_file_list.c:11:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+   10 | #include <string.h>
+  +++ |+#include <stdio.h>
+   11 | 
+src/ui_search_file_list.c:19:16: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   19 |     if (query) snprintf(s_sfl.query, sizeof(s_sfl.query), "%s", query);
+      |                ^~~~~~~~
+src/ui_search_file_list.c:19:16: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_search_file_list.c: In function ‘ui_search_file_list_draw’:
+src/ui_search_file_list.c:50:9: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   50 |         snprintf(title, sizeof(title), "Results for: '%s'", s_sfl.query);
+      |         ^~~~~~~~
+src/ui_search_file_list.c:50:9: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_search_file_list.c:51:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   51 |         font_draw_text(title, 20, y, 0x00ff00); y += 30;
+      |                        ^~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search_file_list.c:51:35: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   51 |         font_draw_text(title, 20, y, 0x00ff00); y += 30;
+      |                                   ^
+      |                                   |
+      |                                   int
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search_file_list.c:57:36: warning: initialization discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+   57 |                 game_entry_t *ge = game_list_get(i);
+      |                                    ^~~~~~~~~~~~~
+src/ui_search_file_list.c:62:36: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   62 |                     font_draw_text(line, 20, y + results * 24,
+      |                                    ^~~~
+      |                                    |
+      |                                    char *
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search_file_list.c:62:48: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   62 |                     font_draw_text(line, 20, y + results * 24,
+      |                                              ~~^~~~~~~~~~~~~~
+      |                                                |
+      |                                                int
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search_file_list.c:67:46: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   67 |             if (results == 0) font_draw_text("(no results)", 20, y, 0x888888);
+      |                                              ^~~~~~~~~~~~~~
+      |                                              |
+      |                                              char *
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search_file_list.c:67:66: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   67 |             if (results == 0) font_draw_text("(no results)", 20, y, 0x888888);
+      |                                                                  ^
+      |                                                                  |
+      |                                                                  int
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search_file_list.c:69:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   69 |         font_draw_text("A=Launch  B=Back  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_search_file_list.c:69:71: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   69 |         font_draw_text("A=Launch  B=Back  U/D=Browse", 20, y + 8 * 24 + 10, 0x888888);
+      |                                                            ~~~~~~~~~~~^~~~
+      |                                                                       |
+      |                                                                       int
+In file included from src/ui_search_file_list.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_search_file_list.c:61:53: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 137 [-Wformat-truncation=]
+   61 |                     snprintf(line, sizeof(line), "%s%s", prefix, ge->name);
+      |                                                     ^~
+src/ui_search_file_list.c:61:21: note: ‘snprintf’ output between 4 and 259 bytes into a destination of size 140
+   61 |                     snprintf(line, sizeof(line), "%s%s", prefix, ge->name);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/ui_pause.c: In function ‘ui_pause_draw’:
+src/ui_pause.c:45:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   45 |         font_draw_text("Paused", 300, y, 0x00ff00); y += 40;
+      |                        ^~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_pause.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_pause.c:45:39: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   45 |         font_draw_text("Paused", 300, y, 0x00ff00); y += 40;
+      |                                       ^
+      |                                       |
+      |                                       int
+In file included from src/ui_pause.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_pause.c:50:13: warning: implicit declaration of function ‘snprintf’ [-Wimplicit-function-declaration]
+   50 |             snprintf(line, sizeof(line), "%s%s", prefix, items[i]);
+      |             ^~~~~~~~
+src/ui_pause.c:9:1: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+    8 | #include <string.h>
+  +++ |+#include <stdio.h>
+    9 | 
+src/ui_pause.c:50:13: warning: incompatible implicit declaration of built-in function ‘snprintf’ [-Wbuiltin-declaration-mismatch]
+   50 |             snprintf(line, sizeof(line), "%s%s", prefix, items[i]);
+      |             ^~~~~~~~
+src/ui_pause.c:50:13: note: include ‘<stdio.h>’ or provide a declaration of ‘snprintf’
+src/ui_pause.c:51:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   51 |             font_draw_text(line, 300, y + i * 30,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_pause.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_pause.c:51:41: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   51 |             font_draw_text(line, 300, y + i * 30,
+      |                                       ~~^~~~~~~~
+      |                                         |
+      |                                         int
+In file included from src/ui_pause.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_pause.c:54:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   54 |         font_draw_text("A=Select  B=Close  U/D=Browse", 300, y + 4 * 30 + 10, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_pause.c:5:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_pause.c:54:73: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   54 |         font_draw_text("A=Select  B=Close  U/D=Browse", 300, y + 4 * 30 + 10, 0x888888);
+      |                                                              ~~~~~~~~~~~^~~~
+      |                                                                         |
+      |                                                                         int
+In file included from src/ui_pause.c:5:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_test.c: In function ‘JoystickTest’:
+src/ui_joystick_test.c:25:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   25 |         font_draw_text("Joystick Test", 20, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_test.c:25:45: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   25 |         font_draw_text("Joystick Test", 20, y, 0x00ff00);
+      |                                             ^
+      |                                             |
+      |                                             int
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_test.c:32:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   32 |             font_draw_text(line, 20, y + d * 28, 0xffffff);
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_test.c:32:40: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   32 |             font_draw_text(line, 20, y + d * 28, 0xffffff);
+      |                                      ~~^~~~~~~~
+      |                                        |
+      |                                        int
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_joystick_test.c:34:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+   34 |         font_draw_text("Press any button to test...", 20, y + joy_dev_count * 28 + 20, 0x888888);
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_joystick_test.c:34:82: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+   34 |         font_draw_text("Press any button to test...", 20, y + joy_dev_count * 28 + 20, 0x888888);
+      |                                                           ~~~~~~~~~~~~~~~~~~~~~~~^~~~
+      |                                                                                  |
+      |                                                                                  int
+In file included from src/ui_joystick_test.c:12:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c: In function ‘ui_type_draw’:
+src/ui_type.c:164:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  164 |             font_draw_text(dir_label, 20, y, 0x00ff00);
+      |                            ^~~~~~~~~
+      |                            |
+      |                            char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:164:43: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  164 |             font_draw_text(dir_label, 20, y, 0x00ff00);
+      |                                           ^
+      |                                           |
+      |                                           int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:167:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  167 |                 font_draw_text("(empty)", 20, y, 0x888888);
+      |                                ^~~~~~~~~
+      |                                |
+      |                                char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:167:47: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  167 |                 font_draw_text("(empty)", 20, y, 0x888888);
+      |                                               ^
+      |                                               |
+      |                                               int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:181:32: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  181 |                 font_draw_text(line, 20, y + (i - start) * 24,
+      |                                ^~~~
+      |                                |
+      |                                char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:181:44: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  181 |                 font_draw_text(line, 20, y + (i - start) * 24,
+      |                                          ~~^~~~~~~~~~~~~~~~~~
+      |                                            |
+      |                                            int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:184:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  184 |             font_draw_text("A=Play  B=Back  Up/Down=Browse",
+      |                            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                            |
+      |                            char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:185:45: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  185 |                            20, y + win * 24 + 10, 0x888888);
+      |                                ~~~~~~~~~~~~~^~~~
+      |                                             |
+      |                                             int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:196:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  196 |         font_draw_text("Game Categories", 20, y, 0x00ff00);
+      |                        ^~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:196:47: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  196 |         font_draw_text("Game Categories", 20, y, 0x00ff00);
+      |                                               ^
+      |                                               |
+      |                                               int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:202:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  202 |         font_draw_text(dir, 20, y, 0xffffff);
+      |                        ^~~
+      |                        |
+      |                        char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:202:33: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  202 |         font_draw_text(dir, 20, y, 0xffffff);
+      |                                 ^
+      |                                 |
+      |                                 int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:210:28: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  210 |             font_draw_text(line, 20, y + i * 28,
+      |                            ^~~~
+      |                            |
+      |                            char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:210:40: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  210 |             font_draw_text(line, 20, y + i * 28,
+      |                                      ~~^~~~~~~~
+      |                                        |
+      |                                        int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:215:24: warning: passing argument 1 of ‘font_draw_text’ makes integer from pointer without a cast [-Wint-conversion]
+  215 |         font_draw_text("A=Enter  B=Back  Up/Down=Browse",
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                        |
+      |                        char *
+In file included from src/ui_type.c:20:
+src/font.h:35:25: note: expected ‘int’ but argument is of type ‘char *’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                     ~~~~^
+src/ui_type.c:216:55: warning: passing argument 3 of ‘font_draw_text’ makes pointer from integer without a cast [-Wint-conversion]
+  216 |                        20, y + s_type.type_count * 28 + 10, 0x888888);
+      |                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~
+      |                                                       |
+      |                                                       int
+In file included from src/ui_type.c:20:
+src/font.h:35:47: note: expected ‘const char *’ but argument is of type ‘int’
+   35 | int  font_draw_text(int x, int y, const char *text, uint32_t color);
+      |                                   ~~~~~~~~~~~~^~~~
+src/ui_type.c:201:37: warning: ‘%s’ directive output may be truncated writing up to 511 bytes into a region of size 20 [-Wformat-truncation=]
+  192 |         const char *path = work_path;
+      |                            ~~~~~~~~~ 
+......
+  201 |         snprintf(dir, sizeof(dir), "%s%03d", path, s_type.cursor);
+      |                                     ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_type.c:24:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 4 and 523 bytes into a destination of size 20
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+src/ui_type.c:180:49: warning: ‘%s’ directive output may be truncated writing up to 511 bytes into a region of size 261 [-Wformat-truncation=]
+  180 |                 snprintf(line, sizeof(line), "%s%s", prefix, ge->name[0] ? ge->name : ge->path);
+      |                                                 ^~
+In file included from /usr/arm-linux-gnueabihf/include/stdio.h:894,
+                 from src/ui_type.c:24:
+/usr/arm-linux-gnueabihf/include/bits/stdio2.h:71:10: note: ‘__builtin___snprintf_chk’ output between 4 and 515 bytes into a destination of size 264
+   71 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   72 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   73 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/hi.c:7:
+In function ‘strncpy’,
+    inlined from ‘hi_load’ at src/hi.c:65:13:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 15 bytes from a string of length 63 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/shoucang.c:9:
+In function ‘strncpy’,
+    inlined from ‘shoucang_load’ at src/shoucang.c:105:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 15 bytes from a string of length 31 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘shoucang_load’ at src/shoucang.c:106:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 95 bytes from a string of length 95 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+In function ‘strncpy’,
+    inlined from ‘shoucang_load’ at src/shoucang.c:107:17:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 255 bytes from a string of length 255 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/joystick_zip.c: In function ‘parse_ui_cfg’:
+src/joystick_zip.c:84:55: warning: suggest parentheses around ‘&&’ within ‘||’ [-Wparentheses]
+   84 |             while (p < end && (*p == '=' || *p >= '0' && *p <= '9')) p++;
+      |                                             ~~~~~~~~~~^~~~~~~~~~~~
+src/joystick_zip.c: In function ‘joystick_zip_load’:
+src/joystick_zip.c:144:9: warning: variable ‘actions_loaded’ set but not used [-Wunused-but-set-variable]
+  144 |     int actions_loaded = 0;
+      |         ^~~~~~~~~~~~~~
+In file included from /usr/arm-linux-gnueabihf/include/string.h:535,
+                 from src/joystick_zip.c:14:
+In function ‘strncpy’,
+    inlined from ‘parse_profile’ at src/joystick_zip.c:101:5,
+    inlined from ‘joystick_zip_load’ at src/joystick_zip.c:177:21:
+/usr/arm-linux-gnueabihf/include/bits/string_fortified.h:95:10: warning: ‘__builtin_strncpy’ output may be truncated copying 15 bytes from a string of length 16383 [-Wstringop-truncation]
+   95 |   return __builtin___strncpy_chk (__dest, __src, __len,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   96 |                                   __glibc_objsize (__dest));
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+src/resources.c: In function ‘resource_scan_cores’:
+src/resources.c:153:9: warning: implicit declaration of function ‘rklog’ [-Wimplicit-function-declaration]
+  153 |         rklog("RESOURCES: cannot open %s", RES_CORES_PATH);
+      |         ^~~~~
+lib/mxml/mxml.c: In function ‘write_node_recursive’:
+lib/mxml/mxml.c:690:25: warning: unused variable ‘op’ [-Wunused-variable]
+  690 |             const char *op = ">";
+      |                         ^~
+In file included from lib/libiconv/official/converters.h:150,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/utf7.h: In function ‘utf7_mbtowc’:
+lib/libiconv/official/utf7.h:165:33: warning: implicit declaration of function ‘abort’ [-Wimplicit-function-declaration]
+  165 |     if ((base64state & 3) == 0) abort();
+      |                                 ^~~~~
+lib/libiconv/official/utf7.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/utf7.h:165:33: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  165 |     if ((base64state & 3) == 0) abort();
+      |                                 ^~~~~
+lib/libiconv/official/utf7.h:165:33: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/utf7.h:169:45: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  169 |       if (!(wc1 >= 0xd800 && wc1 < 0xdc00)) abort();
+      |                                             ^~~~~
+lib/libiconv/official/utf7.h:169:45: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/utf7.h: In function ‘utf7_wctomb’:
+lib/libiconv/official/utf7.h:260:11: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  260 |           abort();
+      |           ^~~~~
+lib/libiconv/official/utf7.h:260:11: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/utf7.h:299:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  299 |           default: abort(); /* stupid gcc */
+      |                    ^~~~~
+lib/libiconv/official/utf7.h:299:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/utf7.h:312:11: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  312 |           abort();
+      |           ^~~~~
+lib/libiconv/official/utf7.h:312:11: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/utf7.h: In function ‘utf7_reset’:
+lib/libiconv/official/utf7.h:346:9: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  346 |         abort();
+      |         ^~~~~
+lib/libiconv/official/utf7.h:346:9: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:231,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/isoir165.h: In function ‘isoir165_mbtowc’:
+lib/libiconv/official/isoir165.h:111:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  111 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/isoir165.h:81:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   80 | #include "isoir165ext.h"
+  +++ |+#include <stdlib.h>
+   81 | 
+lib/libiconv/official/isoir165.h: In function ‘isoir165_wctomb’:
+lib/libiconv/official/isoir165.h:132:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  132 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/isoir165.h:132:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/isoir165.h:145:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  145 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/isoir165.h:145:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:233,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/gbk.h: In function ‘gbk_wctomb’:
+lib/libiconv/official/gbk.h:119:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  119 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/gbk.h:61:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   60 | #include "cp936ext.h"
+  +++ |+#include <stdlib.h>
+   61 | 
+lib/libiconv/official/gbk.h:129:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  129 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/gbk.h:129:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/gbk.h:145:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  145 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/gbk.h:145:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:245,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_jp.h: In function ‘iso2022_jp_mbtowc’:
+lib/libiconv/official/iso2022_jp.h:84:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+   84 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_jp.h:94:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+   94 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp.h:94:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp.h:106:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  106 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp.h:106:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp.h:111:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  111 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_jp.h:111:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp.h: In function ‘iso2022_jp_wctomb’:
+lib/libiconv/official/iso2022_jp.h:133:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  133 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp.h:133:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp.h:154:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  154 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp.h:154:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp.h:175:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  175 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp.h:175:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:246,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_jp1.h: In function ‘iso2022_jp1_mbtowc’:
+lib/libiconv/official/iso2022_jp1.h:96:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+   96 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp1.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_jp1.h:106:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  106 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp1.h:106:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:118:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  118 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp1.h:118:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:130:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  130 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp1.h:130:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:135:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  135 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_jp1.h:135:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h: In function ‘iso2022_jp1_wctomb’:
+lib/libiconv/official/iso2022_jp1.h:157:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  157 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp1.h:157:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:178:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  178 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp1.h:178:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:199:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  199 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp1.h:199:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp1.h:221:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  221 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp1.h:221:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:247,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_jp2.h: In function ‘iso2022_jp2_mbtowc’:
+lib/libiconv/official/iso2022_jp2.h:154:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  154 |               if (ret != 1) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_jp2.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_jp2.h:166:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  166 |               if (ret != 1) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_jp2.h:166:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:172:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  172 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_jp2.h:172:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:185:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  185 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:185:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:198:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  198 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:198:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:212:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  212 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:212:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:225:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  225 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:225:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:238:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  238 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:238:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:251:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  251 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:251:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:264:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  264 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_jp2.h:264:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:270:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  270 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_jp2.h:270:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h: In function ‘iso2022_jp2_wctomb’:
+lib/libiconv/official/iso2022_jp2.h:407:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  407 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_jp2.h:407:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:438:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  438 |           if (ret != 1) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:438:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:462:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  462 |           if (ret != 1) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:462:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:490:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  490 |           if (ret != 1) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:490:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:515:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  515 |           if (ret != 2) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:515:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:538:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  538 |           if (ret != 2) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:538:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:566:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  566 |           if (ret != 2) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:566:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:593:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  593 |           if (ret != 2) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:593:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:623:25: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  623 |           if (ret != 1) abort();
+      |                         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:623:25: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_jp2.h:645:9: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  645 |         abort();
+      |         ^~~~~
+lib/libiconv/official/iso2022_jp2.h:645:9: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:255,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_cn.h: In function ‘iso2022_cn_mbtowc’:
+lib/libiconv/official/iso2022_cn.h:100:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  100 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cn.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_cn.h:106:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  106 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_cn.h:106:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:135:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  135 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_cn.h:135:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:156:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  156 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_cn.h:156:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:160:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  160 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_cn.h:160:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:166:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  166 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_cn.h:166:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h: In function ‘iso2022_cn_wctomb’:
+lib/libiconv/official/iso2022_cn.h:194:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  194 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cn.h:194:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:217:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  217 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cn.h:217:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cn.h:245:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  245 |     if (ret != 3) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cn.h:245:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:256,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_cnext.h: In function ‘iso2022_cn_ext_mbtowc’:
+lib/libiconv/official/iso2022_cnext.h:154:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  154 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_cnext.h:160:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  160 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_cnext.h:160:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:172:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  172 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:172:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:183:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  183 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:183:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:194:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  194 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:194:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:205:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  205 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:205:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:216:29: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  216 |               if (ret != 2) abort();
+      |                             ^~~~~
+lib/libiconv/official/iso2022_cnext.h:216:29: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:222:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  222 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_cnext.h:222:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:256,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_cnext.h:251:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  251 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_cnext.h:251:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:274:20: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  274 |           default: abort();
+      |                    ^~~~~
+lib/libiconv/official/iso2022_cnext.h:274:20: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:278:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  278 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_cnext.h:278:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:284:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  284 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_cnext.h:284:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h: In function ‘iso2022_cn_ext_wctomb’:
+lib/libiconv/official/iso2022_cnext.h:312:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  312 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cnext.h:312:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:335:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  335 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cnext.h:335:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:363:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  363 |     if (ret != 3) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cnext.h:363:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_cnext.h:527:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  527 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_cnext.h:527:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:261,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/big5hkscs1999.h: In function ‘big5hkscs1999_wctomb’:
+lib/libiconv/official/big5hkscs1999.h:149:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  149 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs1999.h:47:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   46 | #include "flushwc.h"
+  +++ |+#include <stdlib.h>
+   47 | 
+lib/libiconv/official/big5hkscs1999.h:162:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  162 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs1999.h:162:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs1999.h:166:70: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  166 |         if (!(buf[0] == 0x88 && (buf[1] == 0x66 || buf[1] == 0xa7))) abort();
+      |                                                                      ^~~~~
+lib/libiconv/official/big5hkscs1999.h:166:70: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:262,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/big5hkscs2001.h: In function ‘big5hkscs2001_wctomb’:
+lib/libiconv/official/big5hkscs2001.h:156:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  156 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2001.h:49:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   48 | #include "flushwc.h"
+  +++ |+#include <stdlib.h>
+   49 | 
+lib/libiconv/official/big5hkscs2001.h:169:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  169 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2001.h:169:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2001.h:173:70: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  173 |         if (!(buf[0] == 0x88 && (buf[1] == 0x66 || buf[1] == 0xa7))) abort();
+      |                                                                      ^~~~~
+lib/libiconv/official/big5hkscs2001.h:173:70: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2001.h:187:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  187 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2001.h:187:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:263,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/big5hkscs2004.h: In function ‘big5hkscs2004_wctomb’:
+lib/libiconv/official/big5hkscs2004.h:161:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  161 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2004.h:49:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   48 | #include "flushwc.h"
+  +++ |+#include <stdlib.h>
+   49 | 
+lib/libiconv/official/big5hkscs2004.h:174:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  174 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2004.h:174:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2004.h:178:70: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  178 |         if (!(buf[0] == 0x88 && (buf[1] == 0x66 || buf[1] == 0xa7))) abort();
+      |                                                                      ^~~~~
+lib/libiconv/official/big5hkscs2004.h:178:70: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2004.h:192:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  192 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2004.h:192:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2004.h:203:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  203 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2004.h:203:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:264,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/big5hkscs2008.h: In function ‘big5hkscs2008_wctomb’:
+lib/libiconv/official/big5hkscs2008.h:166:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  166 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2008.h:49:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+   48 | #include "flushwc.h"
+  +++ |+#include <stdlib.h>
+   49 | 
+lib/libiconv/official/big5hkscs2008.h:179:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  179 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2008.h:179:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2008.h:183:70: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  183 |         if (!(buf[0] == 0x88 && (buf[1] == 0x66 || buf[1] == 0xa7))) abort();
+      |                                                                      ^~~~~
+lib/libiconv/official/big5hkscs2008.h:183:70: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2008.h:197:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  197 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2008.h:197:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2008.h:208:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  208 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2008.h:208:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/big5hkscs2008.h:219:21: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  219 |       if (ret != 2) abort();
+      |                     ^~~~~
+lib/libiconv/official/big5hkscs2008.h:219:21: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+In file included from lib/libiconv/official/converters.h:269,
+                 from lib/libiconv/iconv_real.c:35:
+lib/libiconv/official/iso2022_kr.h: In function ‘iso2022_kr_mbtowc’:
+lib/libiconv/official/iso2022_kr.h:100:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  100 |         if (ret != 1) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_kr.h:1:1: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+  +++ |+#include <stdlib.h>
+    1 | /*
+lib/libiconv/official/iso2022_kr.h:113:48: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  113 |       if (state2 != STATE2_DESIGNATED_KSC5601) abort();
+      |                                                ^~~~~
+lib/libiconv/official/iso2022_kr.h:113:48: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_kr.h:118:23: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  118 |         if (ret != 2) abort();
+      |                       ^~~~~
+lib/libiconv/official/iso2022_kr.h:118:23: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_kr.h:124:14: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  124 |     default: abort();
+      |              ^~~~~
+lib/libiconv/official/iso2022_kr.h:124:14: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_kr.h: In function ‘iso2022_kr_wctomb’:
+lib/libiconv/official/iso2022_kr.h:149:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  149 |     if (ret != 1) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_kr.h:149:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/official/iso2022_kr.h:171:19: warning: incompatible implicit declaration of built-in function ‘abort’ [-Wbuiltin-declaration-mismatch]
+  171 |     if (ret != 2) abort();
+      |                   ^~~~~
+lib/libiconv/official/iso2022_kr.h:171:19: note: include ‘<stdlib.h>’ or provide a declaration of ‘abort’
+lib/libiconv/iconv_real.c: At top level:
+lib/libiconv/iconv_real.c:88:14: warning: initialization of ‘const char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+   88 |     {0x201A, ','},    /* single low-9 quote */
+      |              ^~~
+lib/libiconv/iconv_real.c:88:14: note: (near initialization for ‘translit_table[27].dst’)
+lib/libiconv/iconv_engine.c: In function ‘iconv_close’:
+lib/libiconv/iconv_engine.c:153:13: warning: passing argument 1 of ‘free’ discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  153 |     free(ctx->from_encoding);
+      |          ~~~^~~~~~~~~~~~~~~
+In file included from lib/libiconv/iconv_engine.c:11:
+/usr/arm-linux-gnueabihf/include/stdlib.h:555:25: note: expected ‘void *’ but argument is of type ‘const char *’
+  555 | extern void free (void *__ptr) __THROW;
+      |                   ~~~~~~^~~~~
+lib/libiconv/iconv_engine.c:154:13: warning: passing argument 1 of ‘free’ discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  154 |     free(ctx->to_encoding);
+      |          ~~~^~~~~~~~~~~~~
+In file included from lib/libiconv/iconv_engine.c:11:
+/usr/arm-linux-gnueabihf/include/stdlib.h:555:25: note: expected ‘void *’ but argument is of type ‘const char *’
+  555 | extern void free (void *__ptr) __THROW;
+      |                   ~~~~~~^~~~~
+src/factory_z_stubs.c: In function ‘_Z6sort_qvPvPvjji’:
+src/factory_z_stubs.c:245:109: warning: passing argument 4 of ‘qsort’ makes pointer from integer without a cast [-Wint-conversion]
+  245 | void _Z6sort_qvPvPvjji(void *base, unsigned int nel, unsigned int width, int cmp) { qsort(base, nel, width, cmp); }
+      |                                                                                                             ^~~
+      |                                                                                                             |
+      |                                                                                                             int
+In file included from src/factory_z_stubs.c:24:
+/usr/arm-linux-gnueabihf/include/stdlib.h:839:34: note: expected ‘__compar_fn_t’ {aka ‘int (*)(const void *, const void *)’} but argument is of type ‘int’
+  839 |                    __compar_fn_t __compar) __nonnull ((1, 4));
+      |                    ~~~~~~~~~~~~~~^~~~~~~~
+At top level:
+src/factory_z_stubs.c:32:13: warning: ‘_init_factory_crc’ defined but not used [-Wunused-function]
+   32 | static void _init_factory_crc(void)
+      |             ^~~~~~~~~~~~~~~~~
+Built: output/rkgame (1031860 bytes)
+--- ELF verification ---
+Section sizes: .rel.dyn=001eb0 (001eb0) .rel.plt= ()
+Dynamic: DT_REL=0x10d0 DT_RELSZ=(bytes) ((bytes)) DT_PLTRELSZ=(bytes) ((bytes)) DT_RELENT=(bytes) ((bytes))
+FAIL: DT_RELSZ=(bytes) != .rel.dyn size 001eb0
+FAIL: DT_RELENT=(bytes) (expected 8 for R_REL32 or 12 for R_RELA)
+WARN: dynamic section has errors (parsing may be unreliable)
+      Proceeding anyway - verify on device
+--- GLIBC check ---
+PASS: no GLIBC_2.3x+ symbols
+=== DONE ===
