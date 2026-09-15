@@ -24,41 +24,57 @@ gh_u4 spi_driver_init(void)
   gh_u4 local_120;
   gh_u4 local_11c;
   /* ★★ 原厂这里是**同一块安全数据缓冲的前两个字**（Ghidra 把它拆成了两个独立标量）：
-   *    · `sflash_read_security_data(&sec_buf[0], 0x2000)` ⇒ 把安全数据整块读进 &buf[0]；
-   *    · `printf("… CRC32:%04X ", …, sec_buf[0])` ⇒ 打印 buf[0]；
-   *    · `DateToTmuDate(sec_buf[1]._u32)`            ⇒ 用 buf[1] 解出 "Update time"。
+   *    · `sflash_read_security_data(&sb.sec[0], 0x2000)` ⇒ 把安全数据整块读进 &buf[0]；
+   *    · `printf("… CRC32:%04X ", …, sb.sec[0])` ⇒ 打印 buf[0]；
+   *    · `DateToTmuDate(sb.sec[1]._u32)`            ⇒ 用 buf[1] 解出 "Update time"。
    *   ⇒ 必须表达成**相邻数组**：若写成两个独立标量，编译器可以把 buf[1] 放到那次
    *     0x100 字节写入的范围之外，于是读到链上残留值 —— 实测症状就是
    *     `Update time:1980-0-0 0:0:0`（原厂） vs `…0:0:24`（重建）。
    *   ⇒ 数组保证 buf[0]/buf[1] 相邻、并被同一次写入覆盖。
    *   （证据：工厂反汇编 `str ip,[sp]`/`str ip,[sp,#4]` 之后 `strb 0x9f,[sp]`，
    *     再 `bl sfc_request(sp, 0, r5=sp+8, 3)`；buf 起点 = sp+8。） */
-  gh_u32_bytes_t sec_buf[2];  /* [0] = 原 local_118（CRC32）；[1] = 原 local_114（Update time） */
 
-  /* ★★ 保持与原厂一致的**栈帧形状**（这一条是被行为差分逼出来的）：
-   *   原厂帧 = `sub sp, sp, #0x10C`（268 B），安全数据缓冲区之后还排着
-   *   local_110(20) / local_fc(4) / local_f8(160) / local_58(68) 共 252 B。
-   *   它们在本重建里没有别的引用，于是编译器把整帧压到 ~36 B ⇒
-   *   `sflash_read_security_data(&sec_buf[0], 0x2000)` 那 **0x100=256 字节写入**
-   *   就会越过本帧、**破坏调用者的局部**（原厂帧够大，写在自己帧内）。
-   *   ⇒ 用一条空 asm 强制这四个对象的地址被取用，把它们保留在帧里。
-   *     空 asm 无运行期效果、不改任何数据；只是阻止"未使用即删除"的优化。 */
-  gh_byte local_110 [20];
-  gh_byte local_fc [4];
-  gh_byte local_f8 [160];
-  gh_byte local_58 [68];
-  __asm__ __volatile__("" :: "r"(&local_110[0]), "r"(&local_fc[0]),
-                            "r"(&local_f8[0]), "r"(&local_58[0]));
+  /* ★★ 帧内那 0x104 字节必须表达成**一个对象**（两轮实测逼出来的结论）。 */
+  /* 工厂帧的硬事实（反汇编直读，不是推断）：
+   *   `push {r4,r5,r6,r7,lr}` + `sub sp, sp, #0x10C`  ⇒ 保存寄存器区在 sp+0x10C 之上；
+   *   缓冲区起点 = sp+8（`add r5, sp, #8`）；
+   *   `sflash_read_security_data()` 内部最终 `sfc_request(&cmd, addr, buf, 0x100)`
+   *     ⇒ **一次写入 0x100 = 256 字节**，覆盖 sp+8 .. sp+0x108 —— 恰好停在保存区前 4 字节。
+   *   所以 sp+8 .. sp+0x10C 这 0x104 = 260 字节在原厂里是**一整块**；
+   *   Ghidra 只是把它切成了 local_118 / local_114 / local_110 / local_fc / local_f8 / local_58。
+   *
+   * 为什么必须是一个对象（两种错法都实测过）：
+   *   ① 首两个字拆成独立标量 ⇒ 编译器可把第二个字排到写入范围外 ⇒ 读到链上残留值；
+   *   ② 只把「死局部」单独声明（哪怕加空 asm 保活）⇒ 编译器把它们排到缓冲区**之前**，
+   *      那 256 字节便向上冲进保存寄存器区 ⇒ `pop {…,pc}` 取到被清零的返回地址
+   *      ⇒ 返回瞬间 SIGSEGV（实测：重建侧崩在 `pop {…,pc}`，比原厂早两行）。
+   *   ⇒ 用一个 struct（C 保证字段顺序与相邻），256 字节写入**完全落在自己对象内**。
+   *
+   * 内部偏移（工厂反汇编直读）：
+   *   local_110 = buf+0x08  ← `add r0, sp, #0x10`（复制循环的上界，拷 8 字节 → UniqueID）
+   *   local_fc  = buf+0x1c  ← `add r2, sp, #0x27` 即 local_fc+3、`add r0, sp, #0x25` 即 local_fc+1
+   *   local_f8  = buf+0x20  ← = local_fc + 4
+   *   local_58  = buf+0xc0  ← 校验循环里的 `pbVar4[0xc0]`（代码中无独立引用）
+   *   ★ 首版我按「相对 buf」写偏移时忘了 `dead` 已从 buf+8 起算，四个值整体偏了 ⇒
+   *     复制循环多拷 8 字节（16 而非 8）、XOR 键取自错误位置。已按上表修正。 */
+  struct {
+      gh_u32_bytes_t sec[2];   /* buf+0x00：原 local_118（CRC32）/ local_114（Update time） */
+      gh_byte buf[0xFC];       /* buf+0x08..buf+0x103：0x104 - 8，补齐到保存区之前 */
+  } sb;
+  gh_byte *local_110 = (gh_byte *)&sb.sec[0] + 0x08;
+  gh_byte *local_fc  = (gh_byte *)&sb.sec[0] + 0x1c;
+  gh_byte *local_f8  = (gh_byte *)&sb.sec[0] + 0x20;
+  gh_byte *local_58  = (gh_byte *)&sb.sec[0] + 0xc0;   /* 仅文档用途（代码经 pbVar4[0xc0] 访问） */
   
   local_11c = 0;
   local_120 = 0x9f;
-  sfc_request(&local_120,0,&sec_buf[0]._u32,3);
-  uVar6 = sec_buf[0]._u32 & 0xff;
-  (spi_id_blob)._0_1_ = (gh_byte)sec_buf[0]._u32;
-  (spi_id_blob)._1_1_ = sec_buf[0]._1_1_;
-  (spi_id_blob)._2_1_ = sec_buf[0]._2_1_;
-  if (uVar6 == 0x85 || (uVar6 == 0xb || ((sec_buf[0]._u32 & 0xef) == 200 || uVar6 == 0x20))) {
-    if (sec_buf[0]._2_1_ == '\x18') {
+  sfc_request(&local_120,0,&sb.sec[0]._u32,3);
+  uVar6 = sb.sec[0]._u32 & 0xff;
+  (spi_id_blob)._0_1_ = (gh_byte)sb.sec[0]._u32;
+  (spi_id_blob)._1_1_ = sb.sec[0]._1_1_;
+  (spi_id_blob)._2_1_ = sb.sec[0]._2_1_;
+  if (uVar6 == 0x85 || (uVar6 == 0xb || ((sb.sec[0]._u32 & 0xef) == 200 || uVar6 == 0x20))) {
+    if (sb.sec[0]._2_1_ == '\x18') {
       FlashSize = 0x1000000;
 LAB_002c41fc:
       if (uVar6 == 0xb) goto LAB_002c4360;
@@ -70,9 +86,9 @@ LAB_002c41fc:
 LAB_002c42cc:
       local_11c = 0;
       local_120 = 0x484b;
-      sfc_request(&local_120,0,&sec_buf[0]._u32,8);
+      sfc_request(&local_120,0,&sb.sec[0]._u32,8);
       pbVar4 = (gh_byte *)&UniqueID;
-      pbVar3 = (gh_byte *)&sec_buf[0];
+      pbVar3 = (gh_byte *)&sb.sec[0];
       do {
         pbVar7 = pbVar3 + 1;
         *pbVar4 = *pbVar3;
@@ -81,24 +97,24 @@ LAB_002c42cc:
       } while (pbVar7 != local_110);
     }
     else {
-      if (sec_buf[0]._2_1_ == '\x17') {
+      if (sb.sec[0]._2_1_ == '\x17') {
         FlashSize = 0x800000;
         goto LAB_002c41fc;
       }
-      if (sec_buf[0]._2_1_ == '\x16') {
+      if (sb.sec[0]._2_1_ == '\x16') {
         FlashSize = 0x400000;
         goto LAB_002c41fc;
       }
-      if (sec_buf[0]._2_1_ == '\x15') {
+      if (sb.sec[0]._2_1_ == '\x15') {
         FlashSize = 0x200000;
         if (uVar6 == 0xb) goto LAB_002c4360;
         goto LAB_002c42cc;
       }
-      if (sec_buf[0]._2_1_ == '\x14') {
+      if (sb.sec[0]._2_1_ == '\x14') {
         FlashSize = 0x100000;
       }
       else {
-        if (sec_buf[0]._2_1_ != '\x13') goto LAB_002c41fc;
+        if (sb.sec[0]._2_1_ != '\x13') goto LAB_002c41fc;
         FlashSize = 0x80000;
       }
       if (uVar6 != 0xb) goto LAB_002c42cc;
@@ -108,9 +124,9 @@ LAB_002c4360:
 LAB_002c4220:
       local_11c = 0;
       local_120 = (gh_uint)CONCAT11(0x48,uVar10);
-      sfc_request(&local_120,uVar5,&sec_buf[0]._u32,0x10);
+      sfc_request(&local_120,uVar5,&sb.sec[0]._u32,0x10);
       pbVar4 = (gh_byte *)&UniqueID;
-      pbVar3 = (gh_byte *)&sec_buf[0];
+      pbVar3 = (gh_byte *)&sb.sec[0];
       do {
         pbVar7 = pbVar3 + 1;
         *pbVar4 = *pbVar3 ^ pbVar3[8];
@@ -119,26 +135,26 @@ LAB_002c4220:
       } while (pbVar7 != local_110);
     }
     if ((gh_byte)spi_id == 0xb) {
-      sflash_read_security_data(&sec_buf[0]._u32,0x100);
+      sflash_read_security_data(&sb.sec[0]._u32,0x100);
       goto LAB_002c40e0;
     }
   }
-  sflash_read_security_data(&sec_buf[0]._u32,0x2000);
+  sflash_read_security_data(&sb.sec[0]._u32,0x2000);
 LAB_002c40e0:
-  printf("ROM Size:%08X CRC32:%04X ",FlashSize,sec_buf[0]);
+  printf("ROM Size:%08X CRC32:%04X ",FlashSize,sb.sec[0]);
   printf("Update time:");
-  DateToTmuDate(sec_buf[1]._u32);
+  DateToTmuDate(sb.sec[1]._u32);
   if ((gh_byte)spi_id == 0xb) {
     uVar5 = 0;
   }
   else {
     uVar5 = 0x1000;
   }
-  sflash_read_security_data(&sec_buf[0]._u32,uVar5);
+  sflash_read_security_data(&sb.sec[0]._u32,uVar5);
   iVar9 = 0;
   pbVar3 = &DAT_002dee30;
   iVar8 = 0;
-  pbVar4 = (gh_byte *)&sec_buf[0];
+  pbVar4 = (gh_byte *)&sb.sec[0];
   do {
     bVar1 = *pbVar3;
     pbVar3 = pbVar3 + 1;
