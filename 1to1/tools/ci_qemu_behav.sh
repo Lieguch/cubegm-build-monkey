@@ -31,6 +31,9 @@ OUT="${3:-$ROOT/report/qemu}"
 WORK="${CGM_WORK:-/sdcard/cubegm}"
 GOLDEN="$ROOT/golden/sdcard_min"
 PY="${PY:-python3}"
+# ★ Windows 开发机：python.exe 也是原生程序，不认 `/d/...` ⇒ 把脚本路径按需转 Windows 形式。
+#   （CI 是 Linux，cygpath 不存在 ⇒ 原样返回，无副作用。）
+winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
@@ -38,6 +41,22 @@ PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
 
 mkdir -p "$OUT"
+
+# ---- 假硬件 shim（两侧同一绝对路径 ⇒ 差分仍公平）----
+#   见 tools/guest_shim/fake_mem.c。构建失败则**降级**为不带 shim 跑（并在报告里说明），
+#   以便这一轮仍能产出可比较的指纹，而不是整轮失败。
+# ★ shim **不能**放在 $WORK 里：stage_sdcard_env.sh 每轮都会重建 $WORK（rm -rf + 解包），
+#   放在那里会被抹掉 ⇒ behav_capture 报 "FATAL 指定的 guest shim 不存在"（本地空跑实测抓到）。
+#   构建到 "$OUT/guest_shim.so"，再由 run_side 在铺完环境之后 cp 进 $WORK。
+SHIM="$OUT/guest_shim.so"
+SHIM_ON=0
+if [ "${CGM_GUEST_SHIM:-1}" = "1" ] && sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
+    SHIM_ON=1
+    echo "guest shim = $SHIM（已构建；两侧都加载它）"
+else
+    echo "!! guest shim 构建失败/被禁用 ⇒ 本轮**不带 shim**（可观测窗口较浅）；日志见 $OUT/shim_build.txt"
+    SHIM=""
+fi
 
 echo "============================================================"
 echo "P5 行为差分（qemu-user）"
@@ -56,11 +75,20 @@ ls -la "$FACTORY" "$REBUILD"
 
 # ---- 唯一的包装脚本：guest 路径恒为 $GUEST（两侧共用）----
 WRAP="$OUT/run_guest.sh"
+# ★★ shim 必须用 qemu 的 `-E` 注入 **guest 环境**，绝不能 export 到宿主环境：
+#   `qemu-arm-static` 自身是 **x86_64 宿主**程序，宿主 ld.so 见到 `LD_PRELOAD=<armhf .so>`
+#   会直接崩/静默退出（实测两侧 exit=129、零输出、零事件 ⇒ 差分判 INCONCLUSIVE）。
+PRELOAD_OPT=""
+if [ -n "$SHIM" ]; then
+    PRELOAD_OPT="-E LD_PRELOAD=$SHIM"
+fi
+
 mk_wrap() {
     # $1 = 输出脚本   $2 = 附加 qemu 参数
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\
+  $PRELOAD_OPT \\
   -E LD_LIBRARY_PATH=$QLIB \\
   -E PATH=$SYSROOT/usr/bin:/usr/bin:/bin \\
   -E HOME=/tmp -E TMPDIR=/tmp -E LC_ALL=C -E LANG=C \\
@@ -103,6 +131,9 @@ run_side() {
     # ★ 必须：git 检出的 golden/factory.rkgame.bin 是 0644；qemu-user 对不可执行
     #   目标会走 execve 回退 → EACCES → **静默 exit 1、零输出、零 syscall**（曾整轮误判）
     chmod +x "$GUEST"
+    if [ -n "$SHIM" ] && [ -f "$SHIM" ]; then
+        cp "$SHIM" "$WORK/guest_shim.so" || SHIM=""
+    fi
     ls -la "$GUEST"
 
     probe "$label" "$WRAP_ST" "strace"
@@ -111,9 +142,13 @@ run_side() {
     echo "########## 重新铺环境（清掉探针留下的痕迹）后采集 ${label} ##########"
     sh "$ROOT/tools/stage_sdcard_env.sh" "$WORK" "$GOLDEN" >/dev/null || exit 1
     cp "$src" "$GUEST"; chmod +x "$GUEST"
+    # shim 在每次铺环境之后都要重新放回（stage 会重建 $WORK）；两侧同一绝对路径 ⇒ 差分公平
+    if [ -n "$SHIM" ] && [ -f "$SHIM" ]; then
+        cp "$SHIM" "$WORK/guest_shim.so" || { echo "!! shim 拷贝失败"; SHIM=""; }
+    fi
 
     CGM_WORK="$WORK" CGM_RUNDIR="$OUT/rundir_$label" CGM_TIMEOUT="$TIMEOUT" \
-        CGM_BIN_REAL="$GUEST" \
+        CGM_BIN_REAL="$GUEST" CGM_GUEST_PRELOAD="$SHIM" \
         sh "$ROOT/tools/behav_capture.sh" "$WRAP" "$label" "$OUT/behav_$label.json" \
         || echo "  [note] behav_capture 返回非零（超时/异常退出也照样产出指纹，继续）"
 
@@ -150,7 +185,7 @@ echo "============================================================"
 # ★ 不用管道 + $?：POSIX sh 没有 ${PIPESTATUS[@]}，`cmd | tee f; rc=$?` 拿到的是 **tee** 的退出码
 #   ⇒ 门禁永远"成功"。落文件再 cat。
 set +e
-"${PY:-python3}" "$ROOT/tools/behav_diff.py" "$OUT/behav_factory.json" "$OUT/behav_rebuild.json" --detail \
+"${PY:-python3}" "$(winpath "$ROOT/tools/behav_diff.py")" "$OUT/behav_factory.json" "$OUT/behav_rebuild.json" --detail \
     > "$OUT/behav_diff.txt" 2>&1
 rc=$?
 set -e

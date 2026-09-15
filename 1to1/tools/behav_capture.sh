@@ -42,10 +42,28 @@ PY="${PY:-python3}"
 
 rm -rf "$RUNDIR"; mkdir -p "$RUNDIR"
 
+# --- 假硬件 shim（可选，由 CGM_GUEST_PRELOAD 指定；两侧必须指向**同一绝对路径**）---
+#   见 tools/guest_shim/fake_mem.c：把「物理寄存器映射」换成匿名零页，
+#   让 sunxi_gpio_init 能成功返回 0，从而使 guest 走得更深（可观测窗口更大）。
+PRELOAD="${CGM_GUEST_PRELOAD:-}"
+if [ -n "$PRELOAD" ]; then
+    if [ ! -f "$PRELOAD" ]; then
+        echo "FATAL 指定的 guest shim 不存在：$PRELOAD"
+        exit 5
+    fi
+    # ★★ 绝不能 `export LD_PRELOAD`：那会让**宿主** ld.so 去加载一个 armhf 的 .so
+    #   （qemu-arm-static 是 x86_64 宿主程序）⇒ 立刻崩、零输出、零事件
+    #   ⇒ 差分被判 INCONCLUSIVE（本地空跑实测 exit=129）。
+    #   正确做法：由**包装脚本**用 qemu 的 `-E LD_PRELOAD=<path>` 注入 **guest** 环境。
+    #   这里只做存在性校验 + 记录（便于溯源），不改变宿主环境。
+    echo "[capture] guest shim = $PRELOAD（经 qemu -E 注入 guest；宿主环境不变）"
+fi
+
 # --- 运行器：优先 pty_exec（行缓冲），否则退回 timeout ---
 #   ★ 用函数而不是 "$RUNNER" 多词变量：多词变量在路径含空格时会被拆词
 #     （「把多词命令塞进变量再展开」是本项目记录在案的坑）。
 HAVE_PTY=0
+winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 if command -v "$PY" >/dev/null 2>&1 && "$PY" -c 'import termios' >/dev/null 2>&1; then
     HAVE_PTY=1
     echo "[capture] 使用 pty_exec（stdout 行缓冲；stderr 独立）"
@@ -58,7 +76,7 @@ run_guest() {
     # stdin 固定为 /dev/null：让"被测程序读 stdin"立刻得到 EOF（确定性），
     # 否则它会读到一个永不产生输入的 pty，永久阻塞到超时。
     if [ "$HAVE_PTY" = "1" ]; then
-        "$PY" "$HERE/pty_exec.py" --timeout "$TIMEOUT" "$BIN" $ARGS < /dev/null > "$out" 2> "$err"
+        "$PY" "$(winpath "$HERE/pty_exec.py")" --timeout "$TIMEOUT" "$BIN" $ARGS < /dev/null > "$out" 2> "$err"
         return $?
     fi
     if command -v timeout >/dev/null 2>&1; then
@@ -137,6 +155,22 @@ NEWN=$(wc -l < "$RUNDIR/new_files.txt" | tr -d ' '); NEWN=${NEWN:-0}
 CHGN=$(wc -l < "$RUNDIR/changed_files.txt" | tr -d ' '); CHGN=${CHGN:-0}
 
 STDOUTN=$(wc -l < "$RUNDIR/stdout.txt" 2>/dev/null | tr -d ' '); STDOUTN=${STDOUTN:-0}
+
+# --- 过滤「宿主 loader 的噪音」---
+#   ★ 来历：为了让 guest 加载假硬件 shim，我们把 LD_PRELOAD 放进环境；但**宿主**的 ld.so 同样会读它，
+#     于是会打印 "object '<shim>' from LD_PRELOAD cannot be preloaded (wrong ELF class)" ——
+#     那是宿主侧噪音（ARM 库喂给 x86_64 的 qemu 进程），不是 guest 的输出。
+#     两侧都会出现同样一行，对差分无影响，但会污染 stderr 语义 ⇒ 定向过滤并记录条数。
+if [ -n "${LD_PRELOAD:-}" ]; then
+    NOISE=$(grep -c 'cannot be preloaded' "$RUNDIR/stderr.txt" 2>/dev/null || true)
+    case "$NOISE" in ''|*[!0-9]*) NOISE=0 ;; esac
+    if [ "$NOISE" != "0" ]; then
+        grep -v 'cannot be preloaded' "$RUNDIR/stderr.txt" > "$RUNDIR/stderr.txt.f" 2>/dev/null || true
+        mv "$RUNDIR/stderr.txt.f" "$RUNDIR/stderr.txt"
+        echo "[capture] 已过滤宿主 loader 噪音 ${NOISE} 行（LD_PRELOAD 导致的 wrong-ELF-class 警告）"
+    fi
+fi
+
 STDERRLN=$(wc -l < "$RUNDIR/stderr.txt" 2>/dev/null | tr -d ' '); STDERRLN=${STDERRLN:-0}
 
 # --- 帧缓冲采样（尽力而为）---
@@ -183,6 +217,7 @@ TMO=false
     printf '  "workdir": "%s",\n' "$(printf '%s' "$WORK" | json_quote)"
     printf '  "exit_code": %s,\n' "$RC"
     printf '  "timed_out": %s,\n' "$TMO"
+    printf '  "preload": "%s",\n' "${PRELOAD:-}"
     printf '  "observed": %s,\n' "$OBSERVED"
     printf '  "log_file": "%s",\n' "$LOGNAME"
     printf '  "log_lines": %s,\n' "$LOGLINES"
