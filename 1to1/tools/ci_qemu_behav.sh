@@ -37,7 +37,7 @@ winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else pr
 GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
-EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-300}"   # -d exec 会显著拖慢 guest，给足时间
+EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-90}"    # -d exec 明显拖慢 guest；配合日志大小看门狗（见 exec_probe）
 # 帧探针的目标函数：入口/epilogue 地址**从当前 ELF 现算**（见 tools/find_func_marks.py）。
 #   ★ 不能硬编码：地址随每次重链接漂移，指到别的函数上会让探针静默失去意义。
 FRAME_TARGET="${CGM_FRAME_TARGET:-spi_driver_init}"
@@ -183,13 +183,29 @@ exec_probe() {
     mk_wrap "$wrap" "-d exec -D $log"
     echo ""
     echo "########## 执行轨迹探针 ${label}（-d exec，上限 ${EXEC_TIMEOUT}s）##########"
+    # ★★ 轨迹日志**必须**有大小看门狗：`-d exec` 是"每个被执行翻译块一行"，
+    #    观测窗口一旦推深（例如走到 main_Menu），guest 可能长时间运行 ⇒ 日志会涨到
+    #    GB 级并**写满 runner 磁盘**（曾因此必须提前取消整轮 CI）。超过上限就杀掉 guest：
+    #    探针只用于诊断，留尾部即可。
+    LOG_CAP="${CGM_EXEC_LOG_CAP:-134217728}"     # 128 MiB
     set +e
-    timeout "$EXEC_TIMEOUT" "$wrap" >/dev/null 2>&1
-    prc=$?
+    timeout "$EXEC_TIMEOUT" "$wrap" >/dev/null 2>&1 &
+    gpid=$!
+    while kill -0 "$gpid" 2>/dev/null; do
+        sz=$(wc -c < "$log" 2>/dev/null | tr -d ' '); sz=${sz:-0}
+        case "$sz" in ''|*[!0-9]*) sz=0 ;; esac
+        if [ "$sz" -gt "$LOG_CAP" ]; then
+            echo "   轨迹日志 $sz B 超过上限 $LOG_CAP B → 结束 guest"
+            kill -TERM "$gpid" 2>/dev/null || true
+            break
+        fi
+        sleep 2
+    done
+    wait "$gpid"; prc=$?
     set -e
     echo "   退出码 = $prc"
     if [ -f "$log" ]; then
-        echo "   原始轨迹行数 = $(wc -l < "$log" 2>/dev/null)"
+        echo "   原始轨迹行数 = $(wc -l < "$log" 2>/dev/null)  大小 $(wc -c < "$log" 2>/dev/null) B"
         # 只保留尾部（原始日志很大，不放进制品）
         tail -800 "$log" > "$OUT/exec_tail_${label}.txt"
         rm -f "$log"

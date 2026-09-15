@@ -154,6 +154,19 @@ LC_ALL=C awk -F'|' 'NR==FNR{p[$1]=1; next} ($1 in p){print}' \
 NEWN=$(wc -l < "$RUNDIR/new_files.txt" | tr -d ' '); NEWN=${NEWN:-0}
 CHGN=$(wc -l < "$RUNDIR/changed_files.txt" | tr -d ' '); CHGN=${CHGN:-0}
 
+# ★ 深窗口保护：观测窗口推到菜单之后，guest 在超时前可能刷大量输出 ⇒ 给**落盘的原始输出**
+#   加上限（两侧同一规则 ⇒ 差分仍公平；events 本来就有 400/200 行上限，这里只约束制品体积）。
+CAPL="${CGM_CAP_LINES:-20000}"
+for _f in "$RUNDIR/stdout.txt" "$RUNDIR/stderr.txt"; do
+    [ -f "$_f" ] || continue
+    _n=$(wc -l < "$_f" 2>/dev/null | tr -d ' '); _n=${_n:-0}
+    if [ "$_n" -gt "$CAPL" ]; then
+        head -n "$CAPL" "$_f" > "$_f.cap" 2>/dev/null && mv "$_f.cap" "$_f"
+        echo "[capture] $(basename "$_f") 行数 $_n 超过 $CAPL → 已截断（保留前 $CAPL 行）"
+    fi
+done
+unset _f _n
+
 STDOUTN=$(wc -l < "$RUNDIR/stdout.txt" 2>/dev/null | tr -d ' '); STDOUTN=${STDOUTN:-0}
 
 # --- 过滤「宿主 loader 的噪音」---
