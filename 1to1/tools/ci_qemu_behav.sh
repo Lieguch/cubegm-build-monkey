@@ -44,6 +44,8 @@ FUNC_EPI="${CGM_FUNC_EPI:-0x0501f5c4}"       # 其 epilogue（`sub sp,fp,#28` �
 # 二分定位用的中间断点（都在 spi_driver_init 内；用来判定 r11(fp) 是**哪一段**被改坏的）
 FUNC_POSTPRO="${CGM_FUNC_POSTPRO:-0x0501f2fc}"    # prologue 之后第一条指令
 FUNC_CALL1RET="${CGM_FUNC_CALL1RET:-0x0501f514}"  # 首次 sflash 调用返回点
+FUNC_IDRET="${CGM_FUNC_IDRET:-0x0501f31c}"        # 首个 sfc_request(ID 读 3B) 返回点
+FUNC_PRESFLASH="${CGM_FUNC_PRESFLASH:-0x0501f510}" # sflash(buf,0x2000) 调用前
 FUNC_CALL2RET="${CGM_FUNC_CALL2RET:-0x0501f558}"  # 末次 sflash 调用返回点（进校验循环前）
 
 QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
@@ -222,6 +224,8 @@ frame_probe() {
         -ex "break *${FUNC_ENTRY}" \
         -ex "break *${FUNC_POSTPRO}" \
         -ex "break *${FUNC_CALL1RET}" \
+        -ex "break *${FUNC_IDRET}" \
+        -ex "break *${FUNC_PRESFLASH}" \
         -ex "break *${FUNC_CALL2RET}" \
         -ex "break *${FUNC_EPI}" \
         -ex "continue" \
