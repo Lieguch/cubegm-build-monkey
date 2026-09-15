@@ -81,6 +81,10 @@ WRAP="$OUT/run_guest.sh"
 PRELOAD_OPT=""
 if [ -n "$SHIM" ]; then
     PRELOAD_OPT="-E LD_PRELOAD=$SHIM"
+    # 让 shim 输出一行"投毒参数"证据（默认静默）；两侧一致 ⇒ 不影响差分有效性。
+    if [ "${CGM_SHIM_VERBOSE:-1}" = "1" ]; then
+        PRELOAD_OPT="$PRELOAD_OPT -E CGM_SHIM_VERBOSE=1"
+    fi
 fi
 
 mk_wrap() {

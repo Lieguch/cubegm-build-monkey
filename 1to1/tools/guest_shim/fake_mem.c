@@ -52,6 +52,8 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -179,7 +181,13 @@ int openat(int dirfd, const char *path, int flags, ...)
  */
 #define POISON_BYTE   0xA5u
 #define POISON_FRAME  4088u     /* 每层帧大小（略小于一页，避免叠加出界） */
-#define POISON_DEPTH  24u       /* 24 × 4 KiB ≈ 96 KiB 覆盖深度 */
+/* ★ 深度：192 层 × 4088 B ≈ 768 KiB。
+ *   为什么要这么深（实测推理）：`spi_driver_init` 打印的 `Update time` 取自 `sp+12`，
+ *   而该槽在假硬件下**从未被写**（`sfc_request` 的两条读路径都因状态寄存器恒 0 而超时返回、
+ *   不写缓冲区；`sflash_read_security_data` 只写 3 字节 = sp+8..sp+10）。
+ *   ⇒ 只要调用链深到 96 KiB 以外，第一版 96 KiB 的投毒就够不到这一帧，值不随之变化。
+ *   加深覆盖即可判定"到底是不是栈残留"。 */
+#define POISON_DEPTH  192u
 
 static void shim_poison_walk(unsigned int depth)
 {
@@ -201,6 +209,21 @@ static void shim_poison_walk(unsigned int depth)
 __attribute__((constructor)) static void shim_poison_stack(void)
 {
     shim_poison_walk(POISON_DEPTH);
+
+    /* 证据行（默认静默；把 CGM_SHIM_VERBOSE=1 经 qemu -E 传进 guest 才输出）：
+     * 让我们能从采集到的 stderr 里确认"投毒真的跑了、覆盖多少字节"。
+     * ★ 用 write(2,…) 而不是 printf：constructor 早于 stdio 完全就绪，避免缓冲陷阱。 */
+    if (getenv("CGM_SHIM_VERBOSE") != NULL) {
+        char buf[128];
+        int n = snprintf(buf, sizeof(buf),
+                         "[shim] stack poison: frame=%u B x depth=%u = %u KiB, byte=0x%02X\n",
+                         (unsigned)POISON_FRAME, (unsigned)POISON_DEPTH,
+                         (unsigned)(POISON_FRAME * POISON_DEPTH / 1024u),
+                         (unsigned)POISON_BYTE);
+        if (n > 0) {
+            (void)write(2, buf, (size_t)(n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
+        }
+    }
 }
 
 /* ---- ② 物理寄存器映射 → 匿名零页 ------------------------------------- */static void *sys_mmap2(void *addr, size_t len, int prot, int flags,

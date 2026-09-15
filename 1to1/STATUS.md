@@ -259,6 +259,85 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-15 第二十一轮：★★★ 假硬件 shim 把观测窗口推深（13 → 20 行）+ 确定性控制组 + 门禁假 PASS 修补
+
+**目标**：让 qemu 下的可观测窗口不再停在最浅处（此前两侧都停在 `Failed to initialize GPIO` 之间的
+NULL 寄存器写，只有 13 行输出，"等价"没有说服力）。
+
+#### 一、假硬件 shim（`tools/guest_shim/fake_mem.c`，两侧同一份 ⇒ 差分仍公平）
+
+| 措施 | 内容 | 效果 |
+|---|---|---|
+| ① 设备节点重定向 | `open/open64/openat` 把 `/dev/mem`、`/dev/fb`、`/dev/dri`、`/dev/input`、`/dev/sunxi`… 重定向到 `/dev/zero` | `open("/dev/mem")` 成功 ⇒ `sunxi_gpio_init()` 走完 5 次 mmap |
+| ② 物理寄存器映射 | `mmap(MAP_SHARED+可写+偏移≥4MiB)` → 匿名零页 | 寄存器读回 0、写入被丢弃；两侧一致 |
+| ③ 栈投毒 | constructor 用**递归帧**（24 × 4 KiB）把栈填 `0xA5` | 让"未初始化读"可复现（见第四节：实现方式踩过坑） |
+
+★ 只拦 `mmap` 是不够的 —— `open("/dev/mem")` 先失败，`mmap` 根本走不到（实测踩到）。
+★ shim 必须用 qemu 的 `-E LD_PRELOAD=…` 注入 **guest**；**不能** export 到宿主环境
+（qemu-arm-static 是 x86_64 宿主程序，宿主 ld.so 见到 armhf 的 .so 会直接崩：实测两侧 exit=129、零输出）。
+
+**效果（CI 实测，commit `aea8b7b4` / `89dc7b6d`）**：
+
+| 指标 | 之前 | 之后 |
+|---|---|---|
+| 参考侧 stdout | 13 行 | **20 行** |
+| 等价区间 | 到 `Failed to initialize GPIO` | 到 **`RF_IC Test Fail !`**（穿过 GPIO→SPI→SFC 闪存探测） |
+| 新增可见事件 | — | `CRU_CLKGATE8_CON:0` / `CRU_CLKGATE8_CON:e000000` / `GRF_GPIO0A_IOMUX:0` / `GRF_GPIO2A_IOMUX:C00000` |
+
+另修复**环境缺陷**：`golden/sdcard_min/` 补入真机 `driver.so`（39,844 B，两侧同一份）——
+此前它缺失导致 `dlopen` 失败并跳过图形初始化（`open driver.so fail, libkms.so.1: …`）。
+★ 该文件不在 `push_1to1.py` 的 walk 目录内（`golden/` 走显式清单），漏加会**静默不推送**；
+而 MANIFEST 已引用它 ⇒ CI 铺设会失败。已补清单项。
+
+#### 二、★ 新增「确定性控制组」（`behav_diff.py` 的 B0c）
+
+用**同一份参考二进制再跑一遍**（`CGM_CONTROL=1`，默认开），取
+`k = events(factory) 与 events(control) 的最长公共前缀`：
+
+- 前 k 行 = 参考实现**自身可复现**的部分 ⇒ 门禁只判这一段：
+  `rebuild[:k] == factory[:k]` **且** `len(rebuild) >= k`；
+- 第 k+1 行起 = 参考实现自己都不稳定的部分 ⇒ **不计为失败**，但会在报告里单列并标注"环境受限"；
+- 对照组必须与参考侧是**同一份二进制**（sha 相同），否则 P0d FAIL。
+
+**决定性证据**：本次 CI 中参考侧两遍**完全一致（20/20 行）** ⇒ `k = 20` ⇒
+**该分歧不是不确定，而是真实、可复现的实现差异**（重建侧 18 行，在可判定区间内提前终止）。
+
+#### 三、★★ 修补我自己的门禁「假 PASS」（由栈投毒的副作用暴露）
+
+第一版栈投毒写成「取 SP 减大偏移再写」（**错**）：qemu-user 下该地址未映射 ⇒ guest 启动即 SIGSEGV。
+后果：两侧 stdout 均为 **0 行**，events 只剩 qemu 自己的 `uncaught target signal 11` 一行，
+而 B0c 的"确定性前缀=1"把它判成 **PASS** ⇒ 假通过。
+
+两处收紧（均已双向单元测试）：
+
+1. **B0 改用「真正的行为观测」**：`stdout_lines > 0` 或 有新增/变更文件；
+   不再用 `observed`（它把 **stderr** 也算进去，而 qemu 自身报错就是一行 stderr）。
+2. **可复现前缀必须包含 stdout 事件**：否则判 **INCONCLUSIVE(3)**，理由是"前缀已退化为启动即崩的噪声行"。
+3. 栈投毒改为**递归帧**实现（每层 4 KiB × 24 层，走正常栈增长），不再做危险指针算术。
+
+#### 四、当前进度与下一步
+
+**仍剩 1 项 FAIL（真实、可复现）**，位于 `spi_driver_init()` 打印 ROM 信息处：
+
+```
+factory: ROM Size:00000000 CRC32:0000 Update time:2011-13-29 15:20:0  + 2 行 find *_driver_deinit process fail
+rebuild: ROM Size:00000000 CRC32:0000→0003 Update time:1980-0-0 0:0:24   （且少这 2 行 ⇒ 提前崩）
+```
+
+已定位的证据链：
+
+- 打印点：`spi_driver_init`（0x2c4044）`printf("ROM Size:%08X CRC32:%04X ", FlashSize, [sp+8])`
+  + `printf("Update time:"); DateToTmuDate([sp+12])`；
+- 两个值来自 **`sp+8` / `sp+12`**，本应由 `sfc_request()` 填入安全数据；
+- **栈投毒未改变这两个值**（与投毒前完全一致）⇒ 它们**不是**栈垃圾，而是**被代码写入**的
+  ⇒ 指向 `sfc_request`（0x2c39f0，904 B）或安全数据读路径的重建保真度；
+- 我们重建的 `sflash_read_security_data` 与工厂**逐指令一致**（`0x4848` + 零 = 4 字节栈槽，
+  参数 `(&local, param_2, param_1, 0x100)` 对应 r0/r1/r2/r3 完全吻合）⇒ 嫌疑集中在 `sfc_request`。
+
+**下一步**：① 逐指令对照 `sfc_request` 的"寄存器→缓冲区"写入路径（重点看 `param_4 & 3` 的
+字节循环与 `uVar1 = param_4 >> 2` 的边界）；② 顺带解释"提前 2 行崩"是否同源。
+
+---
 ### 2026-09-14 第二十轮：★★★ 设备兼容性硬伤修复（GLIBC 2.34 → **2.7**）+ libz 地雷
 
 本轮是「行为差分只跑到 13 行就全绿」这个盲区暴露出来的两类**真机阻断级**问题。
