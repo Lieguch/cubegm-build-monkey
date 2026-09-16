@@ -85,6 +85,16 @@ jobs:
           cd 1to1
           python3 tools/check_types.py
 
+      - name: 数组名转型扫描（Ghidra 把 `arr[0]` 误渲染成 `(窄类型)arr`）★ 硬门禁
+        run: |
+          cd 1to1
+          # ★ 血泪：工厂 `spi_driver_init` 的判断原指令是 `ldrb r3,[r6]`（r6=&spi_id），
+          #   Ghidra 渲染成 `(gh_byte)spi_id` —— 在「spi_id 是数组」的声明下它变成
+          #   **指针→字节转换**（取地址最低字节 0xc8，而真值是 0x0b）⇒ 判断走错分支
+          #   ⇒ main() 不去 main_Menu()。编译/链接/ABI/布局全部是绿的，只有行为差分能发现。
+          #   本步骤把该类误渲染变成**静态可拦**。
+          python3 tools/scan_array_casts.py
+
       - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
         run: |
           cd 1to1

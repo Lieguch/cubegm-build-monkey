@@ -259,6 +259,152 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 
 ---
 
+### 2026-09-16 第二十五轮：★ 编译门禁改三态判定（消除「把环境故障误判成类型错误」）
+
+**触发**：上一轮报告出现「严格 212/213、**假绿 1**」（前 5 轮都是 213/213、假绿 0），点名
+`src/proprietary/core/FUN_000226a8_filelist_run_game.c`，且该行 `serr` **为空**。
+
+#### 一、复跑定性：不是源码错误
+
+以**完全相同的严格命令行**连续编译该文件 3 次 ⇒ `rc=0` **三次全过**；stderr 里 `error:` 出现 **0** 次
+（只有 7 条 warning + 2 条 note：`NAN` 宏重定义、`main` 返回类型、`-Wpointer-sign`）；该文件最后修改日期 Sep 12。
+
+★ 顺带观察到一个有用现象：**首次运行 stderr 非空（3547 B，缓存预热/编译 `compiler_rt` 的 warning）、之后两次为空** ——
+这解释了该文件在报告的严格阶段 `serr` 为空的形态（只是时机不同）。
+
+⇒ **定性**：那次 `rc≠0` 是**工具链/环境瞬时故障**（zig 在内存压力下可非 0 退出且 stderr 为空），
+却被记成「类型错被 warning 掩盖」的假绿，**污染了门禁结论**。
+
+#### 二、修法：双轨判定由二态改为三态（`recon_local.sh` + `recon_build.sh` 同步）
+
+| 条件 | 归类 | 处理 |
+|---|---|---|
+| `rc=0` | 通过 | 计入 ok |
+| `rc≠0` 且 stderr **含** `error:` | **真源码错误** | 宽松失败 / 严格假绿 |
+| `rc≠0` 且 stderr **不含** `error:` | **INFRA 未判定** | `sleep 2` **重试一次**；仍如此则单独计数，**既不算通过也不算类型错**，末尾 **exit 3** 显式失败 |
+
+★ 判据刻意用「**有没有 `error:`**」而不是「stderr 是否为空」：编译器可能只吐 warning 然后因环境原因失败，
+那时 stderr 非空但依然不是源码错误。
+
+#### 三、五用例单元测试（假编译器注入故障，秒级）
+
+| 用例 | 注入 | 断言 | 实测 |
+|---|---|---|---|
+| A 全成功 | 全 `rc=0` | 213/213、假绿 0、INFRA 0、exit 0 | ✓ |
+| B 宽松侧空 stderr | 单文件 `rc=1` 无输出 | **失败数 0**（不再误计）、INFRA 1、exit 3 | ✓ |
+| C 严格侧空 stderr | 仅严格口径 `rc=1` 无输出 | **假绿 0**、INFRA 1、exit 3 | ✓ ← **正是真实那一例** |
+| D 空 stderr 后自愈 | 首败、重试成功 | 213/213、exit 0 | ✓ |
+| E 含 `error:` | 单文件 `rc=1` 且打印 error | 宽松失败 1、**不误判为 INFRA** | ✓ |
+
+**顺带修的隐患**：`recon_local.sh` 在 `set -u` 下使用了未定义的 `$PY`（尾部静态门禁要调它），
+此前依赖外部 `export PY` 才跑得通 ⇒ 已补 `PY="${PY:-python}"`（**脚本要能独立跑，不靠调用方环境**）。
+
+#### 四、真实本地复跑（全绿）
+
+```
+宽松口径 213/213  严格口径 213/213  假绿 0  INFRA 0  exit 0
+审计 重复定义 0 / MISSING 0 / upstream 0      链接 rc=0
+布局 PASS 全局 193/194 = 99.5%   ABI PASS   dyn_audit PASS (FAIL 0 / WARN 1)
+数组转型门禁 PASS（761 个数组声明 / 213 个受检文件）
+```
+
+---
+
+### 2026-09-16 第二十四轮：★ 修掉 `spi_id[0]` 误渲染（Ghidra 的「指针→窄整数」陷阱）
+
+**来源**：第二十三轮 CI 的 shim 日志显示**两侧发出的 flash 命令不同** —— 这正是深窗口暴露的**第二个真实语义分歧**。
+
+| 侧 | 命令序列 |
+|---|---|
+| 工厂 | `op=009f addr=0 len=3` → `op=485a addr=0x194 len=16` → `op=4848 addr=0x100` → `op=4848 addr=0x000` |
+| 重建（修复前）| 缺少让原厂选择 0x0b 分支的那次判断结果不同 ⇒ 后续流程与窗口深度不一致 |
+
+**根因**：原厂是 `if (spi_id[0] == 0xb)`（反汇编 `ldrb r3,[r6]`，`r6 = &spi_id`），
+而 Ghidra 把它渲染成 **`(gh_byte)spi_id`** —— 在「`spi_id` 是数组」的声明下，这变成**指针→字节的转换**
+（取地址最低字节 `0xc8`），于是两处判断全部走错分支。这是 P5 深窗口抓到的**第二个真实语义分歧**。
+
+**修复（2 文件 5 处）**：
+
+| 文件 | 处数 | 变更 |
+|---|---|---|
+| `src/proprietary/flash/FUN_002c4044_spi_driver_init.c` | 2 | `(gh_byte)spi_id` → `spi_id[0]`（并补上「为什么」的注释）|
+| `src/proprietary/flash/FUN_0000ac44_UpdateROM.c` | 3 | `(char)spi_id` → `spi_id[0]` |
+
+#### 新增静态门禁 `tools/scan_array_casts.py`
+
+扫描 `src/**/*.c` 里「**数组名被转型成窄整数**」的形状（`(gh_byte)ARR` / `(char)ARR` / `(gh_u2)ARR` …），
+与 `globals.h` 的数组声明表交叉比对。该类错误**编译/链接/ABI/布局门禁全绿**，只有行为差分或静态扫描能发现。
+已接入 `1to1-verify`（`1to1/` 下调用）与 `recon_local.sh`。
+
+★ 门禁第一版就出**假阳性**：报「命中 1 处」—— 结果是我自己写在源码里的**解释性注释**正好引用了
+`(gh_byte)spi_id` 这个错误写法。已加 `strip_comments()`（保留字符串字面量），并做**双向测试**：
+注入错误写法 ⇒ **exit 2 且命中代码行**；恢复 ⇒ **exit 0**。
+
+---
+### 2026-09-15 第二十三轮：★★★★ SFC 做成「有状态设备」→ 观测窗口 20 → 22 行，**首次进入 main_Menu()**
+
+**里程碑**：`spi_driver_init()` 的 24 字节 flash 校验和**通过**（返回 1）⇒ `main()` 走 else 分支 ⇒
+`UpdateROM()` → `sfc_uninit()` → `ShareMemCreat()` → `main_Menu()`（菜单 = 重建量最大的一块）。
+
+| 行 | 内容 | 含义 |
+|---|---|---|
+| 18 | `ROM Size:01000000 CRC32:0000 Update time:1980-0-0 0:0:0` | 假 flash 的芯片 ID 让原厂走 0x0b 分支（FlashSize=16 MB）|
+| 19 | `Load /sdcard/cubegm/update/firmware.upk fail!` | **UpdateROM 被调用**（= 校验和通过）|
+| 20 | `root_path:/sdcard` | **main_Menu() 已进入** |
+| 21-22 | `open /sdcard/cubegm//ui_cn.zip fail` ×2 | 下一处缺口 = UI 资源包（本轮已补齐，下轮见分晓）|
+
+#### 为什么只能做「设备仿真」
+
+读循环是 `*dst++ = g_sfc_reg[0x42]` —— **同一个寄存器地址反复读**。静态内存页每次都返回同一个字 ⇒
+缓冲区内容必然 4 字节周期；而密钥表 KY（工厂 `.rodata` @0x002dee30 = `aXDT8kluSPu6PvHIV2JhA1V4`）
+**不是** 4 字节周期（KY[8]=0x53 vs KY[12]=0x50）⇒ **数学上不可能通过**（此前已用「766 KiB 栈投毒」
+反证那两个值不是随机栈垃圾，而是被写过的确定性内存）。
+
+#### 做法（`tools/guest_shim/fake_mem.c` ③ 段，约 300 行）
+
+`mprotect(PROT_NONE)` 保护寄存器页 + `SA_SIGINFO` 处理器：解码缺页的那条访存指令 → 按**设备语义**应答 →
+`pc += 4`。设备语义：忙标志恒 0；状态寄存器（含 `ldrh/ldrb [r0,#0x22]` 这种**上半字/单字节**读）= 可读字数<<16；
+数据寄存器 = FIFO 下一字（逐字变化）；写 `0x100`（低 16 位 opcode、位 16..29 字节数）复位 FIFO、写 `0x104` = 地址。
+「flash 里有什么」按 (opcode, addr) 决定，其中 `0x4848`@0x000 的 256 字节是**按校验和方程反解**出来的
+（`buf[0xc0..0xd7]=0`、`k<8` 取 0、`k=8..23` 取 `KY[k]^buf[k-8]`），全部由 KY 现算。
+
+★ 处理器发现缺址**不在设备页**时恢复 `SIG_DFL` 再 return ⇒ 非设备错误照旧崩，语义不变。
+★ 回退开关 `CGM_SFC_MODE=seed` 可退回旧的静态种子页行为。
+
+#### 推 CI 之前的零成本验证（本地全做完）
+
+1. **解码器交叉验证**：`objdump -d` 反汇编文本 + 一份 Python 逻辑镜像，逐条比对「读/写、Rd、size」——
+   `sfc_request` 上 **37 条（重建）+ 51 条（原厂）访存指令、0 异常**。靠它把半字尺寸判据从 bit6 改成 bit5。
+2. **设备 + 校验和数值模拟**：Python 复现整条读取序列与校验和循环 ⇒ 失配 0 字节 ⇒ 返回 1。
+3. `zig cc -c` 编译自检通过。
+
+#### CI 实测证据（shim 自己打在 stderr 上）
+
+```
+[shim] SFC 设备仿真已装配 base=0x3fb64000 len=0x1000
+[shim] sfc cmd op=009f addr=000000 len=3   -> payload=flash(4 B)
+[shim] sfc cmd op=485a addr=000194 len=16  -> payload=flash(16 B)
+[shim] sfc cmd op=4848 addr=000100 len=256 -> payload=zeros(0 B)
+[shim] sfc cmd op=4848 addr=000000 len=256 -> payload=flash(256 B)   <- 反解数据
+[shim] SFC 设备撤防（munmap）：faults=180 cmds=4 unhandled=0
+```
+
+#### 同轮修掉的两个「外围」问题（都是深窗口带来的新风险）
+
+1. **`-d exec` 轨迹日志无上限**：观测窗口一深，guest 可能长时间运行 ⇒ 日志涨到 GB 级**写满 runner 磁盘**
+   （本轮为此外**提前取消**了一整轮 CI，避免污染仓库预算）。⇒ 加**大小看门狗**（超过 128 MiB 杀 guest）
+   + `EXEC_TIMEOUT` 300→90 s；给采集落盘的 stdout/stderr 加 20000 行上限（`events` 本来就有 400/200 上限）。
+2. **gdb 默认在 SIGSEGV 上停止**：假硬件让 guest 频繁缺页，帧探针的「第一次停下」于是变成设备缺页而不是
+   函数入口 ⇒ 量到无意义的 `fp-sp=0x18` ⇒ 帧门禁**假红**，整轮连 `behav_diff.txt` 都没生成。
+   ⇒ ① gdb 命令加 `handle SIGSEGV nostop noprint pass`（+SIGBUS）；② **把帧门禁挪到差分之后** ——
+   差分是主门禁，绝不能因为次级探针出问题而拿不到差分结论。
+
+#### 环境补齐（`golden/sdcard_min/`，全部取自原厂 SD 只读拷贝）
+
+`font.ttf`(1.84 MB)、`cores/filelist.xml`(8.7 KB)、`ui_cn.zip`(5.0 MB)、`chord.wav`/`Button1.wav`(各 7.7 KB)、
+`Back_In_The_City.mp3`(1.66 MB) —— 两侧加载同一份 ⇒ 差分仍公平。
+
+---
 ### 2026-09-15 第二十二轮：★★★★★ 行为差分**全等**（22/22 事件）+ 定位并修掉「callee 写坏调用者 fp」
 
 **里程碑**：`1to1-qemu-behav` 首次 **success**，且**不是前缀一致，而是整段全等**：

@@ -38,9 +38,30 @@ mkdir -p "$(dirname "$REP")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-ok=0; bad=0; total=0
+ok=0; bad=0; infra=0; total=0
 : > "$TMP/bad.txt"
 : > "$TMP/ok.txt"
+: > "$TMP/infra.txt"
+
+# ---------------------------------------------------------------------------
+# ★★ 三态判定（与 tools/recon_local.sh 完全同语义；血泪见该脚本长注释）
+#   ① rc=0                            → 通过
+#   ② rc≠0 且 stderr 含 `error:`       → 真源码错误（宽松失败 / 严格假绿）
+#   ③ rc≠0 且 stderr 不含 `error:`     → INFRA 未判定：重试一次；仍如此则单独计数，
+#                                        既不算通过也不算类型错，并在末尾显式失败。
+#   判据用「有没有 `error:`」而非「stderr 是否为空」：编译器可能只吐 warning 后因
+#   环境原因失败，那时 stderr 非空但依然不是源码错误。
+# ---------------------------------------------------------------------------
+compile_loose() {
+    c_rc=0
+    $CC $CFLAGS "$1" -o "$TMP/o.o" 2> "$TMP/err.txt" || c_rc=$?
+    if [ "$c_rc" != "0" ] && ! grep -qa "error:" "$TMP/err.txt"; then
+        sleep 2
+        c_rc=0
+        $CC $CFLAGS "$1" -o "$TMP/o.o" 2> "$TMP/err.txt" || c_rc=$?
+    fi
+    return "$c_rc"
+}
 
 for f in "$SRCDIR"/*/*.c; do
     [ -f "$f" ] || continue
@@ -49,32 +70,47 @@ for f in "$SRCDIR"/*/*.c; do
     # shellcheck disable=SC2086
     # ★ 不能写成 "$CC"：CC 可能是多词命令（如 `<zig> cc`），加引号会被当成单个文件名
     #   → `No such file or directory`（技能库第 28 条）。
-    if $CC $CFLAGS "$f" -o "$TMP/o.o" 2> "$TMP/err.txt"; then
+    if compile_loose "$f"; then
         ok=$((ok + 1))
         echo "$rel" >> "$TMP/ok.txt"
-    else
+    elif grep -qa "error:" "$TMP/err.txt"; then
         bad=$((bad + 1))
         firsterr=$(grep -a -m3 -E 'error:' "$TMP/err.txt" | head -c 400)
-        [ -n "$firsterr" ] || firsterr=$(head -c 300 "$TMP/err.txt" | tr '\n' ' ')
         echo "$rel|$firsterr" >> "$TMP/bad.txt"
+    else
+        infra=$((infra + 1))
+        echo "$rel|$(grep -a -m2 -E 'warning:|note:' "$TMP/err.txt" | head -c 200 | tr '\n' ' ')" \
+             >> "$TMP/infra.txt"
     fi
 done
 
 # ---- 严格口径双轨复测（只重测宽松通过文件，成本不翻倍）----
 strict_ok=0
 : > "$TMP/strict_bad.txt"
+: > "$TMP/infra_strict.txt"
 while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     # shellcheck disable=SC2086
-    if $CC $CFLAGS_STRICT "$ROOT/$rel" -o "$TMP/s.o" 2> "$TMP/serr.txt"; then
+    s_rc=0
+    $CC $CFLAGS_STRICT "$ROOT/$rel" -o "$TMP/s.o" 2> "$TMP/serr.txt" || s_rc=$?
+    # ★ 同「宽松口径」三态语义：rc≠0 且无 `error:` ⇒ 瞬时故障，重试一次
+    if [ "$s_rc" != "0" ] && ! grep -qa "error:" "$TMP/serr.txt"; then
+        sleep 2
+        s_rc=0
+        $CC $CFLAGS_STRICT "$ROOT/$rel" -o "$TMP/s.o" 2> "$TMP/serr.txt" || s_rc=$?
+    fi
+    if [ "$s_rc" = "0" ]; then
         strict_ok=$((strict_ok + 1))
-    else
+    elif grep -qa "error:" "$TMP/serr.txt"; then
         serr=$(grep -a -m3 -E 'error:' "$TMP/serr.txt" | head -c 300)
-        [ -n "$serr" ] || serr=$(head -c 200 "$TMP/serr.txt" | tr '\n' ' ')
         echo "$rel|$serr" >> "$TMP/strict_bad.txt"
+    else
+        echo "$rel|$(grep -a -m2 -E 'warning:|note:' "$TMP/serr.txt" | head -c 200 | tr '\n' ' ')" \
+             >> "$TMP/infra_strict.txt"
     fi
 done < "$TMP/ok.txt"
-strict_bad=$(( ok - strict_ok ))
+strict_infra=$(wc -l < "$TMP/infra_strict.txt" 2>/dev/null | tr -d ' '); strict_infra=${strict_infra:-0}
+strict_bad=$(( ok - strict_ok - strict_infra ))
 
 {
   echo "============================================================"
@@ -92,6 +128,12 @@ strict_bad=$(( ok - strict_ok ))
   echo "★ 假绿清单：宽松通过但严格失败（类型错误被 warning 掩盖）："
   if [ -s "$TMP/strict_bad.txt" ]; then cat "$TMP/strict_bad.txt"; else echo "（无）"; fi
   echo ""
+  echo "--- ★ INFRA 未判定（rc≠0 但 stderr 无 'error:'；已重试一次仍如此）---"
+  echo "    语义：既不算通过、也不算类型错。必须先消除环境因素再复跑，本报告才可信。"
+  echo "    宽松口径 $infra 项 / 严格口径 $strict_infra 项"
+  if [ -s "$TMP/infra.txt" ]; then cat "$TMP/infra.txt"; fi
+  if [ -s "$TMP/infra_strict.txt" ]; then cat "$TMP/infra_strict.txt"; fi
+  echo ""
   echo "--- 宽松口径失败明细（每文件前 3 错）---"
   head -40 "$TMP/bad.txt"
   echo ""
@@ -108,5 +150,10 @@ fi
 if [ "$strict_bad" -gt 0 ]; then
   echo "::error::recon_build: 存在 $strict_bad 个假绿（宽松通过但严格类型失败），禁止用 warning 掩盖类型错"
   exit 1
+fi
+# 硬门禁 3：INFRA 未判定 ⇒ 本轮门禁结论无效（既非通过也非失败），必须显式失败
+if [ "$infra" -gt 0 ] || [ "$strict_infra" -gt 0 ]; then
+  echo "::error::recon_build: 出现 INFRA 未判定（宽松 $infra / 严格 $strict_infra）⇒ 本轮结论无效，请复跑"
+  exit 3
 fi
 exit 0

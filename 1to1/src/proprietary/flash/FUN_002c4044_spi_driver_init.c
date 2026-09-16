@@ -136,7 +136,14 @@ LAB_002c4220:
         pbVar3 = pbVar7;
       } while (pbVar7 != local_110);
     }
-    if ((gh_byte)spi_id == 0xb) {
+    /* ★★ 原厂这里是 `ldrb r3,[r6]`（r6 = &spi_id）＝**读 spi_id 的第一个字节**。
+     *   Ghidra 渲染成 `(gh_byte)spi_id` —— 在「spi_id 是数组」的声明下，那变成
+     *   **指针→字节的转换**（取地址最低字节）！
+     *   实测代价：本函数两处判断全部走错分支（重建侧读到 0xc8 而非 0x0b）
+     *   ⇒ `spi_driver_init()` 返回 0 ⇒ main() 不去 main_Menu()，观测窗口少 4 行。
+     *   这是 P5 深窗口抓到的**第二个真实语义分歧**（证据：shim 打印的 SFC 命令序列 ——
+     *   原厂 `0x4848@0x100 / @0x000`，重建侧 `0x4848@0x2000 / @0x1000`）。 */
+    if (spi_id[0] == 0xb) {
       sflash_read_security_data(&sb.sec[0]._u32,0x100);
       goto LAB_002c40e0;
     }
@@ -146,7 +153,7 @@ LAB_002c40e0:
   printf("ROM Size:%08X CRC32:%04X ",FlashSize,sb.sec[0]);
   printf("Update time:");
   DateToTmuDate(sb.sec[1]._u32);
-  if ((gh_byte)spi_id == 0xb) {
+  if (spi_id[0] == 0xb) {
     uVar5 = 0;
   }
   else {

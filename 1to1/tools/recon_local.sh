@@ -17,6 +17,8 @@
 # ============================================================
 set -u
 ZIG="${ZIG:-C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Lib/site-packages/ziglang/zig.exe}"
+# ★ `set -u` 下必须有默认值：尾部静态门禁要调用 python（此前依赖外部 export，缺了就中断）
+PY="${PY:-python}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRCDIR="$ROOT/src/proprietary"
 REP="${1:-$ROOT/report/local_recon_build.txt}"
@@ -42,24 +44,59 @@ TMP="$NTMP/recon_local_$$"
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
-ok=0; bad=0; total=0
+ok=0; bad=0; infra=0; total=0
 : > "$TMP/bad.txt"
 : > "$TMP/ok.txt"
+: > "$TMP/infra.txt"
+
+# ---------------------------------------------------------------------------
+# ★★ 三态判定（血泪：把「基础设施瞬时故障」误判成「类型错误」）
+#
+# 事实依据（2026-09-16 实测）：`recon_local.sh` 曾连续 5 轮报「严格 213/213、假绿 0」，
+#   随后一轮报「严格 212/213、假绿 1」，点名 FUN_000226a8_filelist_run_game.c，
+#   但该行 stderr **为空**。手工以**完全相同的严格命令行**编译该文件 ⇒ rc=0、stderr 里
+#   `error:` 出现次数 **0**（只有 7 条 warning + 2 条 note），连跑 3 次全 0。
+#   ⇒ 那次 rc≠0 是**工具链/环境瞬时故障**（zig 在内存压力下可能非 0 退出且 stderr 为空），
+#     却被计成「假绿」，污染了门禁结论。
+#
+# 新语义（三态，缺一不可）：
+#   ① rc=0                              → 通过
+#   ② rc≠0 且 stderr 含 `error:`         → **真源码错误**（宽松失败 / 严格假绿）
+#   ③ rc≠0 且 stderr **不含** `error:`   → **INFRA 未判定**：先重试一次；
+#                                           仍如此则单独计数，**既不算通过也不算类型错**，
+#                                           并在末尾以非 0 退出码显式暴露。
+#   判据用「有没有 `error:`」而不是「stderr 是否为空」—— 因为编译器也可能只吐 warning
+#   然后因环境原因失败，那时 stderr 非空但依然不是源码错误。
+# ---------------------------------------------------------------------------
+compile_loose() {
+    # $1 = 已转 Windows 形式的源文件路径
+    rc=0
+    "$ZIG" cc $CFLAGS "$1" -o "$TMP/o.o" 2> "$TMP/err.txt" || rc=$?
+    if [ "$rc" != "0" ] && ! grep -qa "error:" "$TMP/err.txt"; then
+        sleep 2                      # 让 OOM/锁竞争过去
+        rc=0
+        "$ZIG" cc $CFLAGS "$1" -o "$TMP/o.o" 2> "$TMP/err.txt" || rc=$?
+    fi
+    return "$rc"
+}
 
 for f in "$SRCDIR"/*/*.c; do
     [ -f "$f" ] || continue
     total=$((total + 1))
     nf="$(cygpath -w "$f" 2>/dev/null || echo "$f")"
     rel="${f#$ROOT/}"
-    if "$ZIG" cc $CFLAGS "$nf" -o "$TMP/o.o" 2> "$TMP/err.txt"; then
+    if compile_loose "$nf"; then
         ok=$((ok + 1))
         echo "$rel" >> "$TMP/ok.txt"
-    else
+    elif grep -qa "error:" "$TMP/err.txt"; then
         bad=$((bad + 1))
         # 提取前 3 条 error 行（比 CI 的首错更有诊断力）
         firsterr=$(grep -a -m3 -E 'error:' "$TMP/err.txt" | head -c 400)
-        [ -n "$firsterr" ] || firsterr=$(head -c 300 "$TMP/err.txt" | tr '\n' ' ')
         echo "$rel|$firsterr" >> "$TMP/bad.txt"
+    else
+        infra=$((infra + 1))
+        echo "$rel|$(grep -a -m2 -E 'warning:|note:' "$TMP/err.txt" | head -c 200 | tr '\n' ' ')" \
+             >> "$TMP/infra.txt"
     fi
 done
 
@@ -70,18 +107,30 @@ done
 # ============================================================
 strict_ok=0
 : > "$TMP/strict_bad.txt"
+: > "$TMP/infra_strict.txt"
 while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     nf="$(cygpath -w "$ROOT/$rel" 2>/dev/null || echo "$ROOT/$rel")"
-    if "$ZIG" cc $CFLAGS_STRICT "$nf" -o "$TMP/s.o" 2> "$TMP/serr.txt"; then
+    s_rc=0
+    "$ZIG" cc $CFLAGS_STRICT "$nf" -o "$TMP/s.o" 2> "$TMP/serr.txt" || s_rc=$?
+    # ★ 同「宽松口径」的三态语义：rc≠0 且无 `error:` ⇒ 瞬时故障，重试一次
+    if [ "$s_rc" != "0" ] && ! grep -qa "error:" "$TMP/serr.txt"; then
+        sleep 2
+        s_rc=0
+        "$ZIG" cc $CFLAGS_STRICT "$nf" -o "$TMP/s.o" 2> "$TMP/serr.txt" || s_rc=$?
+    fi
+    if [ "$s_rc" = "0" ]; then
         strict_ok=$((strict_ok + 1))
-    else
+    elif grep -qa "error:" "$TMP/serr.txt"; then
         serr=$(grep -a -m3 -E 'error:' "$TMP/serr.txt" | head -c 300)
-        [ -n "$serr" ] || serr=$(head -c 200 "$TMP/serr.txt" | tr '\n' ' ')
         echo "$rel|$serr" >> "$TMP/strict_bad.txt"
+    else
+        echo "$rel|$(grep -a -m2 -E 'warning:|note:' "$TMP/serr.txt" | head -c 200 | tr '\n' ' ')" \
+             >> "$TMP/infra_strict.txt"
     fi
 done < "$TMP/ok.txt"
-strict_bad=$(( ok - strict_ok ))
+strict_infra=$(wc -l < "$TMP/infra_strict.txt" 2>/dev/null | tr -d ' '); strict_infra=${strict_infra:-0}
+strict_bad=$(( ok - strict_ok - strict_infra ))
 
 mkdir -p "$(dirname "$REP")"
 {
@@ -104,6 +153,12 @@ mkdir -p "$(dirname "$REP")"
     echo "（无 —— 全部宽松通过文件也严格通过）"
   fi
   echo ""
+  echo "--- ★ INFRA 未判定（rc≠0 但 stderr 无 'error:'；已重试一次仍如此）---"
+  echo "    语义：既不算通过、也不算类型错。必须先消除环境因素再复跑，本报告才可信。"
+  echo "    宽松口径 $infra 项 / 严格口径 $strict_infra 项"
+  if [ -s "$TMP/infra.txt" ]; then cat "$TMP/infra.txt"; fi
+  if [ -s "$TMP/infra_strict.txt" ]; then cat "$TMP/infra_strict.txt"; fi
+  echo ""
   echo "--- 宽松口径失败明细（全量，每文件前 3 错）---"
   cat "$TMP/bad.txt"
 } | tee "$REP"
@@ -112,5 +167,20 @@ mkdir -p "$(dirname "$REP")"
 if [ "$ok" -eq 0 ] && [ "$total" -gt 0 ]; then
   echo "::error::recon_local: 0 个函数本地编译通过，回路未生效"
   exit 1
+fi
+
+# 硬门禁：INFRA 未判定 ⇒ 本轮结论不可信（既非通过也非失败），必须显式失败
+if [ "$infra" -gt 0 ] || [ "$strict_infra" -gt 0 ]; then
+  echo "::error::recon_local: 出现 INFRA 未判定（宽松 $infra / 严格 $strict_infra）⇒ 本轮门禁结论无效，请复跑"
+  exit 3
+fi
+
+# 硬门禁：数组名转型（Ghidra 把 `arr[0]` 误渲染成 `(窄类型)arr` ⇒ 静默语义错）
+#   该类错误**编译/链接/ABI/布局全绿**，只有行为差分或这个静态扫描能发现。
+echo ""
+echo "== 数组名转型静态门禁（tools/scan_array_casts.py）=="
+if ! "$PY" "$NROOT/tools/scan_array_casts.py" "$NROOT/src"; then
+  echo "::error::recon_local: 数组名被转型成窄整数（见上）"
+  exit 2
 fi
 exit 0

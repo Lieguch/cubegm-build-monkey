@@ -48,7 +48,7 @@ void UpdateROM(char *param_1)
   output_x = 0x14;
   output_y = 0x12;
   __ptr = malloc(0x10000);
-  if ((char)spi_id == '\v') {
+  if (spi_id[0] == '\v') {
     uVar3 = 0x100;
   }
   else {
@@ -96,7 +96,7 @@ void UpdateROM(char *param_1)
     CloseZipU(iVar1);
     iVar1 = (gh_u4 *)UpdateROMProc((int)__s,unaff_r7);
     if (iVar1 != 0) {
-      if ((char)spi_id == '\v') {
+      if (spi_id[0] == '\v') {
         sflash_read_security_data(__ptr + 0x40,0);
         sflash_erase_security_data(0);
       }
@@ -104,7 +104,7 @@ void UpdateROM(char *param_1)
         sflash_erase_security_data(0x2000);
       }
       memset(__ptr,0xff,0x100);
-      bVar4 = (char)spi_id == '\v';
+      bVar4 = spi_id[0] == '\v';
       *__ptr = local_2c;
       __ptr[1] = local_48;
       if (bVar4) {
