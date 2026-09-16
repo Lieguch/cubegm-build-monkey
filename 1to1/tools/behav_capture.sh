@@ -215,6 +215,21 @@ if [ "$STDOUTN" -gt 0 ] || [ "$STDERRLN" -gt 0 ] || [ "$NEWN" -gt 0 ] || [ "$CHG
     OBSERVED=true
 fi
 
+# --- ★ 设备访问计数（SFC 有状态仿真的"轨迹形状"，是一项独立可观测指标）---
+# 来历（P5 第四个真实分歧）：读循环里的设备寄存器读被 LLVM 提升出循环并向量化
+#   （`vdup.32 q8,r2` + `vst1.32 {d16,d17},[r4]!` = **一次读、4 字广播**）
+#   ⇒ 设备访问次数 **180 → 57**；而这一差异**在 stdout 事件里看不出来**
+#   （前 17 行仍逐字相等），只有随后的校验和失败导致分支不同才暴露。
+#   ⇒ 把 shim 在撤防时报出的计数显式记进指纹，比对端直接判等：
+#     "同一份假设备，两侧访问它的次数必须一致"——这是 1:1 保真的直接证据。
+SFC_FAULTS=0; SFC_CMDS=0
+if [ -f "$RUNDIR/stderr.txt" ]; then
+    _ff=$(grep -ao 'faults=[0-9]*' "$RUNDIR/stderr.txt" | tail -1 | cut -d= -f2)
+    _cc=$(grep -ao 'cmds=[0-9]*'   "$RUNDIR/stderr.txt" | tail -1 | cut -d= -f2)
+    case "$_ff" in ''|*[!0-9]*) SFC_FAULTS=0 ;; *) SFC_FAULTS=$_ff ;; esac
+    case "$_cc" in ''|*[!0-9]*) SFC_CMDS=0   ;; *) SFC_CMDS=$_cc   ;; esac
+fi
+
 # --- JSON 输出（所有值先落变量，避免 shell 拼接产生非法 JSON）---
 json_quote() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 TMO=false
@@ -238,6 +253,8 @@ TMO=false
     printf '  "stdout_lines": %s,\n' "$STDOUTN"
     printf '  "stderr_lines": %s,\n' "$STDERRLN"
     printf '  "shm_heartbeat": %s,\n' "$SHM"
+    printf '  "sfc_faults": %s,\n' "$SFC_FAULTS"
+    printf '  "sfc_cmds": %s,\n' "$SFC_CMDS"
     printf '  "frame_hash": "%s",\n' "$FBHASH"
     printf '  "events": [\n'
     LC_ALL=C awk '{gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \

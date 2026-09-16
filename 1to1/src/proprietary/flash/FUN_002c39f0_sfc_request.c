@@ -82,10 +82,22 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
           if (uVar4 <= uVar1) {
             uVar1 = uVar4;
           }
+          /* ★★ 原厂此处**每轮迭代都重新读数据寄存器**：
+           *     `2c3c48: add r1, r2, #0x108`  `2c3c58: ldr r3, [r1]`  `2c3c5c: str r3, [r5], #4`
+           *   写成普通解引用时，LLVM 会把该 load 提升出循环并向量化成
+           *   `vdup.32 q8, r2` + `vst1.32 {d16,d17}, [r4]!`（**一次读、4 字广播**）。
+           *   实测后果（P5 行为差分抓到的第四个真实分歧）：
+           *     · 设备寄存器访问次数 180 → **57**（工厂 180）；
+           *     · 目标缓冲区被**同一个字**填满，而该寄存器是 **FIFO**、每次读返回下一个字；
+           *     · 24 字节校验和因此失败 ⇒ `spi_driver_init()` 返回 0
+           *       ⇒ `main()` 走 deinit 分支（`find sound/video_driver_deinit process fail`），
+           *         进不了 `main_Menu()`；行为差分在「可判定前缀 17/31」处提前终止。
+           *   ⇒ 用 `volatile` 限定这次读：语义上它就是设备 FIFO，"一次 C 访问 = 一次设备访问"。
+           *      ARM 上仍生成普通 `ldr`（与原厂指令序列一致，不会引入 mcr/dsb 之类副作用）。 */
           puVar6 = param_3 + uVar1;
           do {
             puVar8 = param_3 + 1;
-            *param_3 = puVar3[0x42];
+            *param_3 = *(volatile gh_uint *)(puVar3 + 0x42);
             param_3 = puVar8;
           } while (puVar8 != puVar6);
           uVar4 = uVar4 - uVar1;

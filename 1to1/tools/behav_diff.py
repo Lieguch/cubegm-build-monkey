@@ -14,6 +14,10 @@
   B5 menu.log 内容 sha 一致 两侧都有日志时必须（真机日志名 = menu.log）
   B6 帧缓冲采样哈希一致     若两侧均非 none 则必须
   B7 shm 心跳一致          若两侧均 >0 则必须
+  B8 设备访问计数一致       若两侧均经过 SFC 设备仿真则必须（命令条数 + 寄存器访问次数）
+     ★ 这一项能抓住「设备访存被编译器提升/合并/向量化」——该类差异在 stdout 事件里不可见
+  B8 设备访问计数一致       若两侧均经过 SFC 设备仿真则必须（命令条数 + 寄存器访问次数）
+     ★ 这一项能抓住「设备访存被编译器提升/合并/向量化」——该类差异在 stdout 事件里不可见
 
 ★ B0c 确定性控制（--control，强烈建议）：
   用**同一份参考二进制**跑第二遍，得到 control 指纹。取
@@ -240,6 +244,26 @@ def main():
         chk('B7 shm', sma == smb, '%d vs %d' % (sma, smb))
     else:
         checks.append(('B7 shm', True, 'SKIP (一侧无 shm)'))
+
+    # ---- B8 设备访问计数：同一份假设备，两侧访问它的次数必须一致 ----
+    # 来历（P5 第四个真实分歧）：重建侧把 `*dst++ = reg[0x108]` 的设备读
+    #   提升出循环并向量化（一次读、4 字广播）⇒ 设备访问次数 180 → 57。
+    #   这一差异**在 stdout 事件里不可见**（前 17 行逐字相等），
+    #   只在后续校验和失败导致分支不同时才暴露 —— 若早有这样一条计数门禁，可立刻定位。
+    #   ⇒ 既然两侧跑的是**同一份** shim（同一份假设备），访问次数就应当逐值相等；
+    #     不等即说明"设备交互的轨迹形状"与工厂不同，属真实保真度缺口。
+    cfa, cfb = int(a.get('sfc_cmds', 0) or 0), int(b.get('sfc_cmds', 0) or 0)
+    ffa, ffb = int(a.get('sfc_faults', 0) or 0), int(b.get('sfc_faults', 0) or 0)
+    if cfa > 0 and cfb > 0:
+        chk('B8a sfc_cmds', cfa == cfb, '%d vs %d 条命令' % (cfa, cfb))
+        chk('B8b sfc_faults', ffa == ffb, '%d vs %d 次寄存器访问' % (ffa, ffb))
+        if ffa != ffb:
+            print('        ★ 两侧访问次数不等 ⇒ 有设备访存被编译器**提升出循环 / 合并 / 向量化**，'
+                  '或循环结构不同；')
+            print('          常见形态：`*dst++ = reg[DATA]` 被优化成「读一次 + vdup/vst1 广播」；'
+                  '修法：把该访存限定为 `volatile`（一次 C 访问 = 一次设备访问）。')
+    else:
+        checks.append(('B8 sfc_devaccess', True, 'SKIP (一侧未经过 SFC 设备仿真)'))
 
     for n, ok, note in checks:
         print('  [%s] %-18s %s' % ('PASS' if ok else 'FAIL', n, note))
