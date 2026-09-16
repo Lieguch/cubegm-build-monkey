@@ -3219,7 +3219,15 @@ typedef struct {
 /* @0x002dcdac string */ extern char * s_ENGLISH_002dcdac;
 /* @0x002dce44 undefined4 */ extern unsigned int DAT_002dce44;
 /* @0x002dce48 undefined4 */ extern unsigned int DAT_002dce48;
-/* @0x002dcea4 undefined4 */ extern unsigned int DAT_002dcea4;
+/* @0x002dcea4 —— ★★ 实为字符串 `"font.ttf"`（工厂 ELF 该地址处为可打印 ASCII）
+ *  Ghidra 把它渲染成 `undefined4`。若沿用 `unsigned int` 声明，则 `(char *)DAT_002dcea4`
+ *  会**多解引用一次**：反汇编表现为连续两条 `ldr`（先取符号地址、再取该处**内容**），
+ *  于是把字符串前 4 字节 `0x746e6f66`（= "font"）当成指针传给 `FindZipItemA`
+ *  ⇒ `TUnzip::Find` 里 `strcpy(name,tname)` 立刻 SIGSEGV
+ *  （P5 第八个真实分歧；崩点 `lr = TUnzip::Find + 0x24`、访问地址 `0x746e6f66`）。
+ *  ⇒ 声明为**字符数组**：`(char *)DAT_2dcea4` 即为该字符串的**地址**，只生成一条取值指令。
+ *  `.S` 侧无需改动（`src/data/factory_image.S:75` 本就定义为 `__f_rodata_base+0x1200` 的地址别名）。 */
+extern char DAT_002dcea4[];
 /* @0x002dcea8 undefined4 */ extern unsigned int DAT_002dcea8;
 /* @0x002dceac undefined4 */ extern unsigned int DAT_002dceac;
 /* @0x002dcef0 undefined2 */ extern unsigned short DAT_002dcef0;

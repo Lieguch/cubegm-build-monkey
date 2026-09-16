@@ -95,6 +95,16 @@ jobs:
           #   本步骤把该类误渲染变成**静态可拦**。
           python3 tools/scan_array_casts.py
 
+      - name: `.rodata` 字符串当整数门禁（Ghidra 类型陷阱 ⇒ 多解引用一次）★ 硬门禁
+        run: |
+          cd 1to1
+          # 血泪：工厂 0x002dcea4 处是字符串 "font.ttf"，Ghidra 渲染成 `undefined4`。
+          #   若声明为 `unsigned int`，则 `(char *)DAT_002dcea4` 会多解引用一次
+          #   （反汇编两条连续 ldr），把 "font" 的内容 0x746e6f66 当指针传出去
+          #   ⇒ TUnzip::Find 里 strcpy 立刻 SIGSEGV。
+          #   判据：整数声明 + 工厂该地址实为可打印字符串 + 被当 char* 用 ⇒ FAIL。
+          python3 tools/scan_rodata_int_as_ptr.py
+
       - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
         run: |
           cd 1to1

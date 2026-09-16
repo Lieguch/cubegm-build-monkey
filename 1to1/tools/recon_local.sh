@@ -202,4 +202,13 @@ if ! "$PY" "$NROOT/tools/scan_upstream_fingerprint.py"; then
   echo "::error::recon_local: 上游库疑似版本/实现不符（见上表）"
   exit 5
 fi
+# 硬门禁：`.rodata` 字符串被 Ghidra 渲染成整数类型（如 `undefined4`）⇒ 使用时多解引用一次
+#   实测代价：工厂 0x002dcea4 是 "font.ttf"，声明成 `unsigned int` 后 `(char *)DAT_...`
+#   取到 "font" 内容 0x746e6f66 当指针 ⇒ TUnzip::Find 里 strcpy 崩。
+echo ""
+echo "== `.rodata` 字符串当整数门禁（tools/scan_rodata_int_as_ptr.py）=="
+if ! "$PY" "$NROOT/tools/scan_rodata_int_as_ptr.py"; then
+  echo "::error::recon_local: 有字符串被声明为整数并被当 char* 使用（见上）"
+  exit 6
+fi
 exit 0
