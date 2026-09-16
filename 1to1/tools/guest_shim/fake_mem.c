@@ -427,19 +427,44 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
         signal(sig, SIG_DFL);
         {
             void *weak_dladdr = (void *)dladdr;          /* 弱引用：可能为 NULL */
+            unsigned long q[2];
+            int k;
+            q[0] = (unsigned long)m->arm_pc;             /* 出错点 */
+            q[1] = (unsigned long)m->arm_lr;             /* 调用者返回点 */
             if (weak_dladdr) {
-                struct { const char *fname; void *fbase; const char *sname; void *saddr; } di;
-                di.fname = 0; di.fbase = 0; di.sname = 0; di.saddr = 0;
-                if (dladdr((void *)m->arm_pc, &di) && di.fname) {
-                    note("[shim]   pc 归属: %s + 0x%lx   符号=%s\n",
-                         di.fname,
-                         (unsigned long)m->arm_pc - (unsigned long)di.fbase,
-                         di.sname ? di.sname : "(无)");
-                } else {
-                    note("[shim]   pc 归属: dladdr 未解析（pc 可能在本可执行文件或已卸载区）\n");
+                /* ① pc / lr 归属：`lr` 常能直接点名**调用者函数**（pc 可能只到库内某函数） */
+                for (k = 0; k < 2; k++) {
+                    struct { const char *fname; void *fbase; const char *sname; void *saddr; } di;
+                    di.fname = 0; di.fbase = 0; di.sname = 0; di.saddr = 0;
+                    if (dladdr((void *)q[k], &di) && di.fname) {
+                        note("[shim]   %-11s 0x%08lx -> %s + 0x%lx   符号=%s\n",
+                             k ? "lr(调用者)" : "pc(出错点)", q[k], di.fname,
+                             q[k] - (unsigned long)di.fbase,
+                             di.sname ? di.sname : "(无)");
+                    } else {
+                        note("[shim]   %-11s 0x%08lx -> dladdr 未解析\n",
+                             k ? "lr(调用者)" : "pc(出错点)", q[k]);
+                    }
+                }
+                /* ② 栈回溯：sp 起 11 个字里凡能被 dladdr 解析的都列出来
+                 *    —— 这就是一条"穷人版 backtrace"，不需要 gdb，且在真崩溃时依然拿得到。 */
+                {
+                    unsigned long *sp = (unsigned long *)(unsigned long)m->arm_sp;
+                    note("[shim]   栈回溯（sp+0..sp+40；仅列可解析项）:\n");
+                    for (k = 0; k < 11; k++) {
+                        struct { const char *fname; void *fbase; const char *sname; void *saddr; } di;
+                        unsigned long v = sp[k];
+                        if (v < 0x10000) continue;
+                        di.fname = 0; di.fbase = 0; di.sname = 0; di.saddr = 0;
+                        if (dladdr((void *)v, &di) && di.fname) {
+                            note("[shim]     [sp+%2d] = %08lx -> %s + 0x%lx  %s\n",
+                                 k * 4, v, di.fname, v - (unsigned long)di.fbase,
+                                 di.sname ? di.sname : "");
+                        }
+                    }
                 }
             } else {
-                note("[shim]   pc 归属: dladdr 不可用\n");
+                note("[shim]   dladdr 不可用（pc=0x%08lx lr=0x%08lx）\n", q[0], q[1]);
             }
         }
         note("[shim]   故障指令 @pc = %08x   [pc-4]=%08x  [pc+4]=%08x\n",
