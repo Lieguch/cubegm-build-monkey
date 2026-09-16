@@ -30,6 +30,12 @@ typedef const TCHAR   *LPCTSTR;
 typedef TCHAR         *LPTSTR;
 typedef unsigned long  ULONGLONG;
 typedef long           LONG;
+/* ★ calibre（Hans Dietrich「XUnzip.cpp Version 1.3」）版所需的 MSVC 时间类型：
+ *   它用 `__time32_t` / `_gmtime32` 换算 zip 条目时间戳。POSIX 下 32 位 time_t 即 int。 */
+typedef int            __time32_t;
+typedef long long      __time64_t;
+#define _gmtime32(t)   gmtime((const time_t *)(t))
+#define _gmtime64(t)   gmtime((const time_t *)(t))
 
 /* windows.h DECLARE_HANDLE：HZIP = struct HZIP__*（mangled '6HZIP__' 指纹） */
 #define DECLARE_HANDLE(name) struct name##__ { int unused; }; typedef struct name##__ *name

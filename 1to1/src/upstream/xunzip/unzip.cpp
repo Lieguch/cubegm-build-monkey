@@ -2737,10 +2737,18 @@ typedef struct
 	LUFILE* file;                 // io structore of the zipfile
 	uLong compression_method;   // compression method (0==store)
 	uLong byte_before_the_zipfile;// byte before the zipfile, (>0 for sfx)
-  bool encrypted;               // is it encrypted?
-  unsigned long keys[3];        // decryption keys, initialized by unzOpenCurrentFile
-  int encheadleft;              // the first call(s) to unzReadCurrentFile will read this many encryption-header bytes first
-  char crcenctest;              // if encrypted, we'll check the encryption buffer against this
+  /* ★★ 1:1 工厂（P5 第七个真实分歧的**根本原因**）：
+   *   工厂的 XUnzip **删掉了整个 zip 加密/密码支持**。三重证据：
+   *     ① 工厂 `unzOpenCurrentFile(unz_s*)` 是**单参数**（没有 password）；
+   *     ② 工厂该函数里 `malloc(0x6c)` = **108** = 官方结构**减去下面这 4 个字段**
+   *        （bool 4 + keys[3] 12 + int 4 + char 4 = 24）；
+   *     ③ 我们原先 `malloc(0x84)` = **132** ⇒ 字段整体**错位 24 字节** ⇒
+   *        `unzReadCurrentFile` 用错位的 `pos_in_zipfile`/`rest_read_*`/`file`/`compression_method`
+   *        算出垃圾 seek 偏移与指针 ⇒ SIGSEGV。
+   *        （shim 现场与此吻合：访问地址 `0xffffffff`、`pc` 落在字面量池、垃圾寄存器。）
+   *   ⇒ 按工厂删掉这 4 个字段，使 `sizeof(file_in_zip_read_info_s) == 108`。
+   *     加密相关代码已在本文件内同步删除（`unzOpenCurrentFile` 的密钥初始化、
+   *     `unzReadCurrentFile` 的解密分支）。 */
 } file_in_zip_read_info_s;
 
 
@@ -3455,15 +3463,9 @@ int unzOpenCurrentFile (unzFile file, const char *password)
 	}
 	pfile_in_zip_read_info->rest_read_compressed = s->cur_file_info.compressed_size ;
 	pfile_in_zip_read_info->rest_read_uncompressed = s->cur_file_info.uncompressed_size ;
-  pfile_in_zip_read_info->encrypted = (s->cur_file_info.flag&1)!=0;
-  bool extlochead = (s->cur_file_info.flag&8)!=0;
-  if (extlochead) pfile_in_zip_read_info->crcenctest = (char)((s->cur_file_info.dosDate>>8)&0xff);
-  else pfile_in_zip_read_info->crcenctest = (char)(s->cur_file_info.crc >> 24);
-  pfile_in_zip_read_info->encheadleft = (pfile_in_zip_read_info->encrypted?12:0);
-  pfile_in_zip_read_info->keys[0] = 305419896L;
-  pfile_in_zip_read_info->keys[1] = 591751049L;
-  pfile_in_zip_read_info->keys[2] = 878082192L;
-  for (const char *cp=password; cp!=0 && *cp!=0; cp++) Uupdate_keys(pfile_in_zip_read_info->keys,*cp);
+	/* ★ 1:1 工厂：加密初始化整段删除（工厂无 password 支持；见结构体注释）。
+	 *   保留 `password` 形参仅为暂不改变调用点签名，形参不再使用。 */
+	(void)password;
 
 	pfile_in_zip_read_info->pos_in_zipfile =
             s->cur_file_info_internal.offset_curfile + SIZEZIPLOCALHEADER +
@@ -3514,24 +3516,8 @@ int unzReadCurrentFile  (unzFile file, voidp buf, unsigned len)
       pfile_in_zip_read_info->rest_read_compressed-=uReadThis;
       pfile_in_zip_read_info->stream.next_in = (Byte*)pfile_in_zip_read_info->read_buffer;
       pfile_in_zip_read_info->stream.avail_in = (uInt)uReadThis;
-      //
-      if (pfile_in_zip_read_info->encrypted)
-      { char *buf = (char*)pfile_in_zip_read_info->stream.next_in;
-        for (unsigned int i=0; i<uReadThis; i++) buf[i]=zdecode(pfile_in_zip_read_info->keys,buf[i]);
-      }
-    }
-
-    unsigned int uDoEncHead = pfile_in_zip_read_info->encheadleft;
-    if (uDoEncHead>pfile_in_zip_read_info->stream.avail_in) uDoEncHead=pfile_in_zip_read_info->stream.avail_in;
-    if (uDoEncHead>0)
-    { char bufcrc=pfile_in_zip_read_info->stream.next_in[uDoEncHead-1];
-      pfile_in_zip_read_info->rest_read_uncompressed-=uDoEncHead;
-      pfile_in_zip_read_info->stream.avail_in -= uDoEncHead;
-      pfile_in_zip_read_info->stream.next_in += uDoEncHead;
-      pfile_in_zip_read_info->encheadleft -= uDoEncHead;
-      if (pfile_in_zip_read_info->encheadleft==0)
-      { if (bufcrc!=pfile_in_zip_read_info->crcenctest) return UNZ_PASSWORD;
-      }
+      /* ★ 1:1 工厂：解密分支整段删除（工厂 `unzReadCurrentFile` 540 B vs 我们 904 B 即差在此处 +
+       *   encheadleft 加密头跳过逻辑）。工厂在此处只有「读缓冲 → 解压/直拷」两条路。 */
     }
 
     if (pfile_in_zip_read_info->compression_method==0)
