@@ -20,6 +20,18 @@
 #include <tchar.h>
 #include "unzip.h"
 
+/* ★★ 1:1（P5 第七个真实分歧）：工厂的 `TUnzip::Open` 结尾是 `return zopenerror;`
+ *   —— `zopenerror` 是**文件静态**（工厂 symtab：`_ZL10zopenerror @0x003b2218 size=4`，
+ *   已登记 ledger/factory_globals.tsv:771），地址 = `__f_bss_base + 0xa0`
+ *   （别名已在 src/data/factory_image.S:1904 定义 ⇒ 地址天然一致）。
+ *   语义：`unzOpenInternal` 解析 zip 失败时置 `zopenerror` 并返回 NULL，
+ *   而 `TUnzip::Open` **必须把该错误码传出去** —— 我们的变体曾写成 `return ZR_OK;`
+ *   ⇒ 恒报成功 ⇒ `OpenZipU` 返回非 0 ⇒ `get_items_from_zipfile` 不打印 `open %s fail`
+ *   ⇒ 带着非法 `uf` 继续走到 `unzOpenCurrentFile` 崩溃（工厂在同处优雅失败并继续）。
+ *   ★ asm 标签：绑定到镜像里的同名 local 符号，既保证地址一致，又不产生重复定义。
+ *   ★ 必须放在文件头部：`unzOpenInternal`（约 2927 行）与 `TUnzip::Open` 都要用。 */
+extern ZRESULT zopenerror asm("_ZL10zopenerror");
+
 // THIS FILE is almost entirely based upon code by Jean-loup Gailly
 // and Mark Adler. It has been modified by Lucian Wischik.
 // The original code may be found at http://www.gzip.org/zlib/
@@ -2925,8 +2937,9 @@ int unzCloseCurrentFile (unzFile file);
 // If the zipfile cannot be opened (file don't exist or in not valid), return NULL.
 // Otherwise, the return value is a unzFile Handle, usable with other unzip functions
 unzFile unzOpenInternal(LUFILE *fin)
-{ if (fin==NULL) return NULL;
-  if (unz_copyright[0]!=' ') {lufclose(fin); return NULL;}
+{ zopenerror = ZR_OK;              /* ★ 1:1 工厂：入口即清错误码（calibre 版 2842 / 工厂 0x1168c 入口即引用 0x3b2218） */
+  if (fin==NULL) {zopenerror = ZR_ARGS; return NULL;}
+  if (unz_copyright[0]!=' ') {lufclose(fin); zopenerror = ZR_CORRUPT; return NULL;}
 
   int err=UNZ_OK;
   unz_s us;
@@ -2955,7 +2968,7 @@ unzFile unzOpenInternal(LUFILE *fin)
   // zipfile comment length
   if (unzlocal_getShort(fin,&us.gi.size_comment)!=UNZ_OK) err=UNZ_ERRNO;
   if ((central_pos+fin->initial_offset<us.offset_central_dir+us.size_central_dir) && (err==UNZ_OK)) err=UNZ_BADZIPFILE;
-  if (err!=UNZ_OK) {lufclose(fin);return NULL;}
+  if (err!=UNZ_OK) {lufclose(fin); zopenerror = err; return NULL;}   /* ★ 1:1 工厂：把错误码带出去 */
 
   us.file=fin;
   us.byte_before_the_zipfile = central_pos+fin->initial_offset - (us.offset_central_dir+us.size_central_dir);
@@ -3752,18 +3765,21 @@ class TUnzip
 
 
 ZRESULT TUnzip::Open(void *z,unsigned int len,DWORD flags)
-{ if (uf!=0 || currentfile!=-1) return ZR_NOTINITED;
-  //
-  GetCurrentDirectory(MAX_PATH,rootdir);
-  _tcscat(rootdir,_T("\\"));
-  if (flags==ZIP_HANDLE)
-  { DWORD type = GetFileType(z);
-    if (type!=FILE_TYPE_DISK) return ZR_SEEK;
-  }
+{ /* ★★ 1:1 工厂（84 B；反汇编 0x12608 逐条核对）：
+   *   工厂**没有** `NOTINITED` 前置检查、**没有** `GetCurrentDirectory(MAX_PATH,rootdir)`
+   *   + `_tcscat(rootdir,"\\")`、**也没有** ZIP_HANDLE 的 `GetFileType` 检查 ——
+   *   而是直接把 4 个参数搬进 r0..r3 调 `lufopen`，成功后 `uf = unzOpenInternal(f)`，
+   *   最后 `return zopenerror;`（`_ZL10zopenerror` @0x3b2218）。
+   *   旁证：工厂 symtab 里**没有** `EnsureDirectory`，字符串里也**没有** GetCurrentDirectory
+   *   ⇒ 我们这套「Hans Dietrich 1.3 + rootdir 目录逻辑」必须还原为工厂形式。
+   *   ★ 行为关键：旧代码 `return ZR_OK;` 恒报成功 ⇒ 解析失败时 `uf` 为 NULL 却继续走
+   *     ⇒ 崩在 `unzOpenCurrentFile`；工厂返 `zopenerror` ⇒ `OpenZipU` 返 0
+   *     ⇒ `get_items_from_zipfile` 打印 `open %s fail` 并优雅继续。
+   *   `rootdir` 成员保留（`sizeof(TUnzip)` 必须仍是 576 = `_Znwj(0x240)`，勿删成员）。 */
   ZRESULT e; LUFILE *f = lufopen(z,len,flags,&e);
   if (f==NULL) return e;
   uf = unzOpenInternal(f);
-  return ZR_OK;
+  return zopenerror;
 }
 
 ZRESULT TUnzip::Get(int index,ZIPENTRY *ze)
@@ -3980,6 +3996,8 @@ ZRESULT TUnzip::Close()
 
 
 extern ZRESULT lasterrorU; /* 1:1：定义在工厂数据镜像（.bss 0x3b221c），避免双定义破坏布局 */
+/* 注：`zopenerror` 的 extern 声明在文件头部（unzip.h 之后）—— `unzOpenInternal` 与
+ *     `TUnzip::Open` 都要用，位置必须在使用点之前。 */
 
 unsigned int FormatZipMessageU(ZRESULT code, TCHAR *buf,unsigned int len)
 { if (code==ZR_RECENT) code=lasterrorU;

@@ -365,6 +365,55 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第三十轮：★★★★★ 第七个真实分歧**已修复**（`TUnzip::Open` 对齐工厂）
+
+#### 一、根因（承接第二十九轮）
+
+工厂 `TUnzip::Open` 结尾是 **`return zopenerror;`**（`_ZL10zopenerror @0x003b2218`，已登记
+`ledger/factory_globals.tsv:771`），而**我们写成了 `return ZR_OK;`** ⇒ **恒报成功**：
+
+```
+unzOpenInternal(f) 解析失败 ⇒ 内部置 zopenerror、返回 NULL
+  工厂: uf=NULL 且 return zopenerror(非0) ⇒ OpenZipU 返回 0 ⇒ 打印 `open %s fail` ⇒ 优雅继续
+  我们: uf=NULL 却 return ZR_OK(0)         ⇒ OpenZipU 走"成功路径" ⇒ 带着非法 uf 继续
+                                            ⇒ FindZipItemA/UnzipItem ⇒ 崩在 unzOpenCurrentFile
+```
+
+**⇒ 这一行就是 `open /sdcard/cubegm//ui_cn.zip fail` 有无、以及后续崩溃与否的分水岭。**
+
+#### 二、改动（4 处）
+
+| 位置 | 改动 |
+|---|---|
+| `src/upstream/xunzip/unzip.cpp`（文件头）| 新增 `extern ZRESULT zopenerror asm("_ZL10zopenerror");` —— 用 asm 标签绑定镜像里的同名 local 符号（`factory_image.S:1904` 已有 `.globl _ZL10zopenerror / .set __f_bss_base+0xa0`）⇒ **地址天然一致且不产生重复定义** |
+| `unzOpenInternal` | 入口 `zopenerror=ZR_OK`；`fin==NULL ⇒ ZR_ARGS`；`copyright 不符 ⇒ ZR_CORRUPT`；`err!=UNZ_OK ⇒ zopenerror=err`（与 calibre 版 2842/2844/2849/2883 逐处对应）|
+| `TUnzip::Open` | 删除 `NOTINITED` 前置检查 / `GetCurrentDirectory`+`_tcscat` / ZIP_HANDLE 的 `GetFileType` 检查；结尾改 `return zopenerror;` |
+| `tools/link_audit.sh` | ★ `XUnzip.o` 原为「**仅在 .o 缺失时**编译」⇒ 改了 `unzip.cpp` 也不重编（本轮踩到：本地改了但链接产物没变）；改为「.o 不存在 **或** 源码更新」即重编 |
+
+#### 三、验证证据
+
+| 项 | 结果 |
+|---|---|
+| `TUnzip::Open` 符号 size | **204 B → 80 B**（工厂 84 B，比值 1.05 ⇒ **已自动移出指纹门禁列表**）|
+| 机器码与工厂同形 | `mov r0-r3 ⇒ bl lufopen ⇒ cmp/beq ⇒ bl unzOpenInternal ⇒ str r0,[r4] ⇒ GOT ⇒ r0=*(0x3b2218)` ✓ |
+| `getcwd` 调用 | **无** ✓（工厂也没有）|
+| `_ZL10zopenerror` | 在 `XUnzip.o` 里是 **UND 引用**，由 `factory_image.S` 提供地址 ✓ |
+| 链接 | rc=0（17,348,944 B），审计**重复定义 0 / MISSING 0** ✓ |
+| 门禁 | 指纹 FAIL=0 / KNOWN=3；布局 193/194；ABI PASS；dyn_audit PASS；变参 4/4 ✓ |
+
+#### 四、基线纪律执行
+
+已按纪律**删除** `_ZN6TUnzip4OpenEPvjj` 基线行；并把 `mxmlSaveFile/mxmlSaveString` 的注释更正为
+「**已核实非版本问题**：mini-XML 大函数 `mxml_load_data` 5452 vs 4812（1.13×）高度吻合，差异源于
+工厂走共用的 `mxml_write_string`(172 B) 而我们把逻辑内联」⇒ 保持基线但**不得据此改上游**。
+
+#### 五、下一步
+
+1. 盯 CI：`1to1-qemu-behav` 应出现 **`open /sdcard/cubegm//ui_cn.zip fail`（两次）**，观测窗口从 19 行继续推进。
+2. 继续对齐剩余三家：`TUnzip::Unzip`（516 vs 1608）、`Get`（1040 vs 1208）、`Close`（68 vs 168）。
+
+---
+
 ### 2026-09-16 第二十九轮：★★★★★ 第七个真实分歧定位（**上游 XUnzip 版本不符** —— 一整类新问题）
 
 #### 一、已推送并验证（commit `ed3126454d09`）

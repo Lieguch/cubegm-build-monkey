@@ -61,7 +61,11 @@ echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 
 # 上游组件对象（已预编译 / 本脚本内编译）一并纳入符号审计
 XUPOBJ="$ROOT/src/upstream/xunzip/XUnzip.o"
-if [ ! -f "$XUPOBJ" ]; then
+# ★ 血泪：原先只在 .o **缺失**时编译 ⇒ 改了 unzip.cpp 却不重编，CI 一直用旧对象
+#   （P5 第七个真实分歧排查时踩到：本地改了 TUnzip::Open，链接产物却没变）。
+#   ⇒ 改为「.o 不存在 **或** 源码更新」即重编。
+XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
+if [ ! -f "$XUPOBJ" ] || { [ -f "$XUSRC" ] && [ "$XUSRC" -nt "$XUPOBJ" ]; }; then
     XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
     if [ -f "$XUSRC" ]; then
         XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
