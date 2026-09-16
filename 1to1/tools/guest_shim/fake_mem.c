@@ -397,8 +397,20 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
 
     if (!(g_sfc_base && addr >= (unsigned long)g_sfc_base
           && addr < (unsigned long)g_sfc_base + g_sfc_pagelen)) {
-        note("[shim] SFC: fault @%08lx 不在设备页 (base=%p) —— 交回默认处理\n",
-             addr, (void *)g_sfc_base);
+        /* ★★ 这是**真正的崩溃**（不是设备缺页）—— 就在这里把现场打全，比叫 gdb 更可靠：
+         *    gdb 停在"有人访问了坏地址"时只能给出 pc，而 pc 常落在 ld.so/PLT 解析器里
+         *    （调用点信息已丢）；本处能同时给出 pc / lr（=调用者）/ sp / r0-r5，
+         *    足以直接判定"哪条指令、用哪个基址寄存器、被谁调用"。
+         *    实测价值：一次就把「崩在 main_Menu() 之前的 PLT 跳转」定位到具体寄存器。 */
+        note("[shim] ★ 真崩溃 @%08lx 不在设备页 (base=%p) pc=%08lx lr=%08lx sp=%08lx\n",
+             addr, (void *)g_sfc_base,
+             (unsigned long)m->arm_pc, (unsigned long)m->arm_lr,
+             (unsigned long)m->arm_sp);
+        note("        r0=%08lx r1=%08lx r2=%08lx r3=%08lx r4=%08lx r5=%08lx r6=%08lx r7=%08lx\n",
+             (unsigned long)m->arm_r0, (unsigned long)m->arm_r1,
+             (unsigned long)m->arm_r2, (unsigned long)m->arm_r3,
+             (unsigned long)m->arm_r4, (unsigned long)m->arm_r5,
+             (unsigned long)m->arm_r6, (unsigned long)m->arm_r7);
         signal(sig, SIG_DFL);
         return;                     /* 返回后同一指令再次缺址 ⇒ 真正崩掉（保持原语义）*/
     }

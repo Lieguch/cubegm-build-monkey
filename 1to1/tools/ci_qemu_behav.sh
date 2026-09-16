@@ -140,6 +140,11 @@ bt_probe() {
     bs="$OUT/bt_${label}.txt"
     echo ""
     echo "########## 回溯探针 ${label}（qemu gdbstub :$port）##########"
+    # ★ 这里必须 `nostop noprint pass`：假硬件让 guest **频繁**缺页（设备寄存器访问就是靠缺页拦下来的），
+    #   不忽略的话 gdb 会停在那次"**有意**的设备缺页"上，产出**误导性**的"崩溃现场"
+    #   （实测：它报了 `sfc_init` 里的 `ldrh r1,[r0,#44]`，而那是一次正常被处理的设备读）。
+    #   ⇒ 真崩溃的现场以 **shim 自己打的 `★ 真崩溃` 两行**为准（含 pc/lr/sp/r0-r7），比 gdb 更可靠：
+    #     真崩溃时 shim 已把 SIGSEGV 恢复成 SIG_DFL，信号会穿透到进程，gdb 这边拿不到调用栈。
     set +e
     "$wrap" >/dev/null 2>&1 &
     qpid=$!
@@ -149,6 +154,8 @@ bt_probe() {
         -ex "set pagination off" \
         -ex "set sysroot $SYSROOT" \
         -ex "file $GUEST" \
+        -ex "handle SIGSEGV nostop noprint pass" \
+        -ex "handle SIGBUS nostop noprint pass" \
         -ex "target remote localhost:$port" \
         -ex "continue" \
         -ex "echo \n=== 崩溃现场 ===\n" \
