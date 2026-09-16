@@ -365,6 +365,97 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第三十二轮：★★★★★ **根因命中** —— `file_in_zip_read_info_s` 差 24 字节（工厂删了"zip 加密"支持）
+
+#### 一、根因（一条，统一解释此前所有观测）
+
+| 项 | 工厂 | 我们（改前） |
+|---|---|---|
+| `unzOpenCurrentFile` 参数 | `(unz_s*)` **单参数** | `(unz_s*, const char *password)` |
+| 该函数里 `malloc` 尺寸 | **`#108`（0x6c）** | **`#132`（0x84）** |
+| `unzReadCurrentFile` | 540 B | 904 B |
+| `TUnzip::Unzip` | 28 + `.part.7` 488 | 1608 B |
+
+**差 24 字节 = `file_in_zip_read_info_s` 末尾 4 个加密字段**：
+
+```
+bool encrypted          4
+unsigned long keys[3]  12
+int  encheadleft        4
+char crcenctest         4
+─────────────────────────
+                        24   ⇒ 132 − 24 = 108 ✓ = 工厂
+```
+
+**⇒ 工厂的 XUnzip 把整个「zip 加密/密码」支持删掉了**，而我们是完整版
+⇒ 多出的 24 字节让 `pos_in_zipfile` / `rest_read_*` / `file` / `compression_method`
+等**字段整体错位** ⇒ `unzReadCurrentFile` 用错位字段算出垃圾 seek 偏移与指针 ⇒ SIGSEGV
+（与 shim 现场吻合：**访问地址 `0xffffffff`、`pc` 落在字面量池、寄存器为垃圾**）。
+
+#### 二、字段偏移表（从工厂 Ghidra 反编译精确还原，作为重建蓝本）
+
+```
++0x00 read_buffer            +0x3c pos_in_zipfile          +0x58 rest_read_compressed
++0x04 z_stream (56 B)        +0x40 stream_initialised      +0x5c rest_read_uncompressed
++0x24/0x28/0x2c （stream 内） +0x44 offset_local_extrafield +0x60 file
+                             +0x48 size_local_extrafield   +0x64 compression_method
+                             +0x4c pos_local_extrafield    +0x68 byte_before_the_zipfile
+                             +0x50 crc32  +0x54 crc32_wait  = 0x6c = 108 ✓
+```
+
+（另：`unz_s` 两侧 `sizeof` 均 **128** ✓、`pfile_in_zip_read` 均在 **+0x7c** ✓ ⇒ 结构层面只差这一处。）
+
+#### 三、修复（3 处编辑，全部在 `src/upstream/xunzip/unzip.cpp`）
+
+1. `file_in_zip_read_info_s`：**删除** `encrypted` / `keys[3]` / `encheadleft` / `crcenctest`
+2. `unzOpenCurrentFile`：**删除**密钥初始化整段（8 行：keys 赋值 + `Uupdate_keys` 循环）
+3. `unzReadCurrentFile`：**删除**解密分支与加密头跳过逻辑（12 行）
+
+#### 四、验证（本地实测）
+
+| 项 | 改前 | 改后 | 工厂 |
+|---|---|---|---|
+| `malloc(sizeof(file_in_zip_read_info_s))` | `#132` | **`#108`** ✓ | `#108` |
+| `unzOpenCurrentFile` size | 556 | **364** | 316（1.15×）|
+| `unzReadCurrentFile` size | 904 | **656** | 540（1.21×）|
+| `unzCloseCurrentFile` size | 128 | 128 | 144（1.125×）|
+| 最终 ELF 复核 | — | **`mov r0, #108`** ✓ | — |
+| 门禁 | — | 审计 0/0；布局 193/194；ABI PASS；dyn_audit PASS；指纹 FAIL=0 | — |
+
+#### 五、★ 方法论（本轮新增，已写入技能铁律 92）
+
+**`malloc(sizeof(struct))` 的立即数就是「结构体尺寸指纹」。**
+在反汇编里读它，与工厂对比，能**直接发现被删/被加的字段** —— 比逐个字段猜偏移高效得多。
+本轮即由此从 132 vs 108 反推出"删了 4 个加密字段"，**一举解释全部 4 项 size 差异**。
+配套：Ghidra 反编译里 `__ptr[0x11] = ...` 形式的**数组索引 × 4 = 字段偏移**，
+可直接还原结构体布局作为重建蓝本。
+
+#### 六、★ CI 验证（commit `d458968b771c`）—— 行为**已推进**
+
+| 项 | 结果 |
+|---|---|
+| `1to1-verify` | **success** ✓ |
+| 重建侧 stdout 行数 | **34 → 36 行**（多了 2 行）|
+| **崩点** | **移出 `unzOpenCurrentFile+0x170`** ⇒ 现在是 `pc -> libc.so.6 strcpy`、<br>`lr -> _ZN6TUnzip4FindEPKchPiP8ZIPENTRY + 0x24` |
+| 访问地址 | `0x746e6f66` = ASCII **`"font"`** ⇒ 又一处「字符串内容被当指针」|
+| 门禁 | B2 仍 FAIL（可判定前缀 19/41）；B1/B3/B4/B5/B7/B8a/B8b 全 PASS |
+
+★ **解读**：`unz` 解压路径**已打通**（不再崩在那里）。原先被它掩盖的**下一个分歧**
+（`TUnzip::Find` 内部的 `strcpy`）现在暴露出来 —— 这是**真实推进**，不是回归。
+
+#### 七、下一个入口（第八个真实分歧）
+
+`lr = TUnzip::Find + 0x24`，`strcpy` 的 src = `0x746e6f66`（`"font"` 内容）
+⇒ `Find` 内部某处把**字符串内容当成了指针**。
+工厂 `Find` 仅 **180 B**（我们 288 B）⇒ 用**尺寸指纹法**（技能铁律 92）看工厂 `Find` 少了哪一步。
+
+#### 八、下一步
+
+1. 用铁律 92 的尺寸指纹法对齐 `TUnzip::Find`（180 vs 288）—— 这是当前崩点所在。
+2. 继续对齐基线项 `TUnzip::Unzip`（516 vs 1600）、`Get`（1040 vs 1208）、`Close`（68 vs 168）。
+
+---
+
 ### 2026-09-16 第三十一轮：★★★ `Open` 对齐**已生效但行为未变** ⇒ 差异在 `unzOpenInternal` 内部
 
 #### 一、已验证的事实（推送 `00ff19918fc6`）
