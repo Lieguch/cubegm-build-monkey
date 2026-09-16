@@ -95,6 +95,14 @@ jobs:
           #   本步骤把该类误渲染变成**静态可拦**。
           python3 tools/scan_array_casts.py
 
+      - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
+        run: |
+          cd 1to1
+          # 血泪：RARCH_LOG 丢了 `...` ⇒ RARCH_LOG_V 的 va_list 取到调用者的 r1 残留
+          #   ⇒ vfprintf 把字符串自己的内存当参数列表 ⇒ 崩在 libc strlen（观测窗口停在 18/32）。
+          #   工厂侧特征：`push {r0,r1,r2,r3}`（全 .text 仅 4 处）；重建侧 LLVM 用 `stm rX,{r1,r2,r3}`。
+          FACTORY_ELF=golden/factory.rkgame.bin python3 tools/scan_varargs_fns.py
+
       - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
         run: |
           cd 1to1

@@ -183,4 +183,13 @@ if ! "$PY" "$NROOT/tools/scan_array_casts.py" "$NROOT/src"; then
   echo "::error::recon_local: 数组名被转型成窄整数（见上）"
   exit 2
 fi
+
+# 硬门禁：变参函数保真度（Ghidra 把 `f(const char*,...)` 渲染成单参数 ⇒ 静默语义错）
+#   实测代价：RARCH_LOG 丢 `...` ⇒ RARCH_LOG_V 的 va_list 是调用者 r1 残留 ⇒ 崩在 libc strlen。
+echo ""
+echo "== 变参函数保真度门禁（tools/scan_varargs_fns.py）=="
+if ! "$PY" "$NROOT/tools/scan_varargs_fns.py"; then
+  echo "::error::recon_local: 有函数丢了变参语义（Ghidra 丢 \"...\"）"
+  exit 4
+fi
 exit 0

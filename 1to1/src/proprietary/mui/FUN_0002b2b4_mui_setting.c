@@ -342,13 +342,13 @@ LAB_0002c500:
             if ((&DAT_003b2320)[iVar10 * 0x101] == 4) {
               if ((((&file_info_list)[iVar14] == '.') && (*(char *)(iVar14 + 0x3b2221) == '.')) &&
                  (*(char *)(iVar14 + 0x3b2222) == '\0')) {
-                RARCH_LOG(&DAT_002dd878,path);
+                RARCH_LOG(DAT_002dd878,path);  /* 数组名而非 & 数组（类型正确、数值等价） */
                 iVar14 = strcmp(path,root_path);
                 if (iVar14 == 0) goto LAB_0002c094;
                 sVar4 = strlen(path);
                 m_menulog[sVar4 + 0x1bb] = 0;
                 myStrrstr(path,(char *)&DAT_002dd64c);
-                RARCH_LOG(&DAT_002dd878,path);
+                RARCH_LOG(DAT_002dd878,path);  /* 数组名而非 & 数组（类型正确、数值等价） */
                 iVar6 = dir_serial_list(0,&DAT_002dd860);
                 iVar7 = 0;
                 iVar14 = 0;

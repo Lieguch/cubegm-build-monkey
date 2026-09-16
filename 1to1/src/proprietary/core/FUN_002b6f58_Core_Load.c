@@ -90,6 +90,9 @@ gh_u4 Core_Load(char *param_1,char *param_2)
     }
   }
   video_driver_set_colormode(0);
-  RARCH_LOG(&DAT_002ddd74);
+  /* DAT_002ddd74 是**不完整数组**（unsigned char[]）⇒ 直接用数组名（等价于 &DAT_... 的数值，
+   * 但类型正确）。`proto.h` 里 RARCH_LOG 现在是**真变参原型**，传 `&数组` 会触发
+   * -Wincompatible-pointer-types（unsigned char (*)[] → char *）。 */
+  RARCH_LOG(DAT_002ddd74);
   return 0;
 }

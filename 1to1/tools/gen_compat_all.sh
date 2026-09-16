@@ -18,19 +18,22 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="${PY:-python}"
 
-echo "== 1/5 gen_compat.py（生成 ghidra_compat.h / globals.h / proto.h 主块）"
+echo "== 1/6 gen_compat.py（生成 ghidra_compat.h / globals.h / proto.h 主块）"
 "$PY" "$ROOT/tools/gen_compat.py"
 
-echo "== 2/5 normalize_types.py（全部 gh_ 前缀改名；★ 必须紧跟其后）"
+echo "== 2/6 normalize_types.py（全部 gh_ 前缀改名；★ 必须紧跟其后）"
 "$PY" "$ROOT/tools/normalize_types.py"
 
-echo "== 3/5 fix_ptr_globals.py（指针类全局 undefined4 → void*）"
+echo "== 3/6 fix_ptr_globals.py（指针类全局 undefined4 → void*）"
 "$PY" "$ROOT/tools/fix_ptr_globals.py"
 
-echo "== 4/5 patch_globals_extra.py（★ 补丁区：missing 会崩到 48%）"
+echo "== 4/6 patch_globals_extra.py（★ 补丁区：missing 会崩到 48%）"
 "$PY" "$ROOT/tools/patch_globals_extra.py"
 
-echo "== 5/5 check_types.py（本地类型门禁）"
+echo "== 5/6 patch_proto_varargs.py（★ 变参函数必须是真原型：K&R 空声明与 `...` 不兼容）"
+"$PY" "$ROOT/tools/patch_proto_varargs.py"
+
+echo "== 6/6 check_types.py（本地类型门禁）"
 "$PY" "$ROOT/tools/check_types.py"
 
 echo "== 完成"

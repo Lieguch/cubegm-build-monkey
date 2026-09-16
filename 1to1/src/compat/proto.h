@@ -6,7 +6,7 @@
 
 extern gh_u4 main(); /* K&R: 参数不可信/不可解析 */
 extern void RARCH_LOG_V(); /* K&R: 参数不可信/不可解析 */
-extern void RARCH_LOG(); /* K&R: 参数不可信/不可解析 */
+extern void RARCH_LOG(char *param_1, ...);
 extern void GetConfig(); /* K&R: 参数不可信/不可解析 */
 extern int get_executable_path(char *param_1,char *param_2,size_t param_3);
 extern void dispmeninfo(); /* K&R: 参数不可信/不可解析 */

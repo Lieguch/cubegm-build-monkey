@@ -365,6 +365,61 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第二十七轮：★★★★★ 第五个真实分歧 —— Ghidra 把**变参函数**渲染成单参数（一整类陷阱）
+
+#### 一、定位链（全部有运行时证据）
+
+| 步骤 | 证据 | 结论 |
+|---|---|---|
+| ① 门禁假绿被自己抓到 | `可复现前缀 = 6 行`（应 41）| 见下一节；修完后该轮 CI 正确报 `FAIL（18/41）`|
+| ② `dladdr` 探针点名 | `pc -> libc.so.6+0x6b1ee 符号=strlen`；**`lr` 也在 libc 内**（`+0x488f7`）| 不是游戏代码直调，是 **libc 内部**调用 |
+| ③ 栈回溯 | `[sp+4] = libc + 0x11ed50  _IO_2_1_stdout_` | 现场与 **stdout** 相关 ⇒ printf 族 |
+| ④ 寄存器 | `r0=0x6364732f`（`"/sdc"` 的内容）、`r1=r0 & ~7`、`r4=7`（对齐掩码）| `strlen(<字符串内容>)` |
+| ⑤ 反查调用者 | 读 `RARCH_LOG` 的重建产物：`push {fp,lr}` / `pop {fp,lr}` / **`b RARCH_LOG_V`** | 纯尾调用，**只传了 r0** |
+| ⑥ 对照工厂 | `9ed8: push {r0,r1,r2,r3}` / `add r1,sp,#20` / `ldr r0,[sp,#16]` / `bl RARCH_LOG_V` | 工厂是**真变参**，传 `(fmt, va_list)` **两个**参数 |
+
+**因果链闭合**：`RARCH_LOG` 丢 `...` ⇒ `RARCH_LOG_V(char*, va_list)` 的第二个参数（`va_list`）
+**成了调用者的 r1 残留值**；而 `main_Menu()` 里 `RARCH_LOG("root_path:%s
+", root_path)` 调用时
+`r1 = root_path(0x3e1398)` ⇒ `vfprintf(stdout, fmt, ap=0x3e1398)` 把**字符串自己的内存**当参数列表
+⇒ `%s` 取到的"指针" = `0x6364732f` = `"/sdc"` 的内容 ⇒ 崩在 libc `strlen`。
+**与实测寄存器逐位吻合。**
+
+#### 二、修复
+
+`src/proprietary/misc/FUN_00009ed8_RARCH_LOG.c` 按原厂指令证据还原为真变参：
+
+```c
+void RARCH_LOG(char *param_1, ...)
+{
+  __gnuc_va_list ap;
+  __builtin_va_start(ap, param_1);
+  RARCH_LOG_V(param_1, ap);
+  __builtin_va_end(ap);
+  return;
+}
+```
+
+**修后产物**：`stm ip, {r1,r2,r3}`（变参保存区）+ `add r1, fp, #8`（va_list）+ `bl RARCH_LOG_V` ✓ 与工厂同语义。
+
+★ 附带一处 C 语言硬约束：`proto.h` 里 Ghidra 生成的 K&R 空声明
+`extern void RARCH_LOG();` **与可变参原型不兼容**（C11 6.7.6.3p15 禁止空声明配 `...`），
+clang 直接报 `error: conflicting types`。⇒ 新增幂等补丁 `tools/patch_proto_varargs.py`
+（已接入 `gen_compat_all.sh`，成为第 5/6 步）。
+
+#### 三、★ 新增门禁 `tools/scan_varargs_fns.py`（把这一整类陷阱变成静态可拦）
+
+- **工厂侧判据**：变参函数的 AAPCS32 序言是 `push {r0, r1, r2, r3}`（`0xE92D000F`）——
+  全 `.text` 扫该 opcode，命中 **4 处**：`RARCH_LOG` / `spi_printf` / `mxml_error` / `_mxml_strdupf`。
+- **重建侧判据**：**不能**要求同一 opcode（LLVM 用 `sub sp,#12` + `stm rX,{r1,r2,r3}`）⇒
+  改为要求「函数序言区（前 64 B）里存在把 `{r1,r2,r3}` 一起存出去的 `stm`/`push`」。
+- **首跑结果**：精确命中 **只有 `RARCH_LOG` 违规**（其余 3 个已是正确变参，零误报）✓
+- **修后**：4/4 保真 ⇒ 门禁 PASS。
+
+★ 顺带证实：`spi_printf` 此前已按原形还原（其源码里就有同一条证据注释），**`RARCH_LOG` 被漏掉**——
+  说明"逐个靠人记"不可靠，必须机器扫。
+
+#### 四、门禁全景（本地全绿）
 #### 八、★★★★★ 抓到并修掉一次**我自己的门禁假绿**（归一化未折叠空白 ⇒ 前缀塌陷 ⇒ trivial PASS）
 
 **现象**：`22d4cdc1` 那一轮 `1to1-qemu-behav` 报了 **success / 门禁 PASS**，但差分报告里写着：
