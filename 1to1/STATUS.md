@@ -365,6 +365,54 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第三十一轮：★★★ `Open` 对齐**已生效但行为未变** ⇒ 差异在 `unzOpenInternal` 内部
+
+#### 一、已验证的事实（推送 `00ff19918fc6`）
+
+| 项 | 结果 |
+|---|---|
+| `1to1-verify` | **success** ✓（新指纹门禁 + 全部旧门禁）|
+| `1to1-qemu-behav` | FAIL（19/41）—— 真实分歧，**未因本轮修复而改变** |
+| 改动**确实生效** | 崩溃 `pc` 从 `0x05054fa4` → **`0x05054f8c`**（代码布局变了 ⇒ 新对象被链接）|
+| 本地 ELF 复核 | `TUnzip::Open` = **80 B**、`getcwd` 调用 **0** 次、`_ZL10zopenerror` @**0x3b2218**（与工厂一致，邻接 `lasterrorU`@0x3b221c、`file_info_list`@0x3b2220，**无地址冲突**）|
+| 重建侧 stdout | 前 **19 行与工厂逐行一致**，第 20 行仍是分歧点（工厂 `open .../ui_cn.zip fail`，重建为 shim 日志）|
+| `open driver.so fail` 那行 | **art36 里也有**（`grep -c`=1）⇒ 非新增，先前只是 `tail` 窗口不同 |
+
+⇒ **`TUnzip::Open` 已与工厂同形，但它不是 `ui_cn.zip` 那条分歧的成因。**
+
+#### 二、符号表精确定位：**唯一"只存在于一侧"的函数**
+
+| 符号 | 工厂 | 重建 |
+|---|---|---|
+| **`unzOpenCurrentFile`** | `(unz_s*)` **316 B · 单参数** | `(unz_s*, const char*)` **556 B · 双参数** |
+| `TUnzip::Unzip` | 28 B **+** `.part.7` 488 B | 1608 B |
+| `TUnzip::Get` | 152 B **+** `.part.5` 888 B | 1208 B |
+| `unzStringFileNameCompare` | 16 B | 140 B |
+| `unzlocal_getLong` / `getShort` | 156 / 96 | 636 / 336（疑内联 `unzlocal_getByte`）|
+| `unzLocateFile` / `unzClose` | 240 / 60 | 528 / 144 |
+| `unzReadCurrentFile` | 540 | 904（1.67×）|
+| `lufopen` / `SearchCentralDir` | 212 / 452 | 284 / 604 |
+| 其余 | — | 1.3–2.0×（编译器差异范围）|
+
+★ **除 `unzOpenCurrentFile` 外，没有任何 unz/luf 符号"只存在于一侧"** ⇒ 版本差异集中在这一个签名上。
+
+#### 三、⚠️ 方法论限制（本轮学到，已写入技能库）
+
+**函数 size 比值能"发现"版本不符**（57× 的 `Unzip`、签名不同的 `unzOpenCurrentFile`），
+**但无法"定位行为差异"** —— `unzlocal_getLong` 156 vs 636 这类差异**同样可能只是内联造成的**。
+⇒ **定位"解析行为为何不同"必须靠运行时证据（探针），不能靠 size 比值。**
+
+#### 四、下一步（明确，按序执行）
+
+1. **加运行时探针**（最直接、信息量最大，一轮 CI 即可定论）：
+   在重建侧打印 —— `lufopen` 的 `err`、`unzlocal_SearchCentralDir` 返回值、
+   `unzOpenInternal` 内的 `err` 值、`OpenZipU` 的返回值。
+   ⇒ 立刻知道"我们的中央目录解析在哪一步与工厂不同"。
+2. **`unzOpenCurrentFile` 改回单参数**（以 calibre 版为基，对齐签名 + 内部逻辑）。
+3. 视探针结果决定是否需要**整份替换** `unzip.cpp`。
+
+---
+
 ### 2026-09-16 第三十轮：★★★★★ 第七个真实分歧**已修复**（`TUnzip::Open` 对齐工厂）
 
 #### 一、根因（承接第二十九轮）
