@@ -365,6 +365,68 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第二十八轮：★★★ 第六个真实分歧定位并修复（**本轮暂停于此，待推送验证**）
+
+> ⏸ **状态：本地已改、已编译验证，但尚未推送**（用户暂停任务）。续接入口见本节末尾「续接清单」。
+
+#### 一、进展（CI `159b04cf8d43` 实测）
+
+| 项 | 结果 |
+|---|---|
+| 重建侧 stdout | **已打印 `root_path:/sdcard`** ⇒ **成功进入 `main_Menu()` 正文** ✓（`RARCH_LOG` 变参修复奏效）|
+| 可判定前缀 | 18 → **19/41**（重建侧 37 个事件）|
+| 门禁 | B1/B3/B4/B5/B7/**B8a/B8b(180=180)** 全 PASS；B2 FAIL（真实分歧，符合预期）|
+| `1to1-verify` | **failure** —— 但原因是**我把新门禁放在了链接之前**（那时 `build/rkgame.rebuilt.elf` 还不存在 ⇒ 脚本返回 3）|
+
+#### 二、★ 第六个真实分歧：对象指针算术被**按元素大小缩放**
+
+**崩点**（shim 现场）：`pc = OpenZipU + 0x2c`、调用者 `get_items_from_zipfile + 0x28`、
+故障指令 `0xE7891000 = str r1, [r9, r0]`、**`r0 = 0x2be00`**（作为索引）、
+访问地址 `0x050b4cd8 = r9 + 0x2be00`（`r9` = `_Znwj(0x240)` 刚申请的对象，**只有 576 字节**）。
+
+**根因**：`TUnzip` 是 **576 字节**的类（= 申请尺寸 `0x240`）。源码写成
+
+```c
+*(gh_u4 *)(this + 0x138) = 0xffffffff;   /* this 是 TUnzip* ⇒ 0x138 × 576 = 0x2BE00 ✗ */
+*(gh_u4 *)(this + 4)     = 0xffffffff;   /* 4 × 576 = 0x900 ✗ */
+```
+
+而工厂机器码是**字节偏移**：`12cfc: str ip, [r0, #312]`（= 0x138）、`12d04: stm r0, {r5, ip}`（= 0 与 4）。
+
+**修复**：改成显式字节算术 `*(gh_u4 *)((char *)this + 0x138)` / `((char *)this + 4)`。
+**修后机器码实测**：`str r9, [r0, #312]` ✓ 与工厂一致。
+
+**影响**：`ui_cn.zip` 读取路径越界 180 KB 直接 SIGSEGV；而工厂在同一位置是**优雅失败**
+（`OpenZipU` 返回 0 → 打印 `open …／ui_cn.zip fail!` 并继续）⇒ 修完后重建侧应能打印那两行、
+并像工厂一样在 `mui_setting` 处 NULL 解引用（**届时行为差分有望首次全等 PASS**）。
+
+**同类普查**：`TUnzip/XUnzip` 5 个文件里已无其它 `对象指针 + 常量` 写法 ✓。
+
+#### 三、本轮已推送的（`159b04cf8d43`）
+
+1. **`RARCH_LOG` 变参修复**（第五个真实分歧，详见第二十七轮）+ `proto.h` 真原型
+   + 幂等补丁 `tools/patch_proto_varargs.py`（接入 `gen_compat_all.sh`）
+2. **新门禁 `tools/scan_varargs_fns.py`**（工厂 `push {r0,r1,r2,r3}` ⇒ 4 个变参函数；
+   本地首跑精确命中 `RARCH_LOG`，修后 4/4 PASS）
+3. **修掉我自己的门禁假绿**：`norm()` 未折叠空白 ⇒ 前缀塌到 6 行 ⇒ trivial PASS；
+   已加空白折叠 + shim 全部 hex 加 `0x` + `behav_diff.py` **前缀长度护栏**
+4. 3 处 `RARCH_LOG(&DAT_xxx)` ⇒ 去掉 `&`（真原型暴露出的类型不符）
+
+#### 四、⏸ 续接清单（下次开始按序执行）
+
+1. **本地复跑**：`CC="$ZIG cc" sh tools/recon_local.sh report/local_recon_build.txt`
+   → 期望 宽松/严格 **213/213**、假绿 0、INFRA 0、数组转型 PASS、**变参门禁 4/4 PASS**；
+   再跑 `link_audit.sh` + `build_upstream.sh` + `link_full.sh` + 四个门禁
+   （布局 / ABI / dyn_audit / scan_varargs_fns）。
+2. **推送**（增量，预计 2 个 blob）：`src/proprietary/misc/FUN_00012cd0_OpenZipU.c`
+   + `.github/workflows/1to1-verify.yml`（已把变参门禁移到 P3 完整链接**之后**）。
+3. **盯 CI**：`1to1-verify` 应转 success（顺序已修）；`1to1-qemu-behav` 看前缀能否再推进
+   （预期 19 → 22，甚至 **41/41 全等 PASS**）。
+4. **若仍有分歧**：直接读制品里 `rundir_rebuild/stderr.txt` 的 `★ 真崩溃` 段
+   （已带 `pc`/`lr` 归属 + **栈回溯**，`dladdr` 弱引用解析；不需要 gdb）。
+
+---
+
 ### 2026-09-16 第二十七轮：★★★★★ 第五个真实分歧 —— Ghidra 把**变参函数**渲染成单参数（一整类陷阱）
 
 #### 一、定位链（全部有运行时证据）
