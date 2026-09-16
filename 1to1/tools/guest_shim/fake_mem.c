@@ -63,6 +63,12 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+/* ★ 弱引用 `dladdr`：只用于「真崩溃现场点名 pc 属于哪个库的哪个函数」。
+ *   故意**不** `#include <dlfcn.h>`、也不 `-ldl` —— 用弱符号 + 自定义同布局结构体，
+ *   保证链接期零依赖风险（zig 的 arm-linux-gnueabihf 目标不一定自带 libdl 导入库）。
+ *   运行时若未解析则为 NULL，调用点已判空。 */
+extern int dladdr(const void *addr, void *info) __attribute__((weak));
+
 #ifndef __NR_mmap2
 #define __NR_mmap2 192
 #endif
@@ -411,7 +417,35 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
              (unsigned long)m->arm_r2, (unsigned long)m->arm_r3,
              (unsigned long)m->arm_r4, (unsigned long)m->arm_r5,
              (unsigned long)m->arm_r6, (unsigned long)m->arm_r7);
+        /* ★★ pc 常落在共享库里（PLT 解析后调用点信息已丢），必须**点名是哪个库的哪个函数**：
+         *    - pc 可能是 libc/ld.so，也可能是 shim 自己 ⇒ 不点名就只能靠猜（已浪费过时间）。
+         *    - 用 `dladdr` 解析：它查 **guest 自己的 link_map**，对 guest 地址是正确的；
+         *      容器里读 /proc/self/maps 会拿到**宿主**的映射，可能对不上，故不作首选。
+         *    - `dladdr` 声明为 **weak**：zig 的 arm-linux-gnueabihf 目标不一定自带 libdl 的导入库，
+         *      弱符号可保证**链接期零风险**（运行时若未解析则为 NULL，先判空再调用）。
+         *    - `signal(sig, SIG_DFL)` 必须**先**设，否则下面读 pc 处指令若也缺页会递归进处理器。 */
         signal(sig, SIG_DFL);
+        {
+            void *weak_dladdr = (void *)dladdr;          /* 弱引用：可能为 NULL */
+            if (weak_dladdr) {
+                struct { const char *fname; void *fbase; const char *sname; void *saddr; } di;
+                di.fname = 0; di.fbase = 0; di.sname = 0; di.saddr = 0;
+                if (dladdr((void *)m->arm_pc, &di) && di.fname) {
+                    note("[shim]   pc 归属: %s + 0x%lx   符号=%s\n",
+                         di.fname,
+                         (unsigned long)m->arm_pc - (unsigned long)di.fbase,
+                         di.sname ? di.sname : "(无)");
+                } else {
+                    note("[shim]   pc 归属: dladdr 未解析（pc 可能在本可执行文件或已卸载区）\n");
+                }
+            } else {
+                note("[shim]   pc 归属: dladdr 不可用\n");
+            }
+        }
+        note("[shim]   故障指令 @pc = %08x   [pc-4]=%08x  [pc+4]=%08x\n",
+             *(volatile unsigned int *)(unsigned long)m->arm_pc,
+             *(volatile unsigned int *)(unsigned long)(m->arm_pc - 4),
+             *(volatile unsigned int *)(unsigned long)(m->arm_pc + 4));
         return;                     /* 返回后同一指令再次缺址 ⇒ 真正崩掉（保持原语义）*/
     }
 
