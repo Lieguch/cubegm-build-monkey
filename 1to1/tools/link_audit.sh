@@ -61,11 +61,18 @@ echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 
 # 上游组件对象（已预编译 / 本脚本内编译）一并纳入符号审计
 XUPOBJ="$ROOT/src/upstream/xunzip/XUnzip.o"
-# ★ 血泪：原先只在 .o **缺失**时编译 ⇒ 改了 unzip.cpp 却不重编，CI 一直用旧对象
-#   （P5 第七个真实分歧排查时踩到：本地改了 TUnzip::Open，链接产物却没变）。
-#   ⇒ 改为「.o 不存在 **或** 源码更新」即重编。
+# ★★ 血泪（P5 第七个真实分歧排查时踩到两次）：
+#   ① 原先只在 .o **缺失**时编译 ⇒ 改了 unzip.cpp 却不重编；
+#   ② 改成 `-nt`（源码更新）后**在 CI 上仍然失效** —— 仓库里残留着旧的 `XUnzip.o`
+#      （push_1to1.py 把 `.o` 当构建产物**排除**，推送不了新对象），而 git checkout 会把
+#      `unzip.cpp` 与 `XUnzip.o` 的时间戳都设成 checkout 时刻，先后不可靠。
+#   ⇒ 改用**源码内容 hash 缓存**：hash 与上次不同就重编。hash 文件是文本，会被正常推送。
 XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
-if [ ! -f "$XUPOBJ" ] || { [ -f "$XUSRC" ] && [ "$XUSRC" -nt "$XUPOBJ" ]; }; then
+XUHASH="$ROOT/src/upstream/xunzip/.XUnzip.src.sha256"
+_xu_cur=""
+[ -f "$XUSRC" ] && _xu_cur=$(sha256sum "$XUSRC" 2>/dev/null | cut -d' ' -f1)
+_xu_old=$(cat "$XUHASH" 2>/dev/null || echo "")
+if [ ! -f "$XUPOBJ" ] || [ -z "$_xu_cur" ] || [ "$_xu_cur" != "$_xu_old" ]; then
     XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
     if [ -f "$XUSRC" ]; then
         XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
@@ -73,11 +80,11 @@ if [ ! -f "$XUPOBJ" ] || { [ -f "$XUSRC" ] && [ "$XUSRC" -nt "$XUPOBJ" ]; }; the
           *zig*)
             # zig cc 按扩展名自动按 C++ 编译 .cpp
             XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
-            $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && echo "XUnzip.o 已编译" || echo "XUnzip.o 编译失败"
+            $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && { echo "XUnzip.o 已编译"; echo "$_xu_cur" > "$XUHASH"; } || echo "XUnzip.o 编译失败"
             ;;
           *)
             XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
-            $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && echo "XUnzip.o 已编译" || echo "XUnzip.o 编译失败"
+            $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && { echo "XUnzip.o 已编译"; echo "$_xu_cur" > "$XUHASH"; } || echo "XUnzip.o 编译失败"
             ;;
         esac
     fi
