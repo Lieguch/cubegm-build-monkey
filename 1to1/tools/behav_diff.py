@@ -192,6 +192,23 @@ def main():
         print('     排查方向：① guest shim 是否把程序打死在启动处；② 目标二进制是否可执行；')
         print('               ③ 参考二进制是否根本没有产出（环境不足）。')
         return 3
+
+    # ---- ★★ 前缀长度护栏：前缀太短 ⇒ 门禁形同虚设（实测踩到一次**假 PASS**）----
+    # 事实（2026-09-16）：某轮 `MemFree:` 的**数值位数**在不同运行间变化，而采集端的归一化
+    #   当时**没有折叠对齐空白** ⇒ 参考实现"自身不确定"从第 7 行起 ⇒ 可判定前缀只剩 6 行
+    #   ⇒ 门禁只判前 6 行，而两侧真正的分歧在第 18 行 ⇒ **判 PASS（假绿，最危险的一类）**。
+    #   ⇒ 规则：前缀不足参考侧事件数的 60% 时，判 **INCONCLUSIVE**（既非 PASS 也非 FAIL），
+    #     逼先消除"参考实现自身的不确定性"，而不是拿一个塌陷的前缀当通过。
+    if det_prefix is not None and len(ea) >= 10 and det_prefix < len(ea) * 0.6:
+        print('  [INCONCLUSIVE] 可复现前缀仅 %d / %d 行（不足 60%%）⇒ 门禁几乎没有判定力：'
+              % (det_prefix, len(ea)))
+        print('      参考侧 #%d : %s' % (det_prefix + 1, ea[det_prefix][:150]))
+        if det_prefix < len(ec):
+            print('      控制侧 #%d : %s' % (det_prefix + 1, ec[det_prefix][:150]))
+        print('  ⇒ 先查明"参考实现自身为何不确定"，再跑差分。常见成因：')
+        print('     ① 输出里的**对齐空白**随数值位数变化（采集端归一化未折叠空白 —— 已修，见 behav_capture.sh）；')
+        print('     ② 真·非确定性（未初始化内存 / 时间戳 / 地址随机化）。')
+        return 3
     if exit_volatile:
         checks.append(('B1 exit_code', True, 'INFO（参考侧自身不确定：%s/%s；本次 %s vs %s）'
                        % (a.get('exit_code'), c.get('exit_code'),

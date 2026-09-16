@@ -284,7 +284,7 @@ static void sfc_dev_prepare(void)
     /* 其它（含 0x4848 @0x100）：全 0 ⇒ 打印行与原窗口一致 */
 
     if (g_logged < 24) {
-        note("[shim] sfc cmd op=%04x addr=%06x len=%u -> payload=%s(%u B)\n",
+        note("[shim] sfc cmd op=0x%04x addr=0x%06x len=%u -> payload=%s(%u B)\n",
              g_opcode, g_addr, g_reqlen,
              g_pay_zero ? "zeros" : "flash", g_pay_len);
         g_logged++;
@@ -408,11 +408,11 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
          *    （调用点信息已丢）；本处能同时给出 pc / lr（=调用者）/ sp / r0-r5，
          *    足以直接判定"哪条指令、用哪个基址寄存器、被谁调用"。
          *    实测价值：一次就把「崩在 main_Menu() 之前的 PLT 跳转」定位到具体寄存器。 */
-        note("[shim] ★ 真崩溃 @%08lx 不在设备页 (base=%p) pc=%08lx lr=%08lx sp=%08lx\n",
+        note("[shim] ★ 真崩溃 @0x%08lx 不在设备页 (base=%p) pc=0x%08lx lr=0x%08lx sp=0x%08lx\n",
              addr, (void *)g_sfc_base,
              (unsigned long)m->arm_pc, (unsigned long)m->arm_lr,
              (unsigned long)m->arm_sp);
-        note("        r0=%08lx r1=%08lx r2=%08lx r3=%08lx r4=%08lx r5=%08lx r6=%08lx r7=%08lx\n",
+        note("        r0=0x%08lx r1=0x%08lx r2=0x%08lx r3=0x%08lx r4=0x%08lx r5=0x%08lx r6=0x%08lx r7=0x%08lx\n",
              (unsigned long)m->arm_r0, (unsigned long)m->arm_r1,
              (unsigned long)m->arm_r2, (unsigned long)m->arm_r3,
              (unsigned long)m->arm_r4, (unsigned long)m->arm_r5,
@@ -457,7 +457,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
                         if (v < 0x10000) continue;
                         di.fname = 0; di.fbase = 0; di.sname = 0; di.saddr = 0;
                         if (dladdr((void *)v, &di) && di.fname) {
-                            note("[shim]     [sp+%2d] = %08lx -> %s + 0x%lx  %s\n",
+                            note("[shim]     [sp+%2d] = 0x%08lx -> %s + 0x%lx  %s\n",
                                  k * 4, v, di.fname, v - (unsigned long)di.fbase,
                                  di.sname ? di.sname : "");
                         }
@@ -467,7 +467,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
                 note("[shim]   dladdr 不可用（pc=0x%08lx lr=0x%08lx）\n", q[0], q[1]);
             }
         }
-        note("[shim]   故障指令 @pc = %08x   [pc-4]=%08x  [pc+4]=%08x\n",
+        note("[shim]   故障指令 @pc = 0x%08x   [pc-4]=0x%08x  [pc+4]=0x%08x\n",
              *(volatile unsigned int *)(unsigned long)m->arm_pc,
              *(volatile unsigned int *)(unsigned long)(m->arm_pc - 4),
              *(volatile unsigned int *)(unsigned long)(m->arm_pc + 4));
@@ -529,7 +529,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
     /* --- 单寄存器传送（bits 27..26 == 01）--- */
     if ((ins & 0x0C000000u) != 0x04000000u) {
         g_unhandled++;
-        note("[shim] SFC: 未识别指令 @%08x = %08x（off=%x）—— 跳过\n",
+        note("[shim] SFC: 未识别指令 @0x%08x = 0x%08x（off=0x%x）—— 跳过\n",
              (unsigned int)m->arm_pc, ins, off);
         m->arm_pc += 4;
         return;
