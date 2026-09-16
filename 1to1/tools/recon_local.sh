@@ -192,4 +192,14 @@ if ! "$PY" "$NROOT/tools/scan_varargs_fns.py"; then
   echo "::error::recon_local: 有函数丢了变参语义（Ghidra 丢 \"...\"）"
   exit 4
 fi
+
+# 硬门禁：上游符号指纹（技能铁律 90 —— "库名对 ≠ 版本对"）
+#   实测代价：XUnzip 版本不符 ⇒ TUnzip::Unzip 28 B vs 1608 B ⇒ P5 卡三轮。
+#   ★ 依赖 build/rkgame.rebuilt.elf（由 link_full.sh 产出）；未链接时脚本会明确报错。
+echo ""
+echo "== 上游符号指纹门禁（tools/scan_upstream_fingerprint.py）=="
+if ! "$PY" "$NROOT/tools/scan_upstream_fingerprint.py"; then
+  echo "::error::recon_local: 上游库疑似版本/实现不符（见上表）"
+  exit 5
+fi
 exit 0

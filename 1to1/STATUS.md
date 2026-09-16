@@ -365,6 +365,111 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-16 第二十九轮：★★★★★ 第七个真实分歧定位（**上游 XUnzip 版本不符** —— 一整类新问题）
+
+#### 一、已推送并验证（commit `ed3126454d09`）
+
+| 项 | 结果 |
+|---|---|
+| `1to1-verify` | **success** ✓（上一轮「门禁放在链接之前」的顺序问题已修）|
+| `1to1-qemu-behav` | FAIL —— 属**真实分歧**，非假绿 |
+| 可复现前缀 | **41 行（完整）** ✓（归一化修复生效）|
+| 重建侧 stdout | 已打印 `root_path:/sdcard` ⇒ **进入 `main_Menu()` 正文** |
+| 两侧 exit_code | 139 vs 139（**工厂最终也崩**，崩在 `0x2b3c8` = `mui_setting`）|
+| 两侧 `pre_all` | 差异**仅 rkgame 二进制本身**（3.9 MB vs 17 MB）⇒ 环境一致 ✓ |
+
+#### 二、★ 第七个真实分歧：`TUnzip` **上游实现版本不符**
+
+**崩点**（CI shim 现场）：`pc -> _Z18unzOpenCurrentFileP5unz_sPKc + 0x170`；
+而工厂在同样位置是**优雅失败**：打印 `open /sdcard/cubegm//ui_cn.zip fail`（两次）后继续。
+
+**逐符号指纹对比（决定性证据）**：
+
+| 符号 | 工厂 | 重建 | 判定 |
+|---|---|---|---|
+| `TUnzip::Open` | **84 B** | 204 B | ✗ |
+| `TUnzip::Unzip` | **28 B**（+`.part.7` 488 B）| 1608 B | ✗ |
+| `TUnzip::Get` | 152 B（+`.part.5` 888 B）| 1208 B | ✗ |
+| `TUnzip::Close` | 68 B | 168 B | ✗ |
+| `unzOpenCurrentFile` | `(unz_s*)` **单参数** | `(unz_s*, const char*)` **双参数** | ✗ |
+| `lufopen` | 212 B | 284 B | ✗ |
+| `unzClose` | 60 B | 144 B | ✗ |
+| `unzOpenInternal` | 476 B | 548 B | ✗ |
+| **`sizeof(TUnzip)`** | **576**（`_Znwj(0x240)`）| **576** | ✓（唯一一致）|
+
+**工厂 `lufopen` 反汇编**（0x109fc）：就是 Wischik 的 `ZIP_STD` 实现 ——
+`fopen(path,"rb")` + `fseek`，`sizeof(LUFILE)=28`，**没有 `getcwd`**。
+
+**重建 `TUnzip::Open` 反汇编**（0x05055800）：
+`getcwd(this+0x13c, 260)` → `strlen` → 加 `'\'`，对应源码
+
+```cpp
+GetCurrentDirectory(MAX_PATH, rootdir);   // 我们多出来的
+_tcscat(rootdir, _T("\"));
+```
+
+工厂 `TUnzip::Open`（84 B）**没有** `NOTINITED` 检查、**没有** `GetCurrentDirectory`，直接
+`lufopen` → `unzOpenInternal` → 写 `this->uf`。
+
+**工厂缺的符号**：`unzGetCurrentFileInfo` / `unzStringFileNameCompare` /
+`unzGetLocalExtrafield` / `unzGetOffset` / `unzGetFilePos` / `unzGoToFilePos`
+**工厂有的符号集**：`lufopen luftell lufseek lufread unzOpenInternal unzGoToNextFile
+unzLocateFile unzReadCurrentFile unzCloseCurrentFile unzClose unzOpenCurrentFile unzGetGlobalComment`
+
+#### 三、上游定版（联网核实，非臆测）
+
+官方源 `wischik.com/lu/programmer/zip_utils_src.zip` 已下载（222,717 B，
+内部文件日期 2005-09-18）⇒ **官方当前版是双参数 `unzOpenCurrentFile(file,password)`**，
+**与我们一致、与工厂不同** ⇒ 工厂用的是**更早的版本**。
+
+GitHub code-search 逐候选核对后**最接近的候选**：
+
+| 候选 | 大小 | `unzOpenCurrentFile` | `rootdir` 成员 |
+|---|---|---|---|
+| Squirrel.Windows | 145 KB | 双参数 | 有 |
+| OpenSceneGraph | 153 KB | 双参数 | 有 |
+| DuiLib_Ultimate | 150 KB | 双参数 | 有 |
+| **calibre `bypy/windows/XUnzip.cpp`** | **160 KB** | **单参数 ✓** | **有 ✓**（尺寸 576 ✓）|
+| NIM_Duilib | 145 KB | 双参数 | 有 |
+
+calibre 版 = **「XUnzip.cpp Version 1.3」（Modified by Hans Dietrich）**。
+但它的 `TUnzip::Open` 仍含 `NOTINITED` + `GetCurrentDirectory` ⇒ **仍与工厂不同**。
+
+⇒ **结论：工厂 = Hans Dietrich 1.x 系 + 厂商（Rockchip/方案商）定制**，
+定制点 = **删掉 `Open` 里的目录初始化 + `EnsureDirectory` 那条解压分支**。
+
+#### 四、因果链（闭合）
+
+```
+工厂: TUnzip::Open(简化) -> lufopen -> [失败路径] 返回非 0
+      -> get_items_from_zipfile: res_hz==0 -> RARCH_LOG("open %s fail") -> 优雅继续
+      -> 后续崩在 mui_setting(0x2b3c8)
+重建: TUnzip::Open(含 getcwd/rootdir) -> 行为不同 -> 返回 0（成功）
+      -> FindZipItemA/UnzipItem -> unzOpenCurrentFile -> SIGSEGV
+```
+
+#### 五、续接清单
+
+1. **新增门禁 `tools/scan_upstream_fingerprint.py`**（建议）：对关键上游符号
+   （`unz*` / `luf*` / `TUnzip::*`）比对**工厂 vs 重建的 size**，不一致即报警。
+   ★ 这是「上游选型」的**自动回归门禁** —— 本轮若早有它，第一轮就会发现版本不符。
+2. **对齐 `TUnzip`**：以 calibre 版为基，逐函数按工厂反汇编改 `Open` / `Unzip` / `Get` / `Find` / `Close`。
+3. 编译后**逐符号 size 复查**，再推送（预计会牵动 `src/upstream/xunzip/unzip.cpp` 全文件）。
+4. 参考物已存 `build/upstream_ref/`（**在 build/ 下，不进 push**）：
+   `zip_utils_src.zip`（官方）、`calibre_unzip.cpp`、`XUnzip.h`、各候选。
+5. **新增门禁 `tools/scan_upstream_fingerprint.py` 已接入 CI + `recon_local.sh`**（2026-09-16）：
+   判据 = 上游符号（`unz*`/`luf*`/`TUnzip::*`/`mxml*`/`stbtt_*`/`iconv*`/`inflate*`/`xmp3_*`）
+   工厂 vs 重建的 **size 比值**；`≥8×` = FAIL，`4×~8×` = WARN。
+   已知未对齐项登记在 `tools/upstream_fingerprint_baseline.txt`（**修好一项必须删一行**，
+   基线内容会原样打印以保持透明）。首跑结果：**FAIL=0（基线豁免 4 项）、WARN=10**；
+   ★ **新信号**：`mxmlSaveFile` 34.3×、`mxmlSaveString` 22.1× —— 同样是「工厂=薄封装 vs
+   重建=完整实现」模式 ⇒ **minixml 也可能版本不符，下一轮一并查**。
+6. **`tools/scan_scaled_ptr_arith.py`**（本轮新增）目前是**报告型工具，未接入门禁**：
+   首跑 218 条 HIGH 中大量是 `puVar = puVar + 1`（同类型指针递增，**本来就正确**）
+   ⇒ 判据需收窄为「cast 目标类型 ≠ 左操作数声明类型」，收窄后再决定是否接入。
+
+---
+
 ### 2026-09-16 第二十八轮：★★★ 第六个真实分歧定位并修复（**本轮暂停于此，待推送验证**）
 
 > ⏸ **状态：本地已改、已编译验证，但尚未推送**（用户暂停任务）。续接入口见本节末尾「续接清单」。

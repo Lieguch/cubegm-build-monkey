@@ -152,6 +152,17 @@ jobs:
           echo '--- ABI 门禁 ---'
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
 
+      - name: 上游符号指纹门禁（技能铁律 90：库名对 ≠ 版本对）
+        run: |
+          cd 1to1
+          # 血泪：项目长期记录「XUnzip = Wischik zip_utils」——**名字对、版本错**。
+          #   工厂 TUnzip::Unzip 仅 28 B(+.part.7 488 B)、我们 1608 B；unzOpenCurrentFile
+          #   工厂单参数、我们双参数；工厂 TUnzip::Open 84 B 且无 GetCurrentDirectory。
+          #   ⇒ 行为分歧：工厂优雅打印 `open %s fail`，我们继续走到 unzOpenCurrentFile 崩溃。
+          #   判据：同源码不同编译器的 size 差通常 < 2×；≥8× 基本是版本/实现不符。
+          #   已知未对齐项登记在 tools/upstream_fingerprint_baseline.txt（修好一项须删一行）。
+          python3 tools/scan_upstream_fingerprint.py
+
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
         run: |
           cd 1to1
