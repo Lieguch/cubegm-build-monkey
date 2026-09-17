@@ -95,7 +95,7 @@ jobs:
           #   本步骤把该类误渲染变成**静态可拦**。
           python3 tools/scan_array_casts.py
 
-      - name: `.rodata` 字符串当整数门禁（Ghidra 类型陷阱 ⇒ 多解引用一次）★ 硬门禁
+      - name: .rodata 字符串当整数门禁（Ghidra 类型陷阱 ⇒ 多解引用一次）★ 硬门禁
         run: |
           cd 1to1
           # 血泪：工厂 0x002dcea4 处是字符串 "font.ttf"，Ghidra 渲染成 `undefined4`。

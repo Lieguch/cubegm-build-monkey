@@ -2619,98 +2619,108 @@ typedef struct unz_file_info_internal_s
 } unz_file_info_internal;
 
 
+/* ★★★★ 1:1（第八个真实分歧）：`luf*` 底座必须是 **stdio（FILE\*）**，不是原始 fd。
+ *
+ * 证据链（全部来自工厂 ELF 机器码 + 实测 syscall 轨迹，非推断）：
+ *   ① 工厂 `lufopen @0x109fc`：`(unsigned)(flags-1) > 2` ⇒ `*err=65536` 返回 NULL；
+ *      `flags==1` 走**内存缓冲**分支；否则 `bl fopen@plt`，模式串 =
+ *      `pc(0x10a7c) + 字面量(0x002cb430)` = **0x2DBEAC**，该处字节实测为 **"r+b"**（读+写）
+ *      ⇒ 对应 syscall `openat(...,O_RDWR)`（实测：工厂 `O_RDWR` / 重建 `O_RDONLY`）。
+ *   ② 工厂 `lufread @0x10c20`：FILE* 分支付 `fread@plt(p,size,count,f)`，返回 0 时
+ *      `herr([lf+8])=1`；内存分支付 `memcpy`（或厂商钩子 `spi_memcpy`）+ `__aeabi_uidiv`。
+ *   ③ 工厂 `lufseek @0x10b74`/`luftell @0x10b30`/`lufclose @0x10ad0`：`fseek/ftell/fclose`，
+ *      非法参数返回 19(EINVAL)/29(ESPIPE)。
+ *   ④ **实测差异（同一份制品的 -strace）**：
+ *        工厂 `_llseek(3, 4947968, SEEK_SET)` + `read(3, buf, 3313)`
+ *        重建 `_llseek(3, 4950253, SEEK_SET)` + `read(3, buf, 1028)`
+ *      （4950253−4947968 = 2285 ⇒ 工厂的 seek 被 **stdio 对齐到 4 KiB 边界**、并用 4 KiB
+ *        缓冲一次把文件尾读进来）
+ *      ⇒ 对 `unzlocal_SearchCentralDir` 的 `lufread(...) != 1` 判据产生**不同结论**：
+ *        工厂判定"找不到中央目录" ⇒ `OpenZipU` 返回 0 ⇒ 打印 `open .../ui_cn.zip fail`
+ *        （随后崩在 `mui_setting`）；我们成功打开 ⇒ 走另一条分支
+ *        （`find font.ttf in .../ui_cn.zip fail` ⇒ `stbtt_GetFontVMetrics(NULL)` 崩溃）。
+ *   ★ 结论：把 I/O 底座换成 stdio 后，"打开成功/失败"这整类分歧自动同构。
+ * ★ 顺带修正一处语义：工厂把 **flags==1 当内存缓冲**（不是 Win32 HANDLE）——
+ *   `OpenZipU(path,0,2)` 传 2（文件名）不受影响，但语义必须一致。
+ */
 typedef struct
-{ bool is_handle; // either a handle or memory
-  bool canseek;
-  // for handles:
-  HANDLE h; bool herr; unsigned long initial_offset;
-  // for memory:
-  void *buf; unsigned int len,pos; // if it's a memory block
+{ unsigned char use_file;       // [0]  1 = FILE* 路径；0 = 内存缓冲
+  unsigned char canseek;        // [1]  两分支都置 1
+  FILE *f;                      // [4]
+  unsigned char herr;           // [8]
+  unsigned long initial_offset; // [12]
+  void *buf;                    // [16] 内存分支：缓冲区
+  unsigned int len,pos;         // [20] / [24]
 } LUFILE;
 
 
 LUFILE *lufopen(void *z,unsigned int len,DWORD flags,ZRESULT *err)
-{ if (flags!=ZIP_HANDLE && flags!=ZIP_FILENAME && flags!=ZIP_MEMORY) {*err=ZR_ARGS; return NULL;}
-  //
-  HANDLE h=0; bool canseek=false; *err=ZR_OK;
-  if (flags==ZIP_HANDLE||flags==ZIP_FILENAME)
-  { if (flags==ZIP_HANDLE)
-    { HANDLE hf = z;
-      BOOL res = DuplicateHandle(GetCurrentProcess(),hf,GetCurrentProcess(),&h,0,FALSE,DUPLICATE_SAME_ACCESS);
-      if (!res) {*err=ZR_NODUPH; return NULL;}
-    }
-    else
-    { h=CreateFile((const TCHAR*)z,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-      if (h==INVALID_HANDLE_VALUE) {*err=ZR_NOFILE; return NULL;}
-    }
-    DWORD type = GetFileType(h);
-    canseek = (type==FILE_TYPE_DISK);
+{ if ((unsigned)(flags-1)>2) {*err=0x10000; return NULL;}   /* 工厂：非法 flags ⇒ err=65536 */
+  if (flags==1)
+  { /* ★ 工厂把 flags==1 当「内存缓冲」 */
+    LUFILE *lf = new LUFILE;
+    lf->use_file=0; lf->canseek=1; lf->initial_offset=0;
+    lf->buf=z; lf->len=len; lf->pos=0;
+    *err=0;
+    return lf;
   }
+  FILE *f = fopen((const char*)z,"r+b");   /* ★ 工厂实测模式串 = "r+b" ⇒ O_RDWR */
+  if (f==NULL) {*err=512; return NULL;}
   LUFILE *lf = new LUFILE;
-  if (flags==ZIP_HANDLE||flags==ZIP_FILENAME)
-  { lf->is_handle=true;
-    lf->canseek=canseek;
-    lf->h=h; lf->herr=false;
-    lf->initial_offset=0;
-    if (canseek) lf->initial_offset = SetFilePointer(h,0,NULL,FILE_CURRENT);
-  }
-  else
-  { lf->is_handle=false;
-    lf->canseek=true;
-    lf->buf=z; lf->len=len; lf->pos=0; lf->initial_offset=0;
-  }
-  *err=ZR_OK;
+  lf->use_file=1; lf->canseek=1; lf->herr=0;
+  lf->f=f; lf->initial_offset=0;
+  fseek(f,0,SEEK_SET);
+  *err=0;
   return lf;
 }
 
 
 int lufclose(LUFILE *stream)
-{ if (stream==NULL) return EOF;
-  if (stream->is_handle) CloseHandle(stream->h);
+{ if (stream==NULL) return -1;
+  if (stream->use_file) fclose(stream->f);
   delete stream;
   return 0;
 }
 
 int luferror(LUFILE *stream)
-{ if (stream->is_handle && stream->herr) return 1;
-  else return 0;
+{ if (stream!=NULL && stream->use_file && stream->herr) return 1;
+  return 0;
 }
 
 long int luftell(LUFILE *stream)
-{ if (stream->is_handle && stream->canseek) return SetFilePointer(stream->h,0,NULL,FILE_CURRENT)-stream->initial_offset;
-  else if (stream->is_handle) return 0;
-  else return stream->pos;
+{ if (!stream->use_file) return stream->pos;
+  if (!stream->canseek) return 0;
+  return ftell(stream->f)-stream->initial_offset;
 }
 
 int lufseek(LUFILE *stream, long offset, int whence)
-{ if (stream->is_handle && stream->canseek)
-  { if (whence==SEEK_SET) SetFilePointer(stream->h,stream->initial_offset+offset,0,FILE_BEGIN);
-    else if (whence==SEEK_CUR) SetFilePointer(stream->h,offset,NULL,FILE_CURRENT);
-    else if (whence==SEEK_END) SetFilePointer(stream->h,offset,NULL,FILE_END);
-    else return 19; // EINVAL
-    return 0;
-  }
-  else if (stream->is_handle) return 29; // ESPIPE
-  else
+{ if (!stream->use_file)
   { if (whence==SEEK_SET) stream->pos=offset;
     else if (whence==SEEK_CUR) stream->pos+=offset;
     else if (whence==SEEK_END) stream->pos=stream->len+offset;
     return 0;
   }
+  if (!stream->canseek) return 29;        // ESPIPE
+  if (whence==SEEK_SET) fseek(stream->f,stream->initial_offset+offset,SEEK_SET);
+  else if (whence==SEEK_CUR) fseek(stream->f,offset,SEEK_CUR);
+  else if (whence==SEEK_END) fseek(stream->f,offset,SEEK_END);
+  else return 19;                          // EINVAL
+  return 0;
 }
 
 
 size_t lufread(void *ptr,size_t size,size_t n,LUFILE *stream)
-{ unsigned int toread = (unsigned int)(size*n);
-  if (stream->is_handle)
-  { DWORD red; BOOL res = ReadFile(stream->h,ptr,toread,&red,NULL);
-    if (!res) stream->herr=true;
-    return red/size;
+{ if (stream->use_file)
+  { size_t got = fread(ptr,size,n,stream->f);   /* ★ 工厂：fread，返回「元素个数」 */
+    if (got==0) stream->herr=1;
+    return got;
   }
-  if (stream->pos+toread > stream->len) toread = stream->len-stream->pos;
-  memcpy(ptr, (char*)stream->buf + stream->pos, toread); DWORD red = toread;
-  stream->pos += red;
-  return red/size;
+  { unsigned int total = (unsigned int)(size*n);
+    if (stream->pos+total > stream->len) total = stream->len-stream->pos;
+    if (total>0) memcpy(ptr,(char*)stream->buf + stream->pos,total);
+    stream->pos += total;
+    return total/size;
+  }
 }
 
 
