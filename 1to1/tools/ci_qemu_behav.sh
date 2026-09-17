@@ -121,8 +121,14 @@ mk_wrap() {
     # ★ 场景 C：若已用 tools/build_libkms_stub.sh 造好桩目录，把它并进 guest 的库搜索路径
     #   ⇒ `dlopen("/sdcard/cubegm/driver.so")` 的 DT_NEEDED `libkms.so.1` 才能解析成功。
     #   ★ 目录不存在时**不改** LD_LIBRARY_PATH ⇒ 场景 A/B 完全不受影响（保守）。
+    #   ★★ 必须**显式开关**而不是"目录存在就用"：实测事故 —— 场景 C 建好 report/stublib 后它**残留**，
+    #     于是场景 D 也被动注入了桩 ⇒ D 走了 C 的路线（driver.so→DRM 崩），**根本没走到 SFC/zip**，
+    #     判决性探针白跑一轮。这类"环境改动泄漏到别的场景"与覆盖率非单调是同一类坏味道：
+    #     **每个场景的输入必须完全由该场景自己的开关决定**。
     _LIBPATH="$QLIB"
-    if [ -d "$ROOT/report/stublib" ]; then _LIBPATH="$QLIB:$ROOT/report/stublib"; fi
+    if [ "${CGM_LIBKMS_STUB:-0}" = "1" ] && [ -d "$ROOT/report/stublib" ]; then
+        _LIBPATH="$QLIB:$ROOT/report/stublib"
+    fi
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\

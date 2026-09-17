@@ -109,7 +109,7 @@ jobs:
           cd 1to1
           mkdir -p report/stublib
           sh tools/build_libkms_stub.sh report/stublib || echo "[warn] 桩构建失败，场景 C 退化为场景 A"
-          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 CGM_COV_TAG=C \
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 CGM_COV_TAG=C CGM_LIBKMS_STUB=1 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_c || true
           echo '--- 场景 C：driver.so 是否已加载（stdout 不应再出现 libkms 报错）---'
