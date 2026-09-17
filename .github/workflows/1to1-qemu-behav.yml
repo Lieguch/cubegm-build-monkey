@@ -81,10 +81,29 @@ jobs:
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu
 
+      # ★★ 场景 B：注入厂商 ZIP 签名表（key2@0x3E190C）⇒ 资源包**可打开** ⇒ 首次进入菜单正文。
+      #   为什么必须有它：场景 A 里两侧都停在 `open .../ui_cn.zip fail` ⇒ `mui_setting` NULL+4 崩，
+      #   于是 mui 模块（42 函数 / 70,396 B = 重构量的 57%）**永远跑不到**，覆盖率天花板 25%。
+      #   ★ 本步骤是**观测（非门禁）**：场景 B 尚在建立基线期（首跑可能仍两侧同崩或立刻暴露新分歧），
+      #     故用 `|| true` 只为拿数据。**基线稳定后必须去掉 `|| true` 升级为硬门禁**（否则等于白测）。
+      - name: 行为采集·场景 B（注入 key2，观测非门禁，待升级）
+        continue-on-error: true
+        run: |
+          cd 1to1
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 CGM_KEY2_SEED=1 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_b || true
+          echo '--- 场景 B 覆盖率（对比场景 A 的天花板）---'
+          for f in report/qemu_b/coverage_rebuild.txt report/qemu_b/coverage_factory.txt; do
+            [ -f "$f" ] && { echo "== $f =="; sed -n '1,9p' "$f"; }
+          done
+
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: 1to1-qemu-behav
-          path: 1to1/report/qemu/
+          path: |
+            1to1/report/qemu/
+            1to1/report/qemu_b/
           if-no-files-found: warn

@@ -110,13 +110,21 @@ fi
 
 mk_wrap() {
     # $1 = 输出脚本   $2 = 附加 qemu 参数
+    # ★ 把宿主上存在的 CGM_* 变量逐个 `-E` 进 **guest**（shim 在 guest 里 getenv 读）。
+    #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
+    #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
+    _ENVS=""
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED; do
+        eval "_val=\${$_v:-}"
+        if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
+    done
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\
   $PRELOAD_OPT \\
   -E LD_LIBRARY_PATH=$QLIB \\
   -E PATH=$SYSROOT/usr/bin:/usr/bin:/bin \\
-  -E HOME=/tmp -E TMPDIR=/tmp -E LC_ALL=C -E LANG=C \\
+  -E HOME=/tmp -E TMPDIR=/tmp -E LC_ALL=C -E LANG=C$_ENVS \\
   "$GUEST" "\$@"
 EOF
     chmod +x "$1"

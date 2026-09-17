@@ -667,6 +667,48 @@ static void shim_poison_walk(unsigned int depth)
 
 __attribute__((constructor)) static void shim_poison_stack(void)
 {
+    /* ---- ②b 场景 B：key2 注入（让「资源包可打开」这条真机路径进得来）---------------
+     * 背景（P5 实测 + 静态取证）：
+     *   · 工厂与重建**全文件都搜不到 `PK\x05\x06`/`PK\x03\x04`/`PK\x01\x02` 字节串**
+     *     ⇒ ZIP 签名不在 .rodata，只能在运行期内存里；
+     *   · `unzlocal_SearchCentralDir`（工厂 0x10eb0）逐字节比对的正是**全局 `key2`**
+     *     （@0x3E190C，`.bss` 28 B，symtab 有符号；Ghidra 全 812 个函数里只有 3 个 zip 函数读它）；
+     *   · 而 **整个 rkgame + driver.so 都没有任何 key2 的写入者**（driver.so 里连
+     *     0x3E190C 常量与 PK 字节都没有 ⇒ 不是"外部模块填的"）。
+     *   ⇒ 默认环境下 key2 全 0 ⇒ 搜索找的是「4 个 0x00」而**不是** EoCD 签名 ⇒
+     *     工厂与重建都打不开 ui_cn.zip ⇒ 双双停在 `mui_setting` 的 NULL+4 崩溃。
+     *     于是**整个菜单层（mui 42 函数 / 70396 B = 重构量的 57%）永远跑不到**。
+     *
+     * 本开关做的事：把厂商签名表按最自然的排布写进 key2，让"资源包可打开"这条路径
+     * 在两**侧都以完全相同的方式**变得可观测（差分依旧公平：两侧加载同一份 shim、
+     * 同一份注入值）。
+     *   · CGM_KEY2_SEED=1  → key2[0..3]="PK\5\6" [4..7]="PK\6\6"
+     *                        [8..11]="PK\3\4" [12..15]="PK\1\2"
+     *   · 未设 / =0        → 不注入（= 场景 A，与工厂默认态一致）
+     * ★ 地址 0x003E190C 是**常量**：guest 非 PIE（gdb 已断言"地址即链接地址"），
+     *   且两侧布局账本（ledger/factory_globals.tsv）已核对该全局同址。
+     * ★ 只在显式开启时写内存；若假设不成立会立刻在 constructor 里 SIGSEGV（可见、可退）。 */
+    {
+        const char *k2 = getenv("CGM_KEY2_SEED");
+        if (k2 != NULL && k2[0] != '\0' && k2[0] != '0') {
+            static const unsigned char sig[16] = {
+                'P', 'K', 0x05, 0x06, 'P', 'K', 0x06, 0x06,
+                'P', 'K', 0x03, 0x04, 'P', 'K', 0x01, 0x02
+            };
+            volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
+            int i;
+            for (i = 0; i < 16; i++) {
+                p[i] = sig[i];
+            }
+            if (getenv("CGM_SHIM_VERBOSE") != NULL) {
+                static const char msg[] =
+                    "[shim] key2 seeded @0x3E190C = PK\\x05\\x06 PK\\x06\\x06 PK\\x03\\x04 PK\\x01\\x02"
+                    "（场景 B：让 ui_cn.zip 可打开）\n";
+                (void)write(2, msg, sizeof(msg) - 1);
+            }
+        }
+    }
+
     shim_poison_walk(POISON_DEPTH);
 
     /* 证据行（默认静默；把 CGM_SHIM_VERBOSE=1 经 qemu -E 传进 guest 才输出）：
