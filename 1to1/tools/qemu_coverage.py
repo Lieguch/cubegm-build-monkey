@@ -136,6 +136,10 @@ def main():
     ap.add_argument('--elf', required=True)
     ap.add_argument('--ledger', default='')
     ap.add_argument('--label', default='')
+    ap.add_argument('--tag', default='',
+                    help='场景标记（如 A/B/C）。给了就把基线键写成 <tag>/<label> —— '
+                         '**必须**这么做：同一 label 在不同场景下覆盖率天然不同（环境不同、终止点不同），'
+                         '混用同一个键会让棘轮在场景之间互相误报。')
     ap.add_argument('--out', default='')
     ap.add_argument('--baseline', default='')
     ap.add_argument('--top', type=int, default=20)
@@ -162,7 +166,9 @@ def main():
     text_bytes = sum(syms[i][1] for i in all_text_fn)
 
     L = []
-    L.append('== P5 执行覆盖率（label=%s）==' % (a.label or '?'))
+    _tag = (a.tag or '').strip().strip('/')
+    _key = ('%s/%s' % (_tag, a.label)) if _tag else a.label
+    L.append('== P5 执行覆盖率（label=%s%s）==' % (a.label or '?', (' 场景 ' + _tag) if _tag else ''))
     L.append('   ELF      : %s' % a.elf)
     L.append('   轨迹日志 : %s（%d 行；唯一 pc %d 个）' % (a.exec_log, lines, len(pcs)))
     L.append('   覆盖函数 : %d / %d = %.2f%%' % (len(in_text), len(all_text_fn),
@@ -215,11 +221,12 @@ def main():
                     continue
                 k, v = ln.split('=', 1)
                 b[k.strip()] = int(v.strip())
-            prev = b.get(a.label or '')
+            prev = b.get(_key or '')
             if prev is not None:
                 delta = len(in_text) - prev
-                L.append('   覆盖率基线：%d 个函数 → 现在 %d 个（%+d）%s'
-                         % (prev, len(in_text), delta, '✓' if delta >= 0 else '  ✗ 覆盖率回退'))
+                L.append('   覆盖率基线[%s]：%d 个函数 → 现在 %d 个（%+d）%s'
+                         % (_key, prev, len(in_text), delta,
+                            '✓' if delta >= 0 else '  ✗ 覆盖率回退'))
                 if delta < 0:
                     rc = 2
         except Exception as ex:                       # 基线只做提示，不因格式问题失败

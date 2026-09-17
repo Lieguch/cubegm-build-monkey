@@ -234,7 +234,10 @@ exec_probe() {
         #   报告进制品；原始大日志照旧删除。
         _cov_elf="$REBUILD"
         if [ "$label" = "factory" ] || [ "$label" = "control" ]; then _cov_elf="$FACTORY"; fi
+        #   ★ `--tag` 必须传：同一 label 在不同场景（A/B/C）下覆盖率天然不同（环境与终止点都不同），
+        #     混用一个基线键会让棘轮在场景之间互相误报。场景标记由 CGM_COV_TAG 传入。
         _cov_args="--exec-log $log --elf $(winpath "$_cov_elf") --label $label"
+        _cov_args="$_cov_args --tag ${CGM_COV_TAG:-}"
         _cov_args="$_cov_args --out $OUT/coverage_${label}.txt --ledger $(winpath "$ROOT/ledger/functions.csv")"
         if [ -f "$ROOT/tools/coverage_baseline.txt" ]; then
             _cov_args="$_cov_args --baseline $(winpath "$ROOT/tools/coverage_baseline.txt")"
