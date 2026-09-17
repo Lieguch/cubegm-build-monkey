@@ -365,6 +365,79 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-17 第三十四轮：★★★★★ 第八个真实分歧（根因）—— `luf*` I/O 底座：**stdio vs 裸 fd**
+
+> 关键突破：**制品里本来就有 `-strace` 轨迹** —— 不需要再猜、也不需要多花一轮 CI。
+> 直接 grep 目标路径，两侧的 syscall 序列把答案写死了。
+
+#### 一、同一份制品的 syscall 对照（决定性）
+
+| | 工厂（参考） | 重建（改前） |
+|---|---|---|
+| zip 打开 | `openat("/sdcard/cubegm//ui_cn.zip", **O_RDWR**) = 3` | `openat(..., **O_RDONLY**) = 3` |
+| 打开结果 | **成功** | **成功** |
+| 尾部搜索读 | `_llseek(3, **4947968**, SEEK_SET)` + `read(3, buf, **3313**)` | `_llseek(3, **4950253**, SEEK_SET)` + `read(3, buf, **1028**)` |
+| 后续 | seek→EOF、`read(4096)=0`、**close**（未读中央目录） | seek→4950716（中央目录偏移）、逐字节读完 |
+| stdout | `open .../ui_cn.zip fail` ×2 | `find font.ttf in .../ui_cn.zip fail` |
+| 崩点 | `mui_setting+0x114`（`ldrh r0,[r3,#4]`，r3=0 ⇒ addr 0x4） | `stbtt_GetFontVMetrics`（r0=0 ⇒ NULL font） |
+
+⇒ **两侧都成功打开了文件**，却对"能不能解析这个 zip"得出**相反结论**。
+
+#### 二、根因（字节级证据，非推断）
+
+1. 工厂 `lufopen @0x109fc` 用 **`fopen`**：模式串 = `pc(0x10a7c) + 字面量(0x002cb430)` = `0x2DBEAC`，
+   该处字节实测 **`"r+b"`**（读+写）⇒ syscall `O_RDWR` ✓ 与 strace 逐字一致。
+2. 工厂 `lufread @0x10c20` = `fread@plt(p,size,count,f)`（返回"元素个数"，0 时置 `herr`）；
+   `lufseek`/`luftell`/`lufclose` 同理走 `fseek/ftell/fclose`（错误码 19/29）。
+3. **我们** 走 `CreateFile(GENERIC_READ)` ⇒ `open(O_RDONLY)` + `fstat` + `lseek`（**裸 fd**）。
+4. **差异的放大器**：stdio 的 `fseek` 会把底层 fd **对齐到 4 KiB 边界**再整块缓冲
+   （4950253 → 4947968，`read` 3313）；裸 `lseek` 不会（4950253，`read` 1028）。
+   于是 `unzlocal_SearchCentralDir` 里那句 **`if (lufread(...) != 1) return 0;`**
+   （工厂 `0x10f78: cmp r0,#1 / bne 11064`）在两侧**得到相反结果**。
+
+#### 三、修复：按工厂机器码忠实重写整层（不是打补丁）
+
+`src/upstream/xunzip/unzip.cpp` 的 `LUFILE` + 6 个 `luf*` 全部重写：
+
+| 项 | 工厂语义（照抄） |
+|---|---|
+| `lufopen` | `(unsigned)(flags-1) > 2` ⇒ `*err=65536`；`flags==1` ⇒ **内存缓冲**（不是 Win32 HANDLE）；否则 `fopen((char*)z,"r+b")`，失败 ⇒ `*err=512` |
+| `lufread` | FILE* ⇒ `fread(ptr,size,n,f)`；内存 ⇒ `memcpy` + `total/size` |
+| `lufseek` | FILE* ⇒ `fseek`（SET 加 `initial_offset`），非法 ⇒ `19`；不可 seek ⇒ `29` |
+| `luftell` | FILE* ⇒ `ftell(f) - initial_offset`；内存 ⇒ `pos` |
+| `lufclose` | `fclose` + `delete`；NULL ⇒ `-1` |
+
+**符号尺寸收敛**（工厂 = 参考）：
+
+| 符号 | 工厂 | 改前 | 改后 |
+|---|---|---|---|
+| `lufopen` | 212 | 284 | **200** |
+| `luftell` | 68 | 84 | **68 ← 完全一致** |
+| `lufseek` | 172 | 176 | **184** |
+| `lufread` | 168 | 132 | **144** |
+| `lufclose` | 60 | 64 | **64** |
+
+最终 ELF 实测：`bl __ARMv7ABSLongThunk_fopen` ✓；门禁全 PASS
+（宽松/严格 213/213、审计 0/0、布局 193/194、ABI PASS、dyn_audit FAIL 0、变参 4/4、`.rodata` 类型 PASS、指纹 FAIL 0）。
+
+#### 四、顺带修掉两处**我自己**的工具缺陷
+
+- `push_1to1.py` 的 YAML 闸门漏 `import re` ⇒ 推送时 `NameError` 直接崩（已修，函数内自足导入 + 语法自检）。
+- workflow 步骤名以**反引号**开头 ⇒ YAML 解析失败（`1to1-verify` 退化成文件路径、无 jobs、18 步全丢）。
+  已改回普通文本，并由新增的推送前 YAML 自检保证不再复发（实测：`pyyaml` 解析 ✓ / 2 个文件通过）。
+
+#### 五、下一步
+
+1. 盯 CI：重建侧 stdout 是否变成 `open .../ui_cn.zip fail`（与工厂同构）。
+2. 若同构 ⇒ 两侧应停在**同一处**崩溃（`mui_setting`），可判定前缀大幅推进。
+3. 剩余未对齐项按同一方法（机器码 + `-strace` 差分）继续收敛：
+   `unzlocal_SearchCentralDir`(452/616)、`unzLocateFile`(240/528)、`unzGetGlobalComment`(148/308)、
+   `unzGetLocalExtrafield`(164/320)、`unzClose`(60/144)、`TUnzip::Unzip`(28+.part.7 / 1600)、
+   `TUnzip::Get`(152+.part.5 / 1208)、`TUnzip::Close`(68/168)、`TUnzip::Find`(180/288)、
+   `unzOpenCurrentFile`（单参 / 双参——**唯一双侧签名不同者**）。
+
+---
+
 ### 2026-09-16 第三十三轮：★★★★★ 第八个真实分歧 —— `.rodata` 字符串被 Ghidra 渲染成**整数** ⇒ 多解引用一次
 
 #### 一、崩点（CI `d458968b771c`，承接第三十二轮"崩点移出 unz 路径"）

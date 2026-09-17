@@ -2915,36 +2915,72 @@ int unzStringFileNameCompare (const char*fileName1,const char*fileName2,int iCas
 
 //  Locate the Central directory of a zipfile (at the end, just before
 // the global comment)
+/* ★★ 1:1：工厂全局 `key2` @0x3E190C（symtab size=28，.bss）—— `unzlocal_SearchCentralDir` 的
+ *   4 字节签名模式就存在这里（工厂 rodata 里**没有** PK 字面量，改用字面量会导致
+ *   "总能找到 EoCD" ⇒ 打开成功，与工厂相反）。
+ *   别名见 src/data/factory_image.S:2084-2085（`.set key2, __f_bss_base + 0x2f794`），
+ *   地址与工厂逐字节一致 ⇒ 两侧看到的 key2 内容必然相同，判定天然对齐。 */
+extern unsigned char key2[28];
+
 uLong unzlocal_SearchCentralDir(LUFILE *fin)
+/* ★★★★ 1:1（第八个真实分歧·收尾）：**必须比对全局 `key2[8]`，不能用字面量 `PK`**。
+ *
+ * 工厂机器码（0x10eb0..0x11074）逐条对应的判据：
+ *   · `10ef0: movw r3,#65534 ; cmp r5,r3 ; bhi 1100c` ⇒ `uSizeFile > 0xfffe ? uMaxBack=0xffff : =uSizeFile`
+ *     （注意是 **65534**，不是标准版的 0xffff）
+ *   · `10f1c: mov r8,r5`（小文件）⇒ uMaxBack = uSizeFile；`10f14: cmp r5,#4 ; bls` ⇒ `uSizeFile<5` 直接返回 0
+ *   · 循环头 `10f28: add r7,r7,#1024` / `10f3c: movcs r7,r8` ⇒ `uBackRead += 0x400; if (>=uMaxBack) =uMaxBack`
+ *   · `10f44/10f4c: cmp r7,fp(1028) ; movcc/movcs` ⇒ `uReadSize = (uBackRead > 0x403) ? 0x404 : uBackRead`
+ *   · `10f40: sub r5,r3,r7` ⇒ seek 偏移 = `uSizeFile - uBackRead`（**可越界到负**，与标准版的三元夹取不同）
+ *   · `10f78: cmp r0,#1 ; bne 11064` ⇒ **`lufread` 必须恰好读满 1 个元素，否则直接 return 0**
+ *   · `10f9c: ldr r3,[r6,r2]`（GOT 取址）= `key2`；`10fa4/10fb0: ldrsb r0,[r3,#4]/[r3]`
+ *     ⇒ 逐个字节比对 **`key2[0..3]` 或 `key2[4..7]`**（两个 4 字节签名，工厂 rodata 里**没有** PK 字面量）
+ *   · `10fec: add r4,r4,r5` ⇒ 命中位置 = 窗口内偏移 + `uSizeFile-uBackRead`；`beq`（=0）则继续下一窗口
+ *   · `11054: cmp r7,r8 ; bcc 10f28` ⇒ do-while：`uBackRead < uMaxBack` 继续
+ *   · `11064: ldr r4,[sp,#4]` ⇒ 短读时返回 `lufseek` 的返回值（0）
+ *
+ * ★ 为什么这一条是"根因"：`key2` 是 **.bss 全局**（我方 `factory_image.S:2085` 已 `.set key2,
+ *   __f_bss_base + 0x2f794` = **0x3E190C，与工厂逐字节一致**）。用字面量时我们总能找到 EoCD ⇒
+ *   解析成功；用同一个全局时，**两侧看到的内容必然相同**（无论厂商 init 是否写入）
+ *   ⇒ "打开成功/失败"的判定与工厂逐字对齐。
+ * ★ 实测差异（-strace，同一制品）：工厂 `read(4096)=0` 后 `close`（判失败）；
+ *   重建继续 `_llseek(3,0,0,SEEK_SET)` + `read(4096)=4096`（判成功）⇒ 后续 stdout 完全不同。
+ */
 { if (lufseek(fin,0,SEEK_END) != 0) return 0;
   uLong uSizeFile = luftell(fin);
-
-  uLong uMaxBack=0xffff; // maximum size of global comment
-  if (uMaxBack>uSizeFile) uMaxBack = uSizeFile;
-
-  unsigned char *buf = (unsigned char*)zmalloc(BUFREADCOMMENT+4);
+  uLong uMaxBack;
+  unsigned char *buf = (unsigned char*)zmalloc(0x404);
   if (buf==NULL) return 0;
-  uLong uPosFound=0;
-
+  if (uSizeFile > 0xfffe) uMaxBack = 0xffff;
+  else
+  { uMaxBack = uSizeFile;
+    if (uSizeFile < 5) { zfree(buf); return 0; }
+  }
   uLong uBackRead = 4;
-  while (uBackRead<uMaxBack)
-  { uLong uReadSize,uReadPos ;
-    int i;
-    if (uBackRead+BUFREADCOMMENT>uMaxBack) uBackRead = uMaxBack;
-    else uBackRead+=BUFREADCOMMENT;
-    uReadPos = uSizeFile-uBackRead ;
-    uReadSize = ((BUFREADCOMMENT+4) < (uSizeFile-uReadPos)) ? (BUFREADCOMMENT+4) : (uSizeFile-uReadPos);
-    if (lufseek(fin,uReadPos,SEEK_SET)!=0) break;
-    if (lufread(buf,(uInt)uReadSize,1,fin)!=1) break;
-    for (i=(int)uReadSize-3; (i--)>0;)
-    { if (((*(buf+i))==0x50) && ((*(buf+i+1))==0x4b) &&	((*(buf+i+2))==0x05) && ((*(buf+i+3))==0x06))
-      { uPosFound = uReadPos+i;	break;
+  for (;;)
+  { uLong uReadSize;
+    uBackRead += 0x400;
+    if (uBackRead >= uMaxBack) uBackRead = uMaxBack;
+    uReadSize = (uBackRead > 0x403) ? 0x404 : uBackRead;
+    if (lufseek(fin,(long)(uSizeFile-uBackRead),SEEK_SET)!=0) break;
+    if (lufread(buf,(uInt)uReadSize,1,fin)!=1) { zfree(buf); return 0; }
+    { int i; int found=0;
+      for (i=(int)uReadSize-4; i>=0; i--)
+      { if ((buf[i]==key2[4]) && (buf[i+1]==key2[5]) && (buf[i+2]==key2[6]) && (buf[i+3]==key2[7]))
+        { found=1; break; }
+        if ((buf[i]==key2[0]) && (buf[i+1]==key2[1]) && (buf[i+2]==key2[2]) && (buf[i+3]==key2[3]))
+        { found=1; break; }
+      }
+      if (found)
+      { uLong uPosFound = (uLong)i + (uSizeFile-uBackRead);
+        if (uPosFound!=0) { zfree(buf); return uPosFound; }
       }
     }
-    if (uPosFound!=0) break;
+    if (uBackRead < uMaxBack) continue;
+    break;
   }
-  if (buf) zfree(buf);
-  return uPosFound;
+  zfree(buf);
+  return 0;
 }
 
 
