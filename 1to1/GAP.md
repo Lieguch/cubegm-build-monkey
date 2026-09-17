@@ -184,29 +184,30 @@
 - **根因治理**：把 `proto.h` 里三个 K&R 空参声明改成**真原型**（`mxmlLoadFile(gh_u4,void*,gh_u4)` 等）
   ⇒ 漏参在**严格编译门禁**阶段直接报错，不再靠人眼看。
 
-#### G1·补四 ★★★★ **同一物种的存量缺陷：19 个函数存在漏参**（已建机械门禁 + 台账棘轮）
+#### G1·补四 ★★★ **更正**：所谓"19 个函数存在漏参"是**错口径产物**，真实存量 = **0**
 
-`proto.h` 里 **107 个 K&R 空参声明**，对应 **235 处"零实参"调用点**。新增门禁
-`tools/scan_kr_argcount.py`（以**工厂反汇编**为权威：数每个 `bl` 之前写过几个 `r0..r3`；
-内置 3 个手工核对过的自证锚点）首次对账结果：**19 个函数的调用点实参少于工厂真实参数**：
+上一轮我据 `tools/scan_kr_argcount.py`（数工厂机器码 `bl` 前的 `r0..r3` 个数）报告"**19 个函数存在漏参**"。
+**这个结论是错的**，必须更正。追查过程（四次口径修正，每次都被工具内置的**自证锚点**拦下）：
 
-| 函数 | 工厂参数 | 我们最多 | 典型调用点 |
-|---|---|---|---|
-| `mui_ReadJoystick` | 1 | 0 | `SeletEmuCore.c`（工厂 57 处调用）|
-| `mui_WaitNMI` | 1 | 0 | `JoystickTest.c`（工厂 23 处）|
-| `GetTicks` / `getticks` | 2 / 3 | 0 | `JoystickTest.c` / `RF_Joystick_timer_isr.c` |
-| `SaveMenuLog` | 3 | 0 | `mui_menu.c`（工厂 12 处）|
-| `mui_DisplayGameSum` | 3 | 0 | `mui_menu.c`（工厂 15 处）|
-| `mui_DisplayInputBuffer` | 3 | 0 | `mui_search.c`（工厂 5 处）|
-| `mui_LoadConfig` / `mui_DisplayThumbnail` | 1 / 2 | 0 | `mui_setting.c` / `mui_DisplayThumbnailThread.c` |
-| `snor_write_en` / `RetroInitSound` / `InitKeyMapping0fEmuType` | 3 / 1 / 3 | 0 | `spi_write.c` / `Load_Proc2.c` / `Load_Proc1.c` |
-| `GetConfig` / `JoystickTest` / `GetFilenameExt` | 1 / 2 / 2 | 0 / 1 / 1 | `main.c` / `FilePreEmu.c` |
-| `GetZipItemA` | 4 | 3 | `FilePreEmu.c`（zip 路径！）|
-| `run_game` / `FBA_Load` / `stbtt_GetFontVMetrics` | 3 / 3 / 4 | 2 / 2 / 3 | — |
+| 口径 | 现象 | 为何错 |
+|---|---|---|
+| ① 取全部调用点的 **max** | `mui_ReadJoystick` 报"工厂 1 参 / 我们 0 参" | 57 处调用里只要有 1 处碰巧设了 r0 就判成 1 参 ⇒ **假阳性** |
+| ② 取 **min** | `mxmlDelete` 报 min=0 | `mxmlRelease→mxmlDelete` 是**尾调用**，r0 继承自本函数参数，窗口里本就不该有赋值 ⇒ **假阴性** |
+| ③ 取 **前缀 arity**（r0 起连续前缀） | 锚点仍不符 | `mxmlDelete` 调用点前面是 `ldr r0`→`cmp`→`beq`→`bl`，我"遇分支即停"把参数设置丢了 ⇒ **假阴性** |
+| ④ 边界收敛为"仅无条件流改变" | 锚点通过，得 20 项 | 但 `len(regs)` 仍被**临时寄存器**污染（`ldr r3,[r4,#204]` 让 `mxmlDelete` 量成 2 参）⇒ **假阳性** |
 
-**门禁语义（棘轮）**：19 项写入 `tools/kr_argcount_pending.txt`；**不在台账中的新增违例一律失败**。
-已做**反向验证**（空台账 ⇒ 19 项全部算新增 ⇒ 退出码 1）。
-⇒ 这 19 项是下一阶段的主线工作：逐项按工厂机器码定参、修调用点、删台账行。
+**最终采用的口径（保守、无假阳性）**：`tools/scan_call_args.py` —— 以**工厂 per-function 反编译 C 的调用表达式**为准，
+逐 `(调用者, 被调者)` 比较实参个数。关键性质：Ghidra 推断原型偏小时会**丢参数**
+（它把工厂真实的 `mxmlLoadFile(0,fp,0)` 渲染成 `mxmlLoadFile(0,__stream)`），
+故该口径**只可能少算、不可能多算** ⇒ 用它判"我们比工厂少传"**不会产生假阳性**（代价是可能漏报，由机器码口径本地兜底）。
+
+**结论（自证通过，1279 对可比对）**：`✓ 无新增漏参` —— **真实漏参数 = 0**，
+除已修的两处：`mxmlLoadFile` 6 个调用点（漏第 3 参 `cb`）+ `mxmlDelete` 1 处（零实参）。
+
+**机器码口径的去向**：`tools/scan_kr_argcount.py` 降级为**本地工作清单生成器**（不再进门禁）。
+
+**两处真修复的验证强度**：`mxmlLoadFile` 修好后，场景 E 重建侧**覆盖率 4 → 58 个函数**、
+`M5/M6` 首次到达 —— 这是"漏参 ⇒ 寄存器垃圾"这一类缺陷的实证。
 
 ### G2 ★★★★ 硬件接口层 **0% 动态验证**（driver.so 在沙箱里根本没加载成功）
 
