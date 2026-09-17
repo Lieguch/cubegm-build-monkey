@@ -114,6 +114,58 @@ static int raw_openat(const char *path, int flags, mode_t mode)
     return (int)syscall(SYS_openat, AT_FDCWD, path, flags, mode);
 }
 
+/* ---- ②c 场景 E：`.zip` 打开瞬间**重新断言** key2 ---------------------------------
+ * 动机（单变量定位"写入者"）：
+ *   · 已知 `unzlocal_SearchCentralDir` 比对的是 `key2[0..7]`，而 `key2` 在 BSS（初值 0）；
+ *   · 场景 B（constructor 里注入正确字节）会区分两种世界：
+ *       行为仍不变 ⇒ 有代码在 constructor 之后把它覆写 = **存在写入者**；
+ *       行为改变   ⇒ 无写入者，窗口直接打开。
+ *   · 若存在写入者，本开关把写入时刻**推到 last moment**（打开 .zip 之前一瞬）：
+ *       行为改变 ⇒ 写入发生在 constructor 与 zip-open 之间（写入者被夹到极窄窗口内）；
+ *       行为仍不变 ⇒ 写入发生在 open 之后（下一次实验只需再往后推）。
+ *   ★ 只在 `CGM_KEY2_HOOK=1` 时生效；两侧共用同一 shim ⇒ 差分依旧公平。 */
+static int g_key2_hook, g_key2_hook_logged;
+
+/* ★ 本段位于 `note` 的正式定义（更靠后）之前 ⇒ 必须先给前置声明，
+ *   否则 zig/cc 报 "call to undeclared function 'note'"（实测就是这个错）。 */
+static void note(const char *fmt, ...);
+
+static void key2_assert(void)
+{
+    static const unsigned char sig[8] = { 'P', 'K', 0x05, 0x06, 'P', 'K', 0x07, 0x08 };
+    volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
+    int i;
+    for (i = 0; i < 8; i++) {
+        p[i] = sig[i];
+    }
+}
+
+static int is_zip_path(const char *path)
+{
+    size_t n;
+    if (path == NULL) {
+        return 0;
+    }
+    n = strlen(path);
+    return (n >= 4 && path[n - 4] == '.' && path[n - 3] == 'z'
+            && path[n - 2] == 'i' && path[n - 1] == 'p');
+}
+
+static void key2_hook_try(const char *path)
+{
+    if (!g_key2_hook || !is_zip_path(path)) {
+        return;
+    }
+    key2_assert();
+    if (g_key2_hook_logged < 6) {
+        volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
+        note("[shim] key2 re-assert on open(%s) -> 回读=%02x %02x %02x %02x %02x %02x %02x %02x\n",
+             path, (unsigned)p[0], (unsigned)p[1], (unsigned)p[2], (unsigned)p[3],
+             (unsigned)p[4], (unsigned)p[5], (unsigned)p[6], (unsigned)p[7]);
+        g_key2_hook_logged++;
+    }
+}
+
 static int open_impl(const char *path, int flags, va_list ap)
 {
     mode_t mode = 0;
@@ -122,6 +174,7 @@ static int open_impl(const char *path, int flags, va_list ap)
     if (flags & (O_CREAT | O_TMPFILE)) {
         mode = (mode_t)va_arg(ap, int);
     }
+    key2_hook_try(path);
     tgt = redirect_dev(path);
     return raw_openat(tgt != NULL ? tgt : path, flags, mode);
 }
@@ -157,6 +210,7 @@ int openat(int dirfd, const char *path, int flags, ...)
         mode = (mode_t)va_arg(ap, int);
         va_end(ap);
     }
+    key2_hook_try(path);
     /* 只有 AT_FDCWD + 绝对路径才做重定向；相对目录一律原样转发 */
     tgt = (dirfd == AT_FDCWD) ? redirect_dev(path) : NULL;
     if (tgt != NULL) {
@@ -731,11 +785,19 @@ __attribute__((constructor)) static void shim_poison_stack(void)
      * ★ 地址 0x003E190C 是**常量**：guest 非 PIE（gdb 已断言"地址即链接地址"），
      *   且两侧布局账本（ledger/factory_globals.tsv）已核对该全局同址。
      * ★ 只在显式开启时写内存；若假设不成立会立刻在 constructor 里 SIGSEGV（可见、可退）。 */
+    g_key2_hook = (getenv("CGM_KEY2_HOOK") != NULL
+                   && getenv("CGM_KEY2_HOOK")[0] != '\0'
+                   && getenv("CGM_KEY2_HOOK")[0] != '0');
     {
         const char *k2 = getenv("CGM_KEY2_SEED");
         if (k2 != NULL && k2[0] != '\0' && k2[0] != '0') {
+            /* ★★ 2026-09-17 修正（关键）：`unzlocal_SearchCentralDir` 只在 `key2[0..3]` 与
+             *   `key2[4..7]` 两个 4 字节组上比对（反编译第 66..69 行），对应上游 Wischik 的
+             *   两个字面量 `PK\x05\x06`（EoCD）与 **`PK\x07\x08`**（spanned）。
+             *   本开关上一版写的是 `PK\x06\x06` ⇒ 注入的字节本身就不可能是签名 ⇒
+             *   场景 B「注入后行为毫无变化」**是错的注入值造成的假阴性**，不能作为归因依据。 */
             static const unsigned char sig[16] = {
-                'P', 'K', 0x05, 0x06, 'P', 'K', 0x06, 0x06,
+                'P', 'K', 0x05, 0x06, 'P', 'K', 0x07, 0x08,
                 'P', 'K', 0x03, 0x04, 'P', 'K', 0x01, 0x02
             };
             volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
@@ -746,7 +808,7 @@ __attribute__((constructor)) static void shim_poison_stack(void)
             g_key2_seeded = 1;
             /* ★ 回读校验：证明"写到了我们以为的地址上"（而不是写到某块无关的可写内存）。
              *   若这里读回的不是 PK 值，说明 0x3E190C 在运行期并非 key2 所在 ⇒ 注入无效。 */
-            note("[shim] key2 seeded @0x3E190C = PK\\x05\\x06 PK\\x06\\x06 PK\\x03\\x04 PK\\x01\\x02"
+            note("[shim] key2 seeded @0x3E190C = PK\\x05\\x06 PK\\x07\\x08 PK\\x03\\x04 PK\\x01\\x02"
                  "  回读=%02x %02x %02x %02x %02x %02x %02x %02x（场景 B：让 ui_cn.zip 可打开）\n",
                  (unsigned)p[0], (unsigned)p[1], (unsigned)p[2], (unsigned)p[3],
                  (unsigned)p[4], (unsigned)p[5], (unsigned)p[6], (unsigned)p[7]);

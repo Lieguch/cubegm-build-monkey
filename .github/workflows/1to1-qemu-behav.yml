@@ -126,19 +126,23 @@ jobs:
       #   本场景把**所有 SFC 数据读**的载荷统一填成 0xC7（芯片ID/UniqueID 保持真实以免走错启动分支）：
       #     · key2 变成 C7 重复 ⇒ 链路 = SFC 读 → key2 ⇒ 沙箱修法 = 仿真正确的 security 载荷；
       #     · key2 不变        ⇒ 来源与 SFC 无关 ⇒ 下一步改用「key2 页写陷阱」抓写入者的 pc/lr。
-      - name: 行为采集·场景 D（SFC 载荷探针 + key2 现场 dump，观测非门禁）
-        continue-on-error: true
+      - name: 行为采集·场景 E（.zip 打开瞬间重新断言 key2 ⇒ 单变量定位写入者，观测非门禁）
         run: |
           cd 1to1
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 \
-          CGM_SFC_PATTERN=C7 CGM_KEY2_PROBE=1 CGM_COV_TAG=D \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_COV_TAG=E \
             sh tools/ci_qemu_behav.sh \
-              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_d || true
-          echo '--- 场景 D：崩溃现场 key2 现值（判决性）---'
-          grep -a "key2 @0x3E190C" report/qemu_d/rundir_factory/stderr.txt \
-                                     report/qemu_d/rundir_rebuild/stderr.txt || true
-          echo '--- 场景 D：SFC 载荷类别 ---'
-          grep -a "sfc cmd op=" report/qemu_d/rundir_factory/stderr.txt | head -6 || true
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_e || true
+          echo '--- 场景 E：key2 重新断言的证据行 ---'
+          grep -a "key2 re-assert" report/qemu_e/rundir_factory/stderr.txt | head -4 || true
+          echo '--- 场景 E：zip 打开失败行数（与场景 A/B 对比；0 = 窗口打开）---'
+          for d in qemu qemu_b qemu_e; do
+            n=$(grep -ac "ui_cn.zip fail" report/$d/rundir_factory/stdout.txt 2>/dev/null || echo '?')
+            echo "   $d : $n 行"
+          done
+          echo '--- 场景 E：里程碑 + 覆盖率 ---'
+          sed -n '1,14p' report/qemu_e/milestones.txt 2>/dev/null || true
+          sed -n '1,9p' report/qemu_e/coverage_rebuild.txt 2>/dev/null || true
 
       - name: 上传行为指纹与原始输出
         if: always()
@@ -149,5 +153,5 @@ jobs:
             1to1/report/qemu/
             1to1/report/qemu_b/
             1to1/report/qemu_c/
-            1to1/report/qemu_d/
+            1to1/report/qemu_e/
           if-no-files-found: warn
