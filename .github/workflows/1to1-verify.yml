@@ -39,6 +39,16 @@ jobs:
           echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zigcache" >> "$GITHUB_ENV"
           "$ZIG" version
 
+      - name: shim 日志格式化器自检（零-stdio 硬门禁）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 实测）：shim 的 `note()` 曾用 `vsnprintf`，在被拦截的 `fopen`
+          #   内部调用 ⇒ 在 stdio 内部再入 stdio，把 guest 的 FILE 结构污染成
+          #   `blx sl, sl=0x3a`（ASCII ':'）的垃圾跳转，导致重建产物解析 setting.xml 即崩。
+          # 本门禁做两件事：① 抽取的格式化器块里**不得出现任何 stdio 调用**（剥注释后检查）；
+          #   ② 12 条用例与 snprintf 逐一对拍（%p 用显式期望）——全部通过才算过。
+          python tools/shim_fmt_selftest.py --zig "$(command -v zig)"
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'

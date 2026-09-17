@@ -415,6 +415,17 @@ B 无效而 E 有效 ⇒ 写入者被夹进 constructor→zip-open 的窄窗口�
 
 - `57ba7e8b`：shim 种子字节修正 + `CGM_KEY2_HOOK` + 场景 E（替换 D）
 
+#### 二·补充（同日第二轮 CI，`1879e05c` / `97708de8`）：**G1 正向判决 + 一个已修的假分歧**
+
+| 项 | 结果 |
+|---|---|
+| **zip 的实际打开路径** | **`fopen`**（I/O 轨迹：`io #11/#12/#15 fopen rc=0 …/ui_cn.zip ◀ ZIP`）⇒ 拦 `open`/`openat` 拦错了地方（glibc `fopen` 内部绕过 PLT） |
+| **★ 正向判决** | `.zip` 打开瞬间断言 key2（`CGM_KEY2_HOOK=1`）后，**工厂 `M6 = ✓(包已打开(条目缺失))`**，报错变为 `find ui.cfg in …zip fail` ⇒ **根因确证**（不只是"两侧一致地坏"） |
+| **真机证据** | 原厂 SD 的 `menu.log`（444 B，设备自写）= 结构化记录（`0x11c:0a`、`0x120: 0x0a9d=2717`、多处 `ff ff ff ff`）⇒ 真机上**菜单运行过并被使用** ⇒ 真机能打开资源包 ⇒ `key2` 在真机确有来源（沙箱缺的正是 SFC security 数据那一环）；**G4 的"版本不匹配"分支基本可排除** |
+| 次级缺口 | 条目查找仍失败（`find ui.cfg in … fail`），但 `ui.cfg` **确实在包里**；**工厂侧同样出现** ⇒ 包/环境问题，归入 G3 |
+| **假分歧（已修）** | 在拦截的 `fopen` 里调 `note()`（走 `vsnprintf`）⇒ stdio 再入 stdio ⇒ 重建解析 `setting.xml` 崩：`pc=0x3a`、`lr=mxml_load_data+0xdbc`、`blx sl` 而 `sl=0x3a`(ASCII ':')、`[sp+0]=_IO_wfile_jumps`。工厂侧未踩到同一窗口 ⇒ 曾表现为"两侧不同"的假分歧 |
+| 修复 | ① `note()` 改**零-stdio**自包含格式化器（顺带让信号处理器 async-signal-safe）；② 新增 `tools/shim_fmt_selftest.py`（实时抽取 + 无-stdio 硬断言 + 12 用例对拍），接入 `1to1-verify` 硬门禁，并**反向验证**过；③ 崩溃报告器**提前到 constructor**（原先崩在 SFC 装配前就没有现场） |
+
 ### 2026-09-17 第三十七轮：★★★★★★ **进度量化 + 差距分析**（回答「距离直接替代还差什么」）
 
 > 📄 完整报告见仓库根 **`GAP.md`**（含证据链、差距清单、推进顺序、验收标准）。本节只记本轮新增的仪器与结论。

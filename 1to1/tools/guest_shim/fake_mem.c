@@ -1083,18 +1083,186 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
 #define GUEST_ADDR_handle    0x003b21c8u   /* run_process/InitDisplay/InitSound/DeinitDisplay 引用的 handle */
 #define GUEST_ADDR_g_sfc_reg 0x003cfab8u
 
+/* ---- 无 stdio 的日志器（本轮根因修复，务必保持「零 stdio」）----------------------
+ * ★★★ 实测事故（2026-09-17 场景 E，判决性）：
+ *   我们给 shim 加了 `fopen` 拦截，并在拦截体里调 `note()` 打 I/O 轨迹；
+ *   而 `note()` 内部走 **`vsnprintf`** ⇒ 在 **stdio 内部再入 stdio**。
+ *   后果：重建产物在解析 `setting.xml`（mini-XML）时崩，`blx sl` 里 `sl=0x3a`（= ASCII ':'），
+ *   `[sp+0]` 解析成 libc 的 `_IO_wfile_jumps` ⇒ **FILE 内部结构被半初始化状态污染**。
+ *   工厂侧恰好没踩到同一窗口，于是表现为"同一 shim、两侧不同结果"的假分歧。
+ * 修法（根治，不是补丁）：把 `note()` 实现换成**只依赖 `write(2)` 的自包含格式化器**。
+ *   支持全部现有调用点用到的格式：`%s %d %u %x %p %%` + 长度 `l` + 旗标 `-`/`0` + 宽度。
+ *   附带收益：`sfc_fault()`（信号处理器）里的日志也**从此 async-signal-safe**。
+ *
+ * 铁律：**任何被拦截的 stdio 函数（fopen/open/fread/…）内部，绝不允许调用 stdio。** */
+static void raw_write(const char *p, unsigned int n)
+{
+    while (n > 0) {
+        ssize_t w = write(2, p, (size_t)n);
+        if (w <= 0) {
+            return;
+        }
+        p += w;
+        n -= (unsigned int)w;
+    }
+}
+
+static void raw_pad(int count, char c)
+{
+    char pad[24];
+    int k;
+    if (count <= 0) {
+        return;
+    }
+    for (k = 0; k < (int)sizeof(pad); k++) {
+        pad[k] = c;
+    }
+    while (count > 0) {
+        int n = (count > (int)sizeof(pad)) ? (int)sizeof(pad) : count;
+        raw_write(pad, (unsigned int)n);
+        count -= n;
+    }
+}
+
+static void raw_out_num(unsigned long v, int base, int width, int zero, int left, int neg)
+{
+    char tmp[36];
+    int n = 0, body, padn;
+    const char *dig = "0123456789abcdef";
+
+    if (v == 0) {
+        tmp[n++] = '0';
+    }
+    while (v > 0) {
+        tmp[n++] = dig[v % (unsigned long)base];
+        v /= (unsigned long)base;
+    }
+    body = n + (neg ? 1 : 0);
+    padn = (width > body) ? (width - body) : 0;
+    if (!left) {
+        raw_pad(padn, zero ? '0' : ' ');
+    }
+    if (neg) {
+        raw_write("-", 1);
+    }
+    while (n > 0) {
+        raw_write(&tmp[--n], 1);
+    }
+    if (left) {
+        raw_pad(padn, ' ');
+    }
+}
+
+static void raw_out_str(const char *str, int width, int left)
+{
+    int n = 0, padn;
+    if (str == NULL) {
+        str = "(null)";
+    }
+    while (str[n] != '\0') {
+        n++;
+    }
+    padn = (width > n) ? (width - n) : 0;
+    if (!left) {
+        raw_pad(padn, ' ');
+    }
+    raw_write(str, (unsigned int)n);
+    if (left) {
+        raw_pad(padn, ' ');
+    }
+}
+
 static void note(const char *fmt, ...)
 {
-    char buf[256];
     va_list ap;
-    int n;
+    const char *p = fmt;
 
     va_start(ap, fmt);
-    n = vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    if (n > 0) {
-        (void)write(2, buf, (size_t)(n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
+    while (*p != '\0') {
+        const char *run = p;
+        int left = 0, zero = 0, width = 0, is_long = 0, neg = 0;
+        char conv;
+
+        while (*p != '\0' && *p != '%') {
+            p++;
+        }
+        if (p > run) {
+            raw_write(run, (unsigned int)(p - run));
+        }
+        if (*p == '\0') {
+            break;
+        }
+        p++;                                        /* 跨过 '%' */
+        if (*p == '%') {
+            raw_write("%", 1);
+            p++;
+            continue;
+        }
+        while (*p == '-' || *p == '0' || *p == '+' || *p == ' ' || *p == '#') {
+            if (*p == '-') left = 1;
+            if (*p == '0') zero = 1;
+            p++;
+        }
+        while (*p >= '0' && *p <= '9') {
+            width = width * 10 + (*p - '0');
+            p++;
+        }
+        while (*p == 'l' || *p == 'h' || *p == 'z') {
+            if (*p == 'l') is_long = 1;
+            p++;
+        }
+        conv = *p;
+        if (conv == '\0') {
+            break;
+        }
+        p++;
+        switch (conv) {
+            case 's':
+                raw_out_str(va_arg(ap, const char *), width, left);
+                break;
+            case 'p': {
+                /* glibc 的 `%p` 带 `0x` 前缀（宿主 Windows 的 printf 不带）⇒ 手动补齐，
+                 * 与 guest 侧习惯一致，便于人工比对日志。 */
+                unsigned long pv = (unsigned long)(size_t)va_arg(ap, void *);
+                raw_write("0x", 2);
+                raw_out_num(pv, 16, 0, 0, 0, 0);
+                break;
+            }
+            case 'd': {
+                long v = is_long ? va_arg(ap, long) : (long)va_arg(ap, int);
+                unsigned long uv;
+                if (v < 0) {
+                    neg = 1;
+                    uv = (unsigned long)(-(v + 1)) + 1ul;
+                } else {
+                    uv = (unsigned long)v;
+                }
+                raw_out_num(uv, 10, width, zero, left, neg);
+                break;
+            }
+            case 'u': {
+                unsigned long v = is_long ? va_arg(ap, unsigned long)
+                                          : (unsigned long)va_arg(ap, unsigned int);
+                raw_out_num(v, 10, width, zero, left, 0);
+                break;
+            }
+            case 'x': {
+                unsigned long v = is_long ? va_arg(ap, unsigned long)
+                                          : (unsigned long)va_arg(ap, unsigned int);
+                raw_out_num(v, 16, width, zero, left, 0);
+                break;
+            }
+            case 'c':
+                raw_write((const char *)&conv, 1);
+                (void)va_arg(ap, int);
+                break;
+            default:
+                raw_write("%", 1);
+                raw_write(&conv, 1);
+                break;
+        }
     }
+    va_end(ap);
 }
 
 int munmap(void *addr, size_t len)

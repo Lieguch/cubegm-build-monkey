@@ -135,6 +135,34 @@
 - ⇒ **下一个环境缺口明确**：需要一个**有状态的假 DRM 设备**（做法与已验证的 SFC 仿真相仿：
   拦 `ioctl`/`mmap` 并应答 `DRM_IOCTL_MODE_*`、dumb buffer），否则显示层永远走不出 `open drm!`。
 
+#### G1·补 ★★★ **正向判决达成（2026-09-17 场景 E）** —— 不再是"同样坏"，而是"key2 对了就真能打开"
+
+| # | 观测 | 结论 |
+|---|---|---|
+| 1 | shim 的 I/O 轨迹（`CGM_IO_TRACE=1`）显示 zip 是经 **`fopen`** 打开的：`io #11/#12/#15 fopen rc=0 /sdcard/cubegm//ui_cn.zip ◀ ZIP` | **此前拦 `open`/`openat` 是拦错了地方** —— glibc 的 `fopen` 内部用隐藏符号调 `open64`，**不走 PLT** ⇒ 拦截点必须覆盖 `fopen` |
+| 2 | 在 `.zip` **打开瞬间**重新断言 key2（`CGM_KEY2_HOOK=1`）后，**工厂侧 `M6 UI 资源包打开 = ✓(包已打开(条目缺失))`**；stdout 的报错由 `open …/ui_cn.zip fail` 变成 `find ui.cfg in …/ui_cn.zip fail` / `find font.ttf in … fail` / `find setting.raw fail` | **中央目录搜索成功了** ⇒ **G1 根因（`key2[0..7]` 全 0 导致签名比对失败）被正向实验确证**，而非只是"两侧一致地坏" |
+| 3 | **真机证据**：原厂 SD 上设备自写的 `menu.log`（444 B）= 一段结构化记录（`offset 0x11c: 0a 00 00 00`、`0x120: 9d 0a 00 00` = **2717**、多处 `ff ff ff ff` 哨兵、`0x000: 05 00 00 00`） | 设备上**菜单确实运行过并被使用**（有游标/页/最后选择等字段）⇒ **真机上工厂 `rkgame` 能打开 `ui_cn.zip`** ⇒ **`key2` 在真机确有来源**（沙箱缺的正是那一环：SFC 假设备返回的 security 数据）⇒ 也顺带回答了 G4 的分支线索：**不是版本不匹配**（至少在"能不能打开资源包"这一点上） |
+| 4 | 新的次级缺口：即便中央目录解析成功，条目查找仍失败（`find ui.cfg in … fail`），而 **`ui.cfg` 确实在包里**（`ui_cn.zip` 6 条目：`ui.cfg` 242 B / `menu.raw` / `search.raw` / `setting.raw` / `type.raw` / `game.raw`；**无 `font.ttf`**） | 该缺口在**工厂侧同样出现** ⇒ 属"包/环境"问题而非我们的实现差异 ⇒ 归入 **G3**（上游 zip 路径未对齐 / 资源包变体不符）继续查 |
+
+#### G1·补二 ★★ 本轮引入并已修复的一个**假分歧**（值得记住的教训）
+
+为打开窗口，我给 shim 加了 `fopen` 拦截 + I/O 轨迹，并在拦截体里调用 `note()` 打日志 ——
+而 `note()` 当时内部走 **`vsnprintf`** ⇒ **在被拦截的 stdio 函数里再入 stdio**。
+
+现场（判决性）：重建产物在解析 `setting.xml`（mini-XML）时崩：
+`pc=0x0000003a`、`lr=0x0503ec68`（`mxml_load_data+0xdbc`），反汇编 `503ec64: e12fff3a blx sl`，
+**`sl = 0x3a`（= ASCII `':'`）、`r3 = 0x3f`（= `'?'`）**，栈上 `[sp+0]` 解析为 libc 的 `_IO_wfile_jumps`
+⇒ **FILE 内部结构被半初始化的 stdio 状态污染**。工厂侧恰好没踩到同一窗口 ⇒ 表现为"同一 shim、两侧不同结果"的**假分歧**。
+
+**已修复（根治）**：
+1. `note()` 改为**只依赖 `write(2)` 的自包含格式化器**（支持 `%s %d %u %x %p %%` + `l` + `-`/`0` + 宽度）；
+   附带收益：`sfc_fault()`（信号处理器）里的日志**从此 async-signal-safe**。
+2. 新增 `tools/shim_fmt_selftest.py`：**从 `fake_mem.c` 实时抽取**格式化器（不是快照 ⇒ 永不腐烂），
+   ① 硬断言块内**无任何 stdio 调用**（剥注释后检查）；② 12 条用例与 `snprintf` 逐一对拍（`%p` 用显式期望）。
+   已接入 `1to1-verify` 作**硬门禁**，并做过**反向验证**（临时塞回 `vsnprintf` ⇒ 门禁立刻 FAIL）。
+3. 崩溃报告器**提前到 constructor 装配**（原先只在 SFC 装配时安装 ⇒ 崩在那之前的崩溃现场全丢，
+   本轮为此多花了一整轮 CI）。
+
 ### G2 ★★★★ 硬件接口层 **0% 动态验证**（driver.so 在沙箱里根本没加载成功）
 
 | 证据 | 内容 |
