@@ -43,6 +43,13 @@ def find_objdump(explicit=None):
     import shutil
     if explicit:
         return explicit
+    # ★ 实测踩坑（2026-09-17，CI）：Ubuntu 的 `/usr/bin/objdump` 对本工程这类 ARM32 ELF
+    #   会直接报 `can't disassemble for architecture UNKNOWN`（`-t` 能读，`-d` 不行）。
+    #   workflow 里已装 `arm-linux-gnueabihf-objdump` ⇒ 优先用之；否则用 `objdump -m arm` 兜底。
+    for name in ('arm-linux-gnueabihf-objdump', 'arm-none-eabi-objdump'):
+        c = shutil.which(name)
+        if c:
+            return c
     c = shutil.which('objdump')
     if c:
         return c
@@ -88,15 +95,20 @@ def disasm(elf, out_path, objdump='objdump'):
     os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
     if need:
         tmp = out_path + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            r = subprocess.run([objdump, '-d', '--no-show-raw-insn', elf],
-                               stdout=f, stderr=subprocess.PIPE, text=True)
+        r = None
+        for extra in ([], ['-m', 'arm']):      # ★ 兜底：宿主 objdump 不支持 ARM 时显式指定
+            with open(tmp, 'w', encoding='utf-8') as f:
+                r = subprocess.run([objdump, '-d', '--no-show-raw-insn'] + extra + [elf],
+                                   stdout=f, stderr=subprocess.PIPE, text=True)
+            if r.returncode == 0 and os.path.getsize(tmp) > 1_000_000:
+                break
         if r.returncode != 0 or os.path.getsize(tmp) < 1_000_000:
             try:
                 os.remove(tmp)
             except OSError:
                 pass
             raise SystemExit('  [FATAL] objdump 反汇编失败（objdump=%s, rc=%d）：%s'
+                             '  ⇒ 请安装 arm-linux-gnueabihf-objdump 或改用支持 ARM 的 objdump'
                              % (objdump, r.returncode, (r.stderr or '')[:200]))
         os.replace(tmp, out_path)
     return out_path
