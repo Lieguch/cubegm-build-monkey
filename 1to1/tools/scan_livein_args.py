@@ -309,6 +309,14 @@ def _reduce(P, lines):
         owner = key[0]
         ost = OWNER_START.get(owner, -1)
         own_live = livein_callee(lines, ost) if ost >= 0 else set()
+        # ★★ 对称性修正（2026-09-17 实测，第三次）：若该对的**任一**调用点落在
+        #   'jump' 档（无法直线推理），则**整对跳过**。
+        #   教训：单边跳过会造成不对称 —— 工厂侧"设了 r3 的点"被保留、"没设的点"被丢弃，
+        #   于是 `IF` 里出现 r3；而我们侧相反 ⇒ 凭空造出违例（`mui_DispBlock` 就是这么来的：
+        #   工厂 99 处里 22 处不设 r3，跳过后剩下 77 处**全都设** r3 ⇒ 交集含 r3）。
+        #   跳过整对是**保守**方向：宁可漏报，不可乱报。
+        if any(mode == 'jump' for _w, mode in lst):
+            continue
         sets, uncertain = [], set()
         for w, mode in lst:
             if mode == 'jump':
@@ -392,7 +400,16 @@ def main():
 
     # ---- 自证（铁律 101）：① 同 ELF 对同 ELF 必须恒为 0（构造性）
     #                    ② 必须命中**人工核对过**的锚点（工厂设 r3 / 我们不设）
+    # ★★ 锚点必须是**状态感知**且**正负双向**的（2026-09-17 CI 实测教训）：
+    #   初版把锚点写死成"必须出现在违例表里"，而我在同一轮把源码修好了 ⇒
+    #   CI 用新构建时该违例**已消失** ⇒ 端到端自证误报 FATAL 把 CI 打红。
+    #   正确做法：
+    #     · 正向锚点 —— 只要求"被检视到"（两侧调用对都存在，说明解析→判定链路通），
+    #       **打印当前判定结果**（合规/违例），让状态变化可追溯，而不是硬编码结论；
+    #     · 负向锚点 —— 一个人工核对过"两侧一致"的调用对，**必须不在违例表里**
+    #       （防"全都报"的退化解：只靠正向锚点无法发现判据退化）。
     anchors = [('mui_outputxy_t', 'stbtt_GetFontVMetrics', 'r3')]
+    anchors_neg = [('mui_outputxy_t', 'stbtt_MakeCodepointBitmapSubpixel')]
     if a.selfcheck:
         pA, _, _, _, lnF_self = analyze(a.factory, od, os.path.join('build', '_dis_factory.txt'))
         pB = pA                                  # 同一份输入 ⇒ 恒等，违例必须 0
@@ -462,14 +479,26 @@ def main():
 
     highl = [x for x in v if x[2]]
     if a.selfcheck:
-        vk = {x[0] for x in v}
-        ok = all(anchor[:2] in vk for anchor in [(c, ce) for c, ce, _ in anchors])
-        if not ok:
-            miss_keys = [a2[:2] for a2 in anchors if a2[:2] not in vk]
-            raise SystemExit('  [FATAL] 端到端自证失败：违例表里缺少锚点 %s '
-                             '⇒ 从反汇编到判定的链路有断点，拒绝出结论' % miss_keys)
-        print('  [selfcheck-3] 端到端：锚点 %s 出现在最终违例表中 ✓'
-              % ', '.join('%s->%s' % (c, ce) for c, ce, _ in anchors))
+        vk = {x[0] for x in v if x[2]}          # 只取 HIGH（LOW 是保真度差异，不是结论）
+        vkall = {x[0] for x in v}
+        # 正向：必须被**检视到**（两侧调用对都在），并打印当前判定（状态感知）
+        for c, ce, reg in anchors:
+            key = (c, ce)
+            if key not in IF or key not in IO:
+                raise SystemExit('  [FATAL] 端到端自证失败：锚点 %s->%s 未被检视到 '
+                                 '⇒ 解析→判定链路有断点，拒绝出结论' % (c, ce))
+            state = ('违例（缺 %s）' % reg) if key in vk else '合规（该寄存器已设）'
+            if key in vkall and key not in vk:
+                state = '非 HIGH 违例（降级为 LOW）'
+            print('  [selfcheck-3] 正向锚点 %s->%s 已被检视；当前状态 = **%s** ✓'
+                  % (c, ce, state))
+        # 负向：人工核对"两侧一致"的对，必须不在 HIGH 违例表里（防"全都报"的退化解）
+        for c, ce in anchors_neg:
+            key = (c, ce)
+            if key in vk:
+                raise SystemExit('  [FATAL] 端到端自证失败：负向锚点 %s->%s 被误报为 HIGH 违例 '
+                                 '⇒ 判据退化为"全都报"，拒绝出结论' % (c, ce))
+            print('  [selfcheck-4] 负向锚点 %s->%s 未被误报 ✓（防"全都报"退化解）' % (c, ce))
     print()
     print('  == ★ HIGH：缺失寄存器**确在被调者 live-in 中**（会把垃圾当参数用）==')
     if not highl:
@@ -495,7 +524,11 @@ def main():
             f.write('# 调用点实参寄存器差异 · 已知项台账（棘轮）%s' % chr(10))
             f.write('# 格式: <caller> <callee> <HIGH|LOW>%s' % chr(10))
             f.write('# 含义：工厂"恒定设置"而我们从不在该对调用上设置的实参寄存器。%s' % chr(10))
-            f.write('#   HIGH = 该寄存器确在被调者 live-in 中（最可能造成野写/野指针）；%s' % chr(10))
+            f.write('#   HIGH = 该寄存器确在被调者 live-in 中 ⇒ **待人工裁决**：%s' % chr(10))
+            f.write('#          可能是「我们漏了参数」，也可能是「两侧共有的脆弱性（都靠残值）」%s' % chr(10))
+            f.write('#          —— 裁决必须回到机器码：看被调者序言是否真读该寄存器、%s' % chr(10))
+            f.write('#          以及**工厂自己的调用点是否也漏设**（工厂也漏 ⇒ 共有脆弱性，%s' % chr(10))
+            f.write('#          此时我们的 3 参写法是**忠实**的，行动是"显式化"而非"补参数"）。%s' % chr(10))
             f.write('#   LOW  = 缺失寄存器不在两侧 live-in 中（保真度差异，暂无行为后果）。%s' % chr(10))
             f.write('# ★ 逐项人工核对后修正源码，改好一项**删一行**；新增不在本台账内 ⇒ 门禁失败。%s' % chr(10))
             for (caller, callee), miss, high, oi, nf, no in v:
