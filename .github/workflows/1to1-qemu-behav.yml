@@ -142,6 +142,12 @@ jobs:
             n=$(grep -ac "ui_cn.zip fail" report/$d/rundir_factory/stdout.txt 2>/dev/null || echo '?')
             echo "   $d : $n 行"
           done
+          echo '--- 场景 E：两侧崩溃现场（★ 无此行=崩在报告器装配之前，属仪器缺陷）---'
+          for l in factory rebuild; do
+            echo "   [$l]"
+            grep -a "★ 真崩溃\|pc(出错点)\|lr(调用者)\|^\[shim\]     \[sp" \
+              report/qemu_e/rundir_$l/stderr.txt | head -8 | sed 's/^/     /' || true
+          done
           echo '--- 场景 E：里程碑 + 覆盖率 ---'
           sed -n '1,14p' report/qemu_e/milestones.txt 2>/dev/null || true
           sed -n '1,9p' report/qemu_e/coverage_rebuild.txt 2>/dev/null || true

@@ -258,37 +258,58 @@ static int mode_to_flags(const char *mode)
     return fl;
 }
 
+static FILE *(*g_real_fopen)(const char *, const char *);
+static FILE *(*g_real_fopen64)(const char *, const char *);
+static int g_fopen_chain = 1;      /* 1=dlsym(RTLD_NEXT) 真 fopen；2=强制 open+fdopen */
+static int g_in_fopen;             /* 重入保护：绝不在链式调用里递归进自己 */
+
+/* constructor 阶段**预解析**真 fopen：决不在 fopen 内部第一次调 dlsym
+ * （dlsym 自身可能 malloc/触发符号解析，从 fopen 内部首次进入风险不可控）。 */
+static void shim_resolve_fopen(void)
+{
+    if (dlsym != NULL) {
+        if (g_real_fopen == NULL) {
+            g_real_fopen = (FILE *(*)(const char *, const char *))dlsym(SHIM_RTLD_NEXT, "fopen");
+        }
+        if (g_real_fopen64 == NULL) {
+            g_real_fopen64 = (FILE *(*)(const char *, const char *))dlsym(SHIM_RTLD_NEXT, "fopen64");
+        }
+    }
+}
+
 static FILE *shim_fopen_impl(const char *path, const char *mode, int is64)
 {
-    typedef FILE *(*fn_t)(const char *, const char *);
-    static fn_t real_fn, real64;
-    FILE *fp = NULL;
+    FILE *(*real_fn)(const char *, const char *);
+    FILE *fp;
+    int fd;
 
-    key2_hook_try(path);
-    if (dlsym != NULL) {
-        fn_t *slot = is64 ? &real64 : &real_fn;
-        if (*slot == NULL) {
-            *slot = (fn_t)dlsym(SHIM_RTLD_NEXT, is64 ? "fopen64" : "fopen");
-        }
-        if (*slot != NULL) {
-            fp = (*slot)(path, mode);
-            io_trace(is64 ? "fopen64" : "fopen", path, fp ? 0 : -1);
-            return fp;
-        }
+    if (g_in_fopen) {                       /* 递归 ⇒ 直接走最底层的 open+fdopen */
+        fd = raw_openat(path, mode_to_flags(mode), 0644);
+        return (fd < 0) ? NULL : fdopen(fd, mode);
     }
-    {
-        int fd = raw_openat(path, mode_to_flags(mode), 0644);
-        if (fd < 0) {
-            io_trace(is64 ? "fopen64*" : "fopen*", path, -1);
-            return NULL;
-        }
-        fp = fdopen(fd, mode);
-        if (fp == NULL) {
-            (void)syscall(SYS_close, fd);
-        }
-        io_trace(is64 ? "fopen64*" : "fopen*", path, fp ? 0 : -1);
+    g_in_fopen = 1;
+    key2_hook_try(path);
+    real_fn = is64 ? g_real_fopen64 : g_real_fopen;
+    if (g_fopen_chain == 1 && real_fn != NULL) {
+        fp = real_fn(path, mode);
+        io_trace(is64 ? "fopen64" : "fopen", path, fp ? 0 : -1);
+        (void)mode;
+        g_in_fopen = 0;
         return fp;
     }
+    fd = raw_openat(path, mode_to_flags(mode), 0644);
+    if (fd < 0) {
+        io_trace(is64 ? "fopen64*" : "fopen*", path, -1);
+        g_in_fopen = 0;
+        return NULL;
+    }
+    fp = fdopen(fd, mode);
+    if (fp == NULL) {
+        (void)syscall(SYS_close, fd);
+    }
+    io_trace(is64 ? "fopen64*" : "fopen*", path, fp ? 0 : -1);
+    g_in_fopen = 0;
+    return fp;
 }
 
 FILE *fopen(const char *path, const char *mode)
@@ -783,17 +804,30 @@ static void sfc_disarm(void)
 }
 
 /* 装配设备：把刚映射到的页设成 PROT_NONE，并装 SIGSEGV/SIGBUS 处理器 */
-static void sfc_arm_device(void *p, size_t len)
+/* ★★ 崩溃报告器**提前装配**（本轮补的仪器缺口）----------------------------------
+ * 实测事故（2026-09-17 场景 E）：重建产物在解析 `setting.xml`（mini-XML）时 SIGSEGV，
+ *   stderr 里**只有 qemu 的 `uncaught target signal 11` 一行，没有任何现场** ——
+ *   因为处理器原本只在 `sfc_arm_device()`（= `spi_driver_init` 里 mmap SFC 页时）才装，
+ *   而这次崩溃发生在**那之前** ⇒ pc/lr/栈全丢，只能靠猜（浪费了一轮 CI 与大量时间）。
+ * 修法：在 constructor（早于 main）就把 SIGSEGV/SIGBUS 处理器装上；
+ *   此时 `g_sfc_base == NULL`，任何缺页都会走"真崩溃"分支 ⇒ **任何位置的崩溃都能自报现场**。
+ *   `sfc_arm_device()` 之后仍会再装一次（幂等），行为不变。 */
+static void shim_arm_crash_reporter(void)
 {
     struct sigaction sa;
-    unsigned long page = 0x1000;
-
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = sfc_fault;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
     sigemptyset(&sa.sa_mask);
     (void)sigaction(SIGSEGV, &sa, NULL);
     (void)sigaction(SIGBUS, &sa, NULL);
+}
+
+static void sfc_arm_device(void *p, size_t len)
+{
+    unsigned long page = 0x1000;
+
+    shim_arm_crash_reporter();          /* 幂等：constructor 已装过，这里确保仍生效 */
 
     g_sfc_base = (volatile unsigned char *)p;
     g_sfc_pagelen = (unsigned int)(((len + page - 1) / page) * page);
@@ -889,6 +923,16 @@ __attribute__((constructor)) static void shim_poison_stack(void)
      * ★ 地址 0x003E190C 是**常量**：guest 非 PIE（gdb 已断言"地址即链接地址"），
      *   且两侧布局账本（ledger/factory_globals.tsv）已核对该全局同址。
      * ★ 只在显式开启时写内存；若假设不成立会立刻在 constructor 里 SIGSEGV（可见、可退）。 */
+    /* ★ 先把崩溃报告器装上（早于 main）：任何位置的崩溃都必须能自报 pc/lr/栈。
+     *   这条是**仪器纪律**，不是可选项 —— 缺了它，本轮多花了一整轮 CI 才定位到崩点。 */
+    shim_arm_crash_reporter();
+    {
+        const char *fc = getenv("CGM_FOPEN_CHAIN");
+        if (fc != NULL && fc[0] == '2') {
+            g_fopen_chain = 2;
+        }
+    }
+    shim_resolve_fopen();
     g_io_trace = (getenv("CGM_IO_TRACE") != NULL
                   && getenv("CGM_IO_TRACE")[0] != '\0'
                   && getenv("CGM_IO_TRACE")[0] != '0');
