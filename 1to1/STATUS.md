@@ -365,6 +365,51 @@ P3 审计 **重复定义 0 / MISSING 3**；双轨 213/213（GCC）。
 ⇒ 高度指向 `main_Menu()` 开头 `strcpy`/`myStrrstr` 那几行的重建保真度；
 两者的 `pc` 都落在库里 ⇒ 是**传给库函数的参数被算错**，而不是我们自己的循环写错。
 
+### 2026-09-17 第三十五轮：★★★★★ 第八个真实分歧**根因收尾** —— 中央目录搜索必须比对全局 `key2`（不是 PK 字面量）
+
+#### 一、`key2` 是**运行时全局**，工厂的签名模式来自它
+
+| 证据 | 内容 |
+|---|---|
+| 工厂机器码 `0x10f9c` | `ldr r3, [r6, r2]`（`r6 = pc+0x3A10F0 = 0x3B1FC4`，`r2 = -0x1B4`）⇒ 取 `*(0x3B1E10)` = **`0x3E190C`** |
+| 工厂 symtab | **`key2 @0x003E190C size=28`（type=1，OBJECT）** —— 在 `.bss`，静态态全 0 |
+| 工厂 rodata | **没有** `PK\x05\x06` / `PK\x01\x02` / `PK\x03\x04` 字面量 ⇒ 模式**只能**来自该全局 |
+| 比对方式 | `ldrsb` 逐字节比 **`key2[0..3]` 或 `key2[4..7]`**（两个 4 字节签名放在同一个 8 字节前缀里） |
+| 我方现状 | `globals.h:4680` 已有声明、`factory_image.S:2085` 已有别名 **`.set key2, __f_bss_base + 0x2f794` = 0x3E190C（与工厂逐字节一致）** ✓ |
+
+**⇒ 我方 `unzlocal_SearchCentralDir` 用硬编码 `0x50 0x4b 0x05 0x06` 才是错的**：
+总能找到 EoCD ⇒ 打开成功；而工厂用 `key2`（本环境为 0）⇒ 找不到 ⇒ `OpenZipU` 返回 0 ⇒ `open ... fail`。
+**换用同一个全局后，两侧看到的 `key2` 内容必然相同**（无论厂商 init 是否写入、写在哪），判定天然对齐。
+
+#### 二、按工厂机器码逐条重写（`0x10eb0..0x11074`）
+
+| 工厂指令 | 语义（已落入我方源码注释） |
+|---|---|
+| `10ef0 movw r3,#65534 ; bhi 1100c` | `uSizeFile > 0xfffe ? uMaxBack=0xffff : =uSizeFile`（**65534，非标准版 0xffff**）|
+| `10f14 cmp r5,#4 ; bls 10ff8` | `uSizeFile < 5` ⇒ `zfree` + `return 0` |
+| `10f28 add r7,r7,#1024` / `10f3c movcs r7,r8` | 循环 `uBackRead = min(uBackRead+0x400, uMaxBack)` |
+| `10f44/10f4c cmp r7,fp(1028)` | `uReadSize = (uBackRead > 0x403) ? 0x404 : uBackRead` |
+| `10f40 sub r5,r3,r7` | seek = `uSizeFile - uBackRead`（**不夹取**，与标准版不同）|
+| `10f78 cmp r0,#1 ; bne 11064` | **`lufread` 必须恰好读满 1 个元素**，否则 `return 0` |
+| `10f9c/10fa4/10fb0` | 反向扫描，比 `key2[0..3]` / `key2[4..7]` |
+| `10fec add r4,r4,r5 ; beq 11054` | 命中位置 = 窗口内偏移 + `uSizeFile-uBackRead`；为 0 则下一窗口 |
+| `11054 cmp r7,r8 ; bcc 10f28` | do-while：`uBackRead < uMaxBack` 继续 |
+| `11064 ldr r4,[sp,#4]` | 短读时返回 `lufseek` 的返回值（0）|
+
+**验证**：编译 rc=0、`key2` 为 UND 外部引用 ✓、最终 ELF 里 **`key2 @0x003e190c`（与工厂同址）** ✓、
+门禁全 PASS（布局 193/194、ABI PASS、dyn_audit FAIL 0、上游指纹 FAIL 0）。
+
+#### 三、本轮推送
+`dacf5e7f1853`：`unzip.cpp`（blob `9b6b207fc2`）+ `XUnzip.o` + `.XUnzip.src.sha256`。
+（推送器报"上传 0"是因为前一次调用已把变更送出；逐 blob 校验 `VERIFY 1167/1167 blobs match` ✓）
+
+#### 四、下一步
+1. 盯 CI：重建侧 stdout 期望出现 **`open .../ui_cn.zip fail`**（与工厂同构）⇒ 两侧停在**同一处**崩溃。
+2. 剩余未对齐（`unzLocateFile` 240/528、`unzGetGlobalComment` 148/308、`unzGetLocalExtrafield` 164/320、
+   `unzClose` 60/144、`TUnzip::{Unzip,Get,Close,Find}`、`unzOpenCurrentFile` 单参/双参）继续同法收敛。
+
+---
+
 ### 2026-09-17 第三十四轮：★★★★★ 第八个真实分歧（根因）—— `luf*` I/O 底座：**stdio vs 裸 fd**
 
 > 关键突破：**制品里本来就有 `-strace` 轨迹** —— 不需要再猜、也不需要多花一轮 CI。

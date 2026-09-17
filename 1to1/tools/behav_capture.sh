@@ -130,7 +130,21 @@ if [ -s "$RUNDIR/stdout.txt" ]; then
     norm < "$RUNDIR/stdout.txt" | LC_ALL=C grep -a '[^[:space:]]' | head -400 | sed 's/^/O|/' >> "$RUNDIR/events.txt"
 fi
 if [ -s "$RUNDIR/stderr.txt" ]; then
-    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
+    # ★★ 事件口径修正（2026-09-17，第二次「探针 != 被测行为」修订）：
+    #   shim 的**逐帧栈回溯**（`[shim]     [sp+N] = …`）是**探针自身的诊断**，其行数与内容
+    #   取决于各二进制自己的栈帧布局 + dladdr 解析结果 —— **两份不同编译的二进制永不可能相同**
+    #   （实测：工厂 5 帧 / 重建 2 帧）。把它算进指纹 == 要求"两次编译的栈布局一致"
+    #   ⇒ 门禁永远无法通过，且掩盖真实分歧（本轮 B2 卡在 34/41 的**唯一**原因就是它）。
+    #   ⇒ 从事件流剔除逐帧行；**stderr.txt 原样保留并上传制品**（人仍可查完整回溯）。
+    #   ★ 同时补一条**与布局无关**的崩溃形态事件（原始故障地址 + 信号号，不经 norm 的 ADDR 折叠）：
+    #     「崩在哪个地址、什么信号」这一最关键语义仍留在硬门禁里，且要求两侧严格相等。
+    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]'         | LC_ALL=C grep -av '^\[shim\] \[sp+[0-9]' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
+    _cfa=$(LC_ALL=C grep -a -o '真崩溃 @0x[0-9a-fA-F]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*@//')
+    _csg=$(LC_ALL=C grep -a -o 'target signal [0-9]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*signal //')
+    printf 'C|crash_fault=%s
+' "${_cfa:-none}" >> "$RUNDIR/events.txt"
+    printf 'C|crash_signal=%s
+' "${_csg:-none}" >> "$RUNDIR/events.txt"
 fi
 
 # --- 设备日志（真机日志名 = menu.log；rkgame.log 仅作兼容兜底）---
