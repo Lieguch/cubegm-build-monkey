@@ -1,0 +1,16 @@
+# 上游库公有 API「我们多出」· 已知待修台账（棘轮）
+# 格式: <符号名>   —— 修好（重新钉版本）后删行；新增不在台账内 ⇒ 门禁失败
+MP3ClearBadFrame
+mp3_unused_GetNextFrameInfo
+mxmlElementGetAttrByIndex
+mxmlElementGetAttrCount
+mxmlNewOpaquef
+mxmlSetOpaquef
+mxml_fd_read
+mxml_free
+mxml_parse_element
+stbtt_FindSVGDoc
+stbtt_GetCodepointSVG
+stbtt_GetGlyphSVG
+stbtt_GetKerningTable
+stbtt_GetKerningTableLength

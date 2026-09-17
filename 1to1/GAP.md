@@ -209,6 +209,47 @@
 **两处真修复的验证强度**：`mxmlLoadFile` 修好后，场景 E 重建侧**覆盖率 4 → 58 个函数**、
 `M5/M6` 首次到达 —— 这是"漏参 ⇒ 寄存器垃圾"这一类缺陷的实证。
 
+#### G1·补五 ★★★★ **M6 之后的第一个真分歧**（窗口打开后才看得见）
+
+场景 E 下两侧`M5/M6`都到达，但 stdout 从第 21 行开始分叉：
+
+| 行 | 工厂 | 重建 |
+|---|---|---|
+| 21 | `find ui.cfg in /sdcard/cubegm//ui_cn.zip fail` | **缺** |
+| 22 | `find font.ttf in /sdcard/cubegm//ui_cn.zip fail` | ✓ |
+| 23 | `find setting.raw fail` | **缺** |
+
+**重建侧崩点已定位**：`pc = 0x05047020` ⇒ **`stbtt_GetFontVMetricsOS2 + 0x8`**（就在打印 `font.ttf` 之后）。
+
+三条消息的发出位置（已逐个定位）：
+- `find ui.cfg in %s fail` ← `get_items_from_zipfile`（调用链 `mui_LoadConfig → get_items_from_zipfile`）；
+- `find font.ttf in %s fail` ← `mui_InitFont`；
+- `find setting.raw fail` ← `mui_LoadUIResource(&DAT_003af294,"setting.raw")`。
+
+已排除的方向（都做了逐行核对）：我们的 `get_items_from_zipfile`、`FindZipItemA`、`unzLocateFile`、
+`unzStringFileNameCompare` **与工厂语义一致**（函数尺寸差只是编译产物，不是语义差——这条差点让我误判）。
+
+#### G7 ★★★★★ **上游库版本钉错**（机械证据，本轮新增门禁）
+
+新增 `tools/scan_symbol_delta.py`：把两侧的**上游库公有 API 符号集合**摆在一起对拍
+（过滤 `isra`/`part` 等内联重命名；自证锚点 `stbtt_FindSVGDoc` 必须被报为"我们多出"）。
+首跑结果：**我们比工厂多出 14 个上游公有 API**：
+
+| 库 | 我们多出的 API | 含义 |
+|---|---|---|
+| stb_truetype | `stbtt_FindSVGDoc` / `stbtt_GetCodepointSVG` / `stbtt_GetGlyphSVG` | **SVG 支持自 v1.22 才引入** ⇒ 工厂的 stb **更旧**（≤1.21）|
+| stb_truetype | `stbtt_GetKerningTable` / `stbtt_GetKerningTableLength` | 同上（较新版本才导出）|
+| mini-XML | `mxmlElementGetAttrByIndex` / `mxmlElementGetAttrCount` / `mxmlNewOpaquef` / `mxmlSetOpaquef` / `mxml_fd_read` / `mxml_free` / `mxml_parse_element` | 工厂的 mini-XML 是**更旧/被裁剪的变体** |
+| Helix MP3 | `MP3ClearBadFrame` / `mp3_unused_GetNextFrameInfo` | Helix 变体不同 |
+
+**"是版本旧，还是被 `--gc-sections` 裁掉"的判别依据**：工厂**保留了同样没被游戏使用的**
+`stbtt_PackFontRanges*`、`PackSetOversampling`、`PackSetSkipMissingCodepoints` 等公有 API
+⇒ 它**没有做函数级裁剪** ⇒ 缺失的 SVG 函数**确系版本更旧**（这一判别很关键，否则会误判成链接器行为）。
+
+⇒ **影响**：现有"上游定版"里 `stb_truetype v1.26`、以及 mini-XML / Helix 的钉版**都需要重新取证**；
+`stbtt_GetFontVMetricsOS2`（我们 0xd4 / 工厂 0xa8）等尺寸差异也提示实现不同。
+**门禁已上线**：14 项入 `tools/upstream_api_pending.txt` 台账，**新增"我们多出"即失败**（棘轮）。
+
 ### G2 ★★★★ 硬件接口层 **0% 动态验证**（driver.so 在沙箱里根本没加载成功）
 
 | 证据 | 内容 |

@@ -198,6 +198,19 @@ jobs:
           #   已知未对齐项登记在 tools/upstream_fingerprint_baseline.txt（修好一项须删一行）。
           python3 tools/scan_upstream_fingerprint.py
 
+      - name: 上游库公有 API 集合对拍（版本钉错检出）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-18 实测）：上游库**版本钉错**不会让任何编译/链接门禁报错，只会静默改行为。
+          #   机械证据：我们的 stb_truetype 里存在 `stbtt_FindSVGDoc`/`stbtt_GetCodepointSVG`/
+          #   `stbtt_GetGlyphSVG`（**SVG 支持自 v1.22 才引入**）与 `stbtt_GetKerningTable*`，
+          #   而工厂二进制**没有**这些符号；同类还有 mini-XML 6 个、Helix MP3 2 个 ⇒ 共 14 项。
+          #   判别"是版本旧还是被 --gc-sections 裁剪"的依据：工厂**保留了同样没被游戏使用的**
+          #   `stbtt_PackFontRanges*` 等公有 API ⇒ 没做裁剪 ⇒ 确系版本更旧。
+          # 判据：只看上游库公有 API（过滤 isra/part 内联重命名）；"我们多出"入台账棘轮，**新增即失败**。
+          python tools/scan_symbol_delta.py --ours build/rkgame.rebuilt.elf \
+            --pending tools/upstream_api_pending.txt
+
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
         run: |
           cd 1to1
