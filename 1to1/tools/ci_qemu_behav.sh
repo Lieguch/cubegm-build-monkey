@@ -213,6 +213,25 @@ exec_probe() {
     echo "   退出码 = $prc"
     if [ -f "$log" ]; then
         echo "   原始轨迹行数 = $(wc -l < "$log" 2>/dev/null)  大小 $(wc -c < "$log" 2>/dev/null) B"
+        # ★★ 覆盖率度量（**必须在 rm 之前**）：
+        #   原始 `-d exec` 日志 = 逐翻译块的**完整**执行轨迹，是「观测窗口有多深」的唯一硬证据。
+        #   从前只留尾部 800 行（而那 800 行几乎全是 ld/libc 的 TB，rkgame 自身只剩最后 1 个）
+        #   ⇒ 门禁 PASS 却**无法回答「覆盖了多少重构代码」**（进度不可量化）。
+        #   现在改为：先算覆盖率报告（函数维度 + 字节维度 + 专有函数 223 个维度 + 未覆盖重量级清单），
+        #   报告进制品；原始大日志照旧删除。
+        _cov_elf="$REBUILD"
+        if [ "$label" = "factory" ] || [ "$label" = "control" ]; then _cov_elf="$FACTORY"; fi
+        _cov_args="--exec-log $log --elf $(winpath "$_cov_elf") --label $label"
+        _cov_args="$_cov_args --out $OUT/coverage_${label}.txt --ledger $(winpath "$ROOT/ledger/functions.csv")"
+        if [ -f "$ROOT/tools/coverage_baseline.txt" ]; then
+            _cov_args="$_cov_args --baseline $(winpath "$ROOT/tools/coverage_baseline.txt")"
+        fi
+        # 覆盖率是**度量**，不是行为门禁 ⇒ 失败只记 note，不拖红整轮
+        if ! "$PY" "$(winpath "$ROOT/tools/qemu_coverage.py")" $_cov_args \
+                 > "$OUT/coverage_${label}.stdout.txt" 2>&1; then
+            echo "   [note] 覆盖率度量非 0 退出（若是基线回退，见 coverage_${label}.txt）"
+        fi
+        cat "$OUT/coverage_${label}.stdout.txt" 2>/dev/null || true
         # 只保留尾部（原始日志很大，不放进制品）
         tail -800 "$log" > "$OUT/exec_tail_${label}.txt"
         rm -f "$log"
