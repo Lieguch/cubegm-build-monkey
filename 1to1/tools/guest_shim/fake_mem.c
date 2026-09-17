@@ -237,6 +237,8 @@ static unsigned int  g_reqlen;
 static unsigned long g_faults, g_cmds, g_unhandled;
 static int           g_logged;
 static int           g_mode_ready;
+/* ★ 场景 B（key2 注入）是否启用 —— 崩溃现场探针要用它决定是否回读 key2。 */
+static int           g_key2_seeded;
 
 /* 前置声明（定义在后面的段落里）*/
 static void note(const char *fmt, ...);
@@ -408,6 +410,19 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
          *    （调用点信息已丢）；本处能同时给出 pc / lr（=调用者）/ sp / r0-r5，
          *    足以直接判定"哪条指令、用哪个基址寄存器、被谁调用"。
          *    实测价值：一次就把「崩在 main_Menu() 之前的 PLT 跳转」定位到具体寄存器。 */
+        /* ★★ 场景 B 的**判决性探针**（CGM_KEY2_SEED）：场景 B 首跑实测 —— 注入成功
+         *    （shim 自己的 evidence 行已打印）、`-E CGM_KEY2_SEED=1` 也确实传进 guest，
+         *    但**行为与场景 A 逐字相同**（仍 `open .../ui_cn.zip fail`、覆盖率 48/49 不变）
+         *    ⇒ 「中央目录搜索必须比对 key2」这个归因**可能是错的**。崩溃现场再读一次 key2：
+         *      · 仍是注入值 ⇒ **key2 不是签名来源**（需重新定位 GOT 目标）；
+         *      · 已变全 0   ⇒ 有代码在注入之后**覆写了它**（那就是真正的写入者）。 */
+        if (g_key2_seeded) {
+            volatile unsigned char *k2p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
+            note("[shim] key2 @0x3E190C 现值 = %02x %02x %02x %02x %02x %02x %02x %02x"
+                 "（注入值应为 50 4b 05 06 50 4b 06 06）\n",
+                 (unsigned)k2p[0], (unsigned)k2p[1], (unsigned)k2p[2], (unsigned)k2p[3],
+                 (unsigned)k2p[4], (unsigned)k2p[5], (unsigned)k2p[6], (unsigned)k2p[7]);
+        }
         note("[shim] ★ 真崩溃 @0x%08lx 不在设备页 (base=%p) pc=0x%08lx lr=0x%08lx sp=0x%08lx\n",
              addr, (void *)g_sfc_base,
              (unsigned long)m->arm_pc, (unsigned long)m->arm_lr,
@@ -700,12 +715,13 @@ __attribute__((constructor)) static void shim_poison_stack(void)
             for (i = 0; i < 16; i++) {
                 p[i] = sig[i];
             }
-            if (getenv("CGM_SHIM_VERBOSE") != NULL) {
-                static const char msg[] =
-                    "[shim] key2 seeded @0x3E190C = PK\\x05\\x06 PK\\x06\\x06 PK\\x03\\x04 PK\\x01\\x02"
-                    "（场景 B：让 ui_cn.zip 可打开）\n";
-                (void)write(2, msg, sizeof(msg) - 1);
-            }
+            g_key2_seeded = 1;
+            /* ★ 回读校验：证明"写到了我们以为的地址上"（而不是写到某块无关的可写内存）。
+             *   若这里读回的不是 PK 值，说明 0x3E190C 在运行期并非 key2 所在 ⇒ 注入无效。 */
+            note("[shim] key2 seeded @0x3E190C = PK\\x05\\x06 PK\\x06\\x06 PK\\x03\\x04 PK\\x01\\x02"
+                 "  回读=%02x %02x %02x %02x %02x %02x %02x %02x（场景 B：让 ui_cn.zip 可打开）\n",
+                 (unsigned)p[0], (unsigned)p[1], (unsigned)p[2], (unsigned)p[3],
+                 (unsigned)p[4], (unsigned)p[5], (unsigned)p[6], (unsigned)p[7]);
         }
     }
 

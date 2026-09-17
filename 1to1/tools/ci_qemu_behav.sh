@@ -118,11 +118,16 @@ mk_wrap() {
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done
+    # ★ 场景 C：若已用 tools/build_libkms_stub.sh 造好桩目录，把它并进 guest 的库搜索路径
+    #   ⇒ `dlopen("/sdcard/cubegm/driver.so")` 的 DT_NEEDED `libkms.so.1` 才能解析成功。
+    #   ★ 目录不存在时**不改** LD_LIBRARY_PATH ⇒ 场景 A/B 完全不受影响（保守）。
+    _LIBPATH="$QLIB"
+    if [ -d "$ROOT/report/stublib" ]; then _LIBPATH="$QLIB:$ROOT/report/stublib"; fi
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\
   $PRELOAD_OPT \\
-  -E LD_LIBRARY_PATH=$QLIB \\
+  -E LD_LIBRARY_PATH=$_LIBPATH \\
   -E PATH=$SYSROOT/usr/bin:/usr/bin:/bin \\
   -E HOME=/tmp -E TMPDIR=/tmp -E LC_ALL=C -E LANG=C$_ENVS \\
   "$GUEST" "\$@"
