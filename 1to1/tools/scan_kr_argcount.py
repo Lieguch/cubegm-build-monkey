@@ -118,6 +118,26 @@ PAT_CALL = re.compile(r'^\s*([0-9a-f]+):\s+bl\s+([0-9a-f]+)\s*<')
 PAT_INS = re.compile(r'^\s*([0-9a-f]+):\s+(\S+)\s*(.*)$')
 
 
+CALLEE_START = {}
+
+
+def build_func_index(dis_path, sym):
+    """函数入口行号：反汇编里 '<name>:' 那一行。"""
+    want = dict(sym)          # ★ 键必须是**函数名本身**（第一版误建成 '<name>:' ⇒ 永远匹配不上，
+                              #   锚点自证立刻报"函数体读参 = -1"，正是铁律 101 要的拦截）
+    global CALLEE_START
+    CALLEE_START = {}
+    cache = {}
+    for i, l in enumerate(open(dis_path, encoding='utf-8', errors='replace')):
+        t = l.rstrip()
+        if t.endswith(':') and '<' in t:
+            name = t.rsplit('<', 1)[-1][:-2]
+            if name in want:
+                cache.setdefault(want[name], i)
+    CALLEE_START = cache
+    return cache
+
+
 def build_call_index(dis_path):
     """一次扫过反汇编，建 target_addr -> [行号] 的索引。
 
@@ -131,11 +151,16 @@ def build_call_index(dis_path):
     return idx, open(dis_path, encoding='utf-8', errors='replace').read().splitlines()
 
 
-def factory_arity(lines, call_index, fa_addr):
-    """工厂里对 fa_addr 的每处 bl，回溯数 r0..r3 中被写过的个数，取最大值。"""
+def factory_call_args(lines, call_index, fa_addr):
+    """返回工厂对 fa_addr 的**每一处** bl 的实参个数（回溯数被写过的 r0..r3）。
+
+    ★★ 口径修正（2026-09-17，实测假阳性）：第一版对所有调用点取**最大**值 ⇒ 只要 57 处里
+    有 1 处碰巧设了 r0 就判成"1 参"，于是 `mui_ReadJoystick`/`mui_WaitNMI` 这类**真正 0 参**
+    的函数被误报成漏参。正确口径是**取最小值**：只有当"工厂每一处调用都至少传 n 个"时，
+    我们某处只传 <n 个才构成可疑（并辅以被调函数体内的参数读取数交叉验证）。"""
     pat_ins = PAT_INS
     idx = call_index.get(fa_addr, [])
-    best = 0
+    out = []
     for i in idx:
         regs = set()
         for j in range(i - 1, max(-1, i - 12), -1):
@@ -143,12 +168,16 @@ def factory_arity(lines, call_index, fa_addr):
             if not m:
                 continue
             mn, ops = m.group(2), m.group(3)
-            # ★ 控制流边界：任何分支（b/bl/bx/beq/bne/ble/...）或带 pc/lr 的 push/pop
-            #   都会切断"参数寄存器由哪条指令设置"的直线推理 ⇒ 停止回溯。
-            #   实测教训：不切边界时，mxmlDelete（1 参）会被量成 3 参（越界吃到上一个调用的 r1/r2）。
-            if mn.startswith('b'):
+            # ★ 控制流边界（三次修正，实测教训各一条）：
+            #   ① 边界太多 ⇒ 漏：`mxmlDelete` 有的调用点前面是 `ldr r0`→`cmp`→`beq`→`bl`，
+            #      **条件分支并不改变直线顺序**，遇到它就停会丢掉 `ldr r0` ⇒ 量成 0 参（假阴性）。
+            #   ② 边界太少 ⇒ 越界：不切边界时 `mxmlDelete` 会被量成 3 参（吃到上一个调用的 r1/r2）。
+            #   ⇒ 正解：只把**无条件**的流改变当边界：调用/跳转/`ldr pc`/带 pc·lr 的 push·pop。
+            if mn in ('bl', 'blx', 'bx', 'b', 'pop', 'push'):
+                if mn in ('pop', 'push') and not ('pc' in ops or 'lr' in ops):
+                    continue
                 break
-            if mn in ('push', 'pop') and ('pc' in ops or 'lr' in ops):
+            if mn == 'ldr' and ops.split(',')[0].strip() == 'pc':
                 break
             tgt = None
             mm = re.match(r'(r[0-9]+)', ops)
@@ -157,8 +186,58 @@ def factory_arity(lines, call_index, fa_addr):
             if tgt in ('r0', 'r1', 'r2', 'r3'):
                 if mn in ('mov', 'movw', 'movt', 'ldr', 'adr', 'add', 'sub', 'orr', 'mvn', 'movs'):
                     regs.add(tgt)
-        best = max(best, len(regs))
-    return best, len(idx)
+        # ★★ 第四次修正（实测教训）：参数按 r0,r1,r2,r3 顺序传递 ⇒ 真实实参个数
+        #   只能是**从 r0 起的连续前缀长度**。
+        #   · 用 len(regs) 会**多算**：`mxmlDelete` 的调用点里 r3 常被拿出来当临时变量
+        #     （`ldr r3,[r4,#204]`）⇒ 数到 2，而它其实只有 1 个参数。
+        #   · 直接取 0 又会**少算**：`mxmlRelease` 里对 `mxmlDelete` 是**尾调用**，
+        #     r0 继承自本函数参数，窗口里本就没有赋值 ⇒ 数到 0。
+        #   故：先取前缀长度 k；聚合时**忽略 k==0 的调用点**（视为"继承/未知"），
+        #   在非零调用点上取**最小**（每个显式传参的调用点都必须满足）。
+        k = 0
+        for r in ('r0', 'r1', 'r2', 'r3'):
+            if r in regs:
+                k += 1
+            else:
+                break
+        out.append(k)
+    return out, len(idx)
+
+
+def aggregate_arity(vals):
+    nz = [v for v in vals if v > 0]
+    return min(nz) if nz else 0
+
+
+def callee_arity(lines, call_index, fa_addr, window=18):
+    """被调函数体内的参数个数：数入口前 window 条里**先被读**的 r0..r3 有几个。
+
+    与调用点计数互为交叉验证：调用点给的是"调用者以为的 arity"，
+    函数体给的是"被调者真的会读几个参数" —— 两者一致才可信。
+    """
+    start = CALLEE_START.get(fa_addr, -1)     # build_func_index 给的是**行号(int)**
+    if start < 0:
+        return -1
+    read = set()
+    for j in range(start + 1, min(len(lines), start + 1 + window)):
+        m = PAT_INS.match(lines[j])
+        if not m:
+            continue
+        mn, ops = m.group(2), m.group(3).split(';')[0].strip()
+        parts = [x.strip() for x in ops.split(',')]
+        if not parts:
+            continue
+        dst, srcs = parts[0], parts[1:]
+        for r in ('r0', 'r1', 'r2', 'r3'):
+            if r in srcs and r != dst and r not in read:   # ★ 目的寄存器不算读（add r3,pc,r3 是自增）
+                read.add(r)
+        if '[' in dst and dst.startswith('r') and dst.split('[')[0].strip() in ('r0', 'r1', 'r2', 'r3'):
+            base = dst.split('[')[0].strip()
+            if base not in read:
+                read.add(base)
+        if mn.startswith('b') or mn.startswith('pop') or mn.startswith('bx'):
+            break
+    return len(read)
 
 
 def parse_kr_names(proto_path):
@@ -237,6 +316,7 @@ def main():
     print('  objdump = %s' % od)
     dis = disasm(fa, os.path.join(root, 'build', '_fa_dis_kr.txt'), od)
     sym = symtab(fa, od)
+    build_func_index(dis, sym)
     CALLIDX, LINES = build_call_index(dis)
 
     # ---- 自证：锚点必须量对 ----
@@ -244,10 +324,15 @@ def main():
         if n not in sym:
             print('  [FATAL] 自证失败：工厂符号表里没有锚点 %s' % n)
             return 2
-        got, ncalls = factory_arity(LINES, CALLIDX, sym[n])
+        arr, ncalls = factory_call_args(LINES, CALLIDX, sym[n])
+        body = callee_arity(LINES, CALLIDX, sym[n])
+        got = aggregate_arity(arr)
+        # ★ 只以「调用点 min」为权威：`mxmlLoadFile` 这类**透传包装**从不读 r0/r1/r2
+        #   （直接转给 mxml_load_data）⇒ "函数体读参"对它恒为 0/1，量不出 arity。
+        #   函数体读参仅作参考值打印，不参与判定。
         if got != want:
-            print('  [FATAL] 自证失败：锚点 %s 量到 %d 参（期望 %d，%d 处调用）'
-                  ' ⇒ 反汇编参数识别器不可信，拒绝出结论' % (n, got, want, ncalls))
+            print('  [FATAL] 自证失败：锚点 %s 调用点 min=%d（期望 %d，函数体读参=%d 仅供参考）'
+                  ' ⇒ 调用点参数识别器不可信，拒绝出结论' % (n, got, want, body))
             return 2
     print('  自证通过（锚点 %s 全部量对）'
           % ', '.join('%s=%d' % (k, v) for k, v in ANCHORS.items()))
@@ -268,13 +353,18 @@ def main():
     for n, info in sorted(ours.items()):
         if n not in sym:
             continue
-        want, ncalls = factory_arity(LINES, CALLIDX, sym[n])
-        if want == 0 or ncalls == 0:
+        arr, ncalls = factory_call_args(LINES, CALLIDX, sym[n])
+        if not arr:
             continue
+        want = aggregate_arity(arr)
+        body = callee_arity(LINES, CALLIDX, sym[n])
+        if want == 0:
+            continue                      # 工厂每处都不传参 ⇒ 真·0 参函数
         checked += 1
-        if info['max'] < want:
+        ours_min = min(x[0] for x in info['sites'])
+        if ours_min < want:
             low = sorted([s for s in info['sites'] if s[0] < want])
-            bad.append((n, want, info['max'], ncalls, low[0] if low else info['sites'][0]))
+            bad.append((n, want, ours_min, ncalls, low[0] if low else info['sites'][0], body))
 
     print('  K&R 声明 %d 条 / 我们源码调用点 %d 个 / 可对账函数 %d 个'
           % (len(kr), len(calls), checked))
@@ -289,7 +379,7 @@ def main():
         with open(a.pending or 'tools/kr_argcount_pending.txt', 'w', encoding='utf-8', newline='\n') as f:
             f.write('# K&R 漏参·已知待修台账（棘轮）。格式: <函数名> <工厂真实参数>\n')
             f.write('# 新增违例不在本台账内 ⇒ 门禁直接失败。修好一项就删一行。\n')
-            for n, want, got, ncalls, _ in bad:
+            for n, want, got, ncalls, _, body in bad:
                 f.write('%s %d\n' % (n, want))
         print('  已写入台账：%d 项' % len(bad))
         return 0
@@ -300,9 +390,9 @@ def main():
         print('  台账内已知待修：%d 项（不判失败，但必须逐项修并删行）' % len(known))
     if new_:
         print('  ★★ 新增漏参 %d 个函数（不在台账内 ⇒ 判失败）：' % len(new_))
-        for n, want, got, ncalls, (lowa, lowp) in new_:
-            print('     %-30s 工厂 %d 参 / 我们最多 %d 参  (工厂 %d 处调用；最少处: %s)'
-                  % (n, want, got, ncalls, lowp))
+        for n, want, got, ncalls, (lowa, lowp), body in new_:
+            print('     %-30s 工厂调用点 min=%d（函数体读 %d 参）/ 我们 min=%d  (工厂 %d 处；最少处: %s)'
+                  % (n, want, body, got, ncalls, lowp))
         return 1
     if not known:
         print('  ✓ 未发现漏参（台账亦为空）')
