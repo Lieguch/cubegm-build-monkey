@@ -163,6 +163,51 @@
 3. 崩溃报告器**提前到 constructor 装配**（原先只在 SFC 装配时安装 ⇒ 崩在那之前的崩溃现场全丢，
    本轮为此多花了一整轮 CI）。
 
+#### G1·补三 ★★★★★ **窗口已打开（2026-09-17 场景 E，`1ac8c25e`）** —— 重建侧首次走到 M6，覆盖率 4 → 58
+
+| 指标 | 修前（`adb16450` 之前） | 修后（`1ac8c25e`） |
+|---|---|---|
+| 场景 E 重建侧 `M5 main_Menu` | ✗（崩在 `setting.xml`） | **✓** |
+| 场景 E 重建侧 `M6 UI 资源包打开` | ✗（未走到） | **✓（包已打开，条目缺失）** |
+| 场景 E 重建侧 stdout 行数 | **3** | **21** |
+| 场景 E 重建侧专有函数覆盖 | **4 / 223 = 1.79%** | **58 / 223 = 26.01%**（字节 26.88%）|
+| A/B/C 回归门禁 | PASS | **PASS（未受影响）** |
+
+**★ 挡住这一切的真实缺陷（不是环境，是我们的重建错）**：`mxmlLoadFile` 的调用点漏了第 3 个参数。
+
+- 工厂机器码（每处调用都是）：`mov r2,#0` → `mov r1,fp` → `mov r0,#0` → `bl mxmlLoadFile`
+  ⇒ 真实形态 `mxmlLoadFile(NULL, fp, NULL)`（3 参，第 3 个是"类型推断回调"）。
+- 我们写成了 `mxmlLoadFile(0, fp)`（**2 参**）⇒ ARM 上 r2 是**寄存器垃圾** ⇒
+  `mxml_load_data` 内 `(*cb)(parent)` 处 `blx r10`，而 r10 = **0x3a / 0x00（随场景漂移）**
+  ⇒ 解释了两个此前说不通的现象：① 同一二进制在某些场景崩、某些场景不崩；② 崩点 pc 会在两轮之间"变值"。
+- 同类第二处：`mxmlDelete()`（**一个实参都没传**）⇒ 已改为 `mxmlDelete(tree)`。
+- **根因治理**：把 `proto.h` 里三个 K&R 空参声明改成**真原型**（`mxmlLoadFile(gh_u4,void*,gh_u4)` 等）
+  ⇒ 漏参在**严格编译门禁**阶段直接报错，不再靠人眼看。
+
+#### G1·补四 ★★★★ **同一物种的存量缺陷：19 个函数存在漏参**（已建机械门禁 + 台账棘轮）
+
+`proto.h` 里 **107 个 K&R 空参声明**，对应 **235 处"零实参"调用点**。新增门禁
+`tools/scan_kr_argcount.py`（以**工厂反汇编**为权威：数每个 `bl` 之前写过几个 `r0..r3`；
+内置 3 个手工核对过的自证锚点）首次对账结果：**19 个函数的调用点实参少于工厂真实参数**：
+
+| 函数 | 工厂参数 | 我们最多 | 典型调用点 |
+|---|---|---|---|
+| `mui_ReadJoystick` | 1 | 0 | `SeletEmuCore.c`（工厂 57 处调用）|
+| `mui_WaitNMI` | 1 | 0 | `JoystickTest.c`（工厂 23 处）|
+| `GetTicks` / `getticks` | 2 / 3 | 0 | `JoystickTest.c` / `RF_Joystick_timer_isr.c` |
+| `SaveMenuLog` | 3 | 0 | `mui_menu.c`（工厂 12 处）|
+| `mui_DisplayGameSum` | 3 | 0 | `mui_menu.c`（工厂 15 处）|
+| `mui_DisplayInputBuffer` | 3 | 0 | `mui_search.c`（工厂 5 处）|
+| `mui_LoadConfig` / `mui_DisplayThumbnail` | 1 / 2 | 0 | `mui_setting.c` / `mui_DisplayThumbnailThread.c` |
+| `snor_write_en` / `RetroInitSound` / `InitKeyMapping0fEmuType` | 3 / 1 / 3 | 0 | `spi_write.c` / `Load_Proc2.c` / `Load_Proc1.c` |
+| `GetConfig` / `JoystickTest` / `GetFilenameExt` | 1 / 2 / 2 | 0 / 1 / 1 | `main.c` / `FilePreEmu.c` |
+| `GetZipItemA` | 4 | 3 | `FilePreEmu.c`（zip 路径！）|
+| `run_game` / `FBA_Load` / `stbtt_GetFontVMetrics` | 3 / 3 / 4 | 2 / 2 / 3 | — |
+
+**门禁语义（棘轮）**：19 项写入 `tools/kr_argcount_pending.txt`；**不在台账中的新增违例一律失败**。
+已做**反向验证**（空台账 ⇒ 19 项全部算新增 ⇒ 退出码 1）。
+⇒ 这 19 项是下一阶段的主线工作：逐项按工厂机器码定参、修调用点、删台账行。
+
 ### G2 ★★★★ 硬件接口层 **0% 动态验证**（driver.so 在沙箱里根本没加载成功）
 
 | 证据 | 内容 |

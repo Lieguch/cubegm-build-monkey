@@ -426,6 +426,51 @@ B 无效而 E 有效 ⇒ 写入者被夹进 constructor→zip-open 的窄窗口�
 | **假分歧（已修）** | 在拦截的 `fopen` 里调 `note()`（走 `vsnprintf`）⇒ stdio 再入 stdio ⇒ 重建解析 `setting.xml` 崩：`pc=0x3a`、`lr=mxml_load_data+0xdbc`、`blx sl` 而 `sl=0x3a`(ASCII ':')、`[sp+0]=_IO_wfile_jumps`。工厂侧未踩到同一窗口 ⇒ 曾表现为"两侧不同"的假分歧 |
 | 修复 | ① `note()` 改**零-stdio**自包含格式化器（顺带让信号处理器 async-signal-safe）；② 新增 `tools/shim_fmt_selftest.py`（实时抽取 + 无-stdio 硬断言 + 12 用例对拍），接入 `1to1-verify` 硬门禁，并**反向验证**过；③ 崩溃报告器**提前到 constructor**（原先崩在 SFC 装配前就没有现场） |
 
+### 2026-09-17 第三十九轮：★★★★★★ **观测窗口打开了**（重建侧首次走到 M6）+ 找到 19 项同类漏参
+
+#### 一、突破：一切都是一个**漏掉的函数参数**
+
+| 场景 E 指标 | 修前 | 修后 |
+|---|---|---|
+| 重建侧 M5 `main_Menu` | ✗（崩在 `setting.xml`）| **✓** |
+| 重建侧 M6 资源包 | ✗（未走到）| **✓（包已打开）** |
+| 重建侧 stdout 行数 | 3 | **21** |
+| 重建侧专有函数覆盖 | 4 / 223 = 1.79% | **58 / 223 = 26.01%** |
+
+**缺陷本体**：`mxmlLoadFile(0, fp)` 漏了第 3 个参数 `cb`。
+工厂机器码为证（每处）：`mov r2,#0`（cb=NULL）→ `mov r1,fp` → `mov r0,#0`（top=NULL）→ `bl mxmlLoadFile`
+⇒ 真形态 `mxmlLoadFile(NULL, fp, NULL)`；我们少传一个 ⇒ ARM 上 r2 是**寄存器垃圾**
+⇒ `mxml_load_data` 内 `blx r10`，r10 = **0x3a / 0x00（随场景漂移）**。
+这解释了此前两个说不通的现象：同一二进制"有时崩有时不崩"、崩点 pc 两轮之间会变值。
+同类第二处：`mxmlDelete()`（一个实参都没传）⇒ 改为 `mxmlDelete(tree)`。
+**治理**：`proto.h` 三个 K&R 空参声明改**真原型** ⇒ 漏参在严格编译门禁阶段直接报错。
+
+#### 二、同一物种的存量缺陷：**19 个函数存在漏参**（已建机械门禁）
+
+`proto.h` 有 **107 个 K&R 空参声明**、**235 处零实参调用点**。新增 `tools/scan_kr_argcount.py`：
+以**工厂反汇编**为权威（数每个 `bl` 之前写过几个 `r0..r3`），内置 3 个手工核对过的**自证锚点**
+（`mxmlLoadFile=3 / mxmlDelete=1 / mxmlSaveFile=3`），自证不过就拒绝出结论。
+首跑抓到 19 个函数（`mui_ReadJoystick` 工厂 57 处调用 / `mui_WaitNMI` 23 处 / `SaveMenuLog` 12 处 /
+`mui_DisplayGameSum` 15 处 / `GetZipItemA` 工厂 4 参我们 3 参 …）。
+**棘轮语义**：19 项入 `tools/kr_argcount_pending.txt`，**台账外的新增违例一律失败**；已做反向验证。
+性能：一次建索引后 **2.8 秒**（原每个函数重扫 758k 行 ⇒ ~60 秒）。
+
+#### 三、本轮还补了两条仪器纪律（都因踩坑而来）
+
+1. **零-stdio 日志器 + 自检门禁**：在被拦截的 `fopen` 里调 `note()`（内部 `vsnprintf`）
+   ⇒ 在 stdio 内部再入 stdio，把 guest 的 FILE 结构污染成 `blx sl`（sl=0x3a）的垃圾跳转，
+   而且**只把两个二进制中的一个搞崩** ⇒ 一度伪造成"两侧分歧"。
+   现 `note()` 为零-stdio 自包含格式化器；`tools/shim_fmt_selftest.py`（从源码实时抽取 +
+   硬断言无 stdio + 12 用例对拍）已作 `1to1-verify` 硬门禁，并**反向验证**过。
+2. **崩溃报告器提前到 constructor**：原先只在 SFC 装配时安装 ⇒ **最需要现场的那次崩溃**
+   （发生在装配之前）只剩 qemu 一行 `uncaught target signal 11`，pc/lr/栈全丢。
+   本轮正是靠补上它才拿到 `pc=0x3a / lr=mxml_load_data+0xdbc`，一击定位。
+
+#### 四、提交
+
+`1879e05c`（fopen 拦截 + I/O 轨迹）→ `97708de8`（崩溃报告器提前）→ `adb16450`（零-stdio 格式化器 +
+两条门禁）→ `1ac8c25e`（mxml 漏参修复 + 19 项台账 + K&R 棘轮门禁）→ `1fa1469e`（修 CI 里 zig 路径）
+
 ### 2026-09-17 第三十七轮：★★★★★★ **进度量化 + 差距分析**（回答「距离直接替代还差什么」）
 
 > 📄 完整报告见仓库根 **`GAP.md`**（含证据链、差距清单、推进顺序、验收标准）。本节只记本轮新增的仪器与结论。
