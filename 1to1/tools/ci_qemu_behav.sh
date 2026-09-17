@@ -114,7 +114,7 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_SFC_PATTERN; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done
@@ -493,4 +493,21 @@ if [ "$rc" -eq 0 ]; then
 else
     echo "[note] 差分 rc=$rc（非 0）⇒ 跳过帧不变式门禁：先看主门禁结论"
 fi
+
+# ---- 功能里程碑矩阵（**进度刻度**）--------------------------------------------------
+#   为什么需要它：覆盖率会随**环境**变动而非单调（实测：场景 C 补 libkms 桩后 driver.so 加载成功，
+#   随即撞上"假 /dev/dri 无法应答 DRM ioctl"而更早终止 ⇒ 覆盖率 48 → 6，但**同场景下工厂 7 /
+#   控制组 7 / 重建 6 三者同步下降** ⇒ 那是环境属性，不是实现退步）。用覆盖率当进度尺会得出
+#   "越修越远"的错误结论。正确的刻度 = **同一环境下到达的功能里程碑**，且必须同时看两侧。
+echo ""
+echo "########## 功能里程碑矩阵（进度刻度：环境到达了多深 + 两侧是否同步）##########"
+"$PY" "$(winpath "$ROOT/tools/milestones.py")" "$OUT" 2>&1 | tee "$OUT/milestones.txt" || true
+{
+    echo ""
+    echo "## 功能里程碑矩阵（进度刻度）"
+    echo '```'
+    cat "$OUT/milestones.txt" 2>/dev/null | tail -30
+    echo '```'
+} >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
+
 exit $rc

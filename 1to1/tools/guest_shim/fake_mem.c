@@ -285,6 +285,33 @@ static void sfc_dev_prepare(void)
     }
     /* 其它（含 0x4848 @0x100）：全 0 ⇒ 打印行与原窗口一致 */
 
+    /* ★★ 实验开关 `CGM_SFC_PATTERN=<hex 字节>`：把**所有** SFC 读载荷统一填成该字节。
+     *   要判定的问题：崩溃现场实测 key2 被写成 `00 00 00 00 00 7d 1e 47`（既不是我们注入的
+     *   签名、也不是上面任何一种 KY 派生载荷）⇒ 必须先确定「key2 的内容来自哪里」。
+     *   判据：若 key2 变成该字节的重复 ⇒ **链路 = SFC 读 → key2**（沙箱修法 = 仿真正确的
+     *   security 载荷）；若 key2 不变 ⇒ 来源与 SFC 无关，改用「写陷阱」定位写入者。
+     *   ★ 两侧共用同一份 shim、同一取值 ⇒ 差分公平。 */
+    {
+        const char *sp = getenv("CGM_SFC_PATTERN");
+        /* ★ 只覆盖**数据读**：0x9f(芯片ID) 与 0x485a(UniqueID) 必须保持真实，
+         *   否则 spi_driver_init 会走错分支（0xC7 不在 {0x85,0x0b,0xc8,0x20} 里）⇒ 根本走不到 zip。 */
+        if (sp != NULL && sp[0] != '\0' && g_opcode != 0x009f && g_opcode != 0x485a) {
+            unsigned int v = 0, k = 0;
+            while (sp[k] != '\0' && k < 8) {
+                char c = sp[k]; unsigned int d;
+                if (c >= '0' && c <= '9') d = (unsigned int)(c - '0');
+                else if (c >= 'a' && c <= 'f') d = (unsigned int)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') d = (unsigned int)(c - 'A' + 10);
+                else break;
+                v = (v << 4) | d; k++;
+            }
+            if (k > 0) {
+                for (i = 0; i < sizeof(g_pay); i++) g_pay[i] = (unsigned char)v;
+                g_pay_zero = 0;
+                g_pay_len = 256;
+            }
+        }
+    }
     if (g_logged < 24) {
         note("[shim] sfc cmd op=0x%04x addr=0x%06x len=%u -> payload=%s(%u B)\n",
              g_opcode, g_addr, g_reqlen,
@@ -416,7 +443,8 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
          *    ⇒ 「中央目录搜索必须比对 key2」这个归因**可能是错的**。崩溃现场再读一次 key2：
          *      · 仍是注入值 ⇒ **key2 不是签名来源**（需重新定位 GOT 目标）；
          *      · 已变全 0   ⇒ 有代码在注入之后**覆写了它**（那就是真正的写入者）。 */
-        if (g_key2_seeded) {
+        /* CGM_KEY2_PROBE=1：不依赖注入，直接观察崩溃现场的 key2（判定"谁在写 key2"）。 */
+        if (g_key2_seeded || getenv("CGM_KEY2_PROBE") != NULL) {
             volatile unsigned char *k2p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
             note("[shim] key2 @0x3E190C 现值 = %02x %02x %02x %02x %02x %02x %02x %02x"
                  "（注入值应为 50 4b 05 06 50 4b 06 06）\n",
