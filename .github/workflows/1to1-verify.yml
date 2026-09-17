@@ -47,7 +47,11 @@ jobs:
           #   `blx sl, sl=0x3a`（ASCII ':'）的垃圾跳转，导致重建产物解析 setting.xml 即崩。
           # 本门禁做两件事：① 抽取的格式化器块里**不得出现任何 stdio 调用**（剥注释后检查）；
           #   ② 12 条用例与 snprintf 逐一对拍（%p 用显式期望）——全部通过才算过。
-          python tools/shim_fmt_selftest.py --zig "$(command -v zig)"
+          # ★ `zig` 由 pip 安装在 site-packages 内、**不在 PATH**（实测踩坑：`command -v zig` 为空
+          #   ⇒ 门禁直接失败）。这里复用「安装 zig」步骤里同一套解析方式。
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          [ -x "$ZIG" ] || { echo "::error::无法定位 zig（$ZIG）"; exit 1; }
+          python tools/shim_fmt_selftest.py --zig "$ZIG"
 
       - name: K&R 漏参对账（棘轮）★ 硬门禁
         run: |
