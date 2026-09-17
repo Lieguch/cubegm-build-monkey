@@ -173,6 +173,21 @@ def written_by(mn, ops, raw):
         return set()
     if b in ALU_DST or b in ('movw', 'movt'):
         return ({ops[0]} & set(PARAM_REGS)) if ops else set()
+    # ★★ 第六次修正（2026-09-17）：补全多寄存器/长乘指令。
+    #   教训：`ldmib r2, {r0, r8}` 之前未处理 ⇒ `r0` **未被记为已写** ⇒
+    #   后续对 r0 的读被判成"进入时活跃" ⇒ 误报（`xmp3_PolyphaseStereo` 即由此，
+    #   实测其序言只读 r0/r1/r2、**从不读 r3**，r3 是首个被写的）。
+    if b.startswith('ldm'):                     # 基址读、花括号内被写
+        w = set()
+        if '{' in raw:
+            lst = raw[raw.find('{') + 1: raw.rfind('}')]
+            w = set(re.findall(r'\b(r(?:1[0-5]|[0-9]))\b', lst))
+        return w & set(PARAM_REGS)              # ★ written_by 只返回"被写集合"
+    if b.startswith('stm'):                     # 基址与花括号内全为读 ⇒ 无写
+        return set()
+    if b in ('smlal', 'smull', 'umlal', 'umull', 'smlabb', 'smlabt', 'smlaltb'):
+        w = {ops[0], ops[1]} if len(ops) > 1 else set()
+        return {x for x in w if x in PARAM_REGS}
     return set()
 
 
@@ -294,10 +309,19 @@ def analyze(elf, objdump, cache):
         ost = owner_start.get(owner, -1)
         w, mode = availability_at(lines, i, ost)
         pairs.setdefault(key, []).append((w, mode))
-    return pairs, ncall, len(sym), starts, lines
+        # 形参上界：该点"设过的 r0..r3 连续前缀长度"的最大值（两侧取 max）
+        k = 0
+        for r in PARAM_REGS:
+            if r in w:
+                k += 1
+            else:
+                break
+        if k > OWNER_ARITY.get(owner, 0):
+            OWNER_ARITY[owner] = k
+    return pairs, ncall, len(sym), starts, lines, owner_start
 
 
-def _reduce(P, lines):
+def _reduce(P, lines, own_start=None):
     """按 mode 归约出每对的"恒定可用集合"。
 
     · 跳过 'jump' 档（该点可由别处到达，直线回溯不成立 ⇒ 保守排除，避免假阳性）
@@ -307,8 +331,11 @@ def _reduce(P, lines):
     out = {}
     for key, lst in P.items():
         owner = key[0]
-        ost = OWNER_START.get(owner, -1)
+        ost = (own_start or OWNER_START).get(owner, -1)
         own_live = livein_callee(lines, ost) if ost >= 0 else set()
+        # 入口处 r0..r(k-1) 都是有效入参（含"只透传、不被读"的那些）
+        k = OWNER_ARITY.get(owner, 0)
+        entry_ok = set(PARAM_REGS[:k])
         # ★★ 对称性修正（2026-09-17 实测，第三次）：若该对的**任一**调用点落在
         #   'jump' 档（无法直线推理），则**整对跳过**。
         #   教训：单边跳过会造成不对称 —— 工厂侧"设了 r3 的点"被保留、"没设的点"被丢弃，
@@ -323,7 +350,7 @@ def _reduce(P, lines):
                 continue
             avail = set(w)
             if mode == 'entry':
-                avail |= own_live
+                avail |= own_live | entry_ok
             sets.append(avail)
             # ★ 第四次修正（手工核对后）：`bl` 之后 r0 **承接被调者的返回值**，
             #   调用者可以直接把它当参数转发（`p = strchr(...); strupr(p);` 的常见形态）。
@@ -340,6 +367,13 @@ UNCERTAIN = {}
 
 
 OWNER_START = {}
+# ★★ 第五次修正（2026-09-17）：OWNER_ARITY = "该函数形参个数的**上界**"（两侧取 max）。
+#   为什么需要它：`entry` 档的可用集合原先只并入"被读过的"寄存器（own_live），
+#   但**透传形参**从不被本函数读 —— 实测 `isoir165_wctomb` 的 `r0`(conv) 只被透传给
+#   `gb2312_wctomb`，于是 own_live 不含 r0 ⇒ 误报"未设 r0"。
+#   正解：函数入口处 `r0..r(k-1)`（k = 形参上界）**都是有效的入参**，与是否被读过无关。
+#   取上界（不是精确值）是**保守方向**：avail 更大 ⇒ 更少误报。
+OWNER_ARITY = {}
 
 
 def derive_variadic(root='.'):
@@ -411,13 +445,13 @@ def main():
     anchors = [('mui_outputxy_t', 'stbtt_GetFontVMetrics', 'r3')]
     anchors_neg = [('mui_outputxy_t', 'stbtt_MakeCodepointBitmapSubpixel')]
     if a.selfcheck:
-        pA, _, _, _, lnF_self = analyze(a.factory, od, os.path.join('build', '_dis_factory.txt'))
+        pA, _, _, _, lnF_self, oS_self = analyze(a.factory, od, os.path.join('build', '_dis_factory.txt'))
         pB = pA                                  # 同一份输入 ⇒ 恒等，违例必须 0
         if pA is not pB:
             raise SystemExit('  [FATAL] 自证失败：输入不恒等')
         print('  [selfcheck-1] 同 ELF 对拍 = 0 违例 ✓（构造性）')
         anchors_ok = True
-        IA = _reduce(pA, lnF_self)
+        IA = _reduce(pA, lnF_self, oS_self)
         for caller, callee, reg in anchors:
             key = (caller, callee)
             if key not in IA:
@@ -433,10 +467,12 @@ def main():
         if not anchors_ok:
             raise SystemExit('  [FATAL] 自证失败：锚点不可达 ⇒ 反汇编解析不可信')
 
-    PF, nF, sF, stF, lnF = analyze(a.factory, od, os.path.join('build', '_dis_factory.txt'))
-    IF = _reduce(PF, lnF)
-    PO, nO, sO, stO, lnO = analyze(a.ours, od, os.path.join('build', '_dis_ours.txt'))
-    IO = _reduce(PO, lnO)
+    PF, nF, sF, stF, lnF, oSF = analyze(a.factory, od, os.path.join('build', '_dis_factory.txt'))
+    PO, nO, sO, stO, lnO, oSO = analyze(a.ours, od, os.path.join('build', '_dis_ours.txt'))
+    # ★ 两侧都分析完再归约：OWNER_ARITY 需要**两侧取 max**（形参上界），
+    #   在只跑完一侧时归约会让上界偏小 ⇒ 又回到误报。
+    IF = _reduce(PF, lnF, oSF)
+    IO = _reduce(PO, lnO, oSO)
     print('  工厂：函数 %d / bl 调用点 %d / 调用对 %d' % (sF, nF, len(PF)))
     print('  我方：函数 %d / bl 调用点 %d / 调用对 %d' % (sO, nO, len(PO)))
 

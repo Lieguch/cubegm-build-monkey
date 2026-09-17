@@ -8,16 +8,12 @@
 #          此时我们的 3 参写法是**忠实**的，行动是"显式化"而非"补参数"）。
 #   LOW  = 缺失寄存器不在两侧 live-in 中（保真度差异，暂无行为后果）。
 # ★ 逐项人工核对后修正源码，改好一项**删一行**；新增不在本台账内 ⇒ 门禁失败。
-isoir165_wctomb gb2312_wctomb HIGH
 PauseMenu mui_DispBlock HIGH
 mui_setting mui_DispBlock HIGH
-xmp3_Subband xmp3_PolyphaseStereo HIGH
 mui_LoadUIResource CloseZipU LOW
-SeletEmuCore FilePreEmu LOW
 main GetConfig LOW
 mui_run_game GetFileCore LOW
 ReadUSBJoy GetInputInfo LOW
-Load_Proc1 InitKeyMapping0fEmuType LOW
 mui_type_file_list IsShoucang LOW
 Load_Proc2 RetroInitSound LOW
 InitRFJoystick SPI_Write_BUF LOW
@@ -30,6 +26,7 @@ mui_type SeletEmuCore LOW
 filelist_run_game SoundPlay LOW
 mui_SoundplayThread SoundPlay LOW
 mui_run_game SoundPlay LOW
+main UpdateROM LOW
 _ZN6TUnzip4FindEPKchPiP8ZIPENTRY _Z13unzLocateFileP5unz_sPKci LOW
 mui_load_state blockadaptive LOW
 mui_save_state blockadaptive LOW
@@ -48,10 +45,7 @@ mui_do_file_list mui_extract_basepath LOW
 mui_search mui_run_game LOW
 mui_type mui_run_game LOW
 main_Menu myStrrstr LOW
-erase_sector snor_write_en LOW
-sflash_erase_security_data snor_write_en LOW
-sflash_write_security_data snor_write_en LOW
-spi_write snor_write_en LOW
 stbtt_GetNumberOfFonts stbtt__isfont LOW
 SPI_Read sunxi_gpio_output LOW
 SPI_Write sunxi_gpio_output LOW
+xmp3_Subband xmp3_PolyphaseStereo LOW

@@ -2414,3 +2414,11 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 `tools/scan_livein_args.py`（新）、`tools/livein_args_pending.txt`（台账 75 项）、
 `src/compat/proto.h`、`src/proprietary/mui/FUN_0001bbf8_mui_outputxy_t.c`、
 `src/proprietary/mui/FUN_0001b240_mui_outputxy_length.isra.19.c`、`.github/workflows/1to1-verify.yml`。
+
+### 五、第 42 轮·终：门禁口径第 3–6 次修正 + 最终台账
+
+- 假阳性四来源全部定位并修正：① 判据不对称（`jump` 档单边跳过）② 透传形参
+  （`OWNER_ARITY` 上界）③ 指令译码缺 `ldm*/stm*/smlal` ④ 锚点写死结论 → 状态感知 + 负向锚点。
+- 收敛：`229 → 75 → 74 → 47 → 40 → 41`；**最终 HIGH 2 / LOW 39**。
+- 剩余 HIGH 2 = `mui_DispBlock`（已裁决：两侧共有脆弱性，工厂 ≥22/99 处也不设 r3）。
+- CI（`73ce2f81`）：`1to1-verify` / `rkgame-rebuild` / `1to1-qemu-behav` **全部 success**。
