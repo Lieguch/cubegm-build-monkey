@@ -124,7 +124,7 @@ static int raw_openat(const char *path, int flags, mode_t mode)
  *       行为改变 ⇒ 写入发生在 constructor 与 zip-open 之间（写入者被夹到极窄窗口内）；
  *       行为仍不变 ⇒ 写入发生在 open 之后（下一次实验只需再往后推）。
  *   ★ 只在 `CGM_KEY2_HOOK=1` 时生效；两侧共用同一 shim ⇒ 差分依旧公平。 */
-static int g_key2_hook, g_key2_hook_logged;
+static int g_key2_hook, g_key2_hook_logged, g_key2_hits;
 
 /* ★ 本段位于 `note` 的正式定义（更靠后）之前 ⇒ 必须先给前置声明，
  *   否则 zig/cc 报 "call to undeclared function 'note'"（实测就是这个错）。 */
@@ -151,12 +151,33 @@ static int is_zip_path(const char *path)
             && path[n - 2] == 'i' && path[n - 1] == 'p');
 }
 
+/* ---- ②d I/O 轨迹（`CGM_IO_TRACE=1`）：**自证探针可达** -------------------------------
+ * 为什么必须有（本轮实测教训）：
+ *   场景 E 里 `key2 re-assert on open(...)` 一行都没打印，而我们**无法判断**
+ *   "是钩子没生效" 还是 "zip 根本不经过这个拦截点"。按技能铁律 100/101：
+ *   **任何"探针没输出"都必须能自证探针本身可达**，否则结论无效、白烧一轮 CI。
+ * 做法：把 shim 看到的**每一个**文件打开（open/open64/openat/fopen64/fopen）连同结果
+ *   打到 stderr（上限 48 条）。有这条轨迹，就能一眼看出 zip 走的是哪条路径。 */
+static int g_io_trace, g_io_trace_n;
+
+static void io_trace(const char *fn, const char *path, int rc)
+{
+    if (!g_io_trace || g_io_trace_n >= 48) {
+        return;
+    }
+    g_io_trace_n++;
+    note("[shim] io #%02d %-8s rc=%-4d %s%s\n", g_io_trace_n, fn, rc,
+         (path != NULL) ? path : "(null)",
+         (path != NULL && is_zip_path(path)) ? "   ◀ ZIP" : "");
+}
+
 static void key2_hook_try(const char *path)
 {
     if (!g_key2_hook || !is_zip_path(path)) {
         return;
     }
     key2_assert();
+    g_key2_hits++;
     if (g_key2_hook_logged < 6) {
         volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
         note("[shim] key2 re-assert on open(%s) -> 回读=%02x %02x %02x %02x %02x %02x %02x %02x\n",
@@ -176,7 +197,11 @@ static int open_impl(const char *path, int flags, va_list ap)
     }
     key2_hook_try(path);
     tgt = redirect_dev(path);
-    return raw_openat(tgt != NULL ? tgt : path, flags, mode);
+    {
+        int rc = raw_openat(tgt != NULL ? tgt : path, flags, mode);
+        io_trace("open", path, rc);
+        return rc;
+    }
 }
 
 int open(const char *path, int flags, ...)
@@ -199,6 +224,83 @@ int open64(const char *path, int flags, ...)
     return rc;
 }
 
+/* ---- ②e `fopen`/`fopen64` 拦截（本轮补的关键缺口）--------------------------------
+ * 实测事实：`rkgame` 的动态导入**同时含 `open` 与 `fopen`**，而 zip 读法（反编译里的
+ * `lufseek`/`luftell`/`lufread`）走的是 **stdio 层（`FILE*`）**。
+ * glibc 的 `fopen` **内部用隐藏符号调 `open64`，不走 PLT** ⇒ 我们原来的
+ * `open`/`openat` 拦截点**根本不经过** ⇒ 场景 E 的 `.zip` 重断言钩子静默失效
+ * （stderr 里 0 条 `re-assert`，而 stderr 本身是好的）。
+ * ⇒ 必须直接拦截 `fopen`/`fopen64` 才能拿到"打开 .zip 的前一瞬间"。
+ *
+ * 链接策略（避免给 shim 增加硬依赖）：
+ *   ① 弱声明 `dlsym`，可用则取 `RTLD_NEXT` 下的真 `fopen`（语义 100% 一致）；
+ *   ② 取不到就退化为 `open(path, mode→flags) + fdopen(fd, mode)`（只覆盖常见的
+ *      r/w/a 与 `+`、`b`、`x` 组合；本场景只读为主，风险可控）。
+ */
+__attribute__((weak)) extern void *dlsym(void *handle, const char *symbol);
+#define SHIM_RTLD_NEXT ((void *)-1l)
+
+static int mode_to_flags(const char *mode)
+{
+    int fl;
+    char c0 = (mode != NULL) ? mode[0] : 'r';
+    int plus = (mode != NULL && strchr(mode, '+') != NULL);
+    if (c0 == 'w') {
+        fl = plus ? (O_RDWR | O_CREAT | O_TRUNC) : (O_WRONLY | O_CREAT | O_TRUNC);
+    } else if (c0 == 'a') {
+        fl = plus ? (O_RDWR | O_CREAT | O_APPEND) : (O_WRONLY | O_CREAT | O_APPEND);
+    } else {
+        fl = plus ? O_RDWR : O_RDONLY;
+    }
+    if (mode != NULL && strchr(mode, 'x') != NULL) {
+        fl |= O_EXCL;
+    }
+    return fl;
+}
+
+static FILE *shim_fopen_impl(const char *path, const char *mode, int is64)
+{
+    typedef FILE *(*fn_t)(const char *, const char *);
+    static fn_t real_fn, real64;
+    FILE *fp = NULL;
+
+    key2_hook_try(path);
+    if (dlsym != NULL) {
+        fn_t *slot = is64 ? &real64 : &real_fn;
+        if (*slot == NULL) {
+            *slot = (fn_t)dlsym(SHIM_RTLD_NEXT, is64 ? "fopen64" : "fopen");
+        }
+        if (*slot != NULL) {
+            fp = (*slot)(path, mode);
+            io_trace(is64 ? "fopen64" : "fopen", path, fp ? 0 : -1);
+            return fp;
+        }
+    }
+    {
+        int fd = raw_openat(path, mode_to_flags(mode), 0644);
+        if (fd < 0) {
+            io_trace(is64 ? "fopen64*" : "fopen*", path, -1);
+            return NULL;
+        }
+        fp = fdopen(fd, mode);
+        if (fp == NULL) {
+            (void)syscall(SYS_close, fd);
+        }
+        io_trace(is64 ? "fopen64*" : "fopen*", path, fp ? 0 : -1);
+        return fp;
+    }
+}
+
+FILE *fopen(const char *path, const char *mode)
+{
+    return shim_fopen_impl(path, mode, 0);
+}
+
+FILE *fopen64(const char *path, const char *mode)
+{
+    return shim_fopen_impl(path, mode, 1);
+}
+
 int openat(int dirfd, const char *path, int flags, ...)
 {
     mode_t mode = 0;
@@ -213,10 +315,12 @@ int openat(int dirfd, const char *path, int flags, ...)
     key2_hook_try(path);
     /* 只有 AT_FDCWD + 绝对路径才做重定向；相对目录一律原样转发 */
     tgt = (dirfd == AT_FDCWD) ? redirect_dev(path) : NULL;
-    if (tgt != NULL) {
-        return raw_openat(tgt, flags, mode);
+    {
+        int rc = (tgt != NULL) ? raw_openat(tgt, flags, mode)
+                              : (int)syscall(SYS_openat, dirfd, path, flags, mode);
+        io_trace("openat", path, rc);
+        return rc;
     }
-    return (int)syscall(SYS_openat, dirfd, path, flags, mode);
 }
 
 /* ---- ③ SFC（SPI Flash 控制器）设备仿真 -------------------------------
@@ -785,6 +889,9 @@ __attribute__((constructor)) static void shim_poison_stack(void)
      * ★ 地址 0x003E190C 是**常量**：guest 非 PIE（gdb 已断言"地址即链接地址"），
      *   且两侧布局账本（ledger/factory_globals.tsv）已核对该全局同址。
      * ★ 只在显式开启时写内存；若假设不成立会立刻在 constructor 里 SIGSEGV（可见、可退）。 */
+    g_io_trace = (getenv("CGM_IO_TRACE") != NULL
+                  && getenv("CGM_IO_TRACE")[0] != '\0'
+                  && getenv("CGM_IO_TRACE")[0] != '0');
     g_key2_hook = (getenv("CGM_KEY2_HOOK") != NULL
                    && getenv("CGM_KEY2_HOOK")[0] != '\0'
                    && getenv("CGM_KEY2_HOOK")[0] != '0');

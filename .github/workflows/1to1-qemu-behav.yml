@@ -130,11 +130,13 @@ jobs:
         run: |
           cd 1to1
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 \
-          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_COV_TAG=E \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_e || true
+          echo '--- 场景 E：shim 看到的 I/O 轨迹（自证探针可达；◀ ZIP 标出 zip 打开）---'
+          grep -a "shim] io " report/qemu_e/rundir_factory/stderr.txt | head -30 || true
           echo '--- 场景 E：key2 重新断言的证据行 ---'
-          grep -a "key2 re-assert" report/qemu_e/rundir_factory/stderr.txt | head -4 || true
+          grep -a "key2 re-assert" report/qemu_e/rundir_factory/stderr.txt | head -6 || true
           echo '--- 场景 E：zip 打开失败行数（与场景 A/B 对比；0 = 窗口打开）---'
           for d in qemu qemu_b qemu_e; do
             n=$(grep -ac "ui_cn.zip fail" report/$d/rundir_factory/stdout.txt 2>/dev/null || echo '?')
