@@ -466,10 +466,13 @@ B 无效而 E 有效 ⇒ 写入者被夹进 constructor→zip-open 的窄窗口�
    （发生在装配之前）只剩 qemu 一行 `uncaught target signal 11`，pc/lr/栈全丢。
    本轮正是靠补上它才拿到 `pc=0x3a / lr=mxml_load_data+0xdbc`，一击定位。
 
-#### 四、提交
+#### 四、提交（全部 CI 绿）
 
-`1879e05c`（fopen 拦截 + I/O 轨迹）→ `97708de8`（崩溃报告器提前）→ `adb16450`（零-stdio 格式化器 +
-两条门禁）→ `1ac8c25e`（mxml 漏参修复 + 19 项台账 + K&R 棘轮门禁）→ `1fa1469e`（修 CI 里 zig 路径）
+`1879e05c` → `97708de8` → `adb16450` → `1ac8c25e` → `1fa1469e` → `c0214eb0` → `af9bdcfd`；
+最终一次三 workflow 全部 **success**（`1to1-verify` 含两道新硬门禁）。
+两个 CI 专有坑：① `zig` 由 pip 安装在 site-packages **不在 PATH**（不能用 `command -v zig`）；
+② Ubuntu `/usr/bin/objdump` 对 ARM32 **`-t` 能读、`-d` 报 architecture UNKNOWN**
+⇒ 工具优先用 `arm-linux-gnueabihf-objdump`、否则 `objdump -d -m arm`。
 
 ### 2026-09-17 第三十七轮：★★★★★★ **进度量化 + 差距分析**（回答「距离直接替代还差什么」）
 
