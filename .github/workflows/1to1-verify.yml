@@ -211,6 +211,22 @@ jobs:
           python tools/scan_symbol_delta.py --ours build/rkgame.rebuilt.elf \
             --pending tools/upstream_api_pending.txt
 
+      - name: 调用点实参寄存器对拍（工厂=对照组）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 实测）：ARM 上"调用点少设一个实参寄存器"= 传寄存器垃圾。
+          #   已实证：`stbtt_GetFontVMetrics(font,&fontascent,0)` —— 原厂源码同为 3 参，
+          #   但 GCC 6.2.0 构造 r2=0 时顺带 `mov r3,#0`（**恰好安全**），
+          #   我们用 clang 直接 `mov r2,#0` ⇒ r3 任意 ⇒ 函数体 `if (lineGap) *lineGap=...`
+          #   变成**野写**。这类"依赖寄存器副产物的脆弱性"是 1:1 替代必须显式化的东西。
+          # 判据：逐 (调用者,被调者) 对拍两侧的"实参寄存器设置集合"，取交集后比差。
+          # 自证三级：① 同 ELF 对拍必须 0；② 人工核对过的锚点必须被量到；
+          #          ③ 锚点必须出现在**最终违例表**中（端到端）。
+          # 台账棘轮：已知项入 tools/livein_args_pending.txt；**新增即失败**。
+          python tools/scan_livein_args.py \
+            --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf \
+            --ledger tools/livein_args_pending.txt
+
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
         run: |
           cd 1to1

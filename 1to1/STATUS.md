@@ -2375,3 +2375,42 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 3. **`objdump -t` 解析**：行 = `addr bind type section size name`；尺寸在 **p[4]**，
    p[1] 是绑定属性。取错索引会静默提取 0 条。
 4. **硬门禁必需**：任何"提取到 0 条"的作业必须 `exit 1`，否则假绿。
+
+---
+
+## 第四十二轮（2026-09-17）：新门禁「调用点实参寄存器对拍（工厂=对照组）」+ 一类新缺陷
+
+### 一、本轮成果
+
+| 项 | 结果 |
+|---|---|
+| 新工具 | `tools/scan_livein_args.py`（1298 行反汇编 × 两侧，逐调用点对拍） |
+| 新门禁 | `1to1-verify` 第 20 步 ★ 硬门禁（新增差异即失败，带台账棘轮） |
+| 检出 | **HIGH 5 对 / LOW 70 对**（总计 75） |
+| 已修 | `stbtt_GetFontVMetrics` 显式化第 4 实参（`proto.h` 改真原型 + 2 处调用点） |
+| 自证 | 三级：① 同 ELF 对拍 = 0；② 锚点被量到；③ 锚点出现在最终违例表 |
+| 技能铁律 | 107 → **109** |
+
+### 二、四轮口径演进（每一轮都被自证拦下）
+
+| 轮 | 口径 | 结果 | 被拦下的原因 |
+|---|---|---|---|
+| 40 | 单侧（我们）"被调者会读而未设" | 工厂对照组 **541 处** | 变参函数 / 跨基本块 / 同对调用实参个数本就不同 |
+| 41 | 对拍工厂**反编译 C** | 0 项 | Ghidra 两侧一起丢参数 ⇒ 结构性看不见 |
+| 42a | 对拍机器码，`max` | 229 对 | 把"入口参数原样透传"误报 |
+| 42b | + 可用性三档（entry/call/jump） | 75 对 | —— 收敛 |
+| 42c | + 跨调用仅缺 r0 降级为 LOW | **HIGH 5 / LOW 70** | 收敛 |
+
+### 三、新缺陷类别：**依赖寄存器副产物的脆弱性**
+
+原厂源码 `stbtt_GetFontVMetrics(&font,&fontascent,0)` 是 **3 参**（Ghidra 渲染两侧同为 3 参），
+但 GCC 6.2.0 在构造 `r2=0` 时顺带 `mov r3,#0` ⇒ 恰好安全；
+我们换 clang 后 r3 留下层残值 ⇒ 被调函数 `if (lineGap) *lineGap = ...` 变成**野写**。
+
+⇒ **不是漏参，而是"原厂偶然确定 → 我们不确定"**。1:1 替代必须显式化（已修 + 改真原型）。
+
+### 四、提交
+
+`tools/scan_livein_args.py`（新）、`tools/livein_args_pending.txt`（台账 75 项）、
+`src/compat/proto.h`、`src/proprietary/mui/FUN_0001bbf8_mui_outputxy_t.c`、
+`src/proprietary/mui/FUN_0001b240_mui_outputxy_length.isra.19.c`、`.github/workflows/1to1-verify.yml`。

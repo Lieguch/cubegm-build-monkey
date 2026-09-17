@@ -100,7 +100,16 @@ extern int mui_search_file_list(int param_1,int param_2);
 extern int GetTicks(); /* K&R: 参数不可信/不可解析 */
 extern void mui_DisplayThumbnailThread(); /* K&R: 参数不可信/不可解析 */
 extern void mui_WaitNMI(); /* K&R: 参数不可信/不可解析 */
-extern void stbtt_GetFontVMetrics(); /* K&R: 参数不可信/不可解析 */
+/* ★★ 2026-09-17：K&R 空参声明 -> 真原型。
+ * 事故链（机器码级已核对）：
+ *   原厂源码此处也是 3 参（Ghidra 渲染同为 3 参），但原厂用 GCC 6.2.0，
+ *   构造 `r2=0` 时顺带 `mov r3,#0` ⇒ r3 **恰好为 0**，而函数体是
+ *   `if (lineGap) *lineGap = ttSHORT(...)` ⇒ 条件不成立、不写。
+ *   我们用 clang(zig) 直接 `mov r2,#0`，**r3 保持任意值** ⇒ 一旦非 0 就按指针写
+ *   ⇒ 野写（`strne r0,[r3]`）。
+ *   ⇒ 这不是"漏参"，而是**依赖寄存器副产物的脆弱性**：1:1 替代必须把它**显式化**。
+ *   改为真原型后，调用点少传会直接在严格编译门禁报错。 */
+extern void stbtt_GetFontVMetrics(void *info, int *ascent, int *descent, int *lineGap);
 extern float stbtt_ScaleForPixelHeight(float param_1,void *param_2);
 extern int mui_outputxy_length_isra_19(int param_1,int param_2,gh_byte *param_3);
 extern int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint param_5,gh_byte *param_6);

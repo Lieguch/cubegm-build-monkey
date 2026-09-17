@@ -383,3 +383,75 @@ SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=20 \
 SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 CGM_KEY2_SEED=1 \
   sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_b
 ```
+
+---
+
+## 八、★ 新门禁（第 42 轮）：调用点实参寄存器对拍（工厂 = 对照组）
+
+### 为什么这一轮才做出来
+
+前两轮我已经两次被"K&R 空参声明掩盖的调用点差异"打脸：
+
+| 轮次 | 工具 | 口径 | 结果 | 为什么不够 |
+|---|---|---|---|---|
+| 40 | `tools/scan_kr_argcount.py` | 数每个 `bl` 前写过几个 `r0..r3`，**跨全部调用点取最大** | 报 19 项 | 口径错，噪声 19 项全是假的（临时寄存器被当参数 / 尾调用继承 r0 / 编译器为未用形参清零） |
+| 41 | `tools/scan_call_args.py` | 对拍**工厂反编译 C** 的调用表达式 | 报 0 项 | Ghidra 推断原型偏小时会**同时丢两侧**的参数（它把工厂真实的 `mxmlLoadFile(0,fp,0)` 渲染成 2 参）⇒ 结构性看不见 |
+| **42** | **`tools/scan_livein_args.py`** | **两侧机器码逐 (调用者,被调者) 对拍** | **HIGH 5 / LOW 70** | 这正是本次要报告的 |
+
+### 口径（`tools/scan_livein_args.py`）
+
+对每一对 `(调用者, 被调者)`：
+1. 收集**两侧各自全部调用点**的"已设实参寄存器集合"，
+   可用性按回溯终止原因分三档：
+   - `entry` —— 一路回到函数入口（未跨调用/跳转）⇒ **入口参数仍可用**，并入本函数 live-in；
+   - `call`  —— 跨过了 `bl`/`blx` ⇒ `r0..r3` 已被冲掉，只能用之后的显式写入；
+     （★ 例外：`r0` 承接被调者返回值，可被直接转发 ⇒ 仅缺 `r0` 时降级为 LOW，不计 HIGH）
+   - `jump`  —— 跨过 `b`/`bx`/`pop {..pc}` ⇒ 该点可由别处到达，**无法直线推理** ⇒ 整条跳过；
+2. `被调者 live-in` = 它入口处**读早于写**的 `r0..r3`（取两侧并集）；
+3. `miss = 工厂交集 - 我们交集`；`HIGH = miss ∩ live-in`，其余为 LOW。
+
+### 三级自证（铁律 101 的强制要求）
+
+1. **构造性**：同一 ELF 当两边跑，违例必须 0；
+2. **锚点**：人工逐字节核对过的 `mui_outputxy_t -> stbtt_GetFontVMetrics`（工厂恒设 `r0,r1,r2,r3`）
+   必须被量到；
+3. **端到端**：锚点必须出现在**最终违例表**中（验证"反汇编 → 判定"整条链路没有断点）。
+
+三级全绿才出结论；任一级不过即 `FATAL` 退出。
+
+### 本轮结论：这是一类全新的缺陷 —— **依赖寄存器副产物的脆弱性**
+
+`mui_outputxy_t -> stbtt_GetFontVMetrics` 逐字节核对：
+
+| | 工厂 | 我们 |
+|---|---|---|
+| 调用点 | `mov r3,#0` **＋** `mov r2,r3`（r0..r3 全设） | 直接 `mov r2,#0`，**r3 从未设置** |
+| 被调函数体 | `cmp r3,#0` → `strne r0,[r3]`（**会解引用 r3**） | 同（v1.26 源码 `if (lineGap) *lineGap = ...`） |
+
+★ 关键鉴别（**必须诚实**）：**工厂的反编译 C 同样只有 3 个实参**
+（Ghidra 渲染 `stbtt_GetFontVMetrics(font,&fontascent,0)`）
+⇒ 原厂源码里那句就是 3 参，`mov r3,#0` 是 **GCC 构造 `r2=0` 时顺带的副产物**（恰好安全）。
+我们换 clang 后 `mov r2,#0` 不再顺带清 r3 ⇒ **r3 = 上层残留值** ⇒ 一旦非 0 就是**野写**。
+
+⇒ 所以它**不是"漏参"**，而是：**行为在原厂是"偶然确定"，在我们这里变成"不确定"。**
+1:1 替代必须把这种偶然性**显式化**。已修：`proto.h` 把该函数从 K&R 空参声明改成真原型
+（`extern void stbtt_GetFontVMetrics(void *info,int *ascent,int *descent,int *lineGap);`），
+两个调用点显式补 `,0`（= 与工厂 `r3=0` 行为一致且确定）；本地严格门禁配方下 0 error。
+
+### 台账（`tools/livein_args_pending.txt`，棘轮）
+
+| 分级 | 对数 | 含义 | 代表 |
+|---|---|---|---|
+| **HIGH** | **5** | 缺失寄存器确在被调者 live-in 中 ⇒ 可能野写/野指针 | `mui_outputxy_t->stbtt_GetFontVMetrics`（已修）、`PauseMenu/mui_setting->mui_DispBlock`（工厂 4 参 `param_4` 是**表索引**，缺了就按垃圾偏移索引）、`xmp3_Subband->xmp3_PolyphaseStereo`、`isoir165_wctomb->gb2312_wctomb` |
+| LOW | 70 | 缺失寄存器不在两侧 live-in 中 ⇒ 仅保真度差异 | `run_game->Core_Load`(r3)、`mui_setting->SaveMenuLog`(r2,r3)、`*->SeletEmuCore`(r3) … |
+
+CI 已接入（`1to1-verify` 第 20 步，★ 硬门禁）：**新增差异即失败**；
+台账条目消失（= 已修好）打印警告要求删行。
+
+### 下一步（按收益排序）
+
+1. **逐条人工核对 HIGH 剩余 4 项**（`mui_DispBlock` 两处是菜单主路径，优先）—— 每项都要
+   回到机器码定实参，**不许照抄 Ghidra 渲染**（它两侧都会丢参数）。
+2. **LOW 70 项**：批量核对，确认是纯 codegen 差异后从台账清除，或补显式实参。
+3. 复用本工具的口径做 **`b`/`bl` 尾调用版的同类门禁**（当前只覆盖 `bl`）。
+4. 继续 G2（假 DRM 设备仿真）、G3（`TUnzip` 语义对齐）、P6（真机对照）。

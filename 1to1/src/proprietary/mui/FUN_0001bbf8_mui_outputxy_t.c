@@ -39,7 +39,7 @@ int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint pa
   
   fVarScaleIn = VectorUnsignedToFloat(param_4 + 4U & 0xff,(gh_byte)(in_fpscr >> 0x16) & 3);
   fontscale = (float)stbtt_ScaleForPixelHeight(fVarScaleIn,font);
-  stbtt_GetFontVMetrics(font,&fontascent,0);
+  stbtt_GetFontVMetrics(font,&fontascent,0,0);
   uVar11 = (gh_uint)*param_6;
   fVar16 = (float)VectorSignedToFloat(fontascent,(gh_byte)(in_fpscr >> 0x16) & 3);
   fontbaseline = (int)(fVar16 * fontscale);

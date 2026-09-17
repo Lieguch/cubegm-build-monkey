@@ -27,7 +27,7 @@ int mui_outputxy_length_isra_19(int param_1,int param_2,gh_byte *param_3)
   
   uVar4 = VectorUnsignedToFloat(param_2 + 4U & 0xff,(gh_byte)(in_fpscr >> 0x16) & 3);
   fontscale = (float)stbtt_ScaleForPixelHeight(uVar4,font);
-  stbtt_GetFontVMetrics(font,&fontascent,0);
+  stbtt_GetFontVMetrics(font,&fontascent,0,0);
   uVar3 = (gh_uint)*param_3;
   fVar5 = (float)VectorSignedToFloat(fontascent,(gh_byte)(in_fpscr >> 0x16) & 3);
   fontbaseline = (int)(fVar5 * fontscale);
