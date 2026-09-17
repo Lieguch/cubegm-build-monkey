@@ -23,7 +23,7 @@ void GetConfig(void)
     puts("open config.xml fail!");
     return;
   }
-  uVar1 = mxmlLoadFile(0,__stream);
+  uVar1 = mxmlLoadFile(0,__stream,0);
   fclose(__stream);
   iVar2 = mxmlFindElement(uVar1,uVar1,"displayfps",0,0,1);
   if (iVar2 != 0) {

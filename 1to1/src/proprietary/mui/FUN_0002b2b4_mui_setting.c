@@ -229,7 +229,7 @@ LAB_0002b828:
           tree = 0;
         }
         else {
-          tree = mxmlLoadFile(0,pFVar3);
+          tree = mxmlLoadFile(0,pFVar3,0);
           fclose(pFVar3);
           if (tree != 0) {
             iVar9 = mxmlFindElement(tree,tree,"config",0,0,1);
@@ -559,7 +559,7 @@ LAB_0002c7b8:
                     tree = 0;
                   }
                   else {
-                    tree = mxmlLoadFile(0,pFVar3);
+                    tree = mxmlLoadFile(0,pFVar3,0);
                     fclose(pFVar3);
                     if (tree != 0) {
                       iVar6 = mxmlFindElement(tree,tree,"config",0,0,1);

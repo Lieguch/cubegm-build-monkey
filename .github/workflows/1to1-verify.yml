@@ -49,6 +49,17 @@ jobs:
           #   ② 12 条用例与 snprintf 逐一对拍（%p 用显式期望）——全部通过才算过。
           python tools/shim_fmt_selftest.py --zig "$(command -v zig)"
 
+      - name: K&R 漏参对账（棘轮）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 实测）：`src/compat/proto.h` 里 107 个函数是 K&R 空参声明，
+          #   调用点漏参**编译器不报错**；ARM 上漏掉的参数就是寄存器垃圾 ⇒
+          #   表现为"同一二进制在不同场景下崩/不崩"的幽灵故障（本轮 mxmlLoadFile 漏第 3 参
+          #   ⇒ `mxml_load_data` 内 `blx r10`，pc = 0x3a / 0x00 随场景漂移）。
+          # 本门禁以**工厂反汇编**为权威（数每个 bl 之前写过几个 r0..r3），
+          #   内置三个手工核对过的锚点做自证；已知待修入台账，**新增违例一律失败**（棘轮）。
+          python tools/scan_kr_argcount.py --root . --pending tools/kr_argcount_pending.txt
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'

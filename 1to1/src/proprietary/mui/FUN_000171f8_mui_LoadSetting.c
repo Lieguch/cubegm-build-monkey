@@ -40,7 +40,7 @@ void mui_LoadSetting(void)
     tree = 0;
   }
   else {
-    tree = mxmlLoadFile(0,pFVar2);
+    tree = mxmlLoadFile(0,pFVar2,0);
     fclose(pFVar2);
     if (tree != 0) {
       iVar3 = mxmlFindElement(tree,tree,"config",0,0,1);
@@ -239,7 +239,7 @@ LAB_000178ec:
   builtin_strncpy(pcVar4,"cores/filelist.xml",0x13);
   pFVar2 = fopen(acStack_128,"r");
   if (pFVar2 != (FILE *)0x0) {
-    filelist_tree = mxmlLoadFile(0,pFVar2);
+    filelist_tree = mxmlLoadFile(0,pFVar2,0);
     fclose(pFVar2);
     return;
   }

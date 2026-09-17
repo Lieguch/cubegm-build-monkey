@@ -212,9 +212,20 @@ extern gh_u4 xmp3_UnpackFrameHeader(int *param_1,char *param_2);
 extern void ClearBuffer(gh_u1 *param_1,int param_2);
 extern gh_u4 mxmlElementGetAttr(gh_u4 param_1,char *param_2);
 extern void mxmlElementSetAttr(gh_u4 param_1,char *param_2,gh_u4 param_3); /* node 以整型句柄传递；name/value 为字符串 */
-extern gh_u4 mxmlLoadFile(); /* K&R: 参数不可信/不可解析 */
-extern int mxmlSaveFile(); /* K&R: 参数不可信/不可解析 */
-extern void mxmlDelete(); /* K&R: 参数不可信/不可解析 */
+/* ★★ 2026-09-17 修正（真实缺陷，非风格问题）：这三个原来是 K&R 空参声明，
+ *   ⇒ 调用点漏参**编译器不报错**，而 ARM 上被漏掉的那一/两个参数是**寄存器里的垃圾**
+ *   ⇒ 表现为"同一二进制在不同场景下崩或不崩"的幽灵故障。
+ *   实测：`mxmlLoadFile(0,fp)` 漏了第 3 个参数 `cb`（类型推断回调），
+ *   `mxml_load_data` 里 `if (cb && parent) type = (*cb)(parent);` 之后仍会在别处
+ *   `(*cb)`… 实际崩在 mxml 内部的间接调用（`blx r10`，r10=垃圾）：
+ *   lr = mxml_load_data+0xdbc，pc = 0x3a / 0x00（随场景漂移）。
+ *   工厂侧机器码为证（每处都是）：`mov r2,#0`（cb=NULL）→ `mov r1,fp` → `mov r0,#0`（top=NULL）→ `bl mxmlLoadFile`
+ *   ⇒ 正确形态是 **3 参**：`mxmlLoadFile(NULL, fp, NULL)`；
+ *     `mxmlSaveFile(node, fp, cb)` 亦为 3 参；`mxmlDelete(node)` 为 1 参。
+ *   改成真原型后，任何漏参都会在**严格编译门禁**阶段直接报错。 */
+extern gh_u4 mxmlLoadFile(gh_u4 top, void *fp, gh_u4 cb);
+extern int mxmlSaveFile(gh_u4 node, void *fp, gh_u4 cb);
+extern void mxmlDelete(gh_u4 node);
 extern int mxmlFindElement(int param_1,int param_2,char *param_3,int param_4,char *param_5,int param_6);
 extern gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint param_4);
 extern int snor_wait_busy(int param_1);

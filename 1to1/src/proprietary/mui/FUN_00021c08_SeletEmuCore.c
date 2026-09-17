@@ -123,7 +123,7 @@ LAB_00021d94:
     iVar8 = 0;
   }
   else {
-    tree = mxmlLoadFile(0,__stream);
+    tree = mxmlLoadFile(0,__stream,0);
     fclose(__stream);
     if (tree == 0) {
       iVar8 = 0;
@@ -154,7 +154,7 @@ LAB_00021f90:
         goto LAB_00021f90;
       }
       if (tree != 0) {
-        mxmlDelete();
+        mxmlDelete(tree);
         tree = 0;
       }
     }

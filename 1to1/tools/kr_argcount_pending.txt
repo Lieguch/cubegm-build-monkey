@@ -1,0 +1,21 @@
+# K&R 漏参·已知待修台账（棘轮）。格式: <函数名> <工厂真实参数>
+# 新增违例不在本台账内 ⇒ 门禁直接失败。修好一项就删一行。
+FBA_Load 3
+GetConfig 1
+GetFilenameExt 2
+GetTicks 2
+GetZipItemA 4
+InitKeyMapping0fEmuType 3
+JoystickTest 2
+RetroInitSound 1
+SaveMenuLog 3
+getticks 3
+mui_DisplayGameSum 3
+mui_DisplayInputBuffer 3
+mui_DisplayThumbnail 2
+mui_LoadConfig 1
+mui_ReadJoystick 1
+mui_WaitNMI 1
+run_game 3
+snor_write_en 3
+stbtt_GetFontVMetrics 4
