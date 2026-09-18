@@ -984,3 +984,85 @@ _run.sh: line 3:  CGM_DBGUNZ=1: command not found
 自证从「1 坏 + 4 好」扩到「**2 坏 + 6 好**」；**修之前该判据命中了这一行（exit 1）**，修完 0 问题。
 
 ⇒ 两种形态现在都被硬门禁覆盖：① 注释插进链中（第 44 轮）；② 链尾被追加内容（第 46 轮）。
+
+---
+
+## 十三、第 47 轮：**「调用点缺原型」= ABI 级错位**（阻塞 M7 的那一个）+ `fontscale` 类型错
+
+### 13.1 缺陷 D1：调用点缺原型 ⇒ 实参按默认提升传 ⇒ `r0` 根本没被设置
+
+**修复前现场（场景 E，我们侧）**：
+```
+pc = stbtt_FindGlyphIndex+0x8     指令 5045ae0: ldr r4,[r0,#4]   ← info->data
+lr = stbtt_GetCodepointBitmapBoxSubpixel+0x2C   （= 50477a8，紧随 bl stbtt_FindGlyphIndex）
+故障地址 = 0x4     r0 = 0x00000000
+```
+
+**根因链（全部有机器码对照）**：
+
+| # | 事实 | 证据 |
+|---|---|---|
+| 1 | `proto.h` 里**没有** `stbtt_GetCodepointBitmapBoxSubpixel` / `stbtt_MakeCodepointBitmapSubpixel` / `stbtt_GetCodepointHMetrics` 的原型 | `grep stbtt_ src/compat/proto.h` 只有 3 条 |
+| 2 | 于是走 **隐式声明** ⇒ 默认实参提升：`float` → **double** | 我们机器码 `vcvt.f64.f32 d0,s0` |
+| 3 | double 落进 d0/d1/d2，而真函数按 `s0..s3` 读 float ⇒ **整组错位** | 工厂同一调用点：`vmov.f32 s0,s1` / `s2` / `s3` |
+| 4 | 指针实参 `font` 被排到第 5 个位置 ⇒ **`r0` 从未被赋值** | 我们：`mov r0,r8` 之前 r0 无人设置；工厂：`1bc2c: mov r0,r5`(=&font) |
+| 5 | 被调者入口 r0 = 0 ⇒ `ldr r4,[r0,#4]` 故障地址恰为 **0x4** | 崩溃现场 `r0=0x0`、故障地址 `0x00000004` |
+
+★ 关键教训：`GetCodepointBitmapBoxSubpixel` 内部 `bl stbtt_FindGlyphIndex` 之前**没有重新加载 r0**
+（`5047794: mov r6,r0` 之后一路沿用）⇒ **"崩溃点的 r0"就等于"调用者传的 font"**。
+所以"故障地址 0x4"不能只解释成"上层指针为空"，而应优先怀疑**调用点 ABI 错位**。
+
+**同一轮还发现一个错原型**：`extern float stbtt_ScaleForPixelHeight(float param_1, void *param_2);`
+—— 真签名是 `(const stbtt_fontinfo *info, float height)`，**顺序与类型都是反的**。
+本例因"一浮点一指针"的寄存器位置恰好互补而侥幸无害，但同类声明一旦有两个同类型参数就会致命。
+
+### 13.2 缺陷 D2：`fontscale` 应是 `float`，我们写成了 `unsigned int`
+
+| | 工厂 | 我们（修复前） |
+|---|---|---|
+| 写 | `1b288: vstr s0,[r5,#672]`（**按 float 存** scale） | `vcvt.u32.f32 s0,s0` → `vstr`（**截断成整数**再存）|
+| 读 | `1b29c: vldr s14,[r5,#672]` → `vmul.f32` | 按 float 读，但里面已是整数 |
+| 后果 | 正确的缩放系数 | scale 恒 <1 ⇒ 截断为 **0** ⇒ 字形缩放与 baseline 全丢 |
+
+⇒ 判定方法：**看工厂对该地址的取存指令**（`vldr/vstr/vmov` ⇒ float；`ldr/str`+`vcvt` ⇒ int）。
+Ghidra 标的 `undefined4` **不代表类型**，必须回到指令。
+
+### 13.3 顺手补一处漏声明
+
+`proto.h` 有 `shmget`/`shmdt` 却**漏了 `shmat`**（调用点 `(gh_u4 *)shmat(shmid,(void*)0,0)`）。
+两侧 ELF 都导入 `shmget/shmat/shmdt` ⇒ 调用是**忠实**的，只是原型漏了（返回类型被假定 `int`）。
+ARM32 上 int/pointer 同为 32 位而侥幸无害，但同类漏声明一旦涉及 float 或 64 位返回值就是 ABI 级错误。
+
+### 13.4 新门禁（第 13 道 ★）：`tools/scan_implicit_decl.py` —— **编译器真值**口径
+
+为什么不用源码启发式：要维护 libc/上游/宏的巨型白名单，必然假阳性。
+而**编译器的判断就是真值**：逐文件 `-fsyntax-only`，缺原型会以 **error** 形式出现。
+
+- 措辞兼容：clang ≥16 是 `call to undeclared function`（默认 error），旧版是 `implicit declaration of function`。
+- 自证（正负双向）：临时 TU 里未声明调用**必须被检出**；已声明调用**必须不被检出**。
+- 台账棘轮：新增即失败；台账项消失只告警（防"源码已修、账未删"造成假红）。
+- 首跑结果：**213 个文件 → 检出 1 个（`shmat`）** ⇒ 补掉后 **0 项**。
+- 性能：串行 70s → 并行（`--jobs 4`）**20.5s**。
+  ★ `--jobs 8` 在本机直接 `OSError [WinError 1455] 页面文件太小`（zig cc 单进程内存不低）⇒ 默认取 4。
+- ★ **派生失败必须 FATAL**：绝不允许把"编译失败"当成"该文件无缺原型"（仪器静默降级的老坑）。
+
+### 13.5 对既有结论的两处修正
+
+1. **「`key2` 被覆写」的归因撤回**：场景 E 里工厂侧 `key2` 在**崩溃时仍是注入值**
+   `50 4b 05 06 50 4b 07 08`（3 次 `key2 re-assert` 回读也都正确）。
+   即"某处覆写了 key2"这个机制**在注入+重断言之后已不复现**。
+2. **工厂 zip 查找失败的归因理由要换**：分支普查显示 `unzStringFileNameCompare` /
+   `unzGetCurrentFileInfo` 命中 **0** ⇒ **遍历循环体零执行** ⇒ `unzGoToFirstFile` 返回非零。
+   仍归因沙箱，但不再用"key2 是 0"作理由（key2 当时是正确的）。
+
+### 13.6 修复后的验证（机器码形状与工厂对齐）
+
+| 调用点 | 修复后我们 | 工厂 |
+|---|---|---|
+| `stbtt_ScaleForPixelHeight` | `mov r0,&font` → `bl` → **`vstr s0,[r9]`（float 直存）** | `mov r0,&font` → `bl` → `vstr s0,[r5,#672]` |
+| `GetCodepointBitmapBoxSubpixel` | `r0=&font`、`r1=codepoint`、两个栈槽 ix0/iy0、r2/r3 传 ix1/iy1 指针 | 同形 |
+| `MakeCodepointBitmapSubpixel` | `r0=&font`、`r1=output`、`r2=out_w`、`r3=out_h`、`[sp]=stride`、`[sp+4]=codepoint`、`s0=s1=scale`、`s2=s3=0` | 同形 |
+| 全 ELF | 这些调用点前的 **`vcvt.f64.f32` 全部消失**；`fontscale` 存的 **`vcvt.u32.f32` 截断消失** | — |
+
+严格配方复编：两个文件 **0 error**，`implicit-declaration` 告警 **0 条**；
+本地 8 道门禁复跑全绿（链接 193/194、越界 0）。

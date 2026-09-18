@@ -2652,3 +2652,29 @@ CI 报 `CGM_DBGUNZ=1: command not found`，**真正的脚本没执行**（`repor
 而 step 因 `|| true` 仍 ✓。
 **修**：环境变量加在最后一个 `\` 之前。**门禁**：`lint_workflow_continuation.py` 加判据 ②
 （`(?<!\\)\\[ \t]+NAME=` 且行尾 `\`），自证 2 坏 + 6 好；修前命中、修后归零。
+
+## 第四十七轮：缺原型 = ABI 级错位（D1）+ `fontscale` 类型错（D2）+ 第 13 道门禁
+
+### 一、本轮修的两个真缺陷
+
+| # | 缺陷 | 修复前 | 修复后 |
+|---|---|---|---|
+| D1 | stb 调用**缺原型** ⇒ 隐式声明 ⇒ float 按 double 传、`r0` 未设 | 崩在 `stbtt_FindGlyphIndex+0x8`（`ldr r4,[r0,#4]`，故障地址 **0x4**，r0=0）| 调用点形状与工厂一致（`r0=&font`、`s0..s3` 传 float）|
+| D2 | `fontscale` 写成 `unsigned int`（真为 `float`）| `vcvt.u32.f32` **截断** ⇒ scale 恒为 0 | `vstr s0,[..]` float 直存，与工厂 `vstr s0,[r5,#672]` 同形 |
+| — | `proto.h` 漏声明 `shmat` | 返回类型被假定 `int` | 补 `void *shmat(int,const void*,int)` |
+
+### 二、新门禁（第 13 道 ★）
+
+`tools/scan_implicit_decl.py`：**编译器真值**口径（逐文件 `-fsyntax-only`），自证正负双向，
+台账棘轮。首跑 213 个文件检出 1 个（`shmat`）⇒ 补掉后 **0 项**；串行 70s → 并行 20.5s。
+★ `--jobs 8` 在本机触发 `WinError 1455`（页面文件）⇒ 默认 4；**派生失败必须 FATAL**。
+
+### 三、两处归因修正
+
+1. 「`key2` 被某处覆写」**撤回**：场景 E 崩溃时 key2 仍是注入值 `50 4b 05 06 50 4b 07 08`。
+2. 工厂 zip 查找失败**仍归因沙箱**，但理由换成：分支普查显示遍历循环体**零执行**
+   （`unzStringFileNameCompare` / `unzGetCurrentFileInfo` 命中 0）⇒ `unzGoToFirstFile` 返回非零。
+
+### 四、门禁与状态
+
+- `1to1-verify` 现 **13 道 ★**；本地 8 道全绿；链接 193/194、越界 0。

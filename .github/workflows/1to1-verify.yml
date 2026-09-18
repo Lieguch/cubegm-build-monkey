@@ -90,6 +90,25 @@ jobs:
           # 本门禁把这类"实验条件被静默篡改"变成硬失败。构造性自证：1 坏样本 + 4 好样本。
           python tools/lint_workflow_continuation.py --root .
 
+      - name: 调用点缺原型扫描（编译器真值）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-18 第 47 轮，真实缺陷，机器码级已定案）：
+          #   `mui_outputxy_t`/`mui_outputxy_length` 调用 `stbtt_GetCodepointBitmapBoxSubpixel`
+          #   等函数时 **proto.h 里没有原型** ⇒ C 的**隐式声明** ⇒ 实参按默认提升传：
+          #     · `float` 变 **double**（机器码可见 `vcvt.f64.f32`）⇒ 进 d0/d1/d2；
+          #     · 真函数按 `s0..s3` 读 ⇒ 整组错位；指针 `font` 排到第 5 位 ⇒ **r0 未设**；
+          #     · 崩点 = `stbtt_FindGlyphIndex+0x8` 的 `ldr r4,[r0,#4]`，**故障地址 0x4**，
+          #       lr = `stbtt_GetCodepointBitmapBoxSubpixel+0x2C` —— 与现场逐位吻合。
+          # 口径：**用编译器真值**（逐文件 `-fsyntax-only`，缺原型以 error 形式出现），
+          #   不用源码启发式（白名单维护不动、假阳性多）。
+          # 自证：正向样本（未声明调用必须被检出）+ 负向样本（已声明调用必须不被检出）。
+          # 台账棘轮：tools/implicit_decl_pending.txt（当前 0 项）—— 新增即失败。
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          [ -x "$ZIG" ] || { echo "::error::无法定位 zig"; exit 1; }
+          python tools/scan_implicit_decl.py --root . --zig "$ZIG" \
+            --ledger tools/implicit_decl_pending.txt
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'

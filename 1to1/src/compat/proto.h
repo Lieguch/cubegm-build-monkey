@@ -110,7 +110,26 @@ extern void mui_WaitNMI(); /* K&R: 参数不可信/不可解析 */
  *   ⇒ 这不是"漏参"，而是**依赖寄存器副产物的脆弱性**：1:1 替代必须把它**显式化**。
  *   改为真原型后，调用点少传会直接在严格编译门禁报错。 */
 extern void stbtt_GetFontVMetrics(void *info, int *ascent, int *descent, int *lineGap);
-extern float stbtt_ScaleForPixelHeight(float param_1,void *param_2);
+/* ★★ 2026-09-18（第 47 轮）：stb_truetype 原型**按上游真签名**补齐/改正。
+ * 事故（机器码级已核对；工厂对照 golden/factory.rkgame.bin @0x1bc30 / @0x1bd20）：
+ *   `stbtt_GetCodepointBitmapBoxSubpixel` / `stbtt_MakeCodepointBitmapSubpixel` /
+ *   `stbtt_GetCodepointHMetrics` **没有原型** ⇒ C 的**隐式声明** ⇒ 调用点按**默认实参提升**传参：
+ *     · `float` 实参被提升为 **double**（我们机器码可见 `vcvt.f64.f32`）⇒ 落进 d0/d1/d2；
+ *     · 真函数按 `s0..s3` 读 float ⇒ **全部错位**；
+ *     · 指针实参 `font` 被排到第 5 位 ⇒ **`r0` 从未被设置** ⇒ 被调者入口 r0 = 0；
+ *     · 于是 `stbtt_FindGlyphIndex` 的 `ldr r4,[r0,#4]`（= `info->data`）
+ *       **故障地址恰为 0x4**，pc = `stbtt_FindGlyphIndex+0x8`，
+ *       lr = `stbtt_GetCodepointBitmapBoxSubpixel+0x2C` —— 与崩溃现场逐位吻合。
+ *   旧声明 `stbtt_ScaleForPixelHeight(float, void *)` 还把**参数顺序**写反了
+ *   （真签名 `(const stbtt_fontinfo *info, float height)`）。本例因"一浮点一指针"寄存器位置互补
+ *   而侥幸无害，但同类声明一旦有两个同类型参数就会致命 ⇒ 一律按上游改。
+ * 铁律：**调用点缺原型 = ABI 级错位，不是"一个警告而已"**。 */
+extern float stbtt_ScaleForPixelHeight(void *info, float height);
+extern void  stbtt_GetCodepointHMetrics(void *info, int codepoint, int *advanceWidth, int *leftSideBearing);
+extern void  stbtt_GetCodepointBitmapBoxSubpixel(void *font, int codepoint, float scale_x, float scale_y,
+            float shift_x, float shift_y, int *ix0, int *iy0, int *ix1, int *iy1);
+extern void  stbtt_MakeCodepointBitmapSubpixel(void *info, unsigned char *output, int out_w, int out_h,
+            int out_stride, float scale_x, float scale_y, float shift_x, float shift_y, int codepoint);
 extern int mui_outputxy_length_isra_19(int param_1,int param_2,gh_byte *param_3);
 extern int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint param_5,gh_byte *param_6);
 extern void mui_DisplayGameSum(); /* K&R: 参数不可信/不可解析 */
@@ -285,4 +304,9 @@ extern int uncompress(void *param_1,gh_u4 *param_2,void *param_3,gh_u4 param_4);
 extern void * MP3InitDecoder(void); /* Helix: 返回解码器句柄 */
 extern int shmget(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3); /* SysV IPC */
 extern int shmdt(void *param_1); /* SysV IPC */
+/* ★ 2026-09-18（第 47 轮）补齐：原来只声明了 shmget/shmdt、**漏了 shmat**，
+ *   调用点 `(gh_u4 *)shmat(shmid,(void*)0,0)` 走隐式声明 ⇒ 返回类型被假定为 int。
+ *   本例因 ARM32 上 int/pointer 同为 32 位而侥幸无害，但同类漏声明一旦涉及 float 或 64 位
+ *   返回值就是 ABI 级错误（见同轮 stbtt_* 那组）。门禁：tools/scan_implicit_decl.py。 */
+extern void *shmat(int shmid, const void *shmaddr, int shmflg); /* SysV IPC */
 extern int reboot(gh_u4 param_1); /* 不返回 */

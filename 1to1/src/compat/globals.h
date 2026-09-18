@@ -4609,7 +4609,12 @@ extern gh_blob_t DAT_003af804;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003bc414 undefined4 */ extern unsigned int diff_prev;
 /* @0x003bc418 undefined4 */ extern unsigned int m_time0;
 /* @0x003bc41c undefined1[124] */ extern unsigned char font[124];
-/* @0x003bc498 undefined4 */ extern unsigned int fontscale;
+/* @0x003bc498 undefined4 */
+/* ★ 2026-09-18（第 47 轮）修正：原写成 `unsigned int` ⇒ 存值时把 float **截断**，
+ *   实测 `fontscale` 恒为 **0**（scale 必 <1）⇒ 字形缩放全丢。真类型是 **float**：
+ *   工厂 `1b288: vstr s0,[r5,#672]`（按 float 存），`1b29c: vldr s14,[r5,#672]`
+ *   （按 float 参与 `vmul.f32` 算 fontbaseline）。 */
+extern float fontscale;
 /* @0x003bc49c undefined4 */ extern unsigned int fontascent;
 /* @0x003bc4a0 undefined4 */ extern unsigned int fontbaseline;
 extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */

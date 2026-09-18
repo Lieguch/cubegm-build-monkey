@@ -38,7 +38,7 @@ int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint pa
   int local_3c [2];
   
   fVarScaleIn = VectorUnsignedToFloat(param_4 + 4U & 0xff,(gh_byte)(in_fpscr >> 0x16) & 3);
-  fontscale = (float)stbtt_ScaleForPixelHeight(fVarScaleIn,font);
+  fontscale = stbtt_ScaleForPixelHeight(font,fVarScaleIn);  /* ★ 真顺序 (info,height)：工厂 1bc2c `mov r0,r5`(=&font) -> bl -> 1bc44 `vstr s0,[r4,#672]` */
   stbtt_GetFontVMetrics(font,&fontascent,0,0);
   uVar11 = (gh_uint)*param_6;
   fVar16 = (float)VectorSignedToFloat(fontascent,(gh_byte)(in_fpscr >> 0x16) & 3);
@@ -55,19 +55,24 @@ int mui_outputxy_t(gh_u1 *param_1,int param_2,int param_3,int param_4,gh_uint pa
         param_6 = param_6 + 1;
       }
       fVar16 = (float)VectorSignedToFloat(param_2,(gh_byte)(in_fpscr >> 0x16) & 3);
-      stbtt_GetCodepointHMetrics(font,uVar11,&local_50,auStack_4c);
+      stbtt_GetCodepointHMetrics(font,uVar11,&local_50,(int *)auStack_4c);
       stbtt_GetCodepointBitmapBoxSubpixel
-                (fontscale,fontscale,fVar16 - fVar16,0,font,uVar11,&local_48,&local_44,&local_40,
+                (font,uVar11,fontscale,fontscale,0.0f,0.0f,&local_48,&local_44,&local_40,
                  local_3c);
+      /* ★ 真签名 (font,codepoint,sx,sy,shx,shy,ix0,iy0,ix1,iy1)。
+       * 工厂 1bd20 处的实参形态 = r0=&font、r1=codepoint、s0=s1=scale、s2=s3=0、
+       * [sp]=ix0 / [sp+4]=iy0 / [sp+8]=ix1 / [sp+12]=iy1。 */
       iVar10 = local_3c[0];
       iVar6 = local_40;
       iVar14 = fontbaseline;
       iVar9 = fontbaseline + local_3c[0];
       memset(fontbitmap,0,iVar9 * local_40);
       stbtt_MakeCodepointBitmapSubpixel
-                (fontscale,fontscale,fVar16 - fVar16,0,font,
-                 fontbitmap + iVar6 * (iVar14 + local_44) + local_48,iVar6 - local_48,
-                 iVar10 - local_44,iVar6,uVar11);
+                (font,fontbitmap + iVar6 * (iVar14 + local_44) + local_48,iVar6 - local_48,
+                 iVar10 - local_44,iVar6,fontscale,fontscale,0.0f,0.0f,uVar11);
+      /* ★ 真签名 (info,output,out_w,out_h,out_stride,sx,sy,shx,shy,codepoint)：
+       * out_stride = iVar6（位图行宽）；out_w = ix1-ix0 = iVar6-local_48；
+       * out_h = iy1-iy0 = iVar10-local_44；output 偏移 = stride*top + left。 */
       uVar5 = OutRect._20_4_;
       uVar4 = OutRect._16_4_;
       uVar3 = OutRect._12_4_;
