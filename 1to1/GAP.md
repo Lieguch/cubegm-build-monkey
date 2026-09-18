@@ -579,3 +579,38 @@ B/C 的差异都只是"工厂多执行一个收尾函数"，**方向上是工厂
 **下一步**：对拍我们的 `unzLocateFile` 这 240 B 的语义（重点是 `caseMode` 的 1/2 映射、
 `unzGetCurrentFileInfo` 的 8 个参数、以及退出前是否恢复 `[16]`/`[20]`），
 并用 CI 的 gdb 探针在 `FindZipItemA` 处**打印实参名字与返回值**（这是唯一能定死"查的是哪个名字"的手段）。
+
+### 九·补二 ★ 判决性实测：`ui.cfg` 查找分歧 = **我们正确、工厂失败**（归因转向环境）
+
+在 `get_items_from_zipfile` 里插一段**临时诊断**（已撤销），把查找现场打出来。场景 E 实测：
+
+```
+我们 | DBGZIP p=/sdcard/cubegm//ui_cn.zip zr=0 idx=0 tag=1 n=6 cur=0 f24=1 name4='ui.cfg'
+工厂 | find ui.cfg in /sdcard/cubegm//ui_cn.zip fail
+```
+
+| 字段 | 值 | 含义 |
+|---|---|---|
+| `zr` | **0** | `FindZipItemA` **成功**（工厂非 0 = 失败） |
+| `n` | **6** | 中央目录解析出 **6 个条目**（与 zip 实际条目数一致） |
+| `idx` | **0** | 命中索引 0 |
+| `name4` | **`ui.cfg`** | 命中条目名**就是 `ui.cfg`** |
+| `tag`/`f24` | 1 / 1 | HZIP 类型标签与"已有文件列表"标志正常 |
+
+⇒ **我们的 zip/条目层完全正确**。而两侧源码在第 28 行**逐字相同**
+（`zr = FindZipItemA(res_hz,"ui.cfg",1,&local_424,ze);`）⇒
+**工厂侧"找不到一个确实存在的条目"无法由源码解释** ⇒ 归因到**环境/运行期状态**
+（沙箱里 `key2`/SFC 那条链只能部分复现），**不是**我们的重建缺陷。
+
+★ 结论调整：场景 E 的**第一处**分歧（`ui.cfg` 命中与否）从"我们的嫌疑"**降级为"环境的嫌疑"**；
+真正**可归因到我们**的是它后面那一步 ——
+`mui_InitFont` 失败后我们**仍进 `mui_outputxy_t` 渲染**（工厂转 `ClearBuffer`）
+⇒ 无效字体 ⇒ 崩在 `stbtt_GetFontVMetricsOS2+0x8`。
+
+### 九·补三 又一个「仪器静默降级」（这次是我自己引入的）
+
+CI 里场景 A 的覆盖率**从来没产出过**：`--tag ${CGM_COV_TAG:-}` 在 tag 为空时拼出**裸 `--tag`**
+⇒ `qemu_coverage.py` argparse 直接 `error: argument --tag: expected one argument` 退出；
+而脚本只打一句 `[note]` 就继续 ⇒ **静默**（`coverage_*.txt` 在 A 缺席，B/C/E 却在）。
+修法：① 仅当 tag 非空才追加；② 覆盖率非 0 退出改为 **`::error::` 注解 + 打印工具输出前 12 行**。
+⇒ 铁律强化：**"本该产出的仪器产物"缺席必须显式报错**，不能只留一句 note。

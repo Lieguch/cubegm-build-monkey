@@ -243,7 +243,13 @@ exec_probe() {
         #   ★ `--tag` 必须传：同一 label 在不同场景（A/B/C）下覆盖率天然不同（环境与终止点都不同），
         #     混用一个基线键会让棘轮在场景之间互相误报。场景标记由 CGM_COV_TAG 传入。
         _cov_args="--exec-log $log --elf $(winpath "$_cov_elf") --label $label"
-        _cov_args="$_cov_args --tag ${CGM_COV_TAG:-}"
+        # ★★ 只有当 tag 非空时才追加：空值时拼出裸 `--tag` ⇒ argparse 直接
+        #   报 "expected one argument" 退出 ⇒ **场景 A 的覆盖率从来没跑成过**
+        #   （实测踩坑：`coverage_*.txt` 在场景 A 缺席，而脚本只打一句 [note] 就继续
+        #    ⇒ 仪器静默降级。任何"应该产出的仪器产物缺失"都必须显式可见。）
+        if [ -n "${CGM_COV_TAG:-}" ]; then
+            _cov_args="$_cov_args --tag $CGM_COV_TAG"
+        fi
         _cov_args="$_cov_args --out $OUT/coverage_${label}.txt --ledger $(winpath "$ROOT/ledger/functions.csv")"
         if [ -f "$ROOT/tools/coverage_baseline.txt" ]; then
             _cov_args="$_cov_args --baseline $(winpath "$ROOT/tools/coverage_baseline.txt")"
@@ -251,7 +257,10 @@ exec_probe() {
         # 覆盖率是**度量**，不是行为门禁 ⇒ 失败只记 note，不拖红整轮
         if ! "$PY" "$(winpath "$ROOT/tools/qemu_coverage.py")" $_cov_args \
                  > "$OUT/coverage_${label}.stdout.txt" 2>&1; then
-            echo "   [note] 覆盖率度量非 0 退出（若是基线回退，见 coverage_${label}.txt）"
+            echo "::error::覆盖率度量失败（label=${label}）—— 该场景将没有 coverage_${label}.txt"
+            echo "   !! 覆盖率度量非 0 退出；工具输出前 12 行："
+            sed -n '1,12p' "$OUT/coverage_${label}.stdout.txt" 2>/dev/null | sed 's/^/      /'
+            echo "   （若是基线回退，结论仍在 coverage_${label}.txt 里）"
         fi
         cat "$OUT/coverage_${label}.stdout.txt" 2>/dev/null || true
         # 只保留尾部（原始日志很大，不放进制品）
