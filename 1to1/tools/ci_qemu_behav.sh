@@ -274,7 +274,13 @@ exec_probe() {
         if [ -n "${CGM_TRACE_ADDRS:-}" ]; then
             : > "$OUT/trace_hits_${label}.txt"
             for _a in $CGM_TRACE_ADDRS; do
-                _n=$(grep -ac "/$_a/" "$log" 2>/dev/null); _n=${_n:-0}
+                # ★★ `|| true` 不可省（实测事故，第 44 轮）：
+                #   `grep -c` 在**无匹配**时输出 0 但**返回 1**；命令替换 `_n=$(...)`
+                #   的退出码就是 grep 的退出码，而本脚本是 `set -e` ⇒ **整个脚本立即退出**。
+                #   现场表现为：`trace_hits_factory.txt` 被创建但**内容为空**、
+                #   `exec_factory.log` 没被删（退出发生在 rm 之前）、场景 E 的 rebuild 侧
+                #   与行为差分**完全没跑**，而 workflow 仍报 success（因为 `|| true` 在调用处）。
+                _n=$(grep -ac "/$_a/" "$log" 2>/dev/null || true); _n=${_n:-0}
                 printf '   trace-hit /%s/ = %s%s' "$_a" "$_n" "$NLX" >> "$OUT/trace_hits_${label}.txt"
             done
             echo "   --- 关键地址命中普查（$label）---"
