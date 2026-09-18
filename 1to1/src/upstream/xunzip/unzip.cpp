@@ -469,7 +469,10 @@ uLong adler32 (uLong adler, const Byte *buf, uInt len);
 //     }
 //     if (adler != original_adler) error();
 
-uLong ucrc32   (uLong crc, const Byte *buf, uInt len);
+uLong ucrc32   (uLong crc, const Byte *buf, uInt len) asm("ucrc32");   /* 1:1：绑到**未 mangle** 的 C 符号 —— 工厂只有一个 `ucrc32`
+   *   （symtab: `ucrc32 @0x0000fff4 size=0x15c`，callers=1 = `unzReadCurrentFile`），
+   *   那份已由专有层 `src/proprietary/misc/FUN_0000fff4_ucrc32.c` 1:1 重建；
+   *   此处不再自带 C++ 版，使调用点发射 `bl ucrc32`，与工厂调用图一致。 */
 //     Update a running crc with the bytes buf[0..len-1] and return the updated
 //   crc. If buf is NULL, this function returns the required initial value
 //   for the crc. Pre- and post-conditioning (one's complement) is performed
@@ -2214,34 +2217,9 @@ const uLong * get_crc_table()
 #define CRC_DO4(buf)  CRC_DO2(buf); CRC_DO2(buf);
 #define CRC_DO8(buf)  CRC_DO4(buf); CRC_DO4(buf);
 
-uLong ucrc32(uLong crc, const Byte *buf, uInt len)
-{ if (buf == Z_NULL) return 0L;
-  crc = crc ^ 0xffffffffL;
-  while (len >= 8)  {CRC_DO8(buf); len -= 8;}
-  if (len) do {CRC_DO1(buf);} while (--len);
-  return crc ^ 0xffffffffL;
-}
 
 
 
-// =============================================================
-// some decryption routines
-#define CRC32(c, b) (crc_table[((int)(c)^(b))&0xff]^((c)>>8))
-void Uupdate_keys(unsigned long *keys, char c)
-{ keys[0] = CRC32(keys[0],c);
-  keys[1] += keys[0] & 0xFF;
-  keys[1] = keys[1]*134775813L +1;
-  keys[2] = CRC32(keys[2], keys[1] >> 24);
-}
-char Udecrypt_byte(unsigned long *keys)
-{ unsigned temp = ((unsigned)keys[2] & 0xffff) | 2;
-  return (char)(((temp * (temp ^ 1)) >> 8) & 0xff);
-}
-char zdecode(unsigned long *keys, char c)
-{ c^=Udecrypt_byte(keys);
-  Uupdate_keys(keys,c);
-  return c;
-}
 
 
 
@@ -3934,91 +3912,69 @@ ZRESULT TUnzip::Find(const TCHAR *tname,unsigned char ic,int *index,ZIPENTRY *ze
   return ZR_OK;
 }
 
-void EnsureDirectory(const TCHAR *rootdir, const TCHAR *dir)
-{ if (*dir==0) return;
-  const TCHAR *lastslash=dir, *c=lastslash;
-  while (*c!=0) {if (*c=='/' || *c=='\\') lastslash=c; c++;}
-  const TCHAR *name=lastslash;
-  if (lastslash!=dir)
-  { TCHAR tmp[MAX_PATH]; memcpy(tmp,dir,sizeof(TCHAR)*(lastslash-dir));
-    tmp[lastslash-dir]=0;
-    EnsureDirectory(rootdir,tmp);
-    name++;
-  }
-  TCHAR cd[MAX_PATH]; _tcscpy(cd,rootdir); _tcscat(cd,name);
-  CreateDirectory(cd,NULL);
-}
-
-
 
 ZRESULT TUnzip::Unzip(int index,void *dst,unsigned int len,DWORD flags)
-{ if (flags!=ZIP_MEMORY && flags!=ZIP_FILENAME && flags!=ZIP_HANDLE) return ZR_ARGS;
+{ /* ★★ 1:1 工厂（第 46 轮，机器码级逐分支核对）—— 本轮修掉一个**功能性**分歧：
+   *   · 工厂**完全不使用 `len`**。memory 路（工厂 0x126f4..0x128d8）等价于：
+   *       if (index!=currentfile) { 关旧 / 越界判 ZR_ARGS / 走到 index / unzOpenCurrentFile; currentfile=index; }
+   *       for(;;){ res = unzReadCurrentFile(uf,out,16384); out += 16384;
+   *                if(res==0) break; if(res<0){ 关闭; currentfile=-1; return ZR_WRITE; } }
+   *       关闭; currentfile=-1; return ZR_OK;
+   *     机器码为证：`1285c: mov r2,#16384` / `12868: add r6,r6,r2`（推进 dst）
+   *     / `128ac: bl unzOpenCurrentFile` / `128b0: str r5,[r4,#4]`（currentfile=index）。
+   *   · 我们原写法 = 上游语义：`unzReadCurrentFile(uf,dst,len)` **只读一次**，`res>0` 返 ZR_MORE。
+   *     而**全部 15 个专有调用点都传 `len==0`**（`UnzipItem(hz,idx,buf,0,3)`）⇒
+   *     `unzReadCurrentFile(...,0)` 一个字节都不写、`res==0` ⇒ 我们返回 **ZR_OK（假成功）**。
+   *     实测后果：`mui_LoadUIResource` / `get_items_from_zipfile` / `mui_InitFont` / `mui_menu` /
+   *     `mui_search` / `mui_type` / `GetJoystickConfig` / `run_game` / `gpsp_unzip` /
+   *     `FilePreEmu` / `UpdateROM` / `mui_DisplayThumbnail` / `JoystickTest` **全部拿到空缓冲**。
+   *   · flags 常量两侧一致（`ZIP_HANDLE 1 / ZIP_FILENAME 2 / ZIP_MEMORY 3`；分派 `cmp r7,#3` 也对上）。
+   *   · 文件路（flags 1/2）工厂用 **stdio**（`bl fopen` / `bl fwrite` / `bl fclose`），且**没有**
+   *     `EnsureDirectory` / `CreateFile` / `WriteFile`、也**没有**目录项特判；本仓库调用点只传 flags==3
+   *     ⇒ 该路两侧都是死代码，此处只做**结构对齐**（去掉 Win32 文件 API 与目录创建）。
+   *   · 返回常量按工厂机器码：`ZR_ARGS`=0x10000、`ZR_NOFILE`=0x200、读/写错误一律 **0x400(ZR_WRITE)**；
+   *     memory 路成功返 `ZR_OK`（工厂 `mov r0,r5`，r5 = 最后一次 read 的 0）。
+   */
+  (void)len;                                   /* 工厂不使用 len（见上） */
+  if (flags!=ZIP_MEMORY && flags!=ZIP_FILENAME && flags!=ZIP_HANDLE) return ZR_ARGS;
   if (flags==ZIP_MEMORY)
   { if (index!=currentfile)
     { if (currentfile!=-1) unzCloseCurrentFile(uf); currentfile=-1;
       if (index>=(int)uf->gi.number_entry) return ZR_ARGS;
       if (index<(int)uf->num_file) unzGoToFirstFile(uf);
       while ((int)uf->num_file<index) unzGoToNextFile(uf);
-unzOpenCurrentFile(uf); currentfile=index;
+      unzOpenCurrentFile(uf); currentfile=index;
     }
-    int res = unzReadCurrentFile(uf,dst,len);
-    if (res>0) return ZR_MORE;
+    char *out = (char*)dst;
+    int res;
+    for (;;)
+    { res = unzReadCurrentFile(uf,out,16384);
+      out += 16384;
+      if (res==0) break;
+      if (res<0) { unzCloseCurrentFile(uf); currentfile=-1; return ZR_WRITE; }
+    }
     unzCloseCurrentFile(uf); currentfile=-1;
-    if (res==0) return ZR_OK;
-    else if (res==UNZ_PASSWORD) return ZR_PASSWORD;
-    else return ZR_FLATE;
+    return ZR_OK;
   }
-  // otherwise we're writing to a handle or a file
+  /* 其余：写到文件名（调用点从不使用此路；工厂亦同）。 */
   if (currentfile!=-1) unzCloseCurrentFile(uf); currentfile=-1;
   if (index>=(int)uf->gi.number_entry) return ZR_ARGS;
   if (index<(int)uf->num_file) unzGoToFirstFile(uf);
   while ((int)uf->num_file<index) unzGoToNextFile(uf);
-  ZIPENTRY ze; Get(index,&ze);
-  // zipentry=directory is handled specially
-  if ((ze.attr&FILE_ATTRIBUTE_DIRECTORY)!=0)
-  { if (flags==ZIP_HANDLE) return ZR_OK; // don't do anything
-    EnsureDirectory(rootdir,ze.name);
-    return ZR_OK;
-  }
-  // otherwise, we write the zipentry to a file/handle
-  HANDLE h;
-  if (flags==ZIP_HANDLE) h=dst;
-  else
-  { const TCHAR *name = (const TCHAR*)dst;
-    const TCHAR *c=name;
-    while (*c!=0) {if (*c=='/' || *c=='\\') name=c+1; c++;}
-    // if it's a relative filename, ensure directories. We do this as a service  
-    // to the caller so they can just unzip straight unto ze.name.
-    if (name!=(const TCHAR*)dst)
-    { TCHAR dir[MAX_PATH]; _tcscpy(dir,(const TCHAR*)dst); dir[name-(const TCHAR*)dst-1]=0;
-      bool isabsolute = (dir[0]=='/' || dir[0]=='\\' || dir[1]==':');
-      isabsolute |= (_tcsstr(dir,_T("../"))!=0) | (_tcsstr(dir,_T("..\\"))!=0);
-      if (!isabsolute) EnsureDirectory(rootdir,dir);
+  { ZIPENTRY ze; Get(index,&ze); (void)ze; }   /* 工厂同样调用并忽略结果（Get 不透明） */
+  { FILE *fp = fopen((const char*)dst,"wb");
+    if (fp==0) return ZR_NOFILE;
+    unzOpenCurrentFile(uf);
+    char buf[16384];
+    int res;
+    for (;;)
+    { res = unzReadCurrentFile(uf,buf,16384);
+      if (res<0) { fclose(fp); unzCloseCurrentFile(uf); return ZR_WRITE; }
+      if (res==0) break;
+      if (fwrite(buf,(size_t)res,1,fp)==0) { fclose(fp); unzCloseCurrentFile(uf); return ZR_WRITE; }
     }
-    h = CreateFile((const TCHAR*)dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,ze.attr,NULL);
+    fclose(fp); unzCloseCurrentFile(uf);
   }
-  if (h==INVALID_HANDLE_VALUE) return ZR_NOFILE;
-unzOpenCurrentFile(uf);
-  char buf[16384]; DWORD haderr=0;
-  //  
-
-  for (; haderr==0;)
-  { int res = unzReadCurrentFile(uf,buf,16384);
-    if (res==UNZ_PASSWORD) {haderr=ZR_PASSWORD; break;}
-    if (res<0) {haderr=ZR_FLATE; break;}
-    if (res==0) break;
-//    if (ze.encrypted)
-    //{ for (int i=0; i<res; i++) buf[i]=zdecode(keys,buf[i]);
-    //}
-    DWORD writ; BOOL bres = WriteFile(h,buf,res,&writ,NULL);
-    if (!bres) {haderr=ZR_WRITE; break;}
-  }
-  bool settime=false;
-  DWORD type = GetFileType(h); if (type==FILE_TYPE_DISK && !haderr) settime=true;
-  if (settime) SetFileTime(h,&ze.ctime,&ze.atime,&ze.mtime);
-  if (flags!=ZIP_HANDLE) CloseHandle(h);
-  unzCloseCurrentFile(uf);
-  if (haderr!=0) return haderr;
   return ZR_OK;
 }
 

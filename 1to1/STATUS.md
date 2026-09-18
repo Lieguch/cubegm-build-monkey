@@ -2602,3 +2602,33 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 ### 六、提交
 
 `eefe0a68`（6 blob：workflow + unzip.cpp + XUnzip.o + .XUnzip 源哈希 + 新工具 + 新台账）。
+
+---
+
+## 第四十六轮（2026-09-18）★★ 修掉一个"门禁全绿但功能为零"的真实缺陷
+
+### 一、★ 缺陷本体
+
+`TUnzip::Unzip` 两侧签名**完全一致**，但工厂**从不读 `len`**：
+- 工厂 memory 路：`unzReadCurrentFile(uf, dst, 16384)` **循环推进 dst**（`1285c: mov r2,#16384` /
+  `12868: add r6,r6,r2`）；
+- 我们（上游语义）：`unzReadCurrentFile(uf,dst,len)` **只读一次**，`res>0` 返 `ZR_MORE`；
+- 而**全部 15 个专有调用点都传 `len==0`**（`UnzipItem(hz,idx,malloc(条目大小),0,3)`）
+  ⇒ `unzReadCurrentFile(...,0)` **一个字节都不写**、返回 `res==0` ⇒ 我们返回 **`ZR_OK`（假成功）**；
+- ⇒ UI 包 / 字体 / 设置 / 缩略图 / 存档等**所有资源解压都拿到空缓冲**。
+
+判定为真差异的三条独立证据：① 工厂 `UnzipItem` 把 `len` 原样转发，而调用点都传 0（若工厂读 len 则资源永不成功，与"真机可跑"矛盾）；
+② 工厂 memory 路用的是**常量** 16384；③ 每个调用点都 `malloc(条目大小)`（否则分配无意义）。
+
+### 二、修复 + 清理
+
+- `TUnzip::Unzip` 重写为与工厂逐分支一致（memory 路 16384 循环；文件路改 `fopen/fwrite/fclose`，
+  去掉 `EnsureDirectory`/`CreateFile`/`WriteFile` 与目录项特判）。
+- 删掉 5 个「工厂没有的 C++ 符号」：`EnsureDirectory`、加密簇 `Uupdate_keys`/`Udecrypt_byte`/`zdecode`、
+  以及重复的 C++ 版 `_Z6ucrc32`（改绑 C 符号 `ucrc32`，与工厂调用图一致）。
+- ⇒ C++ ABI 门禁：**「0 不一致 / 独有 5」→「0 不一致 / 独有 0」**。
+
+### 三、验证
+
+5 符号消失 ✓｜`bl ucrc32`×2 与工厂一致 ✓｜memory 路 `#16384` 循环 ✓｜调用方 `malloc(条目大小)` ✓｜
+尺寸 `0x640 → 0x550`（工厂 `0x204`）｜本地 8 道门禁 PASS｜链接 193/194、越界 0。

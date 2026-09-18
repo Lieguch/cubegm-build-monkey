@@ -863,3 +863,76 @@ P3 链接就绪审计 / P3 完整链接 + ABI 与布局 / 上游库公有 API �
 
 本地 8 道全部 PASS；链接自带门禁：全局符号 **193/194 = 99.5%**、越界 **0**、
 GLIBC 上限 **2.7 = 工厂**；两侧共有 C++ 签名 **62/62 一致**。
+
+---
+
+## 十二、第 46 轮 ★★ `TUnzip::Unzip`：一个"门禁全绿、功能为零"的真实缺陷
+
+### 12.1 现象：所有资源解压都拿到**空缓冲**，但返回"成功"
+
+15 个专有调用点的写法**完全一致**（例：`mui_LoadUIResource`）：
+
+```c
+pvVar3 = malloc((ze_blob)._296_4_);      /* 按**条目大小**分配 */
+UnzipItem(iVar1, local_9c, pvVar3, 0, 3);/* len = 0 ; flags = 3 = ZIP_MEMORY */
+```
+
+而我们原来的 `TUnzip::Unzip` 是**上游语义**：`unzReadCurrentFile(uf, dst, len)` **只读一次**。
+`len == 0` ⇒ **一个字节都不写**、`res == 0` ⇒ 返回 `ZR_OK`（**假成功**）。
+⇒ `mui_LoadUIResource` / `get_items_from_zipfile` / `mui_InitFont` / `mui_menu` / `mui_type` /
+`mui_search` / `GetJoystickConfig` / `runCase` / `run_game` / `gpsp_unzip` / `FilePreEmu` /
+`UpdateROM` / `mui_DisplayThumbnail` / `JoystickTest` —— **全部拿到未填充的缓冲**。
+
+### 12.2 工厂语义（机器码级，0x126f4..0x128d8）
+
+| 环节 | 工厂机器码 | 含义 |
+|---|---|---|
+| 分派 | `12994: sub ip,r3,#1` / `cmp ip,#2` / `bls` | 只接受 flags ∈ {1,2,3}，否则 `ZR_ARGS`(0x10000) |
+| memory 路 | `cmp r3,#3` → `beq 1280c` | **flags==3 才是 memory**（与我们常量表一致：HANDLE1/FILENAME2/MEMORY3） |
+| 读循环 | `1285c: mov r2,#16384` / `12868: add r6,r6,r2` | `unzReadCurrentFile(uf, out, **16384**)`，**循环推进 out** |
+| 收尾 | `12870: subs r5,r0,#0` / `bge` / `beq 128c0` | `res>0` ⇒ 继续；`res==0` ⇒ 关闭并返回 `ZR_OK`；`res<0` ⇒ 关闭返回 `ZR_WRITE`(0x400) |
+| 文件路（flags 1/2） | `bl fopen@plt` / `bl fwrite@plt` / `bl fclose@plt` | 用 **stdio**；**没有** `EnsureDirectory`/`CreateFile`/`WriteFile`，**没有**目录项特判 |
+
+**关键**：工厂**从不读 `len`** —— 其 wrapper 用 `ldr r3,[sp]`（flags）覆盖 r3 后尾跳到 `.part.7`，
+而 `.part.7` 里 `len` 再未被使用。→ 调用方传 0 是**故意**的。
+
+### 12.3 为什么判定为"真差异"而不是编译产物（三条独立证据）
+
+1. 工厂 `UnzipItem`(`0x13040`) 把 `len`(r3) **原样转发**（`1309c: ldr ip,[sp,#16]` … `130a8: bl TUnzip::Unzip`），
+   而**全部 15 个专有调用点都传 0** ⇒ 若工厂读 len，资源永远解不出来 ⇒ 与"真机能跑"矛盾。
+2. 工厂 memory 路用**常量 16384**，不是任何入参。
+3. 每个调用点都 `malloc(条目大小)` ⇒ **期待整块填充**（否则 malloc 那么大毫无意义）。
+
+### 12.4 修复
+
+`TUnzip::Unzip` 重写为与工厂逐分支一致：
+memory 路 = `for(;;){ res=unzReadCurrentFile(uf,out,16384); out+=16384; if(res==0) break;
+if(res<0){关闭;currentfile=-1;return ZR_WRITE;} }` → 关闭 → `ZR_OK`；
+文件路改为 `fopen("wb")` + `fwrite` + `fclose`（去掉 Win32 文件 API 与目录创建）。
+
+**顺带清掉 5 个「工厂没有的 C++ 符号」**（第 45 轮台账里的 ORPHAN 项）：
+
+| 符号 | 处置 | 依据 |
+|---|---|---|
+| `_Z15EnsureDirectory` | 删除 | 工厂无此函数（其文件路不建目录） |
+| `_Z12Uupdate_keys` / `_Z13Udecrypt_byte` / `_Z7zdecode` | 删除 | 加密簇，工厂整块删除；`zdecode` 只在注释里被提及 |
+| `_Z6ucrc32` | 删除，改绑 C 版 | 工厂只有一个**未 mangle** 的 `ucrc32`（`@0xfff4 size=0x15c`，`callers=1` = `unzReadCurrentFile`）；那份已由专有层 `FUN_0000fff4_ucrc32.c` 1:1 重建 ⇒ 用 `asm("ucrc32")` 绑到 C 符号（与 `zopenerror` 同一手法） |
+
+⇒ C++ ABI 门禁从 **「0 不一致 / 独有 5」** 变为 **「0 不一致 / 独有 0」**（完全干净）。
+
+### 12.5 验证（机器码 + 调用方分配）
+
+| 检查 | 结果 |
+|---|---|
+| 5 个独有符号 | **全部消失** ✓ |
+| 我们 `unzReadCurrentFile` 的调用 | `{ucrc32×2, luf/fseek×1, fread×1, memcpy, uidiv, inflate}` ⇒ **`bl ucrc32` 与工厂一致** ✓ |
+| 我们 Unzip 的 memory 路 | `mov r2,#16384` → `bl unzReadCurrentFile` → `add r5,r5,#16384` ✓ |
+| 调用方缓冲安全 | 每个调用点都是 `malloc((ze_blob)._296_4_)`（= 条目大小）⇒ 整块填充正是它们期待的 ✓ |
+| 尺寸 | 我们 `0x640` → **`0x550`**（工厂 `0x1c+0x1e8 = 0x204`；余差 = 内联 + 文件路栈帧） |
+| 门禁 | 本地 8 道全 PASS；链接全局符号 **193/194**、越界 **0** |
+
+### 12.6 教训（→ 技能铁律 121/122）
+
+**参数对拍必须三层：存在性 → 个数/类型 → 语义（是否真的被使用）。**
+本例二层全对（签名完全一致），三层却是致命的：工厂**不读** `len`，我们**读**了 ⇒ 静默零拷贝。
+**这类缺陷没有任何现有门禁能抓** —— 签名对、尺寸同量级、调用点计数一致、覆盖率甚至还会上升。
