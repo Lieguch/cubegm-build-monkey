@@ -74,8 +74,16 @@ LAB_0002b3b4:
     piVar13 = local_56c;
     do {
       puVar15 = puVar15 + 1;
+      /* ★★ 2026-09-17 修正（真实缺陷，已由场景 E 崩溃现场定案）：
+       *   原写法 `(gh_byte *)*(gh_byte *)puVar15` 把**指针表游标**多解引用了一次 ——
+       *   读到的是**指针的低字节**（0..255），再当指针用。
+       *   工厂机器码为证：`2b490: ldr r2, [r6, #4]!`（按 +4 步长取**字**，然后把该字
+       *   作为第 6 实参 `str r2, [sp, #4]`）；我们编译出的却是 `ldrb r1, [r1, #4]`（取**字节**）。
+       *   实测后果：该槽指针低字节 = 0x80 ⇒ arg6 = 0x80 ⇒ `mui_outputxy_t` 里
+       *   `ldrb sl, [r2]`（读字符串首字节）直接 SIGSEGV @0x80。
+       *   ⇒ 崩溃点 `mui_outputxy_t+0x84`（r2 = arg6 = 0x80）与本案一一对应。 */
       mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 8,piVar13[1] + 6,(gh_u1)DAT_003af700,
-                     DAT_003af704,(gh_byte *)*(gh_byte *)puVar15);
+                     DAT_003af704,(gh_byte *)*puVar15);
       if (m_ui == iVar11) {
         mui_outputxy_t(DAT_003af29c,local_56c[iVar11 * 4] + 0x120,piVar13[1] + -6,
                        (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)(gh_byte *)&DAT_003af708);
@@ -207,7 +215,7 @@ LAB_0002b828:
           do {
             puVar15 = puVar15 + 1;
             mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 8,piVar13[1] + 6,
-                           (gh_u1)DAT_003af700,DAT_003af704,(gh_byte *)*(gh_byte *)puVar15);
+                           (gh_u1)DAT_003af700,DAT_003af704,(gh_byte *)*puVar15);
             if (m_ui == iVar9) {
               mui_outputxy_t(DAT_003af29c,local_56c[iVar9 * 4] + 0x120,piVar13[1] + -6,
                              (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)(gh_byte *)&DAT_003af708);

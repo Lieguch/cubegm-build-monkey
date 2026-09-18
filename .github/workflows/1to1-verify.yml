@@ -64,6 +64,21 @@ jobs:
           #   只可能"少算不多算" ⇒ **保守、无假阳性**。内置三个已人工核对的锚点做自证。
           python tools/scan_call_args.py --root .
 
+      - name: 窄指针转型 + 解引用扫描 ★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 实测，真实缺陷已定案）：`mui_setting` 里曾写成
+          #   `(gh_byte *)*(gh_byte *)puVar15` —— 多一层窄转型使编译器发射**字节读**，
+          #   拿到的是**指针低字节**（0..255）再当指针用。工厂机器码为证：
+          #   `2b490: ldr r2,[r6,#4]!`（按 +4 取**字**）而我们是 `ldrb r1,[r1,#4]`（取**字节**）。
+          #   实测后果：该槽指针低字节 = 0x80 ⇒ 第 6 实参 = 0x80 ⇒
+          #   `mui_outputxy_t` 内 `ldrb sl,[r2]` ⇒ SIGSEGV @0x80（崩溃点 +0x84 逐位吻合）。
+          # 判据刻意收窄到「内外都是窄指针转型」这一确诊形态（宁可漏报不可乱报）：
+          #   合法的 `(char *)*m_search` / `(unsigned char*)*outbuf` / `(gh_byte *)*(gh_u4 *)(p+4)`
+          #   都必须放行。构造性自证 3 危险 + 6 安全；台账棘轮（当前 0 项）。
+          python tools/scan_narrow_deref.py --root . \
+            --ledger tools/narrow_deref_pending.txt
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'
@@ -226,6 +241,22 @@ jobs:
           python tools/scan_livein_args.py \
             --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf \
             --ledger tools/livein_args_pending.txt
+
+      - name: 逐函数「调用点个数」对拍（源码级，与 codegen 无关）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 实测）：场景 E 的执行集合差集里发现
+          #   `mui_setting -> mui_outputxy_t` 的**二进制 bl 数 工厂 13 / 我们 8**，
+          #   一度以为"漏了 5 次字符串绘制调用"。核查结论：
+          #     · 源码级（Ghidra per-function C vs src/proprietary）：**13 / 13 一致**
+          #     · 二进制层差异来自 clang 的 **cross-jumping**（把工厂两处调用
+          #       `sub r2,#10` / `sub r2,#6` 用 `mvn r7,#9` + `mvneq r7,#5` 合并成一处）
+          #   ⇒ **二进制层的调用点计数不是保真度指标**；本门禁改用**源码级调用表达式计数**，
+          #     这是目前**唯一**能抓到"我们漏了一次调用"这类缺陷的机械检查。
+          # 自证：正向锚点 2 条（人工逐行核对）+ 负向锚点 4 条（证明 mangled 名归一化生效）。
+          # 台账棘轮：tools/call_counts_pending.txt（当前 0 项）—— 新增即失败。
+          python tools/scan_call_counts.py --root . \
+            --ledger tools/call_counts_pending.txt
 
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
         run: |

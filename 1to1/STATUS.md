@@ -2422,3 +2422,47 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 - 收敛：`229 → 75 → 74 → 47 → 40 → 41`；**最终 HIGH 2 / LOW 39**。
 - 剩余 HIGH 2 = `mui_DispBlock`（已裁决：两侧共有脆弱性，工厂 ≥22/99 处也不设 r3）。
 - CI（`73ce2f81`）：`1to1-verify` / `rkgame-rebuild` / `1to1-qemu-behav` **全部 success**。
+
+
+---
+
+## 第四十三轮 ★ `mui_setting` 窄指针转型缺陷定案并修复（场景 E 首个"我们自己的"可修分歧）
+
+### 一、判决性修复
+
+| 项 | 内容 |
+|---|---|
+| 缺陷 | `src/proprietary/mui/FUN_0002b2b4_mui_setting.c` 两处 `(gh_byte *)*(gh_byte *)puVar15` |
+| 本质 | 多一层窄转型 ⇒ 编译器发射**字节读** ⇒ 取到**指针低字节**（0..255）当指针用 |
+| 证据 | 工厂 `2b490: ldr r2,[r6,#4]!`（取**字**）vs 我们 `ldrb r1,[r1,#4]`（取**字节**） |
+| 现场 | 崩溃 `pc=mui_outputxy_t+0x84`、故障指令 `ldrb sl,[r2]`、**故障地址 0x80**、`r2=arg6=0x80` |
+| 吻合度 | 该槽指针低字节 = `0x80` ⇒ **与崩溃值逐位匹配** |
+| 修法 | `(gh_byte *)*puVar15`（取字=指针）；本地重编+重链后机器码 `ldrb→ldr` ✓ |
+
+### 二、两处「假分歧」定案（都反转了我此前的判断）
+
+1. **`ClearBuffer` 在 A/B/C/E 全部 4 场景"仅工厂执行"** ⇒ 实为**内联 vs 外联**的编译产物：
+   我们把它内联成 `memset`/`vst1.32`，**尺寸多重集与工厂完全相同**
+   （工厂 8 次调用 `[2032,56,328,284,4624,840,6944,8708]`；我们 `[28+2004,56,328,284,4624,840,6944,8708]`）。
+2. **`mui_setting -> mui_outputxy_t` 的 `bl` 数 13 vs 8** ⇒ 实为 clang 的 **cross-jumping**：
+   源码级两侧都是 13 处；我们把 `sub r2,#10`/`sub r2,#6` 合并成一处（`mvn r7,#9`+`mvneq r7,#5`）。
+
+### 三、两道新硬门禁（`1to1-verify` 现 **10 道 ★**）
+
+- `tools/scan_call_counts.py`：**逐函数调用点个数对拍（源码级）**。
+  自证 = 正向 2 条（`mui_setting→mui_outputxy_t` 13/13、`get_items_from_zipfile→FindZipItemA` 1/1）
+  + **负向 4 条**（`openzipu→operator_new` 2/2 等，证明 mangled 名归一化真的生效）。首跑 **0 项**。
+- `tools/scan_narrow_deref.py`：**窄指针转型 + 解引用**。判据收窄至 `(窄*) *(窄*)`（首版误报 13/15）；
+  构造性自证 3 危险 + 6 安全；反向验证命中恰好 2 行。首跑 **0 项**。
+
+### 四、仪器/纪律修正
+
+- **`--tag` 空值导致场景 A 覆盖率从未产出**（argparse 直接退出，脚本只打 `[note]`）⇒
+  改为仅在非空时追加 + 覆盖率失败升级为 **`::error::` 注解 + 打印工具输出前 12 行**。
+- 执行集合差集在 4 场景全部产出（A/B/C/E）；**A 的报告名是 `coverage_*.stdout.txt`**，CI 已兼容。
+
+### 五、当前"仅我们执行"清单（E 场景，修后待复测）
+
+`UnzipItem` / `get_item_from_line` / `mui_DispBlock` / `mui_outputxy_t` / `strtrim{,l,r}` ——
+它们都是**下游**：因为我们 `ui.cfg` 查找成功（工厂失败、已归因环境）⇒ 解析出内容 ⇒ 走到渲染。
+修掉窄解引用后应能继续前进，需下一轮 CI 复测确认。
