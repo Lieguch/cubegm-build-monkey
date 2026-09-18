@@ -131,7 +131,7 @@ jobs:
           # 关键地址普查（工厂侧 unzLocateFile 的三个关键分支 + zip 遍历；重建侧为 0 属正常）
           cd 1to1
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 \
-          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E           CGM_TRACE_ADDRS="000119f4 000119e4 0001162c 00010ea0 000115ec 00011948 00011950" \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E           CGM_TRACE_ADDRS="000119f4 000119e4 0001162c 00010ea0 000115ec 00011948 00011950" \ CGM_DBGUNZ=1 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_e || true
           echo '--- 场景 E：shim 看到的 I/O 轨迹（自证探针可达；◀ ZIP 标出 zip 打开）---'
@@ -149,6 +149,8 @@ jobs:
             grep -a "★ 真崩溃\|pc(出错点)\|lr(调用者)\|^\[shim\]     \[sp" \
               report/qemu_e/rundir_$l/stderr.txt | head -8 | sed 's/^/     /' || true
           done
+          echo '--- 场景 E：★ 运行期证据 —— UnzipItem 后缓冲区是否真的被写入 ---'
+          grep -a 'DBGUNZ' report/qemu_e/rundir_rebuild/stdout.txt | head -12 || echo '   （无 DBGUNZ 行）'
           echo '--- 场景 E：里程碑 + 覆盖率 ---'
           sed -n '1,14p' report/qemu_e/milestones.txt 2>/dev/null || true
           sed -n '1,9p' report/qemu_e/coverage_rebuild.txt 2>/dev/null || true
