@@ -23,6 +23,8 @@
 # ============================================================
 set -u
 
+NLX="$(printf '
+')"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SYSROOT="${SYSROOT:-/arm-root}"
 REBUILD="${1:?usage: ci_qemu_behav.sh <rebuild.elf> <factory.bin> [outdir]}"
@@ -263,6 +265,21 @@ exec_probe() {
             echo "   （若是基线回退，结论仍在 coverage_${label}.txt 里）"
         fi
         cat "$OUT/coverage_${label}.stdout.txt" 2>/dev/null || true
+        # ★★ 关键地址命中普查（CGM_TRACE_ADDRS="a b c"）—— 必须在 rm 之前做：
+        #   `-d exec` 的原始日志是逐翻译块的**完整**执行轨迹，而制品只留尾部 800 行。
+        #   要判定"某个分支到底有没有被走到"，必须在删除前统计目标地址的出现次数。
+        #   实测用途（第 44 轮）：判定工厂侧 `unzLocateFile` 是否走进了 `unz->[24]==0`
+        #   的 -99 早退分支 —— 尾部 800 行完全覆盖不到那个位置。
+        #   地址按 **8 位十六进制**（不带 0x，小写）给出，例如 000119f4。
+        if [ -n "${CGM_TRACE_ADDRS:-}" ]; then
+            : > "$OUT/trace_hits_${label}.txt"
+            for _a in $CGM_TRACE_ADDRS; do
+                _n=$(grep -ac "/$_a/" "$log" 2>/dev/null); _n=${_n:-0}
+                printf '   trace-hit /%s/ = %s%s' "$_a" "$_n" "$NLX" >> "$OUT/trace_hits_${label}.txt"
+            done
+            echo "   --- 关键地址命中普查（$label）---"
+            cat "$OUT/trace_hits_${label}.txt"
+        fi
         # 只保留尾部（原始日志很大，不放进制品）
         tail -800 "$log" > "$OUT/exec_tail_${label}.txt"
         rm -f "$log"
