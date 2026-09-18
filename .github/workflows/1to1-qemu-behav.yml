@@ -130,7 +130,7 @@ jobs:
         run: |
           cd 1to1
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 \
-          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E CGM_DBGUI2=1 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_e || true
           echo '--- 场景 E：shim 看到的 I/O 轨迹（自证探针可达；◀ ZIP 标出 zip 打开）---'
