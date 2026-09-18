@@ -2466,3 +2466,53 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 `UnzipItem` / `get_item_from_line` / `mui_DispBlock` / `mui_outputxy_t` / `strtrim{,l,r}` ——
 它们都是**下游**：因为我们 `ui.cfg` 查找成功（工厂失败、已归因环境）⇒ 解析出内容 ⇒ 走到渲染。
 修掉窄解引用后应能继续前进，需下一轮 CI 复测确认。
+
+
+---
+
+## 第四十三轮·补
+
+### 九·补八 ★ 修复后实测：崩溃点**前移一大步**（从"参数垃圾"进到"真实字形渲染"）
+
+修复 `(gh_byte *)*(gh_byte *)puVar15` 后同一场景（E）的崩溃现场：
+
+| | 修前 | **修后** | 工厂（对照） |
+|---|---|---|---|
+| 崩点函数 | `mui_outputxy_t+0x84` | **`stbtt_FindGlyphIndex+0x8`** | `mui_setting+0x114` |
+| 调用者 | — | `stbtt_GetCodepointBitmapBoxSubpixel+0x2C` | — |
+| 故障指令 | `ldrb sl,[r2]`（读字符串首字节） | 解引用 `[r3+4]`（字形表查找） | `ldrh r0,[r3,#4]`（图像描述符） |
+| 故障地址 | **0x80**（= arg6 低字节） | **0x4**（= NULL + 4） | **0x4** |
+
+**读法**：修前我们崩在"**传进来的参数本身是垃圾**"（`0x80`）；修后已进到
+**真正的字形渲染**（`stbtt_FindGlyphIndex` 里访问 font 表），崩因是
+`mui_InitFont` 失败（`find font.ttf in …ui_cn.zip fail`，**两侧都打印**）导致 font 指针无效。
+⇒ **这一处是我们自己的缺陷，已修死**；剩下的分歧属"环境缺 `font.ttf`/SFC 安全数据"那一类
+（工厂同样在此区域崩溃，只是崩点函数不同）。
+
+**仍存的真实分歧**（E 场景门禁 FAIL 的具体项）：
+`[FAIL] B2 events 可判定前缀 20/59 行一致；重建侧共 58 行 ★ 未到达参考侧的确定性前缀（提前终止）`
+—— 我方 stdout 21 行 vs 工厂 23 行，差的正是两条 find-fail
+（`find ui.cfg … fail` 我们**没有**，因为查找成功；`find setting.raw fail` 我们**没走到**）。
+
+### 九·补九 门禁首跑在 CI 上红（本地绿）—— 缺"目录不存在即跳过"守卫
+
+`tools/scan_call_counts.py` 依赖本机 Ghidra 反编译目录（本机产物、不进仓库）。
+首跑 CI 时该步骤直接 `[FATAL] 索引为空` 退出 ⇒ 打红。已按 `tools/scan_call_args.py` 的既有做法
+加 `[SKIP]` 优雅跳过（本地模拟 CI：`--ghidra D:/no_such_dir` ⇒ SKIP、退出 0 ✓；
+正常路径仍 213 对可比对、PASS）。
+**纪律**：任何依赖**本机产物**的门禁，都必须显式处理"产物缺席"，并**打印 SKIP 原因**而不是静默/报错。
+
+
+### 第四十三轮补：修复后崩溃点前移入真实字形渲染；门禁补 CI 守卫
+
+- 修复 `(gh_byte *)*(gh_byte *)puVar15` 后，场景 E 崩溃点从
+  `mui_outputxy_t+0x84`（故障地址 **0x80** = arg6 低字节）**前移到**
+  `stbtt_FindGlyphIndex+0x8`（调用者 `stbtt_GetCodepointBitmapBoxSubpixel+0x2C`，故障地址 **0x4**）
+  ⇒ 已从"参数本身是垃圾"进到**真实字形渲染**；崩因变为 `mui_InitFont` 失败导致 font 无效
+  （两侧都打印 `find font.ttf … fail`）⇒ 属环境缺口那一类。
+- E 门禁仍 FAIL，具体项：`可判定前缀 20/59 行一致；重建侧 58 行，未到达参考侧确定性前缀`；
+  stdout 我们 21 行 vs 工厂 23 行，差的正是 `find ui.cfg … fail`（我们查找成功）与
+  `find setting.raw fail`（我们没走到）。
+- **门禁 CI 守卫**：`scan_call_counts.py` 依赖本机 Ghidra 目录（不进仓库）⇒ 首跑 CI 时
+  `[FATAL] 索引为空` 打红。已加 `[SKIP]` 优雅跳过（本地模拟验证 ✓）。
+  纪律：依赖本机产物的门禁必须**显式处理缺席并打印原因**。

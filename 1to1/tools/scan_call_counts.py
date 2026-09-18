@@ -215,6 +215,13 @@ def main():
     a = ap.parse_args()
 
     root = a.root
+    # ★★ CI 上**没有**本地 Ghidra 反编译目录（它是本机产物，不进仓库）⇒ 必须像
+    #   `tools/scan_call_args.py` 一样**优雅跳过**，而不是 FATAL 退出把 CI 打红。
+    #   实测踩坑：本门禁首跑在 CI 上红（本地是绿的），原因就是缺这个守卫。
+    if not os.path.isdir(a.ghidra):
+        print('  [SKIP] 找不到工厂反编译目录 %s' % a.ghidra)
+        print('         （该目录是本机逆向产物、不进仓库；CI 上本步骤自动跳过）')
+        return 0
     fa = index(a.ghidra, '*.c')
     ours = index(os.path.join(root, 'src', 'proprietary'), '**/*.c')
     if not fa or not ours:
