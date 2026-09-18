@@ -90,20 +90,6 @@ jobs:
           # 本门禁把这类"实验条件被静默篡改"变成硬失败。构造性自证：1 坏样本 + 4 好样本。
           python tools/lint_workflow_continuation.py --root .
 
-      - name: C++ mangled 签名对拍（Itanium ABI）★ 硬门禁
-        run: |
-          cd 1to1
-          # 背景（第 45 轮实测）：`TUnzip::Find` / `unzOpenCurrentFile` 这类 **C++ 包装层**
-          #   此前只有"函数尺寸比"这一弱指标，而尺寸差多数来自"内联 vs 外调"（铁律 112）
-          #   ⇒ 真实签名差异只能靠人肉 diff 发现。实测抓到两处：
-          #     · 工厂 `_Z18unzOpenCurrentFileP5unz_s`（单参） vs 我们 `..._sPKc`（双参）
-          #     · 我们 `TUnzip::Find` 多一个 264 B 栈缓冲 + `strcpy`（工厂直接透传 tname）
-          #   而**参数的个数与类型全部编码在 mangled 名里** ⇒ 可机械对拍，且与编译器无关。
-          # 判据：按名字部分配对，比较参数编码集合；后缀 `.isra/.part/.constprop/.llvm` 先归一。
-          # 自证：3 条正向锚点（状态感知打印）+ 1 条归一化锚点（`.part.N` 必须被剥离）。
-          # 台账棘轮：签名不一致 + 「我们独有」两类，均只许缩小。
-          python tools/scan_cxx_abi.py             --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf             --ledger tools/cxx_abi_pending.txt
-
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'
@@ -237,6 +223,20 @@ jobs:
           #   判据：同源码不同编译器的 size 差通常 < 2×；≥8× 基本是版本/实现不符。
           #   已知未对齐项登记在 tools/upstream_fingerprint_baseline.txt（修好一项须删一行）。
           python3 tools/scan_upstream_fingerprint.py
+
+      - name: C++ mangled 签名对拍（Itanium ABI）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（第 45 轮实测）：`TUnzip::Find` / `unzOpenCurrentFile` 这类 **C++ 包装层**
+          #   此前只有"函数尺寸比"这一弱指标，而尺寸差多数来自"内联 vs 外调"（铁律 112）
+          #   ⇒ 真实签名差异只能靠人肉 diff 发现。实测抓到两处：
+          #     · 工厂 `_Z18unzOpenCurrentFileP5unz_s`（单参） vs 我们 `..._sPKc`（双参）
+          #     · 我们 `TUnzip::Find` 多一个 264 B 栈缓冲 + `strcpy`（工厂直接透传 tname）
+          #   而**参数的个数与类型全部编码在 mangled 名里** ⇒ 可机械对拍，且与编译器无关。
+          # 判据：按名字部分配对，比较参数编码集合；后缀 `.isra/.part/.constprop/.llvm` 先归一。
+          # 自证：3 条正向锚点（状态感知打印）+ 1 条归一化锚点（`.part.N` 必须被剥离）。
+          # 台账棘轮：签名不一致 + 「我们独有」两类，均只许缩小。
+          python tools/scan_cxx_abi.py             --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf             --ledger tools/cxx_abi_pending.txt
 
       - name: 上游库公有 API 集合对拍（版本钉错检出）★ 硬门禁
         run: |

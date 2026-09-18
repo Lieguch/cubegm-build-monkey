@@ -159,9 +159,15 @@ def main():
     ap.add_argument('--root', default='.', help='仓库根（默认当前目录）')
     a = ap.parse_args()
 
-    for p in (a.factory, a.ours):
-        if not os.path.exists(p):
-            raise SystemExit('  [SKIP] 找不到 %s（CI 上若无该产物则跳过）' % p)
+    # ★★ `[SKIP]` 必须**返回 0**，绝不能 `raise SystemExit('…')`：
+    #   带**字符串**参数的 SystemExit 退出码是 **1** ⇒ "优雅跳过"反而把 CI 打红。
+    #   实测事故（第 45 轮首推）：本门禁被插在 CI 的链接步骤**之前**，
+    #   彼时 `build/rkgame.rebuilt.elf` 尚不存在 ⇒ 走进 SKIP 分支 ⇒ 退出码 1 ⇒
+    #   `1to1-verify` 红，而本地（有 ELF）全绿 —— 又一个"本地绿 / CI 红"。
+    missing = [p for p in (a.factory, a.ours) if not os.path.exists(p)]
+    if missing:
+        print('  [SKIP] 缺少输入 %s（CI 上该步骤若排在链接之前属正常，请检查步骤顺序）' % missing)
+        return 0
 
     od = find_objdump(a.objdump)
     print('  objdump = %s' % od)

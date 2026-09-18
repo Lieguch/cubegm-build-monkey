@@ -2561,3 +2561,44 @@ pointer→int 实参 48 / int→pointer 实参 20 / 指针类型不符 13 / 其�
 
 `1to1-verify` 现 **11 道 ★ 硬门禁**（新增「工作流续行链 lint」+ 上一轮的「窄指针转型」「调用点个数」）。
 本轮提交：`00e1cf68` → `6bd7e2dd`（set -e 修复）→ `332d96c7`（续行链修复 + lint 门禁）→ 本轮文档。
+
+---
+
+## 第四十五轮（2026-09-18）：C++ 包装层对齐 + 一处自我更正 + 第 12 道硬门禁
+
+### 一、★ 自我更正：`TUnzip::Find` **不缺** `unzCloseCurrentFile`（第 44 轮结论作废）
+
+第 44 轮报的"独立缺陷"是**错的**：全 ELF 里 `bl unzCloseCurrentFile` 的调用者为 **0**，
+但我们 `TUnzip::Find` 的尾部机器码（`ldr r7,[r8,#124]` → `free` → `inflateEnd` → `free`
+→ `str r9,[r8,#124]`）与独立函数体**逐指令同构** ⇒ 同 TU 内联（与 `ClearBuffer` 同一物种）。
+⇒ **判据回到机器码语义，不用"有没有 bl"**。
+
+### 二、两处真差异（均已修，机器码级验证）
+
+| # | 差异 | 工厂 | 我们（改前） | 修法 |
+|---|---|---|---|---|
+| 1 | `TUnzip::Find` 多余的 264 B 栈拷贝 | `bl unzLocateFile` 前 r1 从未被写（透传） | `bl strcpy` + `sub sp,#264` | 删除本地缓冲 ⇒ `0x120→0x100`，`strcpy`/`#264` 消失 |
+| 2 | `unzOpenCurrentFile` 参数个数 | `_Z18unzOpenCurrentFileP5unz_s`（单参） | `_Z18unzOpenCurrentFileP5unz_sPKc`（双参） | 定义/声明/2 调用点收成单参 ⇒ mangled 名**完全一致** |
+
+### 三、第 12 道硬门禁：C++ mangled 签名对拍
+
+`tools/scan_cxx_abi.py`（Itanium ABI：参数个数与类型全在 mangled 名里，与编译器无关）。
+归一化 `.isra/.part/.constprop/.cold/.llvm`；排除 `_ZL/_ZZ`；判据收窄到"共有名字的签名不一致"；
+"仅一侧有"列入棘轮。自证 3+1，**反向验证**：改前版 `.o` 入链接 ⇒ 精确报出唯一一条并 `exit 1`。
+**首跑：共有 62 个名字，签名不一致 = 0**。
+
+### 四、新发现（入台账）：我们独有 5 个 C++ 函数
+
+`Uupdate_keys` / `Udecrypt_byte` / `ucrc32` / `zdecode`（加密残留）+ `EnsureDirectory`
+（工厂无 ⇒ 工厂疑似删掉了 `TUnzip::Unzip` 的 ZIP_FILENAME 分支）。
+与 `TUnzip::Unzip` 尺寸 516 B vs 1600 B 互相印证 ⇒ 下一轮入口。
+
+### 五、本地门禁回归（8 道全绿）
+
+调用点个数 213 对 / 窄指针转型 0 命中 / 调用点实参 1279 对 / 上游 API 无新增（台账 14）/
+**C++ 签名 0 不一致（独有 5）** / 续行链 lint 0 处 / shim 格式化器 12/12 / 实参寄存器台账 41 项。
+链接门禁：全局符号 **193/194**、越界 **0**、GLIBC 上限 **2.7**。
+
+### 六、提交
+
+`eefe0a68`（6 blob：workflow + unzip.cpp + XUnzip.o + .XUnzip 源哈希 + 新工具 + 新台账）。

@@ -785,3 +785,81 @@ CI 里场景 A 的覆盖率**从来没产出过**：`--tag ${CGM_COV_TAG:-}` 在
 `tools/lint_workflow_continuation.py`：检查所有 workflow 的 `run:` 块中
 **"注释行紧跟在以 `\` 结尾的行之后"**。构造性自证 1 坏样本 + 4 好样本；
 已接入 `1to1-verify`（现共 **11 道 ★ 硬门禁**）。
+
+---
+
+## 十一、第 45 轮：C++ 包装层（XUnzip / TUnzip）对齐 + 一处自我更正
+
+### 11.1 先更正：`TUnzip::Find` **并不缺** `unzCloseCurrentFile`
+
+第 44 轮我据"工厂 0xb4 里有该调用、我们 0x120 里没有"判定"我们少了 `unzCloseCurrentFile`"。
+本轮逐指令核实 —— **结论错了**：
+
+| 证据 | 内容 |
+|---|---|
+| 我们 `unzCloseCurrentFile` 独立符号 | 仍存在（`0x80` = 128 B） |
+| 全 ELF 里 `bl unzCloseCurrentFile` 的调用者 | **0 个** |
+| 我们 `TUnzip::Find` 尾部机器码 | `ldr r7,[r8,#124]` → `cmp r7,#0` →（非空）`free` → `inflateEnd` → `free` → `str r9,[r8,#124]`，**与独立函数体逐指令同构** |
+
+⇒ clang 把同 TU 的 `unzCloseCurrentFile` **整体内联**进每个调用者（与 `ClearBuffer` 同一物种）。
+**"有没有 `bl`"不是判据，机器码/源码语义才是**（技能铁律 112 的第二次应用）。
+
+### 11.2 真差异 1：`TUnzip::Find` 多了一次 264 B 栈拷贝（已修）
+
+| | 工厂 | 我们（改前） |
+|---|---|---|
+| 机器码 | `128fc: bl unzLocateFile` 之前 **r1 从未被写过**（`param_1` 直接透传） | `mov r0,r7` → `bl strcpy` → `mov r1,r7` |
+| 栈 | 无本地缓冲 | `sub sp, sp, #264`（`char name[MAX_PATH]`） |
+| 尺寸 | `0xb4`（180 B） | `0x120`（288 B） |
+
+`unzLocateFile` 内部本就会 `memcpy` 进 `s->szCurrentFileName` ⇒ 我们的拷贝**语义多余**；
+且是**潜在栈溢出**（名字 >263 会在 `strlen >= UNZ_MAXFILENAMEINZIP` 检查**之前**冲掉本帧）。
+已删除 ⇒ 机器码里 `strcpy` 与 `#264` 均消失，尺寸 `0x120 → 0x100`；
+余下 `0x100` vs `0xb4` 的差 = **我们内联了 `unzCloseCurrentFile`、工厂是外调**（已解释干净）。
+
+### 11.3 真差异 2：`unzOpenCurrentFile` 参数个数（mangled 名级铁证，已修）
+
+| | mangled 名 | 含义 |
+|---|---|---|
+| 工厂 | `_Z18unzOpenCurrentFileP5unz_s` | **单参** `(unz_s*)` |
+| 我们（改前） | `_Z18unzOpenCurrentFileP5unz_sPKc` | **双参** `(unz_s*, char const*)` |
+
+这条此前只有"印象"（结构体注释里写着"工厂是单参数"）；本轮拿到 **Itanium ABI 级**硬证据。
+结构体字段（`malloc(0x6c)` = 108）早在更早轮次就按工厂删过，但**形参一直留着**
+（源码注释自陈"仅为暂不改变调用点签名"）⇒ 第 45 轮补完：定义 / 声明 / 两个调用点全部收成单参。
+★ 附带收益：C++ 强类型检查现在会在**编译期**拦住"调用点少传参"这一类
+（反向验证时实测触发：`too few arguments`）。
+
+### 11.4 新硬门禁：C++ mangled 签名对拍（第 12 道 ★）
+
+`tools/scan_cxx_abi.py`：**参数的个数与类型全部编码在 mangled 名里** ⇒ 按"名字部分"配对、
+比较参数编码集合，即可机械抓出这一整类漂移，且**与编译器无关**（clang / gcc 同用 Itanium mangling）。
+
+- 归一化：`.isra.N` / `.part.N` / `.constprop.N` / `.cold` / `.llvm.N` / `.N` 先剥离
+  （工厂 `TUnzip::Get` 同时有 `Get` 与 `Get.part.5` ⇒ 归一后必须只剩 1 个 sig）。
+- 排除：`_ZL…`（内部链接）/ `_ZZ…`（函数局部）—— 避免"同名 static 帮手签名不同"这类假阳性。
+- 判据**刻意收窄**：只判"共有名字的签名不一致"；"仅一侧有"只作规模指标 —— 但**列入棘轮**（只许缩小）。
+- 自证：3 条正向锚点（状态感知打印当前判定）+ 1 条归一化锚点；
+  **反向验证**：把改前版 `.o` 放进链接 ⇒ 门禁精确报出唯一一条
+  `_Z18unzOpenCurrentFile`（工厂 `P5unz_s` / 我们 `P5unz_sPKc`）并 `exit 1`。
+
+**首跑结果**：两侧共有 C++ 函数名 **62 个，签名不一致 = 0** ✓
+
+### 11.5 新发现（入台账，待处理）：我们独有 5 个 C++ 函数
+
+| 符号 | 说明 |
+|---|---|
+| `_Z12Uupdate_keys` / `_Z13Udecrypt_byte` / `_Z6ucrc32` / `_Z7zdecode` | zip **加密**残留（工厂整块删除） |
+| `_Z15EnsureDirectory` | 工厂**没有**该函数 ⇒ 工厂很可能删掉了 `TUnzip::Unzip` 的 **ZIP_FILENAME 分支**（解压到文件 + 建目录） |
+
+⇒ 与"`TUnzip::Unzip` 工厂 `0x1c` + `.part.7` `0x1e8`（合计 516 B）vs 我们 `0x640`（1600 B）"互相印证。
+**下一轮入口**：对拍 `TUnzip::Unzip` 的分支集合（ZIP_MEMORY / ZIP_FILENAME / ZIP_HANDLE）。
+
+### 11.6 门禁全景（本轮后）
+
+`1to1-verify` 共 **12 道 ★ 硬门禁**：shim 格式化器自检 / 调用点实参对拍 / 窄指针转型 /
+工作流续行链 lint / **C++ mangled 签名对拍（新）** / 数组名转型 / .rodata 字符串当整数 /
+P3 链接就绪审计 / P3 完整链接 + ABI 与布局 / 上游库公有 API 集合 / 调用点实参寄存器 / 调用点个数。
+
+本地 8 道全部 PASS；链接自带门禁：全局符号 **193/194 = 99.5%**、越界 **0**、
+GLIBC 上限 **2.7 = 工厂**；两侧共有 C++ 签名 **62/62 一致**。
