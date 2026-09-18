@@ -711,3 +711,77 @@ CI 里场景 A 的覆盖率**从来没产出过**：`--tag ${CGM_COV_TAG:-}` 在
 加 `[SKIP]` 优雅跳过（本地模拟 CI：`--ghidra D:/no_such_dir` ⇒ SKIP、退出 0 ✓；
 正常路径仍 213 对可比对、PASS）。
 **纪律**：任何依赖**本机产物**的门禁，都必须显式处理"产物缺席"，并**打印 SKIP 原因**而不是静默/报错。
+
+---
+
+## 十、第 44 轮 ★ `setting.raw` 判决 + 用「关键地址命中普查」把工厂侧失败钉到具体分支
+
+### 10.1 `setting.raw` 其实**在包里**，而且我们读对了
+
+在 `mui_LoadUIResource` 入口加 env 门控探针（已撤）后拿到：
+
+```
+我们| DBGUI2 req=setting.raw zip=/sdcard/cubegm//ui_cn.zip
+我们| DBGUI2 req=setting.raw zr=0 HIT size=2857048
+```
+
+对照 `ui_cn.zip` 的真实条目：
+
+| 条目 | 大小 |
+|---|---|
+| `ui.cfg` | 242 B |
+| `menu.raw` | 3,282,288 B |
+| `search.raw` | 2,234,144 B |
+| **`setting.raw`** | **2,857,048 B** ← 与我们的 `HIT size` **逐字节一致** |
+| `type.raw` | 2,274,136 B |
+| `game.raw` | 2,911,744 B |
+
+⇒ 我们不仅**找到**了 `setting.raw`，还**正确解压**了 2,857,048 B。
+而工厂对**同一个 zip 里确实存在的条目**报 `find … fail`。
+
+### 10.2 ★★ 关键地址命中普查：工厂失败被钉到具体分支
+
+新增 CI 设施 `CGM_TRACE_ADDRS`（在 `-d exec` 原始日志被删**之前**统计指定地址的出现次数；
+**制品只留尾部 800 行，覆盖不到这些位置**）。场景 E 实测（工厂与 control **完全一致**）：
+
+| 地址 | 含义 | 命中 |
+|---|---|---|
+| `000119f4` | `unzLocateFile` 的 **-99 早退**（`unz->[24]==0`，`mvn r3,#99`） | **1** |
+| `000119e4` | `unzLocateFile` 的 -101（`unz==NULL` / `strlen>255`） | 0 |
+| `0001162c` | `unzGoToFirstFile` 入口 | **1** |
+| `00010ea0` | `unzStringFileNameCompare`（遍历中真的比过名字） | **0** |
+| `000115ec` | `unzGetCurrentFileInfo`（遍历中取过条目信息） | **0** |
+| `00011948` | `ldr r3,[r5,#24]` 所在块 | 3 |
+| `00011950` | `cmp r3,#0` / `beq` 所在块 | 0 |
+
+**读法**：
+1. 工厂有 **1 次**调用在 `unz->[24]==0` 处**直接返回 -99**（连遍历都不进）；
+2. 另一次**通过了** `[24]` 检查并进入 `unzGoToFirstFile`，但
+   **`unzStringFileNameCompare` 与 `unzGetCurrentFileInfo` 命中均为 0**
+   ⇒ **循环体零执行** ⇒ `unzGoToFirstFile` **返回了非 0**，直接跳到返回路径。
+
+⇒ **工厂侧的 zip 条目查找在沙箱里不可用**，且失败发生在"中央目录遍历"这一层
+（要么 `[24]==0` 早退，要么 `unzGoToFirstFile` 失败），**从未走到"逐个比名字"**。
+我们的实现（`unzLocateFile` 已逐指令核对：同样有 `[24]==0 → -99` 的检查）在同一 zip、
+同一 shim、同一 key2 注入下**全部成功**。
+
+**归因**：这是**沙箱环境缺一环**（`unzOpenInternal` 填 `[24]` / 建立遍历所需的某个状态），
+而真机上工厂经 `menu.log` 证明**能打开资源包** ⇒ 该缺口在真机不存在。
+**不影响"1:1 替代"**（真机上两侧都会成功），但**必须保留为待真机对照项**。
+
+### 10.3 本轮的三处「仪器/脚本层静默失效」（都花掉了真实轮次）
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| ① | `trace_hits_factory.txt` 被创建但**空**；`exec_factory.log` 没删；场景 E 的 rebuild 侧与差分**完全没跑**，而 workflow 仍报 success | `_n=$(grep -ac …)` 在**无匹配**时返回 1，脚本是 `set -e` ⇒ **整体退出**（退出发生在 `rm` 之前） | `grep … \|\| true` |
+| ② | 重建侧退回 `open … ui_cn.zip fail`（key2 未注入的原症状）、探针证据行全消失，而**行为门禁反而报 PASS（假绿）** | YAML `run:` 里把**注释插进了 `\` 续行链中间** ⇒ shell 把注释行与上一行合并、注释吃掉其后内容、且该行不以 `\` 结尾 ⇒ **续行链断裂**，后面变成独立命令 ⇒ `CGM_KEY2_SEED`/`KEY2_HOOK`/`IO_TRACE`/`DBGUI2` **全部静默丢失** | 注释移到链外；新增硬门禁 `tools/lint_workflow_continuation.py` |
+| ③ | Python heredoc 里含反斜杠的锚点**永远不匹配** | Bash 工具会把命令里的 `\\` 折叠成 `\`，于是 Python 里的 `\\n` 变成**真换行** | 一律用 `chr(92)` 构造反斜杠 |
+
+**③ 的连带发现**：本仓库有 **181 个 CRLF 文件**（vs 928 个纯 LF）——
+凡是对这些文件做多行文本替换，必须先做换行归一（`replace(CRLF, LF)`），否则多行锚点失配。
+
+### 10.4 新增硬门禁
+
+`tools/lint_workflow_continuation.py`：检查所有 workflow 的 `run:` 块中
+**"注释行紧跟在以 `\` 结尾的行之后"**。构造性自证 1 坏样本 + 4 好样本；
+已接入 `1to1-verify`（现共 **11 道 ★ 硬门禁**）。
