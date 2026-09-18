@@ -3438,7 +3438,7 @@ int unzlocal_CheckCurrentFileCoherencyHeader (unz_s *s,uInt *piSizeVar,
 
 //  Open for reading data the current file in the zipfile.
 //  If there is no error and the file is opened, the return value is UNZ_OK.
-int unzOpenCurrentFile (unzFile file, const char *password)
+int unzOpenCurrentFile (unzFile file)
 {
 	int err;
 	int Store;
@@ -3510,8 +3510,11 @@ int unzOpenCurrentFile (unzFile file, const char *password)
 	pfile_in_zip_read_info->rest_read_compressed = s->cur_file_info.compressed_size ;
 	pfile_in_zip_read_info->rest_read_uncompressed = s->cur_file_info.uncompressed_size ;
 	/* ★ 1:1 工厂：加密初始化整段删除（工厂无 password 支持；见结构体注释）。
-	 *   保留 `password` 形参仅为暂不改变调用点签名，形参不再使用。 */
-	(void)password;
+	 *   第 45 轮补完：`unzOpenCurrentFile` 的**形参也已删除**（原"暂不改签名"的欠账），
+	 *   使我们的 mangled 名与工厂完全一致：
+	 *     工厂 `_Z18unzOpenCurrentFileP5unz_s`（单参）
+	 *       我们（改前）`_Z18unzOpenCurrentFileP5unz_sPKc`（双参）
+	 *   ⇒ 两个调用点同步改为 `unzOpenCurrentFile(uf);`。 */
 
 	pfile_in_zip_read_info->pos_in_zipfile =
             s->cur_file_info_internal.offset_curfile + SIZEZIPLOCALHEADER +
@@ -3757,7 +3760,7 @@ int unzGetGlobalComment (unzFile file, char *szComment, uLong uSizeBuf)
 
 
 
-int unzOpenCurrentFile (unzFile file, const char *password);
+int unzOpenCurrentFile (unzFile file);
 int unzReadCurrentFile (unzFile file, void *buf, unsigned len);
 int unzCloseCurrentFile (unzFile file);
 
@@ -3907,13 +3910,15 @@ ZRESULT TUnzip::Get(int index,ZIPENTRY *ze)
 }
 
 ZRESULT TUnzip::Find(const TCHAR *tname,unsigned char ic,int *index,ZIPENTRY *ze)
-{ char name[MAX_PATH];
-#ifdef UNICODE
-  WideCharToMultiByte(CP_ACP,0,tname,-1,name,MAX_PATH,0,0);
-#else
-  strcpy(name,tname);
-#endif
-  int res = unzLocateFile(uf,name,ic?CASE_INSENSITIVE:CASE_SENSITIVE);
+{ /* ★★ 1:1 工厂（第 45 轮，机器码级核实）：工厂**不做本地拷贝**，
+   *   把 `tname` 直接透传给 `unzLocateFile` —— 机器码为证：`128fc: bl unzLocateFile`
+   *   之前 **r1 从未被写过**（r1 = param_1 原样进入）。
+   *   我们原写法多一个 `char name[MAX_PATH]`（栈 264 B）+ `strcpy`：
+   *     · 语义上多余（`unzLocateFile` 内部 `memcpy` 进 `s->szCurrentFileName`，不保留指针）；
+   *     · 且是**潜在栈溢出**：长度 >263 的名字会在 `unzLocateFile` 的
+   *       `strlen >= UNZ_MAXFILENAMEINZIP` 检查**之前**先冲掉本帧 —— 工厂无此风险。
+   *   ⇒ 删除本地缓冲，与工厂一致（我们 0x120 B -> 目标 ~0xb4 B）。 */
+  int res = unzLocateFile(uf,tname,ic?CASE_INSENSITIVE:CASE_SENSITIVE);
   if (res!=UNZ_OK)
   { if (index!=0) *index=-1;
     if (ze!=NULL) {ZeroMemory(ze,sizeof(ZIPENTRY)); ze->index=-1;}
@@ -3954,7 +3959,7 @@ ZRESULT TUnzip::Unzip(int index,void *dst,unsigned int len,DWORD flags)
       if (index>=(int)uf->gi.number_entry) return ZR_ARGS;
       if (index<(int)uf->num_file) unzGoToFirstFile(uf);
       while ((int)uf->num_file<index) unzGoToNextFile(uf);
-      unzOpenCurrentFile(uf,password); currentfile=index;
+unzOpenCurrentFile(uf); currentfile=index;
     }
     int res = unzReadCurrentFile(uf,dst,len);
     if (res>0) return ZR_MORE;
@@ -3993,7 +3998,7 @@ ZRESULT TUnzip::Unzip(int index,void *dst,unsigned int len,DWORD flags)
     h = CreateFile((const TCHAR*)dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,ze.attr,NULL);
   }
   if (h==INVALID_HANDLE_VALUE) return ZR_NOFILE;
-  unzOpenCurrentFile(uf,password);
+unzOpenCurrentFile(uf);
   char buf[16384]; DWORD haderr=0;
   //  
 
