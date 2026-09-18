@@ -128,11 +128,10 @@ jobs:
       #     · key2 不变        ⇒ 来源与 SFC 无关 ⇒ 下一步改用「key2 页写陷阱」抓写入者的 pc/lr。
       - name: 行为采集·场景 E（.zip 打开瞬间重新断言 key2 ⇒ 单变量定位写入者，观测非门禁）
         run: |
+          # 关键地址普查（工厂侧 unzLocateFile 的三个关键分支 + zip 遍历；重建侧为 0 属正常）
           cd 1to1
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 \
-          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E CGM_DBGUI2=1 \
-          # 关键地址普查（工厂侧 unzLocateFile 的三个关键分支 + zip 遍历；重建侧为 0 属正常）
-          CGM_TRACE_ADDRS="000119f4 000119e4 0001162c 00010ea0 000115ec 00011948 00011950" \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=E CGM_DBGUI2=1           CGM_TRACE_ADDRS="000119f4 000119e4 0001162c 00010ea0 000115ec 00011948 00011950" \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_e || true
           echo '--- 场景 E：shim 看到的 I/O 轨迹（自证探针可达；◀ ZIP 标出 zip 打开）---'

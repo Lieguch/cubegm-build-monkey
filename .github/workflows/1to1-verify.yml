@@ -79,6 +79,17 @@ jobs:
           python tools/scan_narrow_deref.py --root . \
             --ledger tools/narrow_deref_pending.txt
 
+      - name: 工作流续行链 lint（注释不得插进 `\` 续行链）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（第 44 轮实测事故，代价一整轮 CI）：场景 E 步骤曾在 `\` 续行链中间插了一行
+          #   注释 ⇒ shell 把它与上一行合成一条命令、注释吃掉其后内容、且该行不以 `\` 结尾
+          #   ⇒ **续行链断裂**，后面变成独立命令 ⇒ `CGM_KEY2_SEED`/`CGM_KEY2_HOOK`/`CGM_IO_TRACE`
+          #   /`CGM_DBGUI2` **全部静默丢失**。观测现象：重建侧退回 `open … ui_cn.zip fail`
+          #   （key2 未注入的原症状）、探针证据行消失，而**行为门禁反而报 PASS（假绿）**。
+          # 本门禁把这类"实验条件被静默篡改"变成硬失败。构造性自证：1 坏样本 + 4 好样本。
+          python tools/lint_workflow_continuation.py --root .
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'
