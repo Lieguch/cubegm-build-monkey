@@ -533,3 +533,49 @@ CI 已接入（`1to1-verify` 第 20 步，★ 硬门禁）：**新增差异即�
 已接入 `1to1-qemu-behav`（4 个场景各跑一次，写 `report/<sc>/exec_set_diff.txt`）。
 ★ 当前为**观测项**（`if: always()`，不判失败）—— 因为场景 E 本就存在真实分歧；
 待该分歧修掉、差集归零后，再升级为**硬门禁**（棘轮："仅我们执行"集合只许缩小）。
+
+### 九·补一 第 42 轮续：执行集合差集在 4 场景跑通 + 一处方法学更正 + 一个新缺陷
+
+**① CI（`c1f2a690`）三 workflow 全 success；执行集合差集 4 场景产出：**
+
+| 场景 | 工厂/我们已执行 | 差异 |
+|---|---|---|
+| A | （报告文件名不同 ⇒ 未产出，已修：兼容 `coverage_*.stdout.txt`） | — |
+| B | 49 / 48 | 1（仅工厂 `ClearBuffer`） |
+| C | 7 / 6 | 1（仅工厂 `run_process.constprop.0`） |
+| **E** | **51 / 58** | **9（仅我们 8 + 仅工厂 1）** |
+
+B/C 的差异都只是"工厂多执行一个收尾函数"，**方向上是工厂走得更远**；只有 E 是**我们多执行 8 个**。
+
+**② ★ 方法学更正（重要）：执行集合列表是「账本域」的，不是全量函数。**
+
+`coverage_*.txt` 的"已执行函数"只覆盖 `ledger/functions.csv` 里的 **223 个专有函数**；
+上游 XUnzip 的函数（`unzLocateFile` / `unzGetCurrentFileInfo` / `unzGoToFirstFile`…）
+**永远不会出现在该列表里**。⇒ 我此前据"`unzLocateFile` 两侧都未执行"做的推断**无效**，
+必须撤回。教训：**任何"列表里没有 X"的结论，先确认该列表的域**（技能铁律 101 的推论）。
+
+**③ 已排除的两项（机器码级核对，不是读源码猜测）：**
+
+| 函数 | 工厂 | 我们 | 结论 |
+|---|---|---|---|
+| `unzStringFileNameCompare` | 16 B：`cmp r2,#1; beq strcmp; b strcmpcasenosensitive_internal` | 140 B：**内联**同一逻辑，`==1` 时尾调 `strcmp` | **语义等价**（16 B 是尾调 thunk，不是被裁剪） |
+| `FindZipItemA` | 132 B | 88 B | **语义等价**：第 5 个栈参数工厂读 `[sp,#16]`、我们读 `[fp,#8]`，**两者都正确** |
+
+**④ ★ 新发现一个真实缺陷：我们的 `TUnzip::Find` 少了 `unzCloseCurrentFile`。**
+
+- 工厂（180 B）在 `unzLocateFile` 成功后：`if (hCurrFile != -1) { unzCloseCurrentFile(unz); hCurrFile = -1; }`
+- 我们（288 B）：**没有调用 `unzCloseCurrentFile`**，而是**内联**了一段"`free(z_stream->…)` + `inflateEnd` + `free`"的部分清理。
+  ⇒ z_stream 的释放路径、以及 `unzCloseCurrentFile` 内部对 CRC/文件句柄/全局注释的处理**全部缺失**。
+- ⚠ 但它执行在 `unzLocateFile` **之后** ⇒ **不能解释**"工厂查 `ui.cfg` 失败、我们成功"这一分歧，
+  只能作为一个**独立的保真度缺陷**记录（在"打开过某个条目后再查找"的路径上会导致状态不一致）。
+
+**⑤ 分歧的搜索空间已收窄到**：`unzLocateFile`（工厂 **240 B** / 我们 **528 B**）、
+`unzGetCurrentFileInfo`、`unzGoToFirstFile`/`unzGoToNextFile`。
+工厂 `unzLocateFile` 的完整语义已逐条读出（240 B，见 STATUS 第四十二轮续）：
+`unz==NULL → -101`；`strlen>255 → -101`；`memcpy(buf,name,len+1)`；`unz->[24]==0 → -99`；
+保存 `unz->[16]`/`unz->[20]` → `unzGoToFirstFile` → 循环
+`{ unzGetCurrentFileInfo(...,buf,256,...); unzStringFileNameCompare(buf,name,caseMode)==0 → 命中 }`
+→ 失败则 `unzGoToNextFile`；退出前**恢复** `unz->[16]`/`unz->[20]`。
+**下一步**：对拍我们的 `unzLocateFile` 这 240 B 的语义（重点是 `caseMode` 的 1/2 映射、
+`unzGetCurrentFileInfo` 的 8 个参数、以及退出前是否恢复 `[16]`/`[20]`），
+并用 CI 的 gdb 探针在 `FindZipItemA` 处**打印实参名字与返回值**（这是唯一能定死"查的是哪个名字"的手段）。
