@@ -1740,3 +1740,55 @@ else { __isoc99_sscanf(local_128,"%d",&DAT_003af394); }       /* 格式串 DAT_0
   ⇒ `M5 main_Menu 入口 ✓`，覆盖率从 6/223 明显上升，且两侧仍同步。
 - 前置：`sh tools/build_libkms_stub.sh report/stublib`（**必须给 outdir 参数**，
   否则脚本只打印 usage 就退出 ⇒ 开关空转，本轮就是这样白跑一次）。
+
+
+### 16.22 ★★★★★ 突破：桩 `libdrm.so.2` 让厂商 driver.so 的图形初始化通过 ⇒ **全里程碑贯通**
+
+**问题（gdb 实测的崩溃现场）**
+```
+[shim] pc = driver.so + 0x3ca8   符号 = gr_init
+[shim] lr = libc.so.6 + 0x41e44
+栈回溯: driver.so + 0x6378 video_drivers_init / +0x6360 video_drivers_init / rkgame + 0x3a9fc4
+故障指令 = ldr r3,[r3]   (r0..r3 = 0 ⇒ NULL 解引用)
+```
+⇒ 设备真实 rootfs **有** `libkms.so.1` ⇒ `dlopen(driver.so)` 成功 ⇒ 进 `gr_init`，
+而沙箱无真 DRM 设备 ⇒ 真 libdrm 的 ioctl 全失败 ⇒ `gr_init` 拿 NULL ⇒ **必崩在厂商代码里**。
+⇒ 历史 48/68/76 覆盖率是 `driver.so` **没加载**才走到的 —— 不是真机路径。
+
+**做法**：`tools/build_libdrm_stub.sh` 造桩 `libdrm.so.2`（`tools/guest_shim/drm_stub.c`），
+覆盖 `driver.so` **实测引用的全部 17 个 `drm*` 符号**（符号集逐字取自其 65 个未定义符号），
+并把 `driver.so` 实际用到的 `snd_*`（20 个）留给真 `libasound`。
+- 所有返回结构**完整初始化**的静态对象；`Free*` 全部 no-op（指针指向静态存储，free 会毁堆）
+- `drmIoctl` 按 `_IOC_NR` 分派，**不猜结构体尺寸**（CREATE_DUMB 的 `size` 位置按 `_IOC_SIZE` 判定）；
+  未知 DRM 命令**零填**整个参数缓冲后返回 0 —— 既确定，也不把未初始化结构体交给被测程序
+- 假 dumb 偏移 = `0x10000000`（≥4 MiB）⇒ 命中 shim 既有"共享+可写+偏移≥4MiB ⇒ 匿名零页"规则，**不引入新机制**
+- `-nostdlib` + 自带 `memset`（`visibility("hidden")`，不导出）+ `-fno-unwind-tables`
+  ⇒ **0 未定义符号**、`e_flags=0x05000400`、`SONAME=libdrm.so.2`
+
+**实测（SYSROOT=`/arm-root-device` 设备真实 glibc 2.29 + `CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1`）**
+
+| 里程碑 | factory | rebuild | control |
+|---|---|---|---|
+| M0 进程启动 / M1 配置 / **M2 SPI-SFC** / **M3 driver.so** / **M4 DRM** / **M5 main_Menu** / **M6 UI 资源包** / **M7 菜单存活** | 全部 ✓ | **全部 ✓** | 全部 ✓ |
+| 覆盖率 | 47/223 = 21.08% | **52/223 = 23.32%** | — |
+| 终止 | exit=134 (SIGABRT) | exit=134 | exit=134 |
+
+- 对照（不加 drm 桩）：7/6/223、崩在 `gr_init` ⇒ **单变量可归因**
+- ★★ **本项目第一次在设备真实路径上 M0–M7 全通，且我们侧覆盖率（52）> 工厂侧（47）**
+- 两侧终止码一致（exit=134）⇒ 差分公平
+
+**下一个瓶颈（已抓到实证，下一轮唯一入口）**
+```
+rkgame: pcm.c:3009: snd_pcm_avail: Assertion `pcm' failed.
+```
+⇒ vendor `driver.so` 调 `snd_pcm_avail` 时 pcm 为 NULL（假硬件没有声卡）⇒ `abort()`。
+**下一轮**：镜像本轮的机制造桩 `libasound.so.2`，覆盖实测的 **20 个 `snd_pcm_*`**
+（`open/hw_params_*/prepare/start/writei/avail/drop/close/recover/sizeof` 等），
+把 ALSA 初始化也做成"成功"，让执行流越过这次 `abort`。
+
+**操作坑（本轮踩到两次，已记）**
+- `CC_ARM="<zig> cc"` **必须带 `-target`**，否则 zig 按**宿主**编译 ⇒
+  `lld-link: undefined symbol: _DllMainCRTStartup`（症状与病因完全无关，易误读成"缺 memset"）
+- 传给 native Windows 版 `zig.exe` 的路径必须 `cygpath -w`，否则报
+  **`error: CacheCheckFailed`**（同样是误导性症状）
+- `build_libkms_stub.sh` / `build_libdrm_stub.sh` **必须给 outdir**，否则只打 usage 就退出 ⇒ 开关空转
