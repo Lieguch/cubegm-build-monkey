@@ -1594,3 +1594,71 @@ sprintf(acStack_258, "%s/%s/%s.dat", root_path, puVar4, puVar4);
 本地端到端干跑（走 stage 脚本本身）已全绿：`=1` → 129 B / 25 项；`=2` → 1156 B / **135 项**；
 `=7` → `FATAL` + `rc=1`；未设 → 无残留；与 `CGM_MENULOG_SCREEN=0` 组合时 `menu.log` 头 4 字节仍为 0。
 
+### 16.16 ★★ 场景 J 的**否证**：`fileinfo.txt` 的内容对当前路径**零影响**
+
+| 场景 | `root.dat` 大小 | `fileinfo.txt` 内容 | `/.dat fail` 行数 | 专有函数覆盖 | M7 | exit |
+|---|---|---|---|---|---|---|
+| I | 129 B | 25 个 `0`（旧口径） | 29 | 76/223 | ✓ | 124 |
+| **J** | **1156 B** | **135 个 `filelist` 路径**（真值源） | **29（未变）** | **76/223（未变）** | ✓ | 124 |
+
+严格核对：**I 与 J 的覆盖函数集合逐项完全相同**（76 ≡ 76，双向差集为空）；两侧 stdout 仅内存行不同。
+⇒ **`fileinfo.txt` 的内容不被当前路径消费** —— `root.dat` 的作用只是"**让 `DAT_003af2ac` 非 NULL**（不崩）"，
+与内容无关。这是本轮最有价值的**否证**：它排除了一个看似合理的假设，把下一步钉到真正的填充路径上。
+
+**真因在另一条填充路径**：`src/proprietary/misc/FUN_0002142c_dir_serial_list.c:69`（readdir 扫目录）：
+
+```c
+pcVar4 = strcpy(&file_info_list + iVar3, pdVar8->d_name);          /* 直接拷目录项名字 */
+*(gh_uint *)(pcVar4 + 0x100) = (gh_uint)(*ppdVar7)->d_type;        /* 并记录 d_type */
+```
+
+而沙箱 `/sdcard/cubegm/` 顶层**没有 `000/`–`008/` 游戏目录**（只有 `cores/` 一个子目录）
+⇒ `dir_serial_list` 扫不到游戏目录 ⇒ `file_info_list[i]` 里没有 `NNN/xxx.zip` 这类项
+⇒ `mui_extract_basepath` 取不到 `/` ⇒ basepath 空 ⇒ **`/sdcard//.dat`**。
+
+**`cores/filelist.xml` 的目录分布（= 下一轮的合成目标，已精确到项数）**
+
+| 目录 | 项数 | 例 | 对应核心（filelist 内） |
+|---|---|---|---|
+| `000` | **105** | `kof96.zip`、`1944.zip` | fba / fbafast / cps2 / fbalpha2012 / extend |
+| `002` | **21** | `Targa (Europe) (Proto).zip` | `libemu_snes9x` / `libemu_snes9x2010` |
+| `004` | **9** | `Rockman Zero4.zip` | `libemu_mgba` |
+
+共 **135 项 / 3 个目录**。★ 附带发现：`libemu_fbafast.so` 被 `filelist.xml` 引用，但 `cores/config.xml`
+**未注册**（config 注册 18 个核心、filelist 只用到 8 个）。
+
+⇒ **下一轮的可执行目标（已量化）**：新增 stage 开关 `CGM_GAMEDIRS=1`，按上面 3 个目录名合成
+`/sdcard/cubegm/000|002|004/` ＋ 按 `filelist.xml` 的 `name=` 造占位游戏文件（135 个，零内容即可）
+⇒ 让 `dir_serial_list` 能列出它们 ⇒ basepath 非空 ⇒ `NNN/NNN.dat` 缩略图包路径成立。
+两侧共用同一份、且在 pre 快照之后不含它 ⇒ 不影响 B3/B4。
+
+### 16.17 场景 K：合成 `NNN/` 游戏目录 + 占位游戏文件（针对 `dir_serial_list`）
+
+| 项 | 内容 |
+|---|---|
+| 开关 | `CGM_GAMEDIRS=1`（新）；缺省时**显式 `rm -rf` 清理**残留 |
+| 工具 | `tools/make_gamedirs.py`（读 `cores/filelist.xml` 的 `name=`） |
+| 产出 | **3 个目录 / 135 个占位文件**：`000/` 105 项、`002/` 21 项、`004/` 9 项 |
+| 占位文件内容 | **22 B 合法空 ZIP**（不是 0 字节）—— 它们是 `.zip`，被 `OpenZipU` 打开时"找不到条目"比"不是压缩包"噪声更小 |
+| 自证 | 工具自身 `os.listdir` 断言 readdir 能看到 135 个条目（否则 FATAL） |
+
+本地端到端干跑（走 stage 脚本）：未设 → 无 `NNN/`；设 1 → 3 目录/135 文件 + 自证通过；
+与 `CGM_MENULOG_SCREEN=0` + `CGM_ROOTDAT=2` 组合 → 三者同时生效；再未设 → 分支执行并报"清理 3 个残留"。
+（本机 `rm -rf` 被 safe-delete shim 拦，故目录删除未真正生效；分支与计数均正确，CI 无此 shim。）
+
+**场景 K 的判据（关键）**：不看"覆盖率涨没涨"，而看**同一句日志的路径内容是否改变** ——
+`open /sdcard//.dat fail` ⇒ 应变成 `open /sdcard/000/000.dat fail`。
+理由：覆盖率会被别的因素抵消（G/H 就出现过"打开新函数但总数下降"），而"路径里的 basepath 是否非空"
+是**单点可判定**的，不受其他因素干扰。
+
+### 16.18 本轮（第 49 轮）净产出汇总
+
+| 类别 | 数量 | 明细 |
+|---|---|---|
+| 新场景 | +4 | G（起始屏幕）/ H（+输入）/ I（+root.dat）/ J（fileinfo 真值源）/ K（+游戏目录） |
+| 新设施 | +4 | `CGM_MENULOG_SCREEN` / `CGM_ROOTDAT=1|2` / `CGM_GAMEDIRS` / `_PY` 解释器回退 |
+| 新工具 | +2 | `tools/make_rootdat.py` / `tools/make_gamedirs.py` |
+| 定案根因 | 3 | 起始屏幕 / `root.dat` 缺失 / `dir_serial_list` 为空 |
+| 否证 | 1 | `root.dat` 的内容零影响（I ≡ J） |
+| 修的缺陷 | 6 | 见上表（短 sha 静默空集 / 探针集不一致 / 重试双执行 / 路径形式 / 语法 / 残留） |
+| 技能铁律 | 129 → 136 | 新增 134/135/136/137 |

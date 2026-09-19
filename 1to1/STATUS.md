@@ -2825,3 +2825,21 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
 | 新工具 | `tools/make_rootdat.py`（`--mode filelist` 取 `cores/filelist.xml` 的 135 个 `name=`） |
 | 下一入口 | 场景 J：`fileinfo.txt` 换真值源 ⇒ 看 `/sdcard//.dat fail` 是否消失、覆盖是否再涨 |
 
+### 第四十九轮·终（场景 J 否证 + 下一步入口）
+
+| 项 | 结论 |
+|---|---|
+| 场景 J | `fileinfo.txt` 换成真值源（135 项）后 **`.dat fail` 仍 29 行、覆盖仍 76/223** ⇒ **内容零影响** |
+| 严格核对 | I 与 J 覆盖集合**逐项完全相同**（对称差为空）；仅 `root.dat` 大小不同（129 vs 1156 B） |
+| 真因 | `dir_serial_list`（readdir 扫目录）填充 `file_info_list`；沙箱**没有 `000/002/004` 游戏目录** |
+| 下一步 | 新增 `CGM_GAMEDIRS=1`：按 `filelist.xml` 合成 3 个目录 + 135 个占位游戏文件 |
+| 边界 | `golden/` 不动（stage 到 `$WORK`）；两侧共用；pre 快照之后不含它 ⇒ B3/B4 不受影响 |
+
+### 第四十九轮·K（游戏目录合成）
+
+| 项 | 数值 |
+|---|---|
+| 行为场景 | **10（A/B/C/E/F/G/H/I/J/K）** |
+| 新设施 | `CGM_GAMEDIRS=1`（合成 `000/002/004` + 135 占位游戏文件） |
+| 新工具 | `tools/make_gamedirs.py`（含 readdir 自证） |
+| 判据 | **看日志路径内容**（`/sdcard//.dat` → `/sdcard/NNN/NNN.dat`），不只看覆盖率 |

@@ -121,4 +121,39 @@ else
     fi
 fi
 
+# ★★★ 场景 K：合成 `NNN/` 游戏目录 + 占位游戏文件（`file_info_list` 的**真正来源**）
+#    依据：`dir_serial_list`（readdir 扫目录）把目录项名字拷进 `file_info_list`
+#      （`src/proprietary/misc/FUN_0002142c_dir_serial_list.c:69`：strcpy + 记 d_type）；
+#      而沙箱 `/sdcard/cubegm/` 顶层只有 `cores/`，缺 `000/002/004`
+#      ⇒ 列表为空 ⇒ `mui_extract_basepath` 取不到 `/` ⇒ basepath 空
+#      ⇒ 运行期反复 `open /sdcard//.dat fail`（实测 29 行）。
+#    内容 = `cores/filelist.xml` 的 135 个 `name=`（只造名字，占位文件为 22 B 空 ZIP）。
+#    ★★ 未启用时**显式清理**残留：/sdcard/cubegm 跨场景共享，残留会让"无游戏目录"的场景
+#       静默变成"有" —— 与场景 C 的 stublib 残留同类（每个场景的输入必须由自己的开关决定）。
+_GD_DIRS="000 002 004"
+if [ "${CGM_GAMEDIRS:-0}" = "1" ]; then
+    _TOOLS_G="$(dirname "$0")"
+    _PY_G="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+    if [ -z "$_PY_G" ]; then echo "FATAL 找不到 python3/python，无法合成游戏目录"; exit 1; fi
+    "$_PY_G" "$_TOOLS_G/make_gamedirs.py" --golden "$GOLDEN" --work "$WORK" \
+        || { echo "FATAL 合成游戏目录失败"; exit 1; }
+    if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
+        mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
+        printf 'GAMEDIRS_BUILT dirs=%s files=%s\n' \
+            "$(ls -d "$WORK"/[0-9][0-9][0-9] 2>/dev/null | wc -l | tr -d ' ')" \
+            "$(find "$WORK"/[0-9][0-9][0-9] -type f 2>/dev/null | wc -l | tr -d ' ')" \
+            >> "$CGM_STAGE_EVIDENCE"
+    fi
+else
+    _gd_rm=0
+    for _d in $_GD_DIRS; do
+        if [ -e "$WORK/$_d" ]; then rm -rf "$WORK/$_d"; _gd_rm=$((_gd_rm + 1)); fi
+    done
+    if [ "$_gd_rm" != "0" ]; then
+        echo "   [GAMEDIRS] 开关缺省 ⇒ 已显式清理 $_gd_rm 个残留游戏目录"
+    else
+        echo "   [GAMEDIRS] 开关缺省，无残留（/sdcard/cubegm 下无 NNN/ 目录 = 场景 J 的预期状态）"
+    fi
+fi
+
 ls -la "$WORK"
