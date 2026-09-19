@@ -169,7 +169,7 @@ jobs:
           #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
           # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
           #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
-          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h qemu_i qemu_j qemu_k; do
+          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h qemu_i qemu_j qemu_k qemu_l; do
             for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
               [ -f "$f" ] || continue
               o="$(echo "$f" | sed s/_factory/_rebuild/)"
@@ -337,35 +337,26 @@ jobs:
             --ours report/qemu_j/coverage_rebuild.txt --label i_vs_j \
             --out report/qemu_j/i_vs_j.txt || true
           sed -n "1,26p" report/qemu_j/i_vs_j.txt 2>/dev/null || true
-      - name: 行为采集·场景 K（合成 NNN/ 游戏目录 + 占位游戏文件；与 J 严格单变量）
+      - name: 行为采集·场景 L（探针：直接读列表闸门 DAT_003af394；与 J 严格单变量）
         run: |
           cd 1to1
-          # 背景（第 49 轮）：场景 J 否证了 root.dat 的**内容**有影响；真因是 file_info_list
-          #   的另一条填充路径 dir_serial_list（readdir 扫目录，拷 d_name + 记 d_type）。
-          #   沙箱 /sdcard/cubegm 顶层只有 cores/，没有 000/002/004 三个游戏目录
-          #   ⇒ 列表为空 ⇒ mui_extract_basepath 取不到斜杠 ⇒ 空 basepath ⇒ /sdcard//.dat。
-          # 本场景按 cores/filelist.xml 的 135 个 name= 合成这 3 个目录 + 占位游戏文件
-          #   （只造名字，占位文件 = 22 B 空 ZIP）。其余与 J 完全一致 ⇒ J vs K 严格单变量。
-          export CGM_STAGE_EVIDENCE="report/qemu_k/stage_evidence.txt"
-          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 CGM_GAMEDIRS=1 \
-          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=K CGM_DBGUNZ=1 \
+          # 第 49 轮：场景 I/J/K 三个输入（root.dat 有无 / fileinfo.txt 内容 / NNN 游戏目录）
+          #   全部"零变化"，而 strace 显示**根本没有目录扫描**，且 .dat 路径恒为 /sdcard//.dat。
+          #   源码上唯一自洽的解释：所有列表循环的上界 `DAT_003af394` == 0 —— 它来自
+          #   mui_LoadConfig: get_value_from_items("GameList_count", ...)，缺字段则 0xb=11。
+          #   理论推不动了 ⇒ 上探针直接读（env 门控 CGM_DBGCFG=1，只在重建侧 stdout 打印）。
+          # 与场景 J 的唯一差别 = 该探针 ⇒ 严格单变量。
+          export CGM_STAGE_EVIDENCE="report/qemu_l/stage_evidence.txt"
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 \
+          CGM_DBGCFG=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=L CGM_DBGUNZ=1 \
             sh tools/ci_qemu_behav.sh \
-              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_k || true
-          echo "--- 场景 K：游戏目录注入证据 ---"
-          grep -a GAMEDIRS report/qemu_k/stage_evidence.txt 2>/dev/null | head -8 || echo "   （无）"
-          echo "--- 场景 K：★ .dat 失败行的**内容**（关键：/sdcard//.dat 应变成 /sdcard/NNN/NNN.dat）---"
-          for d in qemu_j qemu_k; do
-            echo "   [$d] 去重后的 .dat 路径："
-            grep -a "/.dat fail" report/$d/rundir_rebuild/stdout.txt 2>/dev/null | sort -u | head -6 | sed "s/^/      /" || true
-          done
-          echo "--- 场景 K：里程碑 / 覆盖率（对比 J）---"
-          sed -n "/ID     里程碑/,/MX/p" report/qemu_k/milestones.txt 2>/dev/null || true
-          grep -aE "已执行|覆盖函数|覆盖字节" report/qemu_k/coverage_rebuild.txt 2>/dev/null || true
-          echo "--- 场景 K vs J：新增执行的专有函数 ---"
-          python tools/exec_set_diff.py --factory report/qemu_j/coverage_rebuild.txt \
-            --ours report/qemu_k/coverage_rebuild.txt --label j_vs_k \
-            --out report/qemu_k/j_vs_k.txt || true
-          sed -n "1,28p" report/qemu_k/j_vs_k.txt 2>/dev/null || true
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_l || true
+          echo "--- 场景 L：★ 闸门值（决定后续一切）---"
+          grep -a "DBGCFG" report/qemu_l/rundir_rebuild/stdout.txt 2>/dev/null | head -8 || echo "   （无 DBGCFG 行 ⇒ 探针未生效，须查）"
+          echo "--- 场景 L：覆盖率（对比 J，应基本持平）---"
+          grep -aE "已执行|覆盖函数" report/qemu_l/coverage_rebuild.txt 2>/dev/null || true
+          echo "--- 场景 L：.dat 路径（应仍为 /sdcard//.dat）---"
+          grep -a "\.dat" report/qemu_l/rundir_rebuild/stdout.txt 2>/dev/null | sort -u | head -4 || true
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
@@ -382,4 +373,5 @@ jobs:
             1to1/report/qemu_i/
             1to1/report/qemu_j/
             1to1/report/qemu_k/
+            1to1/report/qemu_l/
           if-no-files-found: warn

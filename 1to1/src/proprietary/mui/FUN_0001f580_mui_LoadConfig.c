@@ -147,6 +147,17 @@ void mui_LoadConfig(void)
   else {
     __isoc99_sscanf(local_128,DAT_002dcf4c,&DAT_003af394);
   }
+  /* ★ 第 49 轮探针（`CGM_DBGCFG=1`，默认关）：**列表闸门**。
+   *   闸门链：`DAT_003af394` = 每屏列表项数（配置键 "GameList_count"，缺字段则 0xb=11）；
+   *   它同时是 `mui_do_file_list` / `dir_serial_list` / `mui_menu` / `mui_type` 里
+   *   **所有列表循环的上界**。若此处为 0 ⇒ `file_info_list` 与 root.dat 的 fileinfo
+   *   都不会被消费 ⇒ 缩略图路径退化成 `/sdcard//.dat`（实测 29 行）
+   *   ⇒ 这正是场景 I/J/K 三次输入全部"零变化"的机制解释。
+   *   ★ 只在重建侧 stdout 出现 ⇒ 必须 env 门控，且只在场景 L 启用（不污染 A/B/C 硬门禁）。 */
+  if (getenv("CGM_DBGCFG") != 0) {
+    RARCH_LOG("DBGCFG GameList_count=%d raw='%s' root_path='%s'\n",
+              (int)DAT_003af394, local_128, (char *)root_path);
+  }
   get_value_from_items("GameList_fontsize",local_128,configitems,uVar2);
   if (local_128[0] == '\0') {
     local_1a4 = 0x20;
