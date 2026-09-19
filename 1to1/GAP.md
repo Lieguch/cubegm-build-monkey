@@ -1792,3 +1792,50 @@ rkgame: pcm.c:3009: snd_pcm_avail: Assertion `pcm' failed.
 - 传给 native Windows 版 `zig.exe` 的路径必须 `cygpath -w`，否则报
   **`error: CacheCheckFailed`**（同样是误导性症状）
 - `build_libkms_stub.sh` / `build_libdrm_stub.sh` **必须给 outdir**，否则只打 usage 就退出 ⇒ 开关空转
+
+
+### 16.23 ★★★★★ 桩 `libasound.so.2`：rebuild 覆盖率 52 → 73（+40%），且**不再崩溃**（超时存活）
+
+**问题（实证）**
+```
+rkgame: pcm.c:3009: snd_pcm_avail: Assertion `pcm' failed.
+```
+`pcm.c` 是 **alsa-lib 的源文件** ⇒ 这句来自**真实 libasound**，断言 `pcm != NULL`：
+假硬件上 `snd_pcm_open()` 失败 ⇒ driver.so 未检查返回值就继续用 NULL 句柄 ⇒ `abort()`。
+**与 DRM 完全同型** —— driver.so 的每个硬件后端都必须"做成成功"。
+
+**做法**：`tools/guest_shim/alsa_stub.c` + `tools/build_libasound_stub.sh`，
+覆盖 `driver.so` 实测引用的**全部 20 个 `snd_*`**（符号集逐字取自其 65 个未定义符号）。
+
+| 设计点 | 取值 | 为什么 |
+|---|---|---|
+| 引用面普查 | **只有 driver.so 引用 `snd_*`**（工厂 rkgame / 重建 elf / icube 均 0）| 整体替换 `libasound.so.2` 不影响任何其它模块 |
+| `snd_pcm_hw_params_sizeof` | 返回 **256**（真实约 192~208）| 类型是 opaque ⇒ driver.so 必须运行时调它来分配缓冲；偏大 ⇒ 误差方向保守 |
+| `hw_params` 私有布局 | 只用缓冲**前 32 字节** | 无论 driver.so 分配多大都不越界 |
+| 入参为 NULL | **一律不解引用** | driver.so 正是在"没检查 open 失败"的路径上传 NULL；桩的职责是让流程走下去，不是复刻断言 |
+| 产物自证 | SONAME=`libasound.so.2`、**UND=0**、`e_flags=0x05000400`、**20/20 覆盖** | 零运行时依赖（自带 hidden memset）|
+
+**严格单变量实测**（同容器 / 同 sysroot=`/arm-root-device` / **同开关集 J**，唯一变量 = `CGM_ALSA_STUB`）
+
+| 组 | ALSA 桩 | factory | **rebuild** | 终止 f/r/c | M7 菜单存活 f/r/c |
+|---|---|---|---|---|---|
+| `dv_x` | 关 | 47/223 | **52/223** | 134 / **139**(SIGSEGV) / 134 | ✓ / **✗** / ✓ |
+| `dv_y` | **开** | 52/223 | **73/223 = 32.74%** | 139 / **124**(超时) / 139 | ✗ / **✓** / ✗ |
+| Δ | | +5 | **+21（+40%）** | 崩溃 → **存活** | ✗ → **✓** |
+
+- ★★ **rebuild：52 → 73 专有函数（+21），终止码 139(SIGSEGV) → 124(超时存活)**
+  ⇒ **不再崩溃，菜单活着跑满 30 s 超时**（124 是"活着"的判据，与场景 E/F 的 `exit=124` 同型）
+- ★ **设备真实 sysroot 口径下覆盖率新纪录（73/223 = 32.74%）**，且首次 **rebuild(73) > factory(52)**
+- ★ M6 两侧一致（`✓(包已打开(条目缺失))`）⇒ 桩**未破坏** UI 资源包路径
+
+**★ 必须同时记录的两件事（否则是自欺）**
+1. **factory 侧在 ALSA 桩下反而退步**（M7 ✓→✗、`134`→`139`）⇒ 桩对两侧影响**不对称**，
+   这是**新的分歧点**，下一轮必须诊断（怀疑 driver.so 的音频线程在工厂侧走了不同的同步路径；
+   driver.so 确实引用 `pthread_create/cond_signal/mutex_lock`）。
+2. **差分门禁仍 FAIL(2 项)** —— 两侧终止码不同（124 vs 139）。
+   "终止码不同"本身可能是"我们活着、工厂崩了"，**不等于我们错**；但必须看清是哪 2 项、失败方向是什么。
+
+**★ 本轮实验的设计缺陷（已修正，记账）**
+第一次跑 `dv_alsa` 时**漏了 `CGM_KEY2_SEED`** ⇒ M6 必然 ✗、与历史 52/47 不可比 —— 当时误判为"ALSA 桩帮倒忙"。
+补回**完整同一开关集**后才得到可归因的单变量结论。
+⇒ **纪律：任何"与历史数字对比"的实验，必须先逐字复刻历史那一组的完整开关集（含旁路注入），否则不是单变量。**

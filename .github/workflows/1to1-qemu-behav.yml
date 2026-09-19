@@ -8,7 +8,10 @@ name: 1to1-qemu-behav
 #   · 本 workflow 是「动态门禁」，需要 qemu + armhf sysroot + 运行期驱动，
 #     在把被测程序真正驱动起来之前它会**持续红**。
 #   把两者分开，才能保证「绿」始终等于「真的绿」——而不是靠 continue-on-error 掩盖。
-#   ★ 本 workflow 内**没有任何 continue-on-error**；INCONCLUSIVE(3) 同样判失败。
+#   ★ 纪律：**门禁步骤**一律不得带 `continue-on-error`（`1to1-verify` 有机械 lint 把关）；
+#     **观测步骤**（尚在建立基线、只为拿数据的场景）必须显式标注"观测非门禁"并写明
+#     "基线稳定后必须去掉 `|| true` 升级为硬门禁"，否则等于白测。
+#     INCONCLUSIVE(3) 在任何情况下都判失败。
 #
 # 环境选型依据（见 tools/ci_qemu_env.sh 顶部注释）：
 #   sysroot 必须是 Ubuntu 22.04 armhf —— 与 CI 工具链同版本 glibc(2.35)，
@@ -52,6 +55,22 @@ jobs:
 
       - name: 建立 qemu-user + armhf sysroot
         run: sudo -E sh 1to1/tools/ci_qemu_env.sh /arm-root
+
+      # ★★ 设备真实 sysroot（`/arm-root-device`，glibc 2.29 Buildroot）
+      #   为什么必须有它：`/arm-root`（Ubuntu 22.04，glibc 2.35）与设备**执行路径实质不同**
+      #   （实测：同一份 rebuilt.elf 换 sysroot 后到得了的里程碑完全不一样，见 GAP 16.21 F 节）。
+      #   ⇒ **交付判据必须用 device 口径**；jammy 只用于"与 CI 历史数字对齐"。
+      #   零成本：资产已在仓库里（`1to1/golden/device_rootfs_min/`，13 文件 / 3.82 MB），只需 cp。
+      - name: 建立**设备真实** sysroot /arm-root-device
+        run: |
+          sudo rm -rf /arm-root-device
+          sudo mkdir -p /arm-root-device
+          sudo cp -a 1to1/golden/device_rootfs_min/. /arm-root-device/
+          sudo rm -f /arm-root-device/MANIFEST.sha256
+          echo "文件数 = $(sudo find /arm-root-device -type f | wc -l)"
+          echo "ld.so  = $(sudo test -f /arm-root-device/lib/ld-linux-armhf.so.3 && echo OK || echo 缺)"
+          echo "libc   = $(sudo test -f /arm-root-device/lib/libc.so.6 && echo OK || echo 缺)"
+          strings /arm-root-device/lib/libc-2.29.so 2>/dev/null | grep -m1 'GNU C Library' || true
 
       - name: 准备真机同款工作目录 /sdcard/cubegm
         run: |
@@ -101,6 +120,46 @@ jobs:
             || echo "(两侧均无 driver.so 报错行 ⇒ 已成功加载)"
           echo '--- 场景 C 覆盖率 ---'
           sed -n '1,9p' report/qemu_c/coverage_rebuild.txt 2>/dev/null || true
+
+      # ★★★ 场景 C4：**设备真机 sysroot** + `libkms`/`libdrm`/`libasound` 三桩（观测非门禁）
+      #   为什么它是本项目最关键的一个场景：**这是设备上真实会走的路径**。
+      #     · 设备 rootfs 里**有** libkms.so.1 ⇒ `dlopen(driver.so)` 成功 ⇒ 进厂商 driver.so；
+      #       而 jammy sysroot 恰好缺 libkms ⇒ 历史 48/68/76 覆盖率全是"driver.so 没加载"才走到的，
+      #       **那不是真机路径**（见 GAP 16.21 H 节）。
+      #     · 沙箱无真 DRM/声卡 ⇒ 真 libdrm/libasound 的调用全失败 ⇒ 厂商代码拿 NULL 必崩
+      #       （实测 gdb：`driver.so+0x3ca8` 的 `gr_init`，`ldr r3,[r3]` 且 r0..r3=0）。
+      #     · 三桩把 driver.so 的图形+音频后端都"做成成功" ⇒ 执行流第一次能穿过 driver.so
+      #       进入 rkgame 菜单正文。证据链：GAP 16.22（libdrm 桩，M0–M7 全通）/ 16.23（libasound 桩）。
+      #   ★ 与场景 C 严格对照：唯一变量 = `SYSROOT` 取值 + 桩集合。
+      #   ★ 三桩都是**显式开关**且由本场景自己打开 ⇒ 不会泄漏到 A/B/C/D 等其它场景。
+      - name: 行为采集·场景 C4（设备真机 sysroot + 三桩；观测非门禁）
+        continue-on-error: true
+        run: |
+          cd 1to1
+          mkdir -p report/stublib report/drmstublib report/alsastublib
+          sh tools/build_libkms_stub.sh    report/stublib     || echo "[warn] libkms 桩构建失败"
+          sh tools/build_libdrm_stub.sh    report/drmstublib  || echo "[warn] libdrm 桩构建失败"
+          sh tools/build_libasound_stub.sh report/alsastublib || echo "[warn] libasound 桩构建失败"
+          echo '--- 三桩自证（SONAME 必须与 driver.so 的 DT_NEEDED 一致；UND 必须为 0）---'
+          for f in report/stublib/libkms.so.1 report/drmstublib/libdrm.so.2 report/alsastublib/libasound.so.2; do
+            [ -f "$f" ] || { echo "  ★ 缺 $f"; continue; }
+            printf '  %-20s SONAME=%-18s UND=%s\n' "$(basename "$f")" \
+              "$(arm-linux-gnueabihf-readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME.*\[\(.*\)\]/\1/p' | head -1)" \
+              "$(arm-linux-gnueabihf-readelf -sW "$f" 2>/dev/null | awk '$7=="UND" && $8!=""' | wc -l)"
+          done
+          SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_COV_TAG=C4 \
+            CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 \
+            sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_c4 || true
+          echo '--- 场景 C4：里程碑（M0–M7 是否全通）---'
+          cat report/qemu_c4/milestones.txt 2>/dev/null || true
+          echo '--- 场景 C4：两侧覆盖率 ---'
+          for s in factory rebuild; do printf '%-8s ' "$s"; grep -aE "已执行" report/qemu_c4/coverage_$s.txt 2>/dev/null | head -1; done
+          echo '--- 场景 C4：终止码（两侧应一致；不一致本身就是判决性证据）---'
+          for s in factory rebuild; do printf '%-8s ' "$s"; grep -ahoE "exit=[0-9]+" report/qemu_c4/coverage_$s.txt 2>/dev/null | head -1; done
+          echo '--- 场景 C4：崩溃/断言行（下一个瓶颈就在这几行里）---'
+          grep -ahE "Assertion|assert|真崩溃|abort" \
+            report/qemu_c4/rundir_*/stderr.txt report/qemu_c4/rundir_*/stdout.txt 2>/dev/null \
+            | sort -u | head -8 || true
 
       # ★★ 场景 D：判定「key2 的内容到底来自哪里」——这是 M6（UI 资源包打开 = 57% 重构量的入口）
       #   的唯一堵点。背景：崩溃现场实测 key2 = `00 00 00 00 00 7d 1e 47`
