@@ -96,12 +96,19 @@ ROOTDAT="$(dirname "$WORK")/root.dat"
 # ★ 先记"是否本来就有"，再删 —— 否则那句提示语永远打不出来（rm 在前，[ -e ] 恒假）。
 _rd_had=0; [ -e "$ROOTDAT" ] && _rd_had=1
 rm -f "$ROOTDAT"
-if [ "${CGM_ROOTDAT:-0}" = "1" ]; then
-    if [ ! -f "$GOLDEN/fileinfo" ]; then
-        echo "FATAL CGM_ROOTDAT=1 但 $GOLDEN/fileinfo 不存在"; exit 1
-    fi
-    python3 -c "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);z.write(sys.argv[2],'fileinfo.txt');z.close();print('   [ROOTDAT] built %s <- %s (as fileinfo.txt)'%(sys.argv[1],sys.argv[2]))" \
-        "$ROOTDAT" "$GOLDEN/fileinfo" || { echo "FATAL 合成 root.dat 失败"; exit 1; }
+if [ "${CGM_ROOTDAT:-0}" != "0" ]; then
+    case "$CGM_ROOTDAT" in
+        1) _rd_mode=fileinfo ;;   # 旧口径（顶层 fileinfo，已实测不成立，仅作对照）
+        2) _rd_mode=filelist ;;   # ★ 正确口径：cores/filelist.xml 的 name= 列表
+        *) echo "FATAL CGM_ROOTDAT 只支持 1(fileinfo) / 2(filelist)（收到 '$CGM_ROOTDAT'）"; exit 1 ;;
+    esac
+    # ★ 必须用**相对路径**：本机 Git Bash 的 `pwd` 给的是 `/d/...`，交给 Windows 版
+    #   python.exe 会被解释成 `D:\d\...`（实测报 "No such file"）。相对路径对
+    #   Linux(CI) 与 Windows(本地) 两侧都成立（都从仓库根调用）。
+    _TOOLS="$(dirname "$0")"
+    python3 "$_TOOLS/make_rootdat.py" --mode "$_rd_mode" \
+        --golden "$GOLDEN" --out "$ROOTDAT" \
+        || { echo "FATAL 合成 root.dat 失败（mode=$_rd_mode）"; exit 1; }
     if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
         mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
         printf 'ROOTDAT_BUILT file=%s size=%s\n' "$ROOTDAT" "$(wc -c < "$ROOTDAT" | tr -d ' ')" >> "$CGM_STAGE_EVIDENCE"

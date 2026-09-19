@@ -1529,3 +1529,68 @@ iVar2 = mui_do_file_list(iVar11, DAT_003af2ac);                /* ← 把 NULL �
 | 2 | 场景 E 开 `CGM_DBGUNZ=1`、F 没开 ⇒ E vs F 差异 **不可归因** | 跨场景对比时**探针集也是变量** | 给 F 补 `CGM_DBGUNZ=1` |
 | 3 | `cp` 出来的"改动前"备份，内容却等于"改动后"；幂等断言在自身刚改过的文件上误报"已存在" | **提权重试会让整条命令"从头再执行一遍"** ⇒ 副作用执行两次 | 补丁脚本一律写**幂等**；`cp`/`mv` 这类破坏性前置步骤尤其注意 |
 
+### 16.12 ★★★ 场景 I 首跑：补上 `root.dat` 使覆盖 **59 → 76**（历史最高），并暴露下一缺口
+
+| 指标 | E/F（此前最好） | G/H | **I（补 root.dat）** |
+|---|---|---|---|
+| 我们侧**专有函数**覆盖 | 68/223 = 30.49% | 59/223 = 26.46% | **76/223 = 34.08%** |
+| 我们侧覆盖函数（全 ELF） | 216/1661 | 189/1661 | **225/1661** |
+| 我们侧覆盖字节（.text） | 121,344 / 692,288 | 102,592 | 120,704 |
+| M7 菜单存活 | ✓ | ✗ | **✓ 恢复** |
+| 我们侧 exit | 124（活着） | 139（崩） | **124（活着）** |
+| 工厂侧专有函数覆盖 | 52/223 | — | 52/223 |
+
+**I 相对 G：新增 17 个 / 消失 0 个**；且 `exec_set_diff` 报 **"仅工厂执行 = 0 个"**
+⇒ **我们的执行集合已是工厂的超集**（这是目前最强的保真度信号）。
+
+新增的 17 个：输入链全套（`ReadUSBJoy` / `ReadJoystick` / `ReadJoystickProc` / `GetJoystickConfig` /
+`GetInputInfo` / `mui_ReadJoystick` / `mui_WaitNMI`）＋ 渲染链（`mui_outputxy_t` / `dispFlip` /
+`get_from_line`）＋ 7 个 mui 函数（`mui_DisplayGameSum` / `mui_DisplayLine_t` / `mui_DisplayThumbnail` /
+`mui_UnDispBlock` / `mui_Undisplay` / `mui_extract_basename` / `mui_extract_basepath`）。
+
+★ **新缺口（已定位到行）**：stdout 反复出现 `open /sdcard//.dat fail`。来源
+`src/proprietary/mui/FUN_00014f84_mui_DisplayThumbnail.c:40-42`：
+
+```c
+mui_extract_basepath(puVar4, &file_info_list + DAT_003af27c * 0x404, 0x80);
+mui_extract_basename(auStack_2d8, &file_info_list + DAT_003af27c * 0x404, 0x80);
+sprintf(acStack_258, "%s/%s/%s.dat", root_path, puVar4, puVar4);
+```
+
+`mui_extract_basepath` = 取 `strrchr(0x2f)` **之前**的部分；没有 `/` ⇒ **空串** ⇒ `/sdcard//.dat`。
+
+### 16.13 `fileinfo.txt` 的**真实格式**（真值源，逐条读出）
+
+`mui_do_file_list`（`FUN_000186a4`）的解析循环：
+
+| 环节 | 事实 |
+|---|---|
+| 分隔符 | `,`(0x2c) / `;`(0x3b) / `\n`(10) / `\r`(13) |
+| 每项处理 | `libiconv`(GB2312→utf-8) → `mui_extract_basepath` → **`strtol(local_8c, NULL, 10)`** |
+| ⇒ 约束 | 首段（目录名）必须是**十进制数字**，即每项形如 `NNN/<文件名>` |
+| 可得真值源 | `golden/sdcard_min/cores/filelist.xml` 的 `name="002/xxx.zip"` —— 正是该形态 |
+
+⇒ 场景 I 用的 `golden/fileinfo`（49 B = 25 个 `0`）**不成立**（无 `/` ⇒ basepath 空 ⇒ `/sdcard//.dat`）。
+新工具 `tools/make_rootdat.py --mode filelist` 从 `cores/filelist.xml` 提取 **135 个 `name=`**，
+首项 `002/Targa (Europe) (Proto).zip`、末项 `000/bayroute.zip`（含 `/` 且首段为数字 ✓）。
+
+### 16.14 新增场景 J + `CGM_ROOTDAT` 两口径
+
+| 取值 | 含义 |
+|---|---|
+| `CGM_ROOTDAT=1` | 旧口径：`fileinfo.txt` ← `golden/fileinfo`（**已实测不成立**，保留作对照） |
+| `CGM_ROOTDAT=2` | **真值源**：`fileinfo.txt` ← `cores/filelist.xml` 的 `name=` 列表（`,` 连接） |
+
+新场景 **J** = 场景 I 的 `CGM_ROOTDAT` 由 1 改 2，其余（`CGM_MENULOG_SCREEN=0` / 探针集 / 超时）完全一致
+⇒ **I vs J 严格单变量**，可直接归因到 `fileinfo.txt` 的内容。
+
+### 16.15 又一处仪器可移植性缺陷（已修）
+
+`_TOOLS="$(cd "$(dirname "$0")" && pwd)"` 在 Git Bash 下给出 `/d/...` 形式，交给 **Windows 版
+`python.exe`** 会被解释成 `D:\d\...` ⇒ `No such file or directory`（本地实测；CI 上是 Linux 不受影响）。
+⇒ 改用**相对路径** `_TOOLS="$(dirname "$0")"`；并加 `python3 → python` **解释器回退**
+（本机只有 `python`、CI 只有 `python3`），找不到两者则 `FATAL`（不让它静默不产出）。
+
+本地端到端干跑（走 stage 脚本本身）已全绿：`=1` → 129 B / 25 项；`=2` → 1156 B / **135 项**；
+`=7` → `FATAL` + `rc=1`；未设 → 无残留；与 `CGM_MENULOG_SCREEN=0` 组合时 `menu.log` 头 4 字节仍为 0。
+

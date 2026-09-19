@@ -169,7 +169,7 @@ jobs:
           #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
           # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
           #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
-          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h qemu_i; do
+          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h qemu_i qemu_j; do
             for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
               [ -f "$f" ] || continue
               o="$(echo "$f" | sed s/_factory/_rebuild/)"
@@ -307,6 +307,36 @@ jobs:
             --out report/qemu_i/g_vs_i.txt || true
           sed -n "1,24p" report/qemu_i/g_vs_i.txt 2>/dev/null || true
 
+      - name: 行为采集·场景 J（root.dat 的 fileinfo.txt 换真值源 = filelist.xml；与 I 严格单变量）
+        run: |
+          cd 1to1
+          # 背景（第 49 轮）：场景 I 补了 root.dat 后覆盖 59→76（首次超过 68）且 M7 复现，
+          #   但出现 `open /sdcard//.dat fail` 反复刷屏 ⇒ fileinfo.txt 的内容不对。
+          #   真值源（mui_do_file_list 的解析循环）：分隔符 = " , ; 换行 回车 "，
+          #   每项经 mui_extract_basepath 后**被 strtol(...,10) 当十进制数**
+          #   ⇒ 每项必须是 NNN/文件名 形态；场景 I 用的 golden/fileinfo 是单个 0，
+          #   没有斜杠 ⇒ basepath 为空 ⇒ /sdcard//.dat。
+          #   而 cores/filelist.xml 的 name="002/xxx.zip" 正是该形态 ⇒ 用它当 fileinfo.txt。
+          # 本场景只改 fileinfo.txt 的来源（CGM_ROOTDAT 1→2），其余与 I 完全一致。
+          export CGM_STAGE_EVIDENCE="report/qemu_j/stage_evidence.txt"
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=J CGM_DBGUNZ=1 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_j || true
+          echo "--- 场景 J：root.dat 注入证据（应含 mode=filelist）---"
+          grep -a ROOTDAT report/qemu_j/stage_evidence.txt 2>/dev/null | head -8 || echo "   （无）"
+          echo "--- 场景 J：/sdcard//.dat 失败行数（对比 I，期望显著下降）---"
+          for d in qemu_i qemu_j; do
+            printf "   %s : %s 行\n" "$d" "$(grep -ac "/.dat fail" report/$d/rundir_rebuild/stdout.txt 2>/dev/null)"
+          done
+          echo "--- 场景 J：里程碑 / 覆盖率（对比 I）---"
+          sed -n "/ID     里程碑/,/MX/p" report/qemu_j/milestones.txt 2>/dev/null || true
+          grep -aE "已执行|覆盖函数|覆盖字节" report/qemu_j/coverage_rebuild.txt 2>/dev/null || true
+          echo "--- 场景 J vs I：新增执行的专有函数 ---"
+          python tools/exec_set_diff.py --factory report/qemu_i/coverage_rebuild.txt \
+            --ours report/qemu_j/coverage_rebuild.txt --label i_vs_j \
+            --out report/qemu_j/i_vs_j.txt || true
+          sed -n "1,26p" report/qemu_j/i_vs_j.txt 2>/dev/null || true
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,4 +351,5 @@ jobs:
             1to1/report/qemu_g/
             1to1/report/qemu_h/
             1to1/report/qemu_i/
+            1to1/report/qemu_j/
           if-no-files-found: warn

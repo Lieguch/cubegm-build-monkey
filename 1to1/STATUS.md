@@ -2811,3 +2811,17 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
 
 **下一轮入口（已量化）**：场景 I 的结果 —— 补上 `root.dat` 后 ①`mui_do_file_list` 是否走通；
 ②覆盖率是否从 59 回涨并超过 68；③ M7 是否复现；④ 是否出现**屏幕切换**。
+
+### 第四十九轮·再补（场景 I 结果 + fileinfo 真值源）
+
+| 项 | 数值 |
+|---|---|
+| 行为场景 | **9（A/B/C/E/F/G/H/I/J）** |
+| 我们侧专有函数覆盖 | **76/223 = 34.08%（历史最高；此前最好 68）** |
+| 我们侧覆盖函数（全 ELF） | **225/1661（历史最高）** |
+| 我们侧 exit / M7 | **124（活着）/ ✓** |
+| `exec_set_diff` | **仅工厂执行 = 0 个 ⇒ 我们是工厂的超集** |
+| I 相对 G | **新增 17 / 消失 0** |
+| 新工具 | `tools/make_rootdat.py`（`--mode filelist` 取 `cores/filelist.xml` 的 135 个 `name=`） |
+| 下一入口 | 场景 J：`fileinfo.txt` 换真值源 ⇒ 看 `/sdcard//.dat fail` 是否消失、覆盖是否再涨 |
+
