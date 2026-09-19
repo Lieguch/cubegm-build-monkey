@@ -131,6 +131,18 @@ mk_wrap() {
     if [ "${CGM_LIBKMS_STUB:-0}" = "1" ] && [ -d "$ROOT/report/stublib" ]; then
         _LIBPATH="$QLIB:$ROOT/report/stublib"
     fi
+    # ★★ 场景 C2（`CGM_DRM_STUB=1`）：桩 `libdrm.so.2` —— 让厂商闭源 driver.so 的图形初始化能过。
+    #   为什么需要（2026-09-19 实测定案，见 GAP 16.22）：
+    #     设备真实 rootfs 有 `libkms.so.1` ⇒ `dlopen(driver.so)` 成功 ⇒ 进 `video_drivers_init()`
+    #     → `gr_init()`；而沙箱无真 DRM 设备 ⇒ 真 libdrm 的 ioctl 全失败 ⇒ `gr_init` 拿到 NULL
+    #     ⇒ 在 `driver.so + 0x3ca8` 的 `ldr r3,[r3]`（r3=0）**必崩**（gdb 实测）。
+    #     ⇒ 只要 driver.so 加载成功，沙箱必死在厂商代码里，走不到 rkgame 的任何菜单逻辑；
+    #       而"历史 48/68/76 覆盖率"恰恰是 driver.so **没加载**才走到的 —— 那不是真机路径。
+    #   ★ 桩必须排**最前**：否则真 libdrm 先生效，桩白造。
+    #   ★ 与 libkms 桩同样是**显式开关**：默认关，不启用时行为一字不变（防"环境改动泄漏到别的场景"）。
+    if [ "${CGM_DRM_STUB:-0}" = "1" ] && [ -f "$ROOT/report/drmstublib/libdrm.so.2" ]; then
+        _LIBPATH="$ROOT/report/drmstublib:$QLIB"
+    fi
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\

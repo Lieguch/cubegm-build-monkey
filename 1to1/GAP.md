@@ -1701,3 +1701,42 @@ else { __isoc99_sscanf(local_128,"%d",&DAT_003af394); }       /* 格式串 DAT_0
 | `root.dat` 的 `fileinfo.txt` 内容 | I vs J：逐项相同 | ❌ 零影响 |
 | `NNN/` 游戏目录是否存在 | K vs J：差集 0、无目录扫描 | ❌ 零影响（因闸门为 0，扫描根本没发生） |
 | 起始屏幕 = 0（`mui_menu`） | G vs E：打开 `mui_menu`+`mui_do_file_list` | ⚠️ 有效但会让 `dir_serial_list` 无法被调用（它只在 `mui_setting`） |
+
+
+### 16.21 ★★★★ sysroot 差异的**单一根因** = `libkms.so.1`（且历史覆盖率是"缺件口径"）
+
+**证据链**
+1. `tools/build_libkms_stub.sh` 头部自述：*"CI 沙箱里 `/arm-root` 有 libdrm.so.2 / libasound.so.2，
+   **唯独缺 libkms.so.1** ⇒ `dlopen(/sdcard/cubegm/driver.so)` 失败"*；
+   而 `tools/ci_qemu_env.sh` 的运行时元件校验清单（`ld-linux / libc / libm / libz / libstdc++ /
+   libgcc_s / libdl / libpthread / libdrm / libasound`）**恰好没有 `libkms`** —— 校验通过 ≠ 元件齐全。
+2. 本轮新建的 `golden/device_rootfs_min/`（设备真实 rootfs 最小集）**包含 `libkms.so.1`**
+   （`usr/lib/libkms.so.1.0.0`，实测设备 rootfs 里存在）。
+3. 三种口径的实测对照：
+
+| 口径 | `libkms.so.1` | `driver.so` | 深度 | 我们侧覆盖率 | 里程碑 |
+|---|---|---|---|---|---|
+| `/arm-root`（Ubuntu jammy） | **缺** | `dlopen` 失败 | 跳过 DRM | **48/223**(A) / **76/223**(J) | M5 ✓ |
+| **CI 场景 C**（jammy + 桩） | 有（桩） | 加载成功 | 进 DRM 后崩 | **6/223** | M3/M4 ✓ M5 ✗ |
+| **`/arm-root-device`**（设备真实） | **有（原生）** | 加载成功 | 进 DRM 后崩 | **6/223** | M3/M4 ✓ M5 ✗ |
+
+⇒ **设备 sysroot ≡ jammy+桩 ≡ CI 场景 C**：三者逐项一致（7/6/223、`exit=139`、同一崩溃点）。
+
+**结论（影响此前的全部结论）**
+- 历史所有「48/223、68/223、76/223」都是 **`driver.so` 根本没加载**这个缺件口径下的数字
+  ⇒ 它们不是"设备上会发生的事"，**不能当作交付判据**。
+- 设备真实路径是"**加载 `driver.so` → 走 DRM/KMS → 在 DRM 处止步**"。
+- 因此"提高覆盖率"的正确方向不是继续在 jammy 缺件口径下加场景，而是
+  **让 shim 把 `/dev/dri/card0` 的 DRM/KMS 交互仿真出来**，使执行流越过 DRM 到 `main_Menu`。
+
+**下一轮唯一入口（已定，可执行）**
+在 `tools/guest_shim/fake_mem.c` 里新增 **DRM/KMS 设备仿真**（env 门控开关，默认关、两侧共用）：
+- `open("/dev/dri/card0" | "/dev/dri/renderD128")` → 内存 fd（不落 `/dev/zero`）
+- 新增 `ioctl` 拦截（shim 目前**没有**导出 `ioctl`），应答 `DRM_IOCTL_VERSION` /
+  `DRM_IOCTL_GET_CAP` / `DRM_IOCTL_SET_CLIENT_CAP` / `DRM_IOCTL_MODE_GETRESOURCES` /
+  `DRM_IOCTL_MODE_CREATE_DUMB`（返回假 handle/stride/size）/ `DRM_IOCTL_MODE_MAP_DUMB`（返回假 offset）
+- `mmap` 该 offset → 匿名零页（复用 `fake_mem.c` 已有的 mmap 拦截路径）
+- 判据：设备 sysroot 下 `M4 DRM 显示` 不再是"打印失败即算到达"，而是**真的越过 DRM**
+  ⇒ `M5 main_Menu 入口 ✓`，覆盖率从 6/223 明显上升，且两侧仍同步。
+- 前置：`sh tools/build_libkms_stub.sh report/stublib`（**必须给 outdir 参数**，
+  否则脚本只打印 usage 就退出 ⇒ 开关空转，本轮就是这样白跑一次）。
