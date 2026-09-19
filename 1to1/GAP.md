@@ -1356,3 +1356,94 @@ CGM_INPUT_FILL=4096            # 循环填充到 4 KiB ⇒ 256 周期 ⇒ ~7.7 �
 1. 我们侧 stdout 是否出现**菜单动作**（不再是停在 4 行 `Opened!`）；
 2. 专有函数覆盖率是否**从 68/223 起涨**（尤其 `mui` 模块）；
 3. 里程碑是否出现 M7 之后的新阶段。
+
+## 十六、第 49 轮 ★★★ 根因定案：**起始屏幕由 `menu.log` 头 4 字节决定** —— E/F「活着但不推进」的真因
+
+### 16.1 现场三件套（互相印证）
+
+| # | 观测 | 数据 |
+|---|---|---|
+| 1 | 我们侧**活着**（超时被杀） | `exit=124`；工厂 `exit=139`（确定性控制组复现） |
+| 2 | 但覆盖率**恒定** | 专有函数 **68/223 = 30.49%**（字节 36,600/122,922 = 29.77%）；场景 E 与 F **完全相同** |
+| 3 | 到底在跑什么 | exec 尾部：`mui_SoundplayThread` / `AudioProcess` / `PlaySound` / `GetTicks` / `usleep`；strace：`read(3,buf,8) = 8` + `clock_nanosleep` 循环 |
+
+### 16.2 真因（源码级，单点）
+
+`main_Menu`（`src/proprietary/mui/FUN_0002ce6c_main_Menu.c`）：
+
+```c
+DAT_003af26c = (m_menulog_blob)._0_4_;      /* ★ 起始屏幕 = menu.log 头 4 字节 */
+uVar2 = (m_menulog_blob)._0_4_;
+do { switch(uVar2) {
+       case 0: mui_menu();     case 1: mui_type();   case 2: mui_recent();
+       case 3: mui_shoucang(); case 4: mui_search(); case 5: mui_setting();
+     } uVar2 = DAT_003af26c; } while(1);
+```
+
+`golden/sdcard_min/menu.log`（444 B）头 4 字节 = **`05 00 00 00` = 5** ⇒ 开机即进 `mui_setting()`；
+而 `mui_setting` 只有把 `DAT_003af26c` 改写成别的值才返回顶层 ⇒ **整轮运行都驻留在「设置页」**。
+
+**与覆盖率清单逐项吻合**：`mui_setting`(7096 B) **已执行 ✓**，而
+`mui_menu`(3084) / `mui_search`(5712) / `mui_recent`(4792) / `mui_type`(4740) / `mui_shoucang`(3888)
+**全部未执行**（五个屏幕函数合计 **26,216 B ≈ 21% 重构量**）。
+
+⇒ **这不是缺陷，是"停在设置页轮询"**。把 `main_Menu` 的 `switch` 找出来，比盲注入按键有效得多。
+
+### 16.3 输入注入**已端到端验证**，但注入的按键**语义无效**（假阴性）
+
+| 验证项 | 证据 |
+|---|---|
+| 事件被真读到 | strace：`read(3,0x40ffed0c,8) = 8` |
+| 只开 js0（掩码生效） | strace：`access("/dev/input/js1",R_OK) = -1 errno=2`（js2/js3 同） |
+| 填充生效 | shim：`js 事件流填充：16 B -> 4096 B（256 个周期）` |
+| 在线掩码 | shim：`js 在线掩码 = 0x1（CGM_INPUT_JS='0'）` |
+| 确实打开了设备 | shim：`io #16 open(js-inject) rc=3 /dev/input/js0`；stdout `... js0 Opened!` |
+
+**但**：注入的是 `number=0`，而 `joystick.zip/ui.cfg` 的扫描码矩阵（**真值源**）显示 **0 = SELECT**：
+
+| 按键号 | 0 | 1 | 2 | 4 | 8 | 16 | 17 | 18 |
+|---|---|---|---|---|---|---|---|---|
+| 动作 | SELECT | DOWN | UP | LEFT | START | RIGHT | A | B |
+
+SELECT 几乎不改变菜单状态 ⇒ **输入生效、语义无效**。这类"注入了却什么也没驱动"的假阴性，
+**只能靠"键位映射真值源"排除** —— 否则会误判成"注入设施没做好"而去乱改设施。
+
+### 16.4 本轮新查证的资源事实（全部带字节数）
+
+| 资源 | 大小 | 条目 / 结论 |
+|---|---|---|
+| `ui_cn.zip` | 4,951,281 B | `ui.cfg`(242) / `menu.raw` / `search.raw` / **`setting.raw`(2,857,048)** / `type.raw` / `game.raw` —— ★ **没有 `font.ttf`**（`font.ttf` 是顶层文件 1,840,376 B）⇒ 两侧那句 `find font.ttf in ui_cn.zip fail` 是**正常回退**，不是缺陷 |
+| `joystick.zip` | 332,110 B | `0000_0000`(107 B = 26 动作词表) / `joystick.raw` / `ui.cfg`(215 B = 2×27 扫描码矩阵) / 4 个 USB 手柄 profile |
+| `cores/filelist.xml` | 8,654 B | **真实游戏列表（非空）**，如 `002/Targa (Europe) (Proto).zip` → `libemu_snes9x.so` |
+| `cores/config.xml` | 3,822 B | 核心注册表（`.so` 本体不在沙箱 ⇒ 仍需 stub core，见 15.6） |
+| `font.ttf` | 1,840,376 B | 顶层真实字体（**不是缺失**） |
+| `menu.log` | 444 B | 头 u32 = 起始屏幕 = `5` |
+
+### 16.5 我们侧严格优于工厂的两处（运行期证据）
+
+| 侧 | stdout 关键行 |
+|---|---|
+| 工厂 | `find ui.cfg in /sdcard/cubegm//ui_cn.zip fail` ＋ `find setting.raw fail` ← **zip 里明明有这两项** |
+| 我们 | `DBGUNZ req=setting.raw size=2857048 sum=6830339 nz=65512 head=50 00 00 00 00 05 d0 02` ← 尺寸与 zip 元数据**逐字节一致** |
+
+⇒ 我们的 zip 查找 / 解压路径**正确**；工厂在沙箱里失败（控制组复现 `exit=139` ⇒ 环境归因，非我们的缺陷）。
+
+### 16.6 本轮新增两个场景（G / H）+ 修掉一处差分公平缺陷
+
+| 场景 | 唯一变量 | 与谁严格单变量 | 目的 |
+|---|---|---|---|
+| **G** | `CGM_MENULOG_SCREEN=0`（**只改 `menu.log` 头 4 字节**，其余 440 B 原厂原样） | vs **E**（探针集完全相同） | 归因「起始屏幕」⇒ 打开 `mui_menu` 分支 |
+| **H** | G ＋ `CGM_INPUT_HEX`（DOWN 按下/松开 ＋ A 按下/松开，32 B 周期）＋ `CGM_INPUT_FILL=4096` | vs **G** | 归因「输入」⇒ 驱动菜单交互 |
+
+实现：`tools/stage_sdcard_env.sh` 新增 `CGM_MENULOG_SCREEN=<0..5>`（**默认关**；两侧共用同一份；**宿主侧**铺环境，不需要 `-E` 转发）。
+本地干跑三情形已验证：未设 → 保持 `05 00 00 00`；设 0 → 头 4 字节变 0 且**其余 440 B 与原厂逐字节一致**；设 9 → `FATAL` 且 `rc=1`。
+
+★ **修正的缺陷（我自己引入）**：场景 E 开了 `CGM_DBGUNZ=1`、F 没开 ⇒ E vs F 的 stdout 差异里混进了
+**"探针行有无"**这个非行为变量，使一次注入副作用被误读成需要两轮排查。已给 F 补上 `CGM_DBGUNZ=1`。
+**教训**：跨场景对比的前提是「除目标变量外完全一致」——**探针集本身也是变量**。
+
+### 16.7 下一轮要看的三件事（按信息量排序）
+
+1. **G**：`mui_menu` / `mui_do_file_list` 是否被覆盖（破 5 个屏幕函数的第一道）；
+2. **H**：是否出现**屏幕切换**（`mui_type`/`mui_recent`/`mui_shoucang`/`mui_search` 任一）；
+3. **覆盖率是否从 68/223 起涨**（且**必须与 E 同口径**比较，勿拿波动当进度）。

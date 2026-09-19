@@ -169,7 +169,7 @@ jobs:
           #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
           # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
           #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
-          for sc in qemu qemu_b qemu_c qemu_e; do
+          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h; do
             for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
               [ -f "$f" ] || continue
               o="$(echo "$f" | sed s/_factory/_rebuild/)"
@@ -199,7 +199,7 @@ jobs:
           #   `ReadJoystick` 的 Delay 连发逻辑（0x27 次阈值）周期性产生按键 ⇒ 覆盖整个运行窗口。
           SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
           CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_IO_TRACE=1 CGM_COV_TAG=F \
-          CGM_INPUT_JS=0 CGM_INPUT_FILL=4096 \
+          CGM_INPUT_JS=0 CGM_INPUT_FILL=4096 CGM_DBGUNZ=1 \
           CGM_INPUT_HEX=00000000010001000000000000000100 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_f || true
@@ -215,6 +215,67 @@ jobs:
           wc -l report/qemu_f/rundir_factory/stdout.txt report/qemu_f/rundir_rebuild/stdout.txt 2>/dev/null || true
           sed -n "1,9p" report/qemu_f/coverage_rebuild.txt 2>/dev/null || true
 
+      - name: 行为采集·场景 G（起始屏幕注入 ⇒ 打开 mui_menu 分支；与 E 严格单变量）
+        run: |
+          cd 1to1
+          # 背景（第 49 轮）：main_Menu 的屏幕分派 = switch(menulog[0])，
+          #   0=mui_menu 1=mui_type 2=mui_recent 3=mui_shoucang 4=mui_search 5=mui_setting。
+          #   原厂 menu.log 头 4 字节 = 05 ⇒ 开机即停在「设置页」的 while(true) 循环里。
+          #   这解释了场景 E/F「活着(exit=124)但覆盖率恒为 68/223」：
+          #   mui_setting 已覆盖 ✓，而 mui_menu/mui_search/mui_recent/mui_type/mui_shoucang
+          #   五个屏幕函数（合计 26 KB）永远走不到。
+          # 本场景只改写 menu.log 头 4 字节（其余 440 B 原厂原样）+ 与 E 完全相同的探针集
+          #   ⇒ E vs G 可直接归因到「起始屏幕」这一个变量。
+          export CGM_STAGE_EVIDENCE="report/qemu_g/stage_evidence.txt"
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=25 CGM_MENULOG_SCREEN=0 \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=G \
+          CGM_TRACE_ADDRS="000119f4 000119e4 0001162c 00010ea0 000115ec 00011948 00011950" CGM_DBGUNZ=1 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_g || true
+          echo "--- 场景 G：menu.log 注入证据（应出现 6 次 = 3 侧 x 探针+采集）---"
+          cat report/qemu_g/stage_evidence.txt 2>/dev/null || echo "   （无证据文件 ⇒ 注入未生效，须查）"
+          echo "--- 场景 G：里程碑（对比 E：M7 之后是否新增动作）---"
+          sed -n "/ID     里程碑/,/M7/p" report/qemu_g/milestones.txt 2>/dev/null || true
+          echo "--- 场景 G：覆盖率 + 下一轮目标清单 ---"
+          sed -n "1,12p" report/qemu_g/coverage_rebuild.txt 2>/dev/null || true
+          echo "--- 场景 G：执行集合差集（工厂 vs 我们）---"
+          python tools/exec_set_diff.py --factory report/qemu_g/coverage_factory.txt \
+            --ours report/qemu_g/coverage_rebuild.txt --label qemu_g \
+            --out report/qemu_g/exec_set_diff.txt || true
+          sed -n "1,20p" report/qemu_g/exec_set_diff.txt 2>/dev/null || true
+
+      - name: 行为采集·场景 H（mui_menu + 方向/确认键注入；与 G 严格单变量）
+        run: |
+          cd 1to1
+          # 背景（第 49 轮）：场景 F 注入的是 button 0 = SELECT（见 joystick.zip/ui.cfg 的
+          #   扫描码矩阵：0=SELECT 1=DOWN 2=UP 4=LEFT 8=START 16=RIGHT 17=A 18=B），
+          #   而 SELECT 几乎不改变菜单状态 ⇒ 输入确被读到（strace: read(js0)=8）
+          #   却没被翻译成菜单动作。
+          # 本场景在「起始屏幕 = mui_menu」的前提下注入**方向键 + 确认键**：
+          #   32 字节周期 = DOWN 按下 / DOWN 松开 / A 按下 / A 松开
+          #   （js_event 小端：[time u32][value i16][type u8][number u8]）；
+          #   CGM_INPUT_FILL=4096 ⇒ 128 周期 = 512 事件（约 7.7 s 按键活动）。
+          # 与 G 的唯一差别 = 输入注入 ⇒ G vs H 可归因到「输入」这一个变量。
+          export CGM_STAGE_EVIDENCE="report/qemu_h/stage_evidence.txt"
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_MENULOG_SCREEN=0 \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=H CGM_DBGUNZ=1 \
+          CGM_INPUT_JS=0 CGM_INPUT_FILL=4096 \
+          CGM_INPUT_HEX=0000000001000101000000000000010100000000010001110000000000000111 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_h || true
+          echo "--- 场景 H：注入证据（menu.log + js）---"
+          cat report/qemu_h/stage_evidence.txt 2>/dev/null || true
+          grep -a "js-inject\|js 在线掩码\|js 事件流填充" report/qemu_h/rundir_rebuild/stderr.txt 2>/dev/null | head -4 || true
+          echo "--- 场景 H：里程碑 ---"
+          sed -n "/ID     里程碑/,/M7/p" report/qemu_h/milestones.txt 2>/dev/null || true
+          echo "--- 场景 H：覆盖率（对比 G）---"
+          sed -n "1,12p" report/qemu_h/coverage_rebuild.txt 2>/dev/null || true
+          echo "--- 场景 G vs H：新增执行的专有函数 ---"
+          python tools/exec_set_diff.py --factory report/qemu_g/coverage_rebuild.txt \
+            --ours report/qemu_h/coverage_rebuild.txt --label g_vs_h \
+            --out report/qemu_h/g_vs_h.txt || true
+          sed -n "1,20p" report/qemu_h/g_vs_h.txt 2>/dev/null || true
+
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
@@ -226,4 +287,6 @@ jobs:
             1to1/report/qemu_c/
             1to1/report/qemu_e/
             1to1/report/qemu_f/
+            1to1/report/qemu_g/
+            1to1/report/qemu_h/
           if-no-files-found: warn

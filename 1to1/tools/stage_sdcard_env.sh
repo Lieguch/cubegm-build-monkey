@@ -57,4 +57,29 @@ else
     echo "   [warn] 无 MANIFEST.sha256，未做环境完整性核验"
 fi
 
+# ★★ 场景 G/H：起始屏幕注入（严格单变量）
+#    `main_Menu` 的屏幕分派 = `switch (menulog[0])`：
+#      0=mui_menu  1=mui_type  2=mui_recent  3=mui_shoucang  4=mui_search  5=mui_setting
+#    原厂 golden/sdcard_min/menu.log 头 4 字节 = `05 00 00 00` ⇒ 一开机就停在「设置页」
+#    里 `while(true)` 循环 ⇒ 另外 5 个屏幕函数（合计 ~26 KB 的 mui 代码）永远走不到。
+#    ⇒ 本开关**只改写头 4 字节**，其余 440 字节保持原厂原样（这是 E vs G 可归因的前提）。
+#    ★ 默认关（不设 = 完全用原厂 menu.log）；两侧共用同一份 ⇒ 差分公平。
+#    ★ 不需要 -E 转发：本脚本在**宿主**侧铺环境，guest 不读这个变量。
+if [ -n "${CGM_MENULOG_SCREEN:-}" ]; then
+    case "$CGM_MENULOG_SCREEN" in
+        0|1|2|3|4|5) ;;
+        *) echo "FATAL CGM_MENULOG_SCREEN 必须是 0..5（收到 '$CGM_MENULOG_SCREEN'）"; exit 1 ;;
+    esac
+    if [ ! -f "$WORK/menu.log" ]; then
+        echo "FATAL CGM_MENULOG_SCREEN 已设但 $WORK/menu.log 不存在"; exit 1
+    fi
+    python3 -c "import struct,sys;p=sys.argv[1];v=int(sys.argv[2]);d=bytearray(open(p,'rb').read());o=struct.unpack_from('<I',d,0)[0];struct.pack_into('<I',d,0,v);open(p,'wb').write(bytes(d));print('   [MENULOG-INJECT] screen %d -> %d (%d bytes untouched)'%(o,v,len(d)-4))" \
+        "$WORK/menu.log" "$CGM_MENULOG_SCREEN" || { echo "FATAL menu.log 注入失败"; exit 1; }
+    if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
+        mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
+        printf 'MENULOG_INJECT screen=%s file=%s size=%s\n' \
+            "$CGM_MENULOG_SCREEN" "$WORK/menu.log" "$(wc -c < "$WORK/menu.log" | tr -d ' ')" >> "$CGM_STAGE_EVIDENCE"
+    fi
+fi
+
 ls -la "$WORK"
