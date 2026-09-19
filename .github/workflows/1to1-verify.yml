@@ -109,6 +109,21 @@ jobs:
           python tools/scan_implicit_decl.py --root . --zig "$ZIG" \
             --ledger tools/implicit_decl_pending.txt
 
+      - name: proto.h 声明 vs 上游真签名对拍★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-18 第 47 轮，与「缺原型」同族）：`src/compat/proto.h` 是我们**手写**的声明表，
+          #   上游真签名在 `src/upstream/**` 头文件里。两者不一致时**编译器不报错**，但 ABI 会错位。
+          #   实测：`extern float stbtt_ScaleForPixelHeight(float param_1, void *param_2);` —— 真签名是
+          #   `(const stbtt_fontinfo *info, float height)`，顺序与类型都是反的。
+          # 判据（对类型别名鲁棒）：**元数 + 每个参数的 float 位 + 返回值 float 性**（AAPCS 的浮点/整数
+          #   分类才是 ABI 关键；`gh_u1` vs `unsigned char` 这种别名差异不参与比较）。
+          # K&R 空参声明（`extern void f();`）不参与元数比较（C 里 = 参数不可知），由「调用点实参对拍」覆盖。
+          # 自证：构造性样本（float 掩码互换必须被判定不一致）+ 状态感知（已修的 4 个 stbtt 必须不被报出）。
+          # 台账棘轮：tools/proto_vs_upstream_pending.txt（当前 1 项 = UnzipItem，厂商扩展 API，见台账注释）。
+          python tools/scan_proto_vs_upstream.py --root . \
+            --ledger tools/proto_vs_upstream_pending.txt
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'

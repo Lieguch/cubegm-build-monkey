@@ -287,6 +287,27 @@ def main():
     print('-' * 68)
     print('  门禁结果: %s (%d 项失败)' % ('PASS' if not fails else 'FAIL', len(fails)))
 
+    # ---- ★★ 方向标注（第 48 轮补：文档此前已承诺、代码里却没有 ⇒ 让文档成真）----
+    # 动机（场景 E 实测）：参照侧 exit=139（SIGSEGV）、重建侧 exit=124（超时被杀 = 一直活着）。
+    #   此时 B1/B2 判 FAIL，但**失败方向是参照侧更差**；若只丢一行 `FAIL` 出去，
+    #   下一轮极易读成"重建侧退步了"——这是本项目已经犯过一次的误读（把环境属性当成实现退步）。
+    # ⇒ 统一口径：显式打印方向 + 给标注，并要求用控制组复核参照侧在该环境下的稳定性。
+    ae_, be_ = a.get('exit_code'), b.get('exit_code')
+    if fails and isinstance(ae_, int) and isinstance(be_, int) and ae_ != be_:
+        ref_bad = (ae_ not in (0,))          # 参照侧非正常退出
+        ours_ok = (be_ in (0, 124))          # 0 = 正常；124 = timeout 被杀 ⇒ 一直运行
+        if ref_bad and ours_ok:
+            _note_ours = '（超时被杀 ⇒ 一直运行）' if be_ == 124 else ''
+            print('  方向：**重建侧更健康**：参照侧 exit=%s 疑似异常终止，重建侧 exit=%s%s'
+                  % (ae_, be_, _note_ours))
+            print('  △ 疑似参照侧环境缺口 —— 本次 FAIL **不构成"重建侧缺陷"的证据**；'
+                  '须用控制组（同一份参考二进制）复核参照侧在该环境下的稳定性。')
+        elif not ref_bad and not ours_ok:
+            print('  方向：**重建侧更差**（参照侧 exit=%s 正常；重建侧 exit=%s 异常）'
+                  % (ae_, be_))
+            print('  ⇒ 这才是真信号：参照侧在同一环境下走得更远，优先查此处的实现差异。')
+
+
     if not same_ev and detail:
         print('\n--- 语义事件差异（factory → rebuild）---')
         lim = det_prefix if det_prefix is not None else len(ea)

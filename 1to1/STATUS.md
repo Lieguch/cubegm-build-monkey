@@ -2678,3 +2678,61 @@ CI 报 `CGM_DBGUNZ=1: command not found`，**真正的脚本没执行**（`repor
 ### 四、门禁与状态
 
 - `1to1-verify` 现 **13 道 ★**；本地 8 道全绿；链接 193/194、越界 0。
+
+### 第四十七轮·补 ★★ M7「菜单存活」首次达成
+
+| 指标 | 工厂 | 我们 | 控制组 |
+|---|---|---|---|
+| M7 菜单存活 | X | **v（首次）** | X |
+| 崩溃 / exit_code | SIGSEGV 139 | **0 次崩溃 / 124（存活至超时）** | 139 |
+| 专有函数覆盖 | 51/223 | **68/223** | 51/223 |
+| A/B/C 回归 | — | 48 / 48 / 6（无回归） | — |
+
+- 三条"活着而非自旋"的否定证据：stdout 23 行无重复、末行停在输入设备打开、
+  io 轨迹走到 `/dev/input/js0` + `/proc/bus/input/devices` + `joystick.zip`（等待输入是预期行为）。
+- 场景 E 现在的 B1/B2 失败**方向**是"参照侧崩、我们存活"（已让 `behav_diff.py` 自动标注）。
+- 新增执行覆盖：`ReadJoystick`/`ReadUSBJoy`/`GetInputInfo`/`mui_WaitNMI`/`dispFlip` 等 18 个。
+- 第 14 道 ★ 门禁：`proto.h` 声明 vs 上游真签名对拍（台账 1 项 = `UnzipItem` 厂商扩展）。
+
+## 第四十八轮（2026-09-19）：打开输入子系统（场景 F）+ 方向标注 + 一处误导性证据修正
+
+### 一、为什么这一轮攻输入
+
+第 47 轮拿到 M7（菜单存活）后，stdout 停在 `js0 Opened!`。查到最底：
+shim 把 `/dev/input/*` 重定向到 `/dev/zero` ⇒ `ReadUSBJoy` 的 `read(fd,buf,8)` 读回 8 个**零**字节
+⇒ `type=0`（既非 BUTTON(1) 也非 INIT(2)）⇒ 直接 `return` 旧值 ⇒ **菜单永远收不到输入**。
+代价：`mui` 模块（42 函数 / 70,396 B = **重构量 57%**）零覆盖。
+
+### 二、实现：shim 把 `/dev/input/jsN` 变成内存事件源
+
+| 项 | 内容 |
+|---|---|
+| 手段 | 命中 `/dev/input/js<N>` 且 `CGM_INPUT_HEX` 非空时，`memfd_create` 造内存 fd + 预置 `js_event` 字节流 + `lseek` 回 0 |
+| 关键取舍 | **不拦 `read`/`write`** ⇒ guest 读语义 100% 原生，也不牵扯 stdio 内部（已踩过 stdio 再入的坑） |
+| 顺带 | 接管 `access()`（guest 确实导入），把"设备节点是否存在"从宿主文件系统状态变为显式可控 |
+| 注入内容 | `0000000001000100`（value=1,type=1,number=0 ⇒ 按下 button 0）× 4；EOF 后返回旧值 ⇒ 等价"持续按住"，配合 Delay 连发（`0x27` 阈值）覆盖整个运行窗口 |
+| 公平性 | 两侧共用同一 shim + 同一脚本 ⇒ 差分公平；仅在 `CGM_INPUT_HEX` 非空时生效（默认关） |
+| 导出核对 | `access`/`open`/`open64`/`openat`/`fopen`/`fopen64`/`mmap`/`munmap` **均已导出**；`read` **不在表内** |
+
+### 三、场景 F（观测项，`|| true`）
+
+`SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1
+CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh ... report/qemu_f`
+
+制品路径已加 `1to1/report/qemu_f/`；`1to1-qemu-behav` 现 **5 个场景**（A/B/C/E/F）。
+
+### 四、附带修掉两处（仪器可信度）
+
+1. **`behav_diff.py` 新增方向标注**（文档此前已承诺、代码里却没有 ⇒ 本轮让文档成真）：
+   `方向：**重建侧更健康**：参照侧 exit=139 疑似异常终止，重建侧 exit=124（超时被杀 ⇒ 一直运行）`
+   + `△ 疑似参照侧环境缺口`。已用**真实制品**验证：E 出标注、A（PASS）不出。
+2. **shim 的 key2 探针文案过时**：原写 `（注入值应为 50 4b 05 06 50 4b 06 06）`，那是第 42 轮
+   **修正前**的错误值；正确注入值是 `PK\x05\x06 PK\x07\x08`。该文案会让读者把
+   "现值 = 注入值"误读成"未生效"⇒ **误导性证据**（比没有证据更糟），已改为动态口径。
+
+### 五、校验
+
+- 本地：`behav_diff.py` 语法 + 用真实制品跑通（E=FAIL+方向标注 / A=PASS 无标注）；
+  shim 重编成功（919,016 B，新文案在场、旧文案清除）；`ci_qemu_behav.sh` 语法 OK；
+  workflow YAML 有效（13 步 / 5 场景）；续行链 lint **0 问题**。
+- 门禁回归：见本轮末尾。

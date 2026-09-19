@@ -181,6 +181,36 @@ jobs:
             done
           done
 
+      - name: 行为采集·场景 F（输入事件注入 ⇒ 驱动菜单交互路径，观测非门禁）
+        run: |
+          cd 1to1
+          # 背景（第 48 轮）：`/dev/input/*` 被 shim 重定向到 /dev/zero ⇒ `ReadUSBJoy` 的
+          #   `read(fd,buf,8)` 读回 8 个零字节 ⇒ type=0（既非 BUTTON(1) 也非 INIT(2)）
+          #   ⇒ 直接 return 旧值 ⇒ 菜单永远收不到输入：场景 E 虽已"活着"（M7 达成），
+          #   但停在 js0 Opened!；`mui` 模块（42 函数 / 70396 B = 重构量 57%）零覆盖。
+          # 本场景由 shim 把 `/dev/input/jsN` 变成内存事件源（memfd + 预置 js_event）；
+          #   两侧共用同一 shim 与同一注入脚本 ⇒ 差分公平。
+          # 事件（8 字节 struct js_event，小端：[time u32][value i16][type u8][number u8]）：
+          #   `0000000001000100` = value=1,type=1(BUTTON),number=0 ⇒ 按下（button 0），重复 4 次；
+          #   读尽后 EOF 使 `ReadUSBJoy` 返回旧值 ⇒ 等价"持续按住"，配合
+          #   `ReadJoystick` 的 Delay 连发逻辑（0x27 次阈值）周期性产生按键 ⇒ 覆盖整个运行窗口。
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_IO_TRACE=1 CGM_COV_TAG=F \
+          CGM_INPUT_HEX=0000000001000100000000000100010000000000010001000000000001000100 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_f || true
+          echo "--- 场景 F：注入启用证据（两侧应各有一行）---"
+          for l in factory rebuild; do
+            echo "   [$l]"
+            grep -a "js 输入注入已启用" report/qemu_f/rundir_$l/stderr.txt | head -2 || true
+            grep -a "js-inject" report/qemu_f/rundir_$l/stderr.txt | head -4 || true
+          done
+          echo "--- 场景 F：里程碑（对比 E 场景是否新增动作）---"
+          sed -n "/ID     里程碑/,/M7/p" report/qemu_f/milestones.txt 2>/dev/null || true
+          echo "--- 场景 F：stdout 行数 + 专有函数覆盖率 ---"
+          wc -l report/qemu_f/rundir_factory/stdout.txt report/qemu_f/rundir_rebuild/stdout.txt 2>/dev/null || true
+          sed -n "1,9p" report/qemu_f/coverage_rebuild.txt 2>/dev/null || true
+
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
@@ -191,4 +221,5 @@ jobs:
             1to1/report/qemu_b/
             1to1/report/qemu_c/
             1to1/report/qemu_e/
+            1to1/report/qemu_f/
           if-no-files-found: warn

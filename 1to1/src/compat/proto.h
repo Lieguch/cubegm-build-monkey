@@ -229,7 +229,12 @@ extern gh_u4 VRT_Load(char *param_1,int param_2);
 extern gh_u4 Pico_Load(char *param_1,int param_2);
 extern gh_u4 retro_save_state(char *param_1);
 extern gh_u4 retro_load_state(char *param_1);
-extern void MP3FreeDecoder(); /* K&R: 参数不可信/不可解析 */
+/* 2026-09-18（第 47 轮）K&R -> 真原型：上游 src/upstream/mp3/pub/mp3dec.h 为
+ *   `void MP3FreeDecoder(HMP3Decoder hMP3Decoder)`。空参声明在 C 里是"参数不可知"，
+ *   会让"参数个数/类型"完全不受检查；本函数无 float 参数，故今天侥幸无害，
+ *   但同类漏声明一旦涉及 float 就是 ABI 级错位（见同轮 stbtt_* 那组）。
+ * 门禁：tools/scan_proto_vs_upstream.py（对拍上游真签名）。 */
+extern void MP3FreeDecoder(void *hMP3Decoder);
 extern int MP3FindSyncWord(gh_byte *param_1,int param_2);
 extern void MP3GetLastFrameInfo(int param_1,gh_u4 *param_2);
 extern gh_u4 MP3GetNextFrameInfo(int param_1,gh_u4 *param_2,gh_u4 param_3); /* param_2 透传 MP3GetLastFrameInfo(gh_u4*) */

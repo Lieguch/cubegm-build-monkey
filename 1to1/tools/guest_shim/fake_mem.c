@@ -113,6 +113,111 @@ static int raw_openat(const char *path, int flags, mode_t mode)
 {
     return (int)syscall(SYS_openat, AT_FDCWD, path, flags, mode);
 }
+/* ---- ①b 场景 F：`/dev/input/jsN` 输入事件注入（`CGM_INPUT_HEX`）------------------
+ * 动机（2026-09-19 第 48 轮）：
+ *   shim 把 `/dev/input/*` 统一重定向到 `/dev/zero` ⇒ `ReadUSBJoy()` 的
+ *   `read(fd,buf,8)` 读回 8 个**零**字节 ⇒ `type=0`（既非 JS_EVENT_BUTTON(1)
+ *   也非 JS_EVENT_INIT(2)）⇒ 函数直接 `return` 旧值 ⇒ **菜单永远收不到输入**。
+ *   实测后果：场景 E 我们虽已"活着"（M7 首次达成），但 stdout 停在
+ *   `... js0 Opened!` 之后再无动作；`mui` 模块（42 函数 / 70396 B = 重构量 57%）
+ *   **一次都没被驱动过** ⇒ 观测窗口卡在这里。
+ *
+ * 做法（最小侵入，刻意不碰 read/write）：
+ *   只改 `open` 这一条路径 —— 命中 `/dev/input/js<N>` 且启用注入时，
+ *   不再重定向到 `/dev/zero`，而是造一个**内存 fd**（`memfd_create`），
+ *   预置事件字节流后 `lseek` 回 0 再返回。
+ *   ⇒ guest 侧读语义 100% 原生（读到 EOF 返回 0），**不需要拦 read**，
+ *     也不会像拦 read 那样牵扯 stdio 内部（本项目已踩过 stdio 再入的坑）。
+ *
+ * 事件格式（`struct js_event`，8 字节，小端）：
+ *   [0..3] time(u32)   [4..5] value(s16)   [6] type(u8)   [7] number(u8)
+ *   type: 1 = JS_EVENT_BUTTON, 2 = JS_EVENT_INIT
+ *   例 —— 点按 button 0 一次（按下 + 松开）：
+ *     `0000000001000100` = value=1,type=1,number=0  ⇒ 按下
+ *     `0000000000000100` = value=0,type=1,number=0  ⇒ 松开
+ *
+ * 纪律：
+ *   · 只在 `CGM_INPUT_HEX` 非空时生效（**默认关**）—— 与其它探针同规矩；
+ *     探针只出现在一侧就会污染行为门禁（本项目实测过一次）。
+ *   · 两侧共用同一份 shim ⇒ 差分公平。
+ *   · `access()` 一并接管（guest 确实导入了它）—— 否则"真实文件系统里
+ *     `/dev/input/jsN` 是否存在"会成为流程走不走到 open 的隐藏变量。 */
+static int g_inject_on;
+static unsigned char g_ev[512];
+static int g_ev_len;
+
+static int is_js_path(const char *p)
+{
+    if (p == NULL) {
+        return 0;
+    }
+    if (strncmp(p, "/dev/input/js", 13) != 0) {
+        return 0;
+    }
+    return (p[13] >= '0' && p[13] <= '9' && p[14] == '\0');
+}
+
+static int make_input_fd(void)
+{
+    int fd = -1;
+#ifdef SYS_memfd_create
+    fd = (int)syscall(SYS_memfd_create, "cgi_js", 0u);
+#endif
+    if (fd < 0) {
+        fd = raw_openat("/tmp/.cgi_js_events", O_RDWR | O_CREAT | O_TRUNC, 0600);
+    }
+    if (fd < 0) {
+        return -1;
+    }
+    if (g_ev_len > 0) {
+        const unsigned char *p = g_ev;
+        int left = g_ev_len;
+        while (left > 0) {
+            ssize_t w = write(fd, p, (size_t)left);
+            if (w <= 0) {
+                break;
+            }
+            p += (int)w;
+            left -= (int)w;
+        }
+        (void)lseek(fd, 0, SEEK_SET);
+    }
+    return fd;
+}
+
+static void parse_input_hex(const char *h)
+{
+    unsigned v = 0;
+    int have = 0;
+    if (h == NULL) {
+        return;
+    }
+    for (; *h != '\0' && g_ev_len < (int)sizeof(g_ev); h++) {
+        int c = (int)(unsigned char)*h;
+        int d;
+        if (c >= '0' && c <= '9') {
+            d = c - '0';
+        } else if (c >= 'a' && c <= 'f') {
+            d = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'F') {
+            d = c - 'A' + 10;
+        } else {
+            continue;
+        }
+        v = (v << 4) | (unsigned)d;
+        if (++have == 2) {
+            g_ev[g_ev_len++] = (unsigned char)v;
+            v = 0;
+            have = 0;
+        }
+    }
+    if (g_ev_len >= 8) {
+        g_inject_on = 1;
+    } else {
+        g_ev_len = 0;
+    }
+}
+
 
 /* ---- ②c 场景 E：`.zip` 打开瞬间**重新断言** key2 ---------------------------------
  * 动机（单变量定位"写入者"）：
@@ -196,6 +301,12 @@ static int open_impl(const char *path, int flags, va_list ap)
         mode = (mode_t)va_arg(ap, int);
     }
     key2_hook_try(path);
+    /* ★ 场景 F：js 设备改为"事件源 fd"，绕开 /dev/zero 重定向 */
+    if (g_inject_on && is_js_path(path)) {
+        int jrc = make_input_fd();
+        io_trace("open(js-inject)", path, jrc);
+        return jrc;
+    }
     tgt = redirect_dev(path);
     {
         int rc = raw_openat(tgt != NULL ? tgt : path, flags, mode);
@@ -223,6 +334,24 @@ int open64(const char *path, int flags, ...)
     va_end(ap);
     return rc;
 }
+
+/* ---- ③b `access` 接管（仅 js 设备）----------------------------------------------
+ * guest 的 `.dynsym` 里**确实导入了 `access`**（GLIBC_2.4）⇒ 可拦。
+ * 目的：把"`/dev/input/jsN` 是否存在"从**宿主文件系统状态**变成**显式可控**——
+ *   否则 access 失败会直接 return（连 open 都走不到），而它在 CI runner 上是否
+ *   存在属于环境细节，不该参与判定（本项目铁律：沙箱输入必须显式可控）。 */
+int access(const char *path, int mode)
+{
+    if (g_inject_on && is_js_path(path)) {
+        return 0;
+    }
+#ifdef SYS_access
+    return (int)syscall(SYS_access, path, mode);
+#else
+    return (int)syscall(SYS_faccessat, AT_FDCWD, path, mode, 0);
+#endif
+}
+
 
 /* ---- ②e `fopen`/`fopen64` 拦截（本轮补的关键缺口）--------------------------------
  * 实测事实：`rkgame` 的动态导入**同时含 `open` 与 `fopen`**，而 zip 读法（反编译里的
@@ -625,8 +754,16 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
         /* CGM_KEY2_PROBE=1：不依赖注入，直接观察崩溃现场的 key2（判定"谁在写 key2"）。 */
         if (g_key2_seeded || getenv("CGM_KEY2_PROBE") != NULL) {
             volatile unsigned char *k2p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
+            /* ★ 2026-09-19 文案修正：原写"（注入值应为 50 4b 05 06 50 4b 06 06）"，
+             *   那是第 42 轮**修正前**的错误注入值（PK\x06\x06）。
+             *   正确注入值是 `PK\x05\x06 PK\x07\x08`
+             *   （对应上游 Wischik 的两个签名常量）。
+             *   危害：探针文案与实际注入值不符 ⇒ 现场读到 "50 4b 05 06 50 4b 07 08" 时，
+             *   读者会以为"注入没生效/被覆写"，而实际是**完全一致 ⇒ 未被覆写**。
+             *   这就是一条**误导性证据** —— 比没有证据更糟，故必须改。 */
             note("[shim] key2 @0x3E190C 现值 = %02x %02x %02x %02x %02x %02x %02x %02x"
-                 "（注入值应为 50 4b 05 06 50 4b 06 06）\n",
+                 "（已 seed 时期望注入值 = PK\x05\x06 PK\x07\x08 ="
+                 " 50 4b 05 06 50 4b 07 08；未 seed 时 key2 在 BSS，期望全 0）\n",
                  (unsigned)k2p[0], (unsigned)k2p[1], (unsigned)k2p[2], (unsigned)k2p[3],
                  (unsigned)k2p[4], (unsigned)k2p[5], (unsigned)k2p[6], (unsigned)k2p[7]);
         }
@@ -933,6 +1070,12 @@ __attribute__((constructor)) static void shim_poison_stack(void)
         }
     }
     shim_resolve_fopen();
+    /* ★ 场景 F：解析输入事件注入脚本（默认关） */
+    parse_input_hex(getenv("CGM_INPUT_HEX"));
+    if (g_inject_on) {
+        note("[shim] js 输入注入已启用：%d 字节事件流（%d 个 js_event）\n",
+             g_ev_len, g_ev_len / 8);
+    }
     g_io_trace = (getenv("CGM_IO_TRACE") != NULL
                   && getenv("CGM_IO_TRACE")[0] != '\0'
                   && getenv("CGM_IO_TRACE")[0] != '0');

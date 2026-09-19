@@ -1,0 +1,9 @@
+# ★ UnzipItem：**厂商扩展过 API，上游 unzip.h 不是真值**。
+#   上游只有 3/4 参重载 `UnzipItem(HZIP,int,HANDLE|TCHAR*|void*,unsigned)`；
+#   而工厂二进制与其全部调用点都是 **5 参** `(hz,idx,dst,len,flags)`
+#   （上一轮已机器码核实：flags==3 == ZIP_MEMORY，工厂的 len 被忽略、
+#   以 16384 循环推进 dst）。⇒ 我们的 5 参声明是**忠实**的，此条为**已知且正确**，
+#   保留在台账里只为让门禁不再重复报出。
+# 「proto.h 声明 vs 上游真签名」不一致台账（棘轮）。格式: <函数名>
+# 逐项按上游头文件改正（顺序/类型/个数），改好一项**删一行**。
+UnzipItem
