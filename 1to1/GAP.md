@@ -1932,3 +1932,53 @@ marks["M7"] = bool(marks["M5"]) and ex is not None and ex < 128
 
 **★ 另一处已修的登记缺陷**：workflow 的 `upload-artifact` paths 漏了 `qemu_c4/` / `qemu_c5/`
 ⇒ 判决性场景跑完了却**拿不到 rundir 产物**（首跑只能靠 CI 日志里 echo 出来的摘要）。已补登记。
+
+### 16.25 ★★★★★ 定位 rebuild「跑满超时」的真相 + 两侧第一个分歧点（精确到行）
+
+**观测方法**：CI artifact（`run 35447258006`）+ CNB 同口径复跑 ⇒ 分析 `rundir_*/stdout.txt` 的**唯一行**结构。
+（只比"最长公共前缀"看不见这类信息 —— 这是"执行集合差集"之外的第三种观测粒度。）
+
+**① rebuild 的 1871 行 = 一个忙循环**
+
+| 出现次数 | 行 |
+|---|---|
+| **1816** | `gr_blit: source has wrong format` |
+| 29 | `open /sdcard//.dat fail` |
+| 其余 25 行 | 各 1 次（初始化 / 内存 / 驱动 / ROM 打印） |
+
+⇒ **`exit=124`（超时存活）不是"闲着"，而是 driver.so 的 `gr_blit` 因"source 格式错误"反复失败 ⇒ 忙循环 30 s。**
+⇒ 归属已证：`gr_blit` 与 `Unknown format` 两句**只存在于 `driver.so`**（@0x69d8 / @0x6ac0），rkgame 里没有。
+
+**② 两侧第一个分歧点 = 第 25 行**
+
+唯一行清单**前 24 行完全相同**（含 `video_driver_setting 0 1 1` / `open drm!` / `Unknown format 875713089`）：
+
+| 行 | factory | rebuild |
+|---|---|---|
+| 25 | `find ui.cfg in /sdcard/cubegm//ui_cn.zip fail` | *(无 —— **找到了** ui.cfg)* |
+| 26 | `find font.ttf in … fail` | `find font.ttf in … fail` |
+| 27+ | `find menu.raw fail` / `find /sdcard/root.dat fail!` ⇒ 崩 | **`gr_blit` ×1816** + `open /sdcard//.dat fail` ×29 |
+
+- ★ **`Unknown format 875713089`(=0x34325241=AR24) 是两侧共有的**（driver.so 在 M4 的一次性警告）⇒ **不是分歧点**
+- 真分歧仍是 `ui.cfg` 查找（GAP 583–605 已定案：我们正确、工厂失败）
+- ⇒ rebuild 因拿到 ui.cfg 而**第一次走到菜单渲染**（`gr_blit`），工厂**从未走到**
+
+**③ 下一瓶颈（明确、可执行）**
+
+`gr_blit` 是 driver.so **内部**调用的（两个 rkgame 都不含该字符串）；
+rkgame 的入口是 `video_driver_disp_frame` —— 通过 `dlsym` 取到后存入 BSS 全局：
+```c
+/* src/proprietary/hw/FUN_0000d678_InitDisplay.c:42 */
+video_driver_frame = dlsym(handle,"video_driver_disp_frame");
+/* 调用点 src/proprietary/hw/FUN_0000d8e4_dispFlip.c:43 */
+gh_u4 ret = (*video_driver_frame)(param_1,param_2,param_3,param_4);
+```
+⇒ **下一步 = 对比 `dispFlip` 的 4 个实参**（尤其"帧数据指针 + 格式"那两个）与工厂在同一位置的传参。
+
+**★ 我在本轮犯的一个仪器错误（记账，必须写）**
+
+用正则 `[A-Za-z_][A-Za-z0-9_]{3,60}` 扫"两个 rkgame 里出现了哪些 driver.so 导出符号"，
+得出"factory 多一个 `frame`、rebuilt 缺失" —— **假阳性**：`frame` 来自 factory 的
+`-fomit-frame-pointer` 编译标志串（前后是 `-`，被分词切开）。
+⇒ **教训：把"字符串包含"当"API 引用"必须精确分词（要求前后为非标识符字符），否则编译标志/注释串会污染结论。**
+⇒ 用精确分词复核后：**两侧对 driver.so 的 API 字符串集完全一致（14 个）**，无保真度差异。
