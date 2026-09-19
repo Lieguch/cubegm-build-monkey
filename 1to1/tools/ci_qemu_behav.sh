@@ -143,6 +143,17 @@ mk_wrap() {
     if [ "${CGM_DRM_STUB:-0}" = "1" ] && [ -f "$ROOT/report/drmstublib/libdrm.so.2" ]; then
         _LIBPATH="$ROOT/report/drmstublib:$QLIB"
     fi
+    # ★★ 场景 C3（`CGM_ALSA_STUB=1`）：桩 `libasound.so.2` —— 让 driver.so 的**音频**初始化能过。
+    #   为什么需要（2026-09-19 实测定案，见 GAP 16.23）：
+    #     桩 libdrm 打通图形后两侧都止于 `pcm.c:3009: snd_pcm_avail: Assertion `pcm' failed.`
+    #     （该行来自**真实 alsa-lib**）⇒ 假硬件上 `snd_pcm_open()` 失败、driver.so 未检查返回值
+    #     就直接用 NULL 句柄 ⇒ abort()。与 DRM 完全同型：driver.so 的每个硬件后端都要"做成成功"。
+    #   ★ 全仓普查：**只有 driver.so 引用 `snd_*`**（工厂 rkgame / 重建 elf / icube 均 0）
+    #     ⇒ 整体替换 libasound.so.2 不影响任何其它模块。
+    #   ★ 同样是**显式开关**且排在最前：默认关，不启用时行为一字不变（防"环境改动泄漏到别的场景"）。
+    if [ "${CGM_ALSA_STUB:-0}" = "1" ] && [ -f "$ROOT/report/alsastublib/libasound.so.2" ]; then
+        _LIBPATH="$ROOT/report/alsastublib:$_LIBPATH"
+    fi
     cat > "$1" <<EOF
 #!/bin/sh
 exec qemu-arm-static -L $SYSROOT -cpu cortex-a7 ${2:-} \\
