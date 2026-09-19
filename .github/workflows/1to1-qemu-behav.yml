@@ -155,11 +155,37 @@ jobs:
           echo '--- 场景 C4：两侧覆盖率 ---'
           for s in factory rebuild; do printf '%-8s ' "$s"; grep -aE "已执行" report/qemu_c4/coverage_$s.txt 2>/dev/null | head -1; done
           echo '--- 场景 C4：终止码（两侧应一致；不一致本身就是判决性证据）---'
-          for s in factory rebuild; do printf '%-8s ' "$s"; grep -ahoE "exit=[0-9]+" report/qemu_c4/coverage_$s.txt 2>/dev/null | head -1; done
+          for s in factory rebuild control; do printf '%-8s ' "$s"; grep -ahoE "exit=[0-9]+" report/qemu_c4/milestones.txt 2>/dev/null | head -1; done
           echo '--- 场景 C4：崩溃/断言行（下一个瓶颈就在这几行里）---'
           grep -ahE "Assertion|assert|真崩溃|abort" \
             report/qemu_c4/rundir_*/stderr.txt report/qemu_c4/rundir_*/stdout.txt 2>/dev/null \
             | sort -u | head -8 || true
+
+      # ★★★ 场景 C5：C4 + **完整 J 口径旁路注入** ⇒ 与本地 CNB 的 `dv_y` **逐字同口径**。
+      #   为什么必须有它（2026-09-19 实测教训）：
+      #     C4 不含 `CGM_KEY2_SEED` ⇒ `ui_cn.zip` 打不开 ⇒ M6 必然 ✗（实测 CI/C4 = M6✗, 覆盖率 50/48）
+      #     ⇒ 它只能测"桩链本身通不通"，**测不到"桩把执行流推到了多深"**。
+      #   ★ 它要验证的结论：设备真机路径 + 三桩 + J 口径下
+      #     **rebuild 覆盖率 = 73/223（52→73，+40%），终止码 124（超时存活）而非 139（崩）**。
+      #   ★ 该比值已在本地 CNB 容器（Debian 13）测出；本场景负责给出**跨平台可复现**的外部证据。
+      - name: 行为采集·场景 C5（C4 + J 口径旁路注入；与本地 dv_y 同口径；观测非门禁）
+        continue-on-error: true
+        run: |
+          cd 1to1
+          SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_COV_TAG=C5 \
+            CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 \
+            CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 \
+            sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_c5 || true
+          echo '--- 场景 C5：里程碑（rebuild 应 M6 ✓ / M7 ✓）---'
+          cat report/qemu_c5/milestones.txt 2>/dev/null || true
+          echo '--- 场景 C5：两侧覆盖率（★ 期望 rebuild = 73/223 = 32.74%，本地已测）---'
+          for s in factory rebuild control; do printf '%-8s ' "$s"; grep -aE "已执行" report/qemu_c5/coverage_$s.txt 2>/dev/null | head -1; done
+          echo '--- 场景 C5：stdout 行数（rebuild 应远超 factory ⇒ 菜单真在跑，不是"没崩但没干活"）---'
+          for s in factory rebuild control; do printf '%-8s ' "$s"; wc -l < report/qemu_c5/rundir_$s/stdout.txt 2>/dev/null || echo '(无)'; done
+          echo '--- 场景 C5：终止码（★ rebuild 期望 124=超时存活；factory 139=崩）---'
+          grep -ahoE "exit=[0-9]+" report/qemu_c5/milestones.txt 2>/dev/null | sort | uniq -c || true
+          echo '--- 场景 C5：差分方向（工具应自判"哪一侧更健康"）---'
+          grep -aE "门禁结果|方向|疑似" report/qemu_c5/behav_diff.txt 2>/dev/null | head -4 || true
 
       # ★★ 场景 D：判定「key2 的内容到底来自哪里」——这是 M6（UI 资源包打开 = 57% 重构量的入口）
       #   的唯一堵点。背景：崩溃现场实测 key2 = `00 00 00 00 00 7d 1e 47`

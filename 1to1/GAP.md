@@ -1839,3 +1839,26 @@ rkgame: pcm.c:3009: snd_pcm_avail: Assertion `pcm' failed.
 第一次跑 `dv_alsa` 时**漏了 `CGM_KEY2_SEED`** ⇒ M6 必然 ✗、与历史 52/47 不可比 —— 当时误判为"ALSA 桩帮倒忙"。
 补回**完整同一开关集**后才得到可归因的单变量结论。
 ⇒ **纪律：任何"与历史数字对比"的实验，必须先逐字复刻历史那一组的完整开关集（含旁路注入），否则不是单变量。**
+
+---
+
+**★ CI 侧交叉验证（`f2bed039`，20 steps 全 ✓；job `105906364634`）**
+
+| 口径 | sysroot | 桩 | 旁路注入 | factory | rebuild | M6/M7 | 终止 |
+|---|---|---|---|---|---|---|---|
+| CI 场景 C（既存） | jammy | libkms | — | 7 | 6 | ✗/✗ | 139 |
+| CNB `dv_alsa`（**漏 KEY2**） | device | 三桩 | — | 50 | 48 | ✗/✗ | 139 |
+| **CI 场景 C4**（本轮新增） | **device** | 三桩 | — | **50** | **48** | ✗/✗ | 139 两侧一致 |
+| CNB `dv_y` | device | 三桩 | **J 口径** | 52 | **73** | ✓/✓ | 124(f) / 139(f) |
+| **CI 场景 C5**（本轮新增） | device | 三桩 | J 口径 | 待首跑验证 | 待首跑验证 | — | — |
+
+- ★★ **CI/C4 与 CNB `dv_alsa` 逐位一致（50/48、M6 ✗、exit=139）** ⇒ 差分结论**跨平台可复现**
+  （Ubuntu runner + `arm-linux-gnueabihf-gcc` vs Debian 13 容器 + zig）
+- ★ 三桩在 CI 侧同样自证通过（`SONAME` 正确、`UND=0`），且**换了编译器**（gcc 而非 zig）
+  ⇒ 桩的**编译器无关性**得到独立验证
+- ★ CI 侧设备 sysroot 建立成功：`文件数=25`、`ld.so OK`、`libc OK`、`GNU C Library (Buildroot) 2.29`
+- ★ 场景 C5（与本地 `dv_y` **逐字同口径**）的职责 = 给出 **73/223 的跨平台可复现证据**
+
+**★ 本轮实验设计缺陷之二（已修，记账）**
+- C4 最初**漏了 `CGM_KEY2_SEED`** ⇒ `ui_cn.zip` 打不开 ⇒ M6 必然 ✗、**测不到"桩把执行流推了多深"**；
+- C4 的"终止码"输出为空 —— `grep exit=` 打到了不含该字段的 `coverage_*.txt`（应打 `milestones.txt`）。
