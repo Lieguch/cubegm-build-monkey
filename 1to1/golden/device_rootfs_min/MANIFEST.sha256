@@ -1,0 +1,17 @@
+d280ba39e7dc48ce019ae0403dfef9ec391d71b45aa9439f09aa1aada07bd511  lib/ld-2.29.so
+d68be39e6e75f124beca8f798556dbaec2697a6755b58df9bdbe816266538944  lib/libc-2.29.so
+1183a77f5192f356925b6e30b6dd982b5770e4e334cf54ee63b1332ef31513ce  lib/libm-2.29.so
+4b2d389bd0db02f57f96be2a41dc190283fdd30edf459c2d89e53f29888c23b9  lib/libdl-2.29.so
+f4e4f7fbdf9a9e0be642d0ded34b5d1763026a2b050f36c4a6f2b6c659abe9fe  lib/libpthread-2.29.so
+83723e081a580f8167e810b6364a8c8e5749ff27a1f39ae86534d83bdd7d4ccc  lib/librt-2.29.so
+6d312a967316ff3868f2d69c325d79cbd30aa75edebe0ff978415be75754a250  lib/libgcc_s.so.1
+413ea7d1709a107ee0c51a4b79f77ce0bbc0efa7cc87f52f31f5fec81842eec9  usr/lib/libstdc++.so.6.0.22
+62735ccd1994c4cedefa8e6d1bceb58e8ec0330e464e6473dff0f61b8116e7c5  usr/lib/libasound.so.2.0.0
+42574fc656e4b8e234533465e244e16b3115d8a0b344e8469738747eb55a742b  usr/lib/libdrm.so.2.4.0
+c16634cd8a4db1623c49ae319f6874a89794b42955b99cf043f6a3ff0efcdbc7  usr/lib/libdrm_rockchip.so.1.0.0
+8f582aae3d9facea9f7e9a52fb514dbfc31feb3f323c6850fbeb8ce1cf6abc62  usr/lib/libkms.so.1.0.0
+49677ff79e22f1c4be061ddea407c0876d5ec442917a57096809b9366fd47eb1  usr/lib/libz.so.1.2.11
+# 设备精确 sysroot 最小集（源：org.bin 的 squashfs rootfs 分区）
+# 设备真实 glibc = 2.29 (Buildroot)；busybox v1.27.2；libstdc++ 6.0.22
+# libz 1.2.11；libdrm 2.4.0 + libdrm_rockchip.so.1；libasound 2.0.0；libkms 1.0.0
+# 生成工具: tools/make_device_sysroot.py（--src 指向本机解包归档/rootfs解包）

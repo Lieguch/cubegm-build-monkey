@@ -1662,3 +1662,42 @@ pcVar4 = strcpy(&file_info_list + iVar3, pdVar8->d_name);          /* 直接拷�
 | 否证 | 1 | `root.dat` 的内容零影响（I ≡ J） |
 | 修的缺陷 | 6 | 见上表（短 sha 静默空集 / 探针集不一致 / 重试双执行 / 路径形式 / 语法 / 残留） |
 | 技能铁律 | 129 → 136 | 新增 134/135/136/137 |
+
+### 16.19 ★★★ 闸门定案：`DAT_003af394`（每屏列表项数）—— 场景 I/J/K 三次「零变化」的统一解释
+
+**证据链（逐条可复核）**
+
+| # | 证据 | 来源 |
+|---|---|---|
+| 1 | 场景 K 注入生效（`GAMEDIRS_BUILT dirs=3 files=135` × 6），但 `.dat` 仍 `/sdcard//.dat`、覆盖仍 76/223、**K vs J 差集 = 0（双向）** | `qemu_art73/qemu_k/*` |
+| 2 | **strace 里没有任何目录扫描**（无 `opendir`/`getdents`），只有文件 open | `probe_stderr_rebuild_strace.txt` |
+| 3 | `dir_serial_list`（唯一的 readdir 填充者）**只被 `mui_setting` 调用**（`callers=1`）；而 G/H/I/J/K 起始屏幕都是 0（`mui_menu`）⇒ **扫描从未发生** | `grep dir_serial_list` |
+| 4 | 所有列表循环的统一上界 = `DAT_003af394`，只在 `mui_LoadConfig` 赋值 | 见下 |
+
+```c
+get_value_from_items("GameList_count",local_128,configitems,uVar2);
+if (local_128[0] == ' ') { DAT_003af394 = 0xb; }             /* 缺字段 ⇒ 默认 11 */
+else { __isoc99_sscanf(local_128,"%d",&DAT_003af394); }       /* 格式串 DAT_002dcf4c = "%d" */
+```
+
+| 5 | `golden/ui_cn.zip/ui.cfg`（242 B）只有 `[Setting]` / `Recover*` ⇒ **`GameList_count` 缺字段** | `unzip -l` + 全文 |
+| 6 | **场景 J 已证 `fileinfo.txt` 内容零影响** ⇒ 解析循环体被跳过 ⇒ 只可能是 `DAT_003af394 == 0` | 场景 J |
+
+⇒ **`DAT_003af394 == 0` 是 I/J/K 全部「零变化」的统一机制**：它是 `mui_do_file_list` / `dir_serial_list` /
+`mui_menu` / `mui_type` / `DisplayPage_list` 里**每一个**列表循环的上界；为 0 时 `file_info_list`
+与 root.dat 的 `fileinfo.txt` 都不会被消费 ⇒ 缩略图路径退化成 `/sdcard//.dat`（实测 29 行）。
+
+**理论到此无法再推 ⇒ 上探针**（本项目纪律：推不动就上仪器）：
+新增 `CGM_DBGCFG=1`（env 门控、只在重建侧 stdout、只在场景 L 启用），
+在 `mui_LoadConfig` 的 `GameList_count` 之后打印 `DAT_003af394` / `local_128` / `root_path`。
+
+**场景增删**：新增 **L**（= J + 探针，严格单变量）；**删除 K 步骤**（结论已定案，保留每轮白烧 ~3 min CI）。
+
+### 16.20 ★ 本轮被「排除」的输入（负面清单，避免以后重复试）
+
+| 已排除的输入 | 证据 | 结论 |
+|---|---|---|
+| `root.dat` 是否存在 | I vs G：59 → 76（+17） | ✅ **有效**（唯一有效的） |
+| `root.dat` 的 `fileinfo.txt` 内容 | I vs J：逐项相同 | ❌ 零影响 |
+| `NNN/` 游戏目录是否存在 | K vs J：差集 0、无目录扫描 | ❌ 零影响（因闸门为 0，扫描根本没发生） |
+| 起始屏幕 = 0（`mui_menu`） | G vs E：打开 `mui_menu`+`mui_do_file_list` | ⚠️ 有效但会让 `dir_serial_list` 无法被调用（它只在 `mui_setting`） |

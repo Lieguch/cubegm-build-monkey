@@ -2843,3 +2843,14 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
 | 新设施 | `CGM_GAMEDIRS=1`（合成 `000/002/004` + 135 占位游戏文件） |
 | 新工具 | `tools/make_gamedirs.py`（含 readdir 自证） |
 | 判据 | **看日志路径内容**（`/sdcard//.dat` → `/sdcard/NNN/NNN.dat`），不只看覆盖率 |
+
+### 第四十九轮·L（闸门探针）
+
+| 项 | 内容 |
+|---|---|
+| 新探针 | `CGM_DBGCFG=1` —— 打印 `DAT_003af394` / `local_128` / `root_path`（env 门控、只在重建侧）|
+| 新场景 | **L**（= J + 探针，严格单变量）|
+| 删除 | 场景 K 步骤（结论已定案，省 ~3 min/轮）|
+| 闸门候选 | `DAT_003af394`（配置键 `GameList_count`；缺字段默认 11，sscanf 失败则保持 0）|
+| 已排除输入 | `fileinfo.txt` 内容（I≡J）、`NNN/` 游戏目录（K≡J）|
+| 唯一有效输入 | `root.dat` 的**存在**（I：59→76）|

@@ -171,4 +171,43 @@ else
     fi
 fi
 
+# ★★★ 场景 M/N/O：给 `ui_cn.zip` 的 `ui.cfg` 补 `GameList_count`（列表闸门 `DAT_003af394` 的来源）
+#    依据：`mui_LoadConfig` 用 `get_value_from_items("GameList_count", ...)` 取该值
+#      （configitems ← ui_cn.zip 的 ui.cfg）；而 golden 的 ui.cfg（242 B）只有 [Setting]/Recover*。
+#      `DAT_003af394` 是**所有列表循环的统一上界**（mui_do_file_list:68 / dir_serial_list:82 /
+#      mui_menu / mui_type / DisplayPage_list）；为 0 时 file_info_list（readdir 填充）与
+#      root.dat 的 fileinfo（文本解析填充）**两条路径都不被消费** ⇒ `/sdcard//.dat`（实测 29 行）。
+#    ★ 不需要"缺省显式清理"：ui_cn.zip 每次 stage 都从 golden 重新拷贝 ⇒ 天然无残留。
+if [ "${CGM_UICFG:-0}" = "1" ]; then
+    _TOOLS_U="$(dirname "$0")"
+    _PY_U="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+    if [ -z "$_PY_U" ]; then echo "FATAL 找不到 python3/python，无法补 ui.cfg"; exit 1; fi
+    "$_PY_U" "$_TOOLS_U/patch_uicfg.py" --zip "$WORK/ui_cn.zip" \
+        || { echo "FATAL 补 ui.cfg 失败"; exit 1; }
+    if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
+        mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
+        printf 'UICFG_PATCHED zip=%s size=%s\n' "$WORK/ui_cn.zip" "$(wc -c < "$WORK/ui_cn.zip" | tr -d ' ')" >> "$CGM_STAGE_EVIDENCE"
+    fi
+fi
+# ★★★ 场景 P：合成 `cubegm/allfiles.lst`（游戏索引，独立逆向资料的确切格式）
+#    外部依据（github.com/LiamJ74/R36S-V2.6_Wiki，同族固件独立逆向 Wiki）：
+#      · 位置 SD 卡 `cubegm/allfiles.lst`；格式（逐字）
+#        `Platform/filename.ext|Display Name|UPPERCASE NAME|Chinese Name|Abbreviated`
+#      · 运行时 `rkgame` 启动时 **读列表文件**："loads ... game lists from allfiles.lst / filelist.csv"
+#      · 菜单看不到游戏的官方解释：**"allfiles.lst is out of sync with actual ROM files"**
+#    本机铁证：`cores/filelist.xml` 的 `name="002/xxx.zip"` ⇒ Platform 段取 `NNN`（本机是数字目录）。
+#    ★ 与 golden 无冲突：生成在 $WORK 内（= /sdcard/cubegm/），stage 每次重建 ⇒ 天然无残留。
+if [ "${CGM_ALLFILES:-0}" = "1" ]; then
+    _TOOLS_A="$(dirname "$0")"
+    _PY_A="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+    if [ -z "$_PY_A" ]; then echo "FATAL 找不到 python3/python，无法合成 allfiles.lst"; exit 1; fi
+    "$_PY_A" "$_TOOLS_A/make_allfiles.py" --golden "$GOLDEN" --work "$WORK" \
+        || { echo "FATAL 合成 allfiles.lst 失败"; exit 1; }
+    if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
+        mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
+        printf 'ALLFILES_BUILT file=%s size=%s lines=%s\n' "$WORK/allfiles.lst" \
+            "$(wc -c < "$WORK/allfiles.lst" | tr -d ' ')" \
+            "$(wc -l < "$WORK/allfiles.lst" | tr -d ' ')" >> "$CGM_STAGE_EVIDENCE"
+    fi
+fi
 ls -la "$WORK"

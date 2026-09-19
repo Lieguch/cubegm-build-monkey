@@ -27,11 +27,21 @@ if [ -z "${ZIG_GLOBAL_CACHE_DIR:-}" ]; then
     export ZIG_GLOBAL_CACHE_DIR
 fi
 
+# ★★ 目标 glibc 版本必须钉死 —— 这不是优化，是"能不能在设备上跑"的前提。
+#   实测（2026-09-19）：不钉版本时 zig 用 arm-linux-gnueabihf 的默认 glibc，产物要求
+#   **GLIBC_2.34**；而设备真实 glibc 是 **2.29**（org.bin 的 rootfs 里是
+#   `GNU C Library (Buildroot) stable release version 2.29`，实测）
+#   ⇒ 不钉版本的话，shim 在设备上**根本加载不了**，我们永远做不了"贴近设备"的差分，
+#     更不可能把它带上真机（而 shim 是差分环境的组成部分，不能比被测对象更苛刻）。
+#   钉 2.29 后产物只要求 ≤2.29：CI 的 jammy(2.35) 与设备(2.29) 上**都**能加载。
+#   `CGM_SHIM_GLIBC` 可覆盖（例如做"设备向下兼容"实验时钉 2.7）。
+SHIM_GLIBC="${CGM_SHIM_GLIBC:-2.29}"
 # zig 用 -target；GCC 用 -march（见技能库第 68 条：换工具链前必须对齐 flags）
 case "$CC" in
-  *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
+  *zig*) ARCH="-target arm-linux-gnueabihf.${SHIM_GLIBC} -mfloat-abi=hard -mfpu=neon" ;;
   *)     ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon" ;;
 esac
+echo "  [shim] CC=$CC  目标 glibc=${SHIM_GLIBC}"
 
 mkdir -p "$(dirname "$OUT")"
 # shellcheck disable=SC2086
