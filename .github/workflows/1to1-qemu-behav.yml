@@ -169,7 +169,7 @@ jobs:
           #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
           # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
           #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
-          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h; do
+          for sc in qemu qemu_b qemu_c qemu_e qemu_f qemu_g qemu_h qemu_i; do
             for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
               [ -f "$f" ] || continue
               o="$(echo "$f" | sed s/_factory/_rebuild/)"
@@ -276,6 +276,37 @@ jobs:
             --out report/qemu_h/g_vs_h.txt || true
           sed -n "1,20p" report/qemu_h/g_vs_h.txt 2>/dev/null || true
 
+      - name: 行为采集·场景 I（补 /sdcard/root.dat（ZIP/fileinfo.txt）⇒ 解 mui_do_file_list 的 NULL 崩溃；与 G 严格单变量）
+        run: |
+          cd 1to1
+          # 背景（第 49 轮）：场景 G 首次打开 mui_menu + mui_do_file_list，但仍 exit=139。
+          #   崩溃现场：fopen(/sdcard/root.dat)=-1 后 pc=mui_do_file_list+0xf0 的 ldrb r0,[r0]，r0=0。
+          #   工厂反编译 00_rkgame_ALL.c:19285 = mui_do_file_list(iVar11, DAT_003af2ac)，
+          #   而 DAT_003af2ac 在 root.dat 失败分支保持 NULL（两侧逐行同构）
+          #   ⇒ 这是**环境缺口**（沙箱缺 /sdcard/root.dat），不是实现缺陷。
+          # 本场景由 stage_sdcard_env.sh 合成该 ZIP（内容 = golden/sdcard_min/fileinfo 49 B），
+          #   其余与场景 G 完全一致 ⇒ G vs I 可归因到「root.dat 有无」这一个变量。
+          export CGM_STAGE_EVIDENCE="report/qemu_i/stage_evidence.txt"
+          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=1 \
+          CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 CGM_COV_TAG=I CGM_DBGUNZ=1 \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_i || true
+          echo "--- 场景 I：menu.log + root.dat 注入证据（各应 6 次）---"
+          cat report/qemu_i/stage_evidence.txt 2>/dev/null || echo "   （无证据文件 ⇒ 注入未生效，须查）"
+          echo "--- 场景 I：里程碑 / 覆盖率（对比 G）---"
+          sed -n "/ID     里程碑/,/M7/p" report/qemu_i/milestones.txt 2>/dev/null || true
+          sed -n "1,12p" report/qemu_i/coverage_rebuild.txt 2>/dev/null || true
+          echo "--- 场景 I：崩溃现场（两侧）---"
+          for l in factory rebuild; do
+            echo "   [$l]"
+            grep -a "真崩溃\|故障指令\|pc(出错点)\|crash_fault" report/qemu_i/rundir_$l/stderr.txt report/qemu_i/behav_$l.json 2>/dev/null | head -6 || true
+          done
+          echo "--- 场景 I vs G：新增执行的专有函数 ---"
+          python tools/exec_set_diff.py --factory report/qemu_g/coverage_rebuild.txt \
+            --ours report/qemu_i/coverage_rebuild.txt --label g_vs_i \
+            --out report/qemu_i/g_vs_i.txt || true
+          sed -n "1,24p" report/qemu_i/g_vs_i.txt 2>/dev/null || true
+
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,4 +320,5 @@ jobs:
             1to1/report/qemu_f/
             1to1/report/qemu_g/
             1to1/report/qemu_h/
+            1to1/report/qemu_i/
           if-no-files-found: warn

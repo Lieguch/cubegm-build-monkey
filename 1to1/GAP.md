@@ -1447,3 +1447,85 @@ SELECT 几乎不改变菜单状态 ⇒ **输入生效、语义无效**。这类"
 1. **G**：`mui_menu` / `mui_do_file_list` 是否被覆盖（破 5 个屏幕函数的第一道）；
 2. **H**：是否出现**屏幕切换**（`mui_type`/`mui_recent`/`mui_shoucang`/`mui_search` 任一）；
 3. **覆盖率是否从 68/223 起涨**（且**必须与 E 同口径**比较，勿拿波动当进度）。
+
+### 16.8 ★★★ 场景 G/H 首跑结果（回答 16.7 的三问）
+
+| 16.7 的问题 | 结果 |
+|---|---|
+| G：`mui_menu` / `mui_do_file_list` 是否被覆盖 | **✓ 是，两者首次执行**（见下表"新增 2"） |
+| H：是否出现屏幕切换 | ✗ 否（H 相对 G 新增 **0** 个） |
+| 覆盖率是否起涨 | ✗ **68 → 59**（净 -9）—— 原因见下，**不是退步** |
+
+| 场景 | 专有函数覆盖 | M7 菜单存活 | 我们侧 exit | 门禁 |
+|---|---|---|---|---|
+| E / F | 68/223 = 30.49% | ✓ | **124**（活着） | FAIL(2) ＋ 方向=重建侧更健康 |
+| **G** | **59/223 = 26.46%** | ✗ | **139（崩）** | FAIL(1) |
+| **H** | 59/223 = 26.46% | ✗ | 139（崩） | FAIL(1) |
+| 工厂（G/H） | — | ✗ | 139（崩） | — |
+
+`menu.log` 注入证据：`MENULOG_INJECT screen=0 file=/sdcard/cubegm/menu.log size=444` × **6 次**（3 侧 × 探针+采集）✓
+
+**E → G 的集合变化（精确）**
+
+- 新增 2：`mui_do_file_list`、`mui_menu`
+- 消失 11：`mui_setting`、`ReadUSBJoy`、`ReadJoystick`、`ReadJoystickProc`、`GetJoystickConfig`、
+  `GetInputInfo`、`mui_ReadJoystick`、`mui_WaitNMI`、`mui_outputxy_t`、`dispFlip`、`get_from_line`
+
+⇒ **68→59 是"换了一条更早就崩的路径"，不是退步**：`mui_setting` 那条链里含**整个摇杆轮询循环**
+（`ReadJoystickProc→ReadJoystick→ReadUSBJoy` ＋ `mui_ReadJoystick` ＋ `mui_WaitNMI`）与字体渲染
+`mui_outputxy_t`；换成 `mui_menu` 后链在 `mui_do_file_list` 里**立刻崩**，轮询根本没机会跑。
+
+★ **重要副产品（修正了场景 F/H 的设计前提）**：**摇杆轮询循环位于 `mui_setting` 内，不在 `main_Menu` 顶层**
+—— `main_Menu` 只是 `switch(menulog[0])` 的分派器。这就是 H（在 `mui_menu` 上注入方向/确认键）新增 0 个函数的机制解释。
+
+### 16.9 ★★★ 新崩溃的根因：`/sdcard/root.dat` 缺失（**环境缺口，非缺陷**）
+
+- 崩溃现场（我们侧 stderr）：`io #16 fopen rc=-1 /sdcard/root.dat` →
+  `真崩溃 pc=0x05006430 lr=0x003b24a4 r0=0x00000000`，故障指令 `0xe5d50000` = **`ldrb r0,[r0]`**
+- pc 归属（读重建 ELF 的 `.symtab`；**链接基址 `0x05000000`**）：
+  **`mui_do_file_list + 0xf0`**（起始 `0x05006340`，大小 1500 B）
+- 工厂反编译 `decompiled/02-ghidra-c/00_rkgame_ALL.c:19268-19285`：
+
+```c
+if (DAT_003af2ac == (void *)0x0) {
+    sprintf(acStack_490,"%s/root.dat",root_path);              /* root.dat 是 ZIP 包 */
+    hz = OpenZipU(acStack_490,0,2);
+    if ((hz==0) || (zr=FindZipItemA(hz,"fileinfo.txt",1,&local_498,ze), zr!=0)) {
+        RARCH_LOG("find %s fail!\n",acStack_490);             /* ← 失败：DAT_003af2ac 保持 NULL */
+    } else { DAT_003af2ac = malloc(ze._296_4_ + 1); UnzipItem(...); }   /* ← 只有成功才赋值 */
+}
+...
+iVar2 = mui_do_file_list(iVar11, DAT_003af2ac);                /* ← 把 NULL 当第 2 实参传进去 ⇒ 崩 */
+```
+
+- **我们侧 `mui_menu` 与工厂逐行同构**（含 `DAT_003af2ac = (void *)0x0;` 与失败分支不赋值）
+  ⇒ **两侧同一故障形态**（工厂 G/H 亦 `exit=139`）
+- `golden/sdcard_min/fileinfo`（49 B）= `"0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"`（25 个 `0,`）
+  = **`root.dat` 内 `fileinfo.txt` 的来源**
+- ⇒ **判定：沙箱缺 `/sdcard/root.dat` 这一外部输入所导致，不是我们的实现缺陷。**
+  判据：① 两侧同一故障形态（同一条 `ldrb r0,[r0]`、r0=0）；② 崩溃发生在"依赖外部文件的失败分支之后"。
+
+### 16.10 本轮新增场景 I（补 `/sdcard/root.dat`）
+
+| 场景 | 唯一变量 | 与谁严格单变量 |
+|---|---|---|
+| **I** | G ＋ `CGM_ROOTDAT=1`（合成 `/sdcard/root.dat` = `ZIP{fileinfo.txt ← golden/sdcard_min/fileinfo}`） | vs **G** |
+
+实现要点（`tools/stage_sdcard_env.sh`）：
+
+1. 目标路径 `$(dirname "$WORK")/root.dat` = **`/sdcard/root.dat`** —— 在 `CGM_WORK` **之外**
+   ⇒ 不进 `new_files` / `changed_files` 维度（不会污染 B3/B4）；
+2. ★★ **开关缺省时显式 `rm -f`**：`/sdcard` 是跨场景共享的，残留会让"缺文件"的场景**静默变成"有文件"**
+   —— 与场景 C 的 `stublib` 残留属同一类事故（"每个场景的输入必须完全由该场景自己的开关决定"）；
+3. 内容取**原厂 49 B `fileinfo`**，不自行编造；
+4. 本地干跑三情形已验证：未设 → 无残留；设 1 → 合法 ZIP（129 B）且 `fileinfo.txt` 与原厂**逐字节一致**；
+   再未设 → **显式移除残留**（两分支都打明确提示）。
+
+### 16.11 本轮修掉的三处**仪器/流程缺陷**（都是我自己引入或踩到的）
+
+| # | 现象 | 根因 | 处置 |
+|---|---|---|---|
+| 1 | CI 监控连续 11 次打印「（无）」却不报错，差点误判"推送没触发 CI" | `actions/runs?head_sha=<12 位短 sha>` **静默返回空集** | 短 sha 先解析为全长；并把"空结果"与"查询失败"分开 |
+| 2 | 场景 E 开 `CGM_DBGUNZ=1`、F 没开 ⇒ E vs F 差异 **不可归因** | 跨场景对比时**探针集也是变量** | 给 F 补 `CGM_DBGUNZ=1` |
+| 3 | `cp` 出来的"改动前"备份，内容却等于"改动后"；幂等断言在自身刚改过的文件上误报"已存在" | **提权重试会让整条命令"从头再执行一遍"** ⇒ 副作用执行两次 | 补丁脚本一律写**幂等**；`cp`/`mv` 这类破坏性前置步骤尤其注意 |
+

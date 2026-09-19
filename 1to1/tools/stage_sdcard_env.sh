@@ -82,4 +82,36 @@ if [ -n "${CGM_MENULOG_SCREEN:-}" ]; then
     fi
 fi
 
+# ★★★ 场景 I：补 `/sdcard/root.dat`（**ZIP 包**，内含 `fileinfo.txt`）
+#    依据（工厂反编译 decompiled/02-ghidra-c/00_rkgame_ALL.c:19268-19285）：
+#      DAT_003af2ac 只在「root.dat 打开成功 **且** 找到 fileinfo.txt」时才被 malloc 填充；
+#      失败分支**保持 NULL**，随后 `mui_do_file_list(iVar11, DAT_003af2ac)` 解引用它
+#      ⇒ 缺 root.dat 时两侧都会崩（实测：我们崩在 mui_do_file_list+0xf0 的 `ldrb r0,[r0]`，r0=0）。
+#    ⇒ 本开关合成该 ZIP；内容取 golden/sdcard_min/fileinfo（49 B = "0,0,...,0"），
+#      **不自行编造**。位置 = $(dirname $WORK)/root.dat，即 /sdcard/root.dat
+#      （在 CGM_WORK 之外 ⇒ 不进 new_files / changed_files 维度）。
+#    ★★ 未启用时**显式删除**：/sdcard 是跨场景共享的，残留会让"缺文件"的场景静默变成"有文件"
+#       —— 与场景 C 的 stublib 残留是同一类事故（"每个场景的输入必须完全由该场景自己的开关决定"）。
+ROOTDAT="$(dirname "$WORK")/root.dat"
+# ★ 先记"是否本来就有"，再删 —— 否则那句提示语永远打不出来（rm 在前，[ -e ] 恒假）。
+_rd_had=0; [ -e "$ROOTDAT" ] && _rd_had=1
+rm -f "$ROOTDAT"
+if [ "${CGM_ROOTDAT:-0}" = "1" ]; then
+    if [ ! -f "$GOLDEN/fileinfo" ]; then
+        echo "FATAL CGM_ROOTDAT=1 但 $GOLDEN/fileinfo 不存在"; exit 1
+    fi
+    python3 -c "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);z.write(sys.argv[2],'fileinfo.txt');z.close();print('   [ROOTDAT] built %s <- %s (as fileinfo.txt)'%(sys.argv[1],sys.argv[2]))" \
+        "$ROOTDAT" "$GOLDEN/fileinfo" || { echo "FATAL 合成 root.dat 失败"; exit 1; }
+    if [ -n "${CGM_STAGE_EVIDENCE:-}" ]; then
+        mkdir -p "$(dirname "$CGM_STAGE_EVIDENCE")" 2>/dev/null || true
+        printf 'ROOTDAT_BUILT file=%s size=%s\n' "$ROOTDAT" "$(wc -c < "$ROOTDAT" | tr -d ' ')" >> "$CGM_STAGE_EVIDENCE"
+    fi
+else
+    if [ "$_rd_had" = "1" ]; then
+        echo "   [ROOTDAT] 开关缺省 ⇒ 已显式移除上一次运行残留的 $ROOTDAT"
+    else
+        echo "   [ROOTDAT] 开关缺省，且无残留（/sdcard/root.dat 不存在 = 场景 G 的预期状态）"
+    fi
+fi
+
 ls -la "$WORK"
