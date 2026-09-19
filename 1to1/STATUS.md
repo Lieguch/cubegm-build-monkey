@@ -2736,3 +2736,31 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
   shim 重编成功（919,016 B，新文案在场、旧文案清除）；`ci_qemu_behav.sh` 语法 OK；
   workflow YAML 有效（13 步 / 5 场景）；续行链 lint **0 问题**。
 - 门禁回归：见本轮末尾。
+
+### 第四十八轮·补 ★ 场景 F 首跑 + 一次自我引入的事故（三场景静默失效）
+
+**场景 F 首跑**（CI `86cb9e81` 三 workflow 全 success，制品 313 文件）：
+
+| 观测项 | E | **F** |
+|---|---|---|
+| `js 输入注入已启用` | — | 两侧各一行（32 B / 4 个 js_event） |
+| `open(js-inject)` | — | 我们侧 **js0..js3 全部**（fd 3/5/8/11）；工厂侧无（已在 E 崩溃） |
+| 我们 stdout | 23 行 | **25 行**（多出 js1/js2/js3 `Opened!`） |
+| 覆盖率 | 68/223 | **68/223（未变）** |
+| 里程碑 | M7 ✓ | M7 ✓（无新增） |
+
+⇒ **注入生效**（设备枚举从 1 个变 4 个），但**尚未驱动菜单逻辑**（覆盖率/里程碑未动）。
+⇒ 副作用：我的 `access` 接管**过宽**（4 个 js 设备全变"在线"）⇒ 下一轮应限定到指定编号。
+
+**★ 事故（我引入的）**：CI success，但 `qemu_b`/`qemu_e`/`qemu_f` 的 `behav_diff.txt` 末行全是
+`json.decoder.JSONDecodeError: Invalid control character` ⇒ **三个场景判定根本不存在**。
+
+- 根因：我改 key2 探针文案时写了 `PK\x05\x06`（**真转义**）⇒ 输出带 ENQ/ACK 控制字节
+  ⇒ `behav_capture.sh` 收进 JSON ⇒ 非法 ⇒ `behav_diff.py` 抛异常。
+- 为何没早发现：脚本只 `echo` 退出码不报错；且 B/E 是观测项（`|| true`）。
+
+**修复三件**：
+1. 文案改纯可打印（十六进制文本）；
+2. **第 15 道 ★ 门禁** `tools/check_shim_charset.py`（扫字符串字面量的真控制字符转义；
+   判据区分反斜杠奇偶；构造性自证 + **反向验证**）；
+3. `ci_qemu_behav.sh`：`behav_diff` 退出码非 `0/2/3` ⇒ **`::error::` + `exit 1`**（仪器故障不再静默）。

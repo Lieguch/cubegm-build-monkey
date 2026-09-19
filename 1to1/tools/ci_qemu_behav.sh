@@ -503,6 +503,17 @@ rc=$?
 set -e
 cat "$OUT/behav_diff.txt" 2>/dev/null || true
 echo "behav_diff 退出码 = $rc"
+# ★★ 仪器故障必须显式化（2026-09-19 实测事故）：
+#   `behav_diff.py` 的**约定**退出码 = 0(PASS) / 2(FAIL) / 3(INCONCLUSIVE)。
+#   其它值（典型是 1 = Python 抛异常）意味着**仪器自己崩了** ⇒ 该场景判定**根本不存在**。
+#   事故现场：shim 文案里一个裸 x05 让采集的 JSON 非法 ⇒ B/E/F 三场景全部 JSONDecodeError，
+#   而 CI 仍报 success ⇒ 三个场景静默失去判定（最危险的一类：看起来在跑，其实没判）。
+if [ "$rc" != "0" ] && [ "$rc" != "2" ] && [ "$rc" != "3" ]; then
+    echo "::error::behav_diff 异常退出 rc=$rc（非约定值）=> 本场景判定失效，属仪器故障"
+    echo "       最后 10 行输出："
+    tail -10 "$OUT/behav_diff.txt" 2>/dev/null | sed "s/^/         /"
+    exit 1
+fi
 
 # 供 CI 的 Step Summary 使用（不必下载制品就能看到每项门禁数值）
 {

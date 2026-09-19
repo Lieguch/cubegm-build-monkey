@@ -124,6 +124,20 @@ jobs:
           python tools/scan_proto_vs_upstream.py --root . \
             --ledger tools/proto_vs_upstream_pending.txt
 
+      - name: shim 文案可 JSON 化检查 ★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-19 实测事故，代价：三个场景静默失效）：
+          #   `behav_capture.sh` 把 guest 的 stdout/stderr 逐行收进 `behav_*.json`，
+          #   而 JSON **不允许**裸控制字符（U+0000..U+001F，除 \t \n \r）。
+          #   我写的 key2 探针文案里放了 `PK\x05\x06`（**真转义**）⇒ 输出带 ENQ/ACK
+          #   ⇒ `behav_rebuild.json` 非法 ⇒ `behav_diff.py` 抛
+          #   `JSONDecodeError: Invalid control character`，而 CI 仍报 success
+          #   ⇒ **场景 B / E / F 三个全部静默失去判定**。
+          # 判据：字符串字面量里「奇数个反斜杠 + xHH」才是真转义；
+          #   `PK\\x05\\x06`（偶数）是字面文本，必须放行。构造性自证 1 坏 + 1 好。
+          python tools/check_shim_charset.py --root .
+
       - name: 校验金标准完整性
         run: |
           python3 - <<'PY'

@@ -761,9 +761,14 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
              *   危害：探针文案与实际注入值不符 ⇒ 现场读到 "50 4b 05 06 50 4b 07 08" 时，
              *   读者会以为"注入没生效/被覆写"，而实际是**完全一致 ⇒ 未被覆写**。
              *   这就是一条**误导性证据** —— 比没有证据更糟，故必须改。 */
+            /* ★★ 2026-09-19 二次修正：**文案里绝不能放裸控制字符**。
+             *   上一版写了 `PK\x05\x06 PK\x07\x08`（raw 字节 ENQ/ACK），
+             *   采集进 stderr 事件后 JSON **非法** ⇒ `behav_diff.py` 在场景 B/E/F 全部崩掉
+             *   （`JSONDecodeError: Invalid control character`），而 CI 仍报 success
+             *   ⇒ **三个场景静默失去判定**。
+             *   ⇒ 一律用**可打印的十六进制文本**表达字节值（下面已是纯 ASCII）。 */
             note("[shim] key2 @0x3E190C 现值 = %02x %02x %02x %02x %02x %02x %02x %02x"
-                 "（已 seed 时期望注入值 = PK\x05\x06 PK\x07\x08 ="
-                 " 50 4b 05 06 50 4b 07 08；未 seed 时 key2 在 BSS，期望全 0）\n",
+                 "（已 seed 时期望 = 50 4b 05 06 50 4b 07 08；未 seed 时 key2 在 BSS，期望全 0）\n",
                  (unsigned)k2p[0], (unsigned)k2p[1], (unsigned)k2p[2], (unsigned)k2p[3],
                  (unsigned)k2p[4], (unsigned)k2p[5], (unsigned)k2p[6], (unsigned)k2p[7]);
         }

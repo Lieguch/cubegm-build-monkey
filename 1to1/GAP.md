@@ -1196,3 +1196,108 @@ stdio 内部（本项目已踩过"在被拦截的 stdio 函数里调用 stdio"�
    被 Ghidra 渲染成地址 `0x3e16a4`）—— 顺手核对两侧该字符串常量是否同址同文。
 3. `cores/` 目录里**没有 `.so`**（只有 `config.xml`/`filelist.xml`）⇒ "进入游戏 → `dlopen` core"
    在沙箱走不通；若要走通需给 `golden/sdcard_min/cores/` 补一个 stub `.so`（新议题）。
+
+### 15.6 下一轮入口已侦察：**stub core**（把观测窗口从"菜单"推进到"进游戏 + libretro 交互"）
+
+**为什么需要**：场景 F 让菜单能接收输入，但 `golden/sdcard_min/cores/` 里**只有 `config.xml` 与
+`filelist.xml`，没有任何 `.so`** ⇒ 一旦菜单选中游戏并启动，`dlopen` 必然失败，路径到此为止。
+而 `libemu_*` 的加载与交互（`Core_Load` / `Load_Proc1` / `Load_Proc2` + libretro 回调）
+是**完全未覆盖**的一块。
+
+**`Core_Load` 的完整契约**（源码 `src/proprietary/core/FUN_002b6f58_Core_Load.c`，900 B）：
+
+| 步骤 | 内容 | 必需性 |
+|---|---|---|
+| 配置 | `sprintf(cfg, "%s/cores/%s.cfg", work_path, param_2)` → `get_items_from_file()` | 缺文件应可容忍（`corecfg` 先 `memset` 0） |
+| 加载 | `sprintf(path, "%s/cores/%s", work_path, param_2)` → `dlopen(path, RTLD_NOW=2)` | **必需** |
+| 支持性 | `dlsym("retro_is_support")` → `(*f)(rom)`；返回 <0 则 `dlclose` 并退出 | 可选（不存在则跳过） |
+| 手柄类型 | `dlsym("retro_set_controller_port_device")`，从 cfg 读 `device0_type`/`device1_type` | 可选 |
+| 载入 | `dlsym("retro_load_game")` → `(*f)(&game_blob)`；**返回值 0 ⇒ unload+deinit+dlclose** | **必需** |
+| 后续 | `run_process("retro_set_progress_callback", progress)`；返回非 0 时 `Load_Proc2()` + `video_driver_set_rotation(0xFF00)` | — |
+| `Load_Proc2` | `dlsym("retro_get_region")`（**必需**，缺则 return）、`dlsym("retro_run")`、`dlsym("SetFrameSkip")` | 部分必需 |
+
+**⇒ stub core 的最小导出集**（交叉编译成 armhf `.so`，几百行 C 即可）：
+
+```
+retro_load_game(void *game) -> int      /* 必须返回非 0，否则被 dlclose */
+retro_get_region(void)      -> int      /* Load_Proc2 里缺它就直接 return */
+retro_run(void)             -> void     /* 主循环每帧调用 ⇒ 这是覆盖 libretro 交互的入口 */
+retro_unload_game / retro_deinit / retro_set_progress_callback /
+retro_set_controller_port_device / retro_is_support / SetFrameSkip   /* 可选，用于探测分辨率 */
+```
+
+**★ 红线与做法**（必须先定，否则会污染对照环境）：
+
+1. `golden/sdcard_min/` 是**带 `MANIFEST.sha256` 的原厂只读拷贝** ⇒ **绝不能**往里面加文件
+   （会破坏"原厂完整性"这一前提，也会让 `B3 new_files` 判据失去意义）。
+2. 正确做法：在 CI 的 **stage 阶段动态生成** stub core 并放进 `/sdcard/cubegm/cores/`，
+   且**两侧使用同一份**（差分公平）。
+3. **`new_files` 口径已核实（第 48 轮查证）**：`behav_capture.sh` 的 `new_files` = 
+   "`CGM_WORK`(= `/sdcard/cubegm`) 下相对**前置快照**新增的文件"，而前置快照是在
+   **stage 之后、guest 运行之前**拍的（`ci_qemu_behav.sh` 的 `run_side()` 先铺环境再采集）。
+   ⇒ 只要 stub core 在 **stage 阶段**放入且两侧一致，它就**不会**进 `new_files`。
+   ⚠ 反向注意：探针本身若改动 work 目录，必须跑在**独立一遍**里（否则前置快照被污染，
+   该维度静默失效 —— 这一条已在 `ci_qemu_behav.sh` 的注释里记为实测事故）。
+4. `retro_run` 是空实现的话，`Load_Proc2` 之后会进入 `ReadJoystickThread` 的主循环 ⇒
+   与场景 F 的输入注入**天然衔接**，可看到"按键 → 切菜单 → 进游戏 → 核心运行"的完整链路。
+
+**预估价值**：覆盖 `Core_Load`/`Load_Proc1`/`Load_Proc2`/`run_process` +
+`processvblank`/`dispFlip` 主循环 + libretro 交互 ≈ 26 函数 / 15 KB，且是**唯一**能验证
+"核心加载 ABI"（`retro_is_support`/`save_state`/`load_state`/`set_unzip`/`set_progress_callback`
+这套定制 ABI）的场景。
+
+### 15.7 ★ 场景 F 首跑结论 + **一次我自己引入的事故**（诚实记录）
+
+#### (a) 注入生效了 —— 但它只改变了"设备枚举"，还没驱动菜单逻辑
+
+| 观测项 | 场景 E | **场景 F** | 判读 |
+|---|---|---|---|
+| `[shim] js 输入注入已启用` | — | **两侧各一行**（32 字节 / 4 个 js_event） | 注入装配成功 |
+| `open(js-inject)` 轨迹 | — | 我们侧 **js0/js1/js2/js3 各一次**（fd=3/5/8/11） | ★ 行为确实被改变 |
+| 工厂侧 `open(js-inject)` | — | **无** | 工厂在 E 就已经崩了，走不到输入初始化 |
+| 我们侧 stdout 行数 | 23 | **25**（多出 `js1/js2/js3 Opened!`） | 前进 2 行 |
+| 专有函数覆盖率 | 68 / 223 | **68 / 223（未变）** | ⚠ 没带来新代码覆盖 |
+| 里程碑 M0–M7 | M7 ✓ | **同样是 M7 ✓（无新增）** | ⚠ 未进入新阶段 |
+
+**读法**：E 场景下我们只打开 **1 个** js 设备（`access("/dev/input/jsN")` 只有 js0 通过）；
+F 场景接管 `access` 后 **4 个全部返回可读** ⇒ `ReadUSBJoy(0..3)` 依次打开 4 个设备。
+**这是注入生效的直接证据**，但也暴露一个设计副作用：
+
+> ★ **`access` 接管过宽** —— 我让它对所有 `/dev/input/jsN` 都返回 0，
+> 于是 guest 认为 4 个手柄都在线。真实设备上没插的手柄应当 `access` 失败。
+> **下一轮应把注入限定到指定编号**（例如只让 `js0` 可读，或由 `CGM_INPUT_HEX` 带 N 位掩码），
+> 否则"4 个设备都在线"本身就是一处与真机不符的偏差。
+
+**为什么覆盖率没涨**（诚实说：不知道，需要下一轮查）：
+候选解释 —— ① 注入的按键被 `ReadJoystick` 消费了，但菜单主循环尚未运行到处理按键的位置
+（我们的 stdout 在 4 行 `Opened!` 之后就结束了）；② 按键位掩码未命中菜单使用的键码；
+③ 按键只在启动瞬间注入一次，而菜单进入主循环更晚。
+**下一步的判定实验**：让注入**周期性重复**（而非 4 次后 EOF）+ 延长 `CGM_TIMEOUT`，
+看 stdout 是否出现菜单动作（如 `mui_setting`/`mui_DispBlock` 相关打印）与覆盖率跃迁。
+
+#### (b) ★ 事故：**我引入了一个让三个场景静默失效的缺陷**
+
+| 项 | 内容 |
+|---|---|
+| **症状** | CI 三 workflow 全 **success**，但 `qemu_b` / `qemu_e` / `qemu_f` 的 `behav_diff.txt` **末行全是** `json.decoder.JSONDecodeError: Invalid control character at: line 72 column 73` |
+| **本质** | 这三个场景**判定根本不存在**，却看不出失败 —— "看起来在跑，其实没判" |
+| **根因** | 我在第 48 轮改 key2 探针文案时写了 `PK\x05\x06`（**真转义**，C 里是 ENQ/ACK 字节）。`behav_capture.sh` 把 guest stderr 逐行收进 `behav_*.json`，而 **JSON 不允许裸控制字符**（除 `\t \n \r`）⇒ 采集的 JSON 非法 ⇒ `behav_diff.py` 抛异常 |
+| **为什么 B 也中** | 场景 B 开了 `CGM_KEY2_SEED=1` ⇒ 必然打印该探针行 |
+| **为什么没被立刻发现** | `ci_qemu_behav.sh` 里只 `echo "behav_diff 退出码 = $rc"`，**没有据此报错**；而场景 B/E 又是观测项（workflow 层 `|| true`） |
+
+**修复（三件，都已落盘）**：
+
+1. **文案改纯可打印**：`PK\x05\x06` → 十六进制文本 `50 4b 05 06`（同一信息，零控制字符）。
+2. **新硬门禁（第 15 道 ★）**：`tools/check_shim_charset.py` —— 扫 shim 源码的**字符串字面量**，
+   报出其中的真控制字符转义。**判据必须区分反斜杠奇偶**：
+   `"PK\x05\x06"`（1 个反斜杠）= 真转义（危险）；`"PK\\x05\\x06"`（2 个）= 字面文本（安全）。
+   构造性自证 1 坏 + 1 好，并做了**反向验证**（还原成真转义 ⇒ 精确命中那 2 处并 exit 1）。
+   已接进 `1to1-verify`。
+3. **仪器故障显式化**：`ci_qemu_behav.sh` 里 `behav_diff.py` 的约定退出码是
+   `0=PASS / 2=FAIL / 3=INCONCLUSIVE`；**其它值一律 `::error::` + `exit 1`**。
+   ⇒ 从此"仪器自己崩了"不会再被当成"场景通过"。
+
+**这是本轮最有价值的一条教训**（已写进技能铁律 129）：
+
+> **探针/日志的输出必须可安全序列化；且"仪器的崩溃"必须与"被测对象失败"分开显式化。**
+> 否则最危险的假绿就出现了 —— 门禁报 success，而它**什么都没判**。
