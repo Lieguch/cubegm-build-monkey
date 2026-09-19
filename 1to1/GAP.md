@@ -1241,6 +1241,25 @@ retro_set_controller_port_device / retro_is_support / SetFrameSkip   /* 可选�
 4. `retro_run` 是空实现的话，`Load_Proc2` 之后会进入 `ReadJoystickThread` 的主循环 ⇒
    与场景 F 的输入注入**天然衔接**，可看到"按键 → 切菜单 → 进游戏 → 核心运行"的完整链路。
 
+**编译配方（已本地验证）**：
+
+```
+zig cc -target arm-linux-gnueabihf -shared -fPIC -nostdlib -O1 -fno-unwind-tables \
+       -o libemu_stub.so tools/guest_shim/stub_core.c
+```
+
+| 校验项 | 结果 |
+|---|---|
+| `e_machine` / `e_flags` | `0x28`(EM_ARM) / **`0x05000400`**（与工厂、设备基准逐位一致） |
+| 导出符号 | 11 个（含 `retro_load_game` / `retro_get_region` / `retro_run` 等全部必需项） |
+| **未定义符号** | **0 个（完全自洽）** —— `-fno-unwind-tables` 消掉了唯一的 `__aeabi_unwind_cpp_pr0` |
+| `.gnu.version_r` | 不存在 ⇒ **零版本化依赖**（不触碰 GLIBC ≤2.7 红线） |
+
+★ 附带观察：`factory.rkgame.bin` 的 `DT_NEEDED` **含 `libgcc_s.so.1`**（其 `__aeabi_unwind_cpp_pr0/pr1`
+为 UND），而我们的 `rkgame.rebuilt.elf` **一个 `aeabi` 符号都没有** —— 编译器差异（GCC 走 libgcc_s
+unwind，clang/zig 静态化）；功能上无影响（两侧都不做 C++ 异常传播），但值得记一笔：
+**`DT_NEEDED` 集合也是保真度的一个维度，目前没有任何门禁覆盖它**（候选：新门禁）。
+
 **预估价值**：覆盖 `Core_Load`/`Load_Proc1`/`Load_Proc2`/`run_process` +
 `processvblank`/`dispFlip` 主循环 + libretro 交互 ≈ 26 函数 / 15 KB，且是**唯一**能验证
 "核心加载 ABI"（`retro_is_support`/`save_state`/`load_state`/`set_unzip`/`set_progress_callback`
@@ -1301,3 +1320,39 @@ F 场景接管 `access` 后 **4 个全部返回可读** ⇒ `ReadUSBJoy(0..3)` �
 
 > **探针/日志的输出必须可安全序列化；且"仪器的崩溃"必须与"被测对象失败"分开显式化。**
 > 否则最危险的假绿就出现了 —— 门禁报 success，而它**什么都没判**。
+
+### 15.8 注入设施的两次改进（针对 15.7 暴露的两个问题）
+
+#### (a) `access` 接管过宽 ⇒ 新增 `CGM_INPUT_JS` 限定在线编号
+
+**问题**：第一版让 `access("/dev/input/jsN")` 对**所有** N 返回 0 ⇒ guest 认为 4 个手柄全在线
+（实测 `open(js-inject)` 出现 js0/js1/js2/js3），而**真机只插 1 个手柄**
+⇒ 这本身就是一处"与真机不符的假象"，会以"两侧一致"的形式混进差分。
+
+**改法**：新增 `CGM_INPUT_JS`（默认 `"0"`，可写 `"01"` / `"0,1"`）⇒
+只有列出的编号 `access` 成功，其余照常失败（等价于"该手柄没插"，guest 走它自己的分支）。
+`open` 特判也同步按编号，避免两条路径口径不一致。
+
+#### (b) 注入只覆盖"启动瞬间" ⇒ 新增 `CGM_INPUT_FILL` 循环填充
+
+**问题**：第一版只给 4 个 `js_event`（32 B），而 `ReadUSBJoy` 每 15 ms 读 8 B
+⇒ **32 字节在几毫秒内读尽**，之后 EOF、`joy_key_tmp` 保持最后值。
+而菜单进入主循环通常要几秒 ⇒ **按键注入的时机过窗** ——
+这很可能是"注入生效（设备都被打开）但覆盖率没涨"的原因之一。
+
+**改法**：新增 `CGM_INPUT_FILL=<字节数>`，把事件流**循环填充**到该长度后再交给 guest。
+场景 F 现用：一个"按下 + 松开"周期（16 B）+ `FILL=4096` ⇒ 256 个周期
+⇒ 约 **7.7 秒**的按键活动（按 15 ms/次读算）⇒ 覆盖菜单初始化之后的窗口。
+
+#### (c) 场景 F 现在的完整注入参数
+
+```
+CGM_INPUT_JS=0                 # 只 js0 在线（真机 = 插一个手柄）
+CGM_INPUT_HEX=0000000001000100 0000000000000100   # 按下 button0 + 松开（一个周期）
+CGM_INPUT_FILL=4096            # 循环填充到 4 KiB ⇒ 256 周期 ⇒ ~7.7 秒
+```
+
+**下一轮要看的三件事**：
+1. 我们侧 stdout 是否出现**菜单动作**（不再是停在 4 行 `Opened!`）；
+2. 专有函数覆盖率是否**从 68/223 起涨**（尤其 `mui` 模块）；
+3. 里程碑是否出现 M7 之后的新阶段。

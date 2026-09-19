@@ -2764,3 +2764,15 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
 2. **第 15 道 ★ 门禁** `tools/check_shim_charset.py`（扫字符串字面量的真控制字符转义；
    判据区分反斜杠奇偶；构造性自证 + **反向验证**）；
 3. `ci_qemu_behav.sh`：`behav_diff` 退出码非 `0/2/3` ⇒ **`::error::` + `exit 1`**（仪器故障不再静默）。
+
+### 第四十八轮·再补 注入设施两次改进（针对首跑暴露的问题）
+
+| # | 问题（首跑实测） | 改进 |
+|---|---|---|
+| a | `access` 接管**过宽** ⇒ 4 个 js 设备全"在线"（真机只插 1 个）⇒ 不符真机的假象会混进差分 | 新增 **`CGM_INPUT_JS`**（默认 `"0"`）限定在线编号；`open` 特判同步按编号 |
+| b | 注入只给 32 B ⇒ 几毫秒读尽 ⇒ **时机过窗**（菜单进主循环要几秒） | 新增 **`CGM_INPUT_FILL=<字节>`** 循环填充；场景 F 用 `4096` ⇒ 256 周期 ⇒ **~7.7 秒**按键活动 |
+
+场景 F 现参数：`CGM_INPUT_JS=0` + `CGM_INPUT_HEX=<按下
+
+松开 一个周期>` + `CGM_INPUT_FILL=4096`；
+`ci_qemu_behav.sh` 已转发这两个新变量；YAML / sh / 续行链 lint 全部通过。

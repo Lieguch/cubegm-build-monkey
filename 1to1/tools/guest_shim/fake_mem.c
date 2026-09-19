@@ -145,16 +145,40 @@ static int raw_openat(const char *path, int flags, mode_t mode)
 static int g_inject_on;
 static unsigned char g_ev[512];
 static int g_ev_len;
+/* `CGM_INPUT_FILL=<字节数>`：把事件流**循环填充**到该长度后再交给 guest。
+ *   0（默认）= 原样给出（读尽即 EOF ⇒ `ReadUSBJoy` 返回旧值 ⇒ 等价"保持最后状态"）。
+ *   例：事件流 = 一个"按下+松开"周期（16 B），FILL=65536 ⇒ 4096 个周期
+ *   ⇒ 按键活动覆盖整个运行窗口，而不是只在启动瞬间闪一下。 */
+static int g_ev_fill;
+
+/* ★ 2026-09-19 改进：`access` 的接管**必须限定编号**。
+ *   第一版让所有 `/dev/input/jsN` 都返回可读 ⇒ guest 认为 4 个手柄全在线
+ *   （实测 `open(js-inject)` 出现 js0/js1/js2/js3），而**真机只插 1 个手柄**
+ *   ⇒ 这本身就是一处与真机不符的偏差，会让"四设备都在线"这个假象进入差分。
+ *   现由 `CGM_INPUT_JS`（默认 "0"）指定哪些编号在线；其余编号 `access` 照常失败，
+ *   等价于"该手柄没插" ⇒ guest 走它自己的"设备不存在"分支。 */
+static unsigned g_js_enable = 1u;      /* bit N = jsN 在线；默认仅 js0 */
+
+static int js_index(const char *p)
+{
+    if (p == NULL) {
+        return -1;
+    }
+    if (strncmp(p, "/dev/input/js", 13) != 0) {
+        return -1;
+    }
+    if (p[13] < '0' || p[13] > '9') {
+        return -1;
+    }
+    if (p[14] != '\0') {
+        return -1;
+    }
+    return (int)(p[13] - '0');
+}
 
 static int is_js_path(const char *p)
 {
-    if (p == NULL) {
-        return 0;
-    }
-    if (strncmp(p, "/dev/input/js", 13) != 0) {
-        return 0;
-    }
-    return (p[13] >= '0' && p[13] <= '9' && p[14] == '\0');
+    return js_index(p) >= 0;
 }
 
 static int make_input_fd(void)
@@ -170,19 +194,42 @@ static int make_input_fd(void)
         return -1;
     }
     if (g_ev_len > 0) {
-        const unsigned char *p = g_ev;
-        int left = g_ev_len;
-        while (left > 0) {
-            ssize_t w = write(fd, p, (size_t)left);
-            if (w <= 0) {
-                break;
+        int target = (g_ev_fill > g_ev_len) ? g_ev_fill : g_ev_len;
+        int written = 0;
+        while (written < target) {
+            /* + 按 g_ev 原样写一轮（不足 target 时继续，形成循环） */
+            const unsigned char *p = g_ev;
+            int left = g_ev_len;
+            if (target - written < left) {
+                left = target - written;      /* 最后一段只写需要的部分 */
             }
-            p += (int)w;
-            left -= (int)w;
+            while (left > 0) {
+                ssize_t w = write(fd, p, (size_t)left);
+                if (w <= 0) {
+                    (void)lseek(fd, 0, SEEK_SET);
+                    return fd;
+                }
+                p += (int)w;
+                left -= (int)w;
+                written += (int)w;
+            }
         }
         (void)lseek(fd, 0, SEEK_SET);
     }
     return fd;
+}
+
+static int parse_int(const char *s)
+{
+    int v = 0;
+    if (s == NULL) {
+        return 0;
+    }
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10 + (int)(*s - '0');
+        s++;
+    }
+    return v;
 }
 
 static void parse_input_hex(const char *h)
@@ -301,11 +348,14 @@ static int open_impl(const char *path, int flags, va_list ap)
         mode = (mode_t)va_arg(ap, int);
     }
     key2_hook_try(path);
-    /* ★ 场景 F：js 设备改为"事件源 fd"，绕开 /dev/zero 重定向 */
-    if (g_inject_on && is_js_path(path)) {
-        int jrc = make_input_fd();
-        io_trace("open(js-inject)", path, jrc);
-        return jrc;
+    /* ★ 场景 F：**在线**的 js 设备改为"事件源 fd"，绕开 /dev/zero 重定向 */
+    if (g_inject_on) {
+        int ji = js_index(path);
+        if (ji >= 0 && (g_js_enable & (1u << ji)) != 0u) {
+            int jrc = make_input_fd();
+            io_trace("open(js-inject)", path, jrc);
+            return jrc;
+        }
     }
     tgt = redirect_dev(path);
     {
@@ -342,8 +392,12 @@ int open64(const char *path, int flags, ...)
  *   存在属于环境细节，不该参与判定（本项目铁律：沙箱输入必须显式可控）。 */
 int access(const char *path, int mode)
 {
-    if (g_inject_on && is_js_path(path)) {
-        return 0;
+    /* 只有**在线的** js 编号才"可读"；其余照常失败 ⇒ 等价于"该手柄没插" */
+    {
+        int ji = js_index(path);
+        if (g_inject_on && ji >= 0 && (g_js_enable & (1u << ji)) != 0u) {
+            return 0;
+        }
     }
 #ifdef SYS_access
     return (int)syscall(SYS_access, path, mode);
@@ -1077,6 +1131,28 @@ __attribute__((constructor)) static void shim_poison_stack(void)
     shim_resolve_fopen();
     /* ★ 场景 F：解析输入事件注入脚本（默认关） */
     parse_input_hex(getenv("CGM_INPUT_HEX"));
+    g_ev_fill = parse_int(getenv("CGM_INPUT_FILL"));
+    if (g_inject_on && g_ev_fill > g_ev_len) {
+        note("[shim] js 事件流填充：%d B -> %d B（%d 个周期）\n",
+             g_ev_len, g_ev_fill, g_ev_fill / (g_ev_len > 0 ? g_ev_len : 1));
+    }
+    {
+        /* `CGM_INPUT_JS="0"` / `"01"` / `"0,1"` ⇒ 哪些 jsN 在线（默认仅 js0，与真机一致） */
+        const char *jsel = getenv("CGM_INPUT_JS");
+        unsigned mask = 0u;
+        if (jsel != NULL) {
+            for (; *jsel != '\0'; jsel++) {
+                if (*jsel >= '0' && *jsel <= '9') {
+                    mask |= (1u << (unsigned)(*jsel - '0'));
+                }
+            }
+        }
+        g_js_enable = (mask != 0u) ? mask : 1u;      /* 空/非法 ⇒ 回落 js0 */
+        if (g_inject_on) {
+            note("[shim] js 在线掩码 = 0x%x（CGM_INPUT_JS='%s'）\n",
+                 (unsigned)g_js_enable, (jsel != NULL && jsel[0] != '\0') ? jsel : "0");
+        }
+    }
     if (g_inject_on) {
         note("[shim] js 输入注入已启用：%d 字节事件流（%d 个 js_event）\n",
              g_ev_len, g_ev_len / 8);
