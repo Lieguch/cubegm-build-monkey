@@ -406,6 +406,17 @@ jobs:
           python3 tools/prop_equiv.py --selftest
           echo '--- 逐函数差分 ---'
           python3 tools/prop_equiv.py --json report/prop_equiv.json
+      # ★★ 2026-09-20（GAP 16.36）：**死循环门禁** —— 产物里出现「无出口循环」时，
+      #   若源码没有 `for(;;)`/`while(1)`，就是"编译器把循环后续判为不可达而删除"。
+      #   本轮实证：`init_user_joy_key_mask` 因循环边界取了另一个局部对象的地址
+      #   （Ghidra 保真度陷阱）⇒ 108B 产物、整个 .o **只有 1 条重定位**，
+      #   第二段循环与函数尾声被删光、第一段循环变成死循环。修复后 348B / 6 条重定位。
+      - name: ★ 死循环门禁（产物出现无出口循环且源码无 for(;;) ⇒ 函数体被删）
+        run: |
+          set -e
+          cd 1to1
+          python3 tools/scan_dead_loop.py --selftest
+          python3 tools/scan_dead_loop.py
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4

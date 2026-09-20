@@ -137,19 +137,43 @@ def factory_varargs(d, S):
 
 
 def has_varargs_epilogue_free(d, S, va, limit=64):
-    """重建侧：序言区（前 limit 字节）里是否有「把 {r1,r2,r3} 一起存出去」的指令。
+    """重建侧：函数里是否**真的构造了 va_list 并传出去**。
 
-    覆盖三种形状：
-      · GCC/原厂：`push {r0, r1, r2, r3}`（STMDB sp!, mask=0xF）
-      · GCC/原厂：`push {r1, r2, r3}`     （STMDB sp!, mask=0xE —— r0 是已消费的固定参数）
-      · LLVM    ：`sub sp,#12` + `stm rX, {r1, r2, r3}`（Rn 为普通寄存器，mask 含 r1,r2,r3）
+    ★★ 2026-09-20 第二次放宽（本轮又抓到自己判据的盲区）：
+      放宽前的判据要求"序言区里有把 {r1,r2,r3} 一起存出去的 push/stm"。但 clang 在
+      `log_dummy(int lvl, char *fmt, ...)` 上只保存**真正需要的两个**变参寄存器，用
+      **两条独立的 `str`** 而不是 push/stm：
+
+          sub sp, sp, #8 / push {fp, r14} / sub sp, sp, #8
+          cmp r0, #2                      ← if (lvl < 2) return（条件码在下面的 bcc）
+          str r2, [sp, #16]               ┐ 变参「寄存器保存区」= 两条 str
+          str r3, [sp, #20]               ┘
+          bcc <return>
+          add r2, sp, #16                 ← r2 = va_list 基址
+          mov r0, r1                      ← r0 = fmt
+          str r2, [sp, #4]
+          mov r1, r2                      ← r1 = va_list
+          bl  RARCH_LOG_V                 ← ★ 真调用，传 (fmt, va_list) 两个参数
+
+      ⇒ 这个形态**语义完全正确**（修复前是 `cmp/bxls/mov/b RARCH_LOG_V` 的**尾调用**、
+        r1 未设），但按旧判据会被误判成"丢了变参序言"。
+
+    判据改为**语义式**（两种形态都接受），核心是"必须构造 va_list 并**真调用**出去"：
+      A. 序言区有 `STMDB sp!`, mask 含 r1..r3（GCC/原厂形状）
+      B. 序言区有 `stm`(非 sp) 且 mask 含 r1..r3（LLVM 形状）
+      C. **va_list 基址构造**：`add rX, sp, #imm` 之后 8 条指令内出现 `bl`
+         —— 这覆盖"用独立 str 保存变参寄存器 + 取地址传参"的所有形状。
+    为什么可以这么判：变参转发函数**必须**把 va_list 的**地址**交出去，
+    而尾调用 `b` 无法构造并传递它（这正是原来的缺陷形态）⇒ 一定有 `bl` + 取址。
     """
     ta, to, ts = S['.text']
     if not (ta <= va < ta + ts):
         return None
     off = to + (va - ta)
+    words = []
     for p in range(off, min(off + limit, to + ts - 4), 4):
-        ins = struct.unpack_from('<I', d, p)[0]
+        words.append(struct.unpack_from('<I', d, p)[0])
+    for ins in words:
         if (ins & STMDB_SP_MASK) == STMDB_SP_OP and (ins & 0xFFFF & VARARG_RLOW) == VARARG_RLOW:
             return True
         # STM/LDM：bits27..25 = 100；L = bit20
@@ -158,6 +182,12 @@ def has_varargs_epilogue_free(d, S, va, limit=64):
             mask = ins & 0xFFFF
             if L == 0 and (mask & 0x0E) == 0x0E:      # 存 r1,r2,r3
                 return True
+    # C：add rX, sp, #imm（bits27:21 == 0010100，Rn=13）之后 8 条内有 bl
+    for i, ins in enumerate(words):
+        if (ins & 0x0FE00000) == 0x02800000 and ((ins >> 16) & 0xF) == 13:   # ADD(imm), Rn=sp
+            for nx in words[i + 1:i + 9]:
+                if (nx & 0x0F000000) == 0x0B000000:                          # BL
+                    return True
     return False
 
 

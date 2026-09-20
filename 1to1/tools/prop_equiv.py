@@ -247,6 +247,7 @@ CALIB_ANCHORS = ("__libc_csu_fini", "__libc_csu_init")
 #   ⇒ 单独归为 `THIN`（不计入 FAIL/WARN），但**照常列出**（供人工抽查），
 #     并标注 `thin_hint`，避免"看不见"和"误报"两种错误同时发生。
 THIN_BYTES = 16
+N_RATIO_MIN = 12                  # 逐指令比生效的最小"工厂纯指令数"（小函数无统计意义）
 
 
 def load_baseline(path):
@@ -328,7 +329,13 @@ def compare(fac, re_syms, elf, names, baseline=None, verbose=False):
         #   但那些"更优"项全是 `init_user_joy_key_mask` 0.51 / `popwindows` 0.86 这种**偏小**项
         #   —— 是"从 1.55 变成 0.80"被误当成改善。改成对称后，偏小同样会报。
         skew = max(size_ratio, (1.0 / size_ratio) if size_ratio > 0 else 1e9)
-        worst = max([skew] + ([max(n_ratio, 1.0 / n_ratio)] if n_ratio else []))
+        # ★★ 第八个校准点（2026-09-20）：**逐指令比（n_ratio）需要最小样本量**。
+        #   小函数的"差 1 条指令"就能把比值推到 1.75+，那是噪声不是信号 ——
+        #   实证：`GetWorkPath` 工厂 5 条 / 我们 4 条 ⇒ n_ratio 0.571 ⇒ 读作"偏离 1.751"，
+        #   而两道实现都只是"取一个全局指针"（差别是字面量池取址方式），语义完全一致。
+        #   ⇒ 只有工厂**纯指令数 >= N_RATIO_MIN** 时才让 n_ratio 参与判决。
+        use_n = n_ratio is not None and fn_code >= N_RATIO_MIN
+        worst = max([skew] + ([max(n_ratio, 1.0 / n_ratio)] if use_n else []))
 
         is_thin = fmem <= THIN_BYTES
         is_calib = nm in CALIB_ANCHORS or nk in CALIB_ANCHORS
