@@ -40,6 +40,11 @@ GUEST="$WORK/rkgame"
 TIMEOUT="${CGM_TIMEOUT:-20}"
 PROBE_TIMEOUT="${CGM_PROBE_TIMEOUT:-3}"
 EXEC_TIMEOUT="${CGM_EXEC_TIMEOUT:-90}"    # -d exec 明显拖慢 guest；配合日志大小看门狗（见 exec_probe）
+# ★★ 执行轨迹对齐（Laelaps 法）：`CGM_EXEC_ALIGN=1` 时把**完整**轨迹保留在 `$OUT` **之外**
+#    的临时目录（不进制品 —— rebuild 侧可达 ~160 MB，进制品会让 artifact 爆炸），
+#    并在两侧探针都跑完后对齐出**首个分歧点**，只把小结（几 KB）写进 `$OUT/exec_align.txt`。
+#    默认关 ⇒ 行为与从前逐字一致。对齐完立即删掉保留目录（磁盘占用被限制在"一个场景"内）。
+EXEC_KEEP="${CGM_EXEC_KEEP_DIR:-/tmp/cgm_exec_keep}"
 # 帧探针的目标函数：入口/epilogue 地址**从当前 ELF 现算**（见 tools/find_func_marks.py）。
 #   ★ 不能硬编码：地址随每次重链接漂移，指到别的函数上会让探针静默失去意义。
 FRAME_TARGET="${CGM_FRAME_TARGET:-spi_driver_init}"
@@ -434,13 +439,49 @@ exec_probe() {
         fi
         # 只保留尾部（原始日志很大，不放进制品）
         tail -800 "$log" > "$OUT/exec_tail_${label}.txt"
-        rm -f "$log"
+        # ★★ 2026-09-20：完整轨迹的价值在**对齐**（首个分歧点）—— 而 `exec_tail_*` 做不到：
+        #    C5 实测 factory 侧的尾部 800 行里 **652/746 落在 >=0x3f000000 且全部无符号名**
+        #    （那是崩溃后的 ld/libc 解体路径），在尾部上对齐只会得到"两侧都已在 libc 里"。
+        #    ⇒ 开关打开时把完整日志搬到 $OUT 之外（**不进制品**），供 exec_align_probe 使用。
+        if [ "${CGM_EXEC_ALIGN:-0}" = "1" ]; then
+            mkdir -p "$EXEC_KEEP"
+            mv -f "$log" "$EXEC_KEEP/exec_${label}.log" 2>/dev/null || rm -f "$log"
+        else
+            rm -f "$log"
+        fi
         echo "--- 尾部 40 行（每行 = 一个被执行翻译块的入口 pc）---"
         tail -40 "$OUT/exec_tail_${label}.txt"
     else
         echo "   （未生成轨迹日志）"
     fi
 }
+
+# ---- 执行轨迹对齐：给出**首个分歧点**（Laelaps 法落地）------------------------------------
+#   为什么需要它（`exec_set_diff` 的两个盲区）：
+#     · 执行集合**无序** —— "两边都执行了 A 和 B"但顺序相反，集合差集看不出来；
+#     · 执行集合**不含谁先退出** —— 参照侧提前崩溃时，另一侧会"凭空中多出"一整套函数
+#       （2026-09-20 C5 实测：差集显示"重建侧多跑 24 个"，实际是**工厂侧空指针早逝**）。
+#   本探针在**完整**轨迹上按顺序对齐（只比主程序自身代码段、按各自 symtab 归一成函数名），
+#   给出三个视图的首个分歧点。固件差分测试的标准做法见 Laelaps, ACM 10.1145/3427228.3427280。
+exec_align_probe() {
+    [ "${CGM_EXEC_ALIGN:-0}" = "1" ] || return 0
+    if [ ! -f "$EXEC_KEEP/exec_factory.log" ] || [ ! -f "$EXEC_KEEP/exec_rebuild.log" ]; then
+        echo "   [note] exec_align 跳过（缺完整轨迹：factory / rebuild 其一不存在）"
+        return 0
+    fi
+    echo ""
+    echo "########## 执行轨迹对齐（首个分歧点；Laelaps 法）##########"
+    "$PY" "$(winpath "$ROOT/tools/exec_align.py")" \
+        --factory "$(winpath "$EXEC_KEEP/exec_factory.log")" \
+        --ours    "$(winpath "$EXEC_KEEP/exec_rebuild.log")" \
+        --factory-elf "$(winpath "$FACTORY")" \
+        --ours-elf    "$(winpath "$REBUILD")" \
+        --label "$(basename "$OUT")" \
+        --out "$OUT/exec_align.txt" 2>&1 | tee "$OUT/exec_align.stdout.txt" || true
+    # 对齐完即回收（磁盘占用被限制在"一个场景"内；完整日志不留在制品里）
+    rm -rf "$EXEC_KEEP"
+}
+
 # ---- 帧探针：在函数入口与 epilogue 各停一次，直接看帧内容 --------------------------------
 #   要回答的问题：`pop {…,pc}` 取到坏地址，究竟是
 #     ① **保存的 lr 槽被写坏**（帧基址仍对齐），还是
@@ -701,6 +742,8 @@ fi
 #   "越修越远"的错误结论。正确的刻度 = **同一环境下到达的功能里程碑**，且必须同时看两侧。
 echo ""
 echo "########## 功能里程碑矩阵（进度刻度：环境到达了多深 + 两侧是否同步）##########"
+exec_align_probe
+
 "$PY" "$(winpath "$ROOT/tools/milestones.py")" "$OUT" 2>&1 | tee "$OUT/milestones.txt" || true
 {
     echo ""
