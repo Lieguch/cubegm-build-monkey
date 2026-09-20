@@ -25,9 +25,20 @@ GAP 16.28 暴露的矛盾：`gr_blit_b` 里 `P->[12] != source->[12]` 的 `P` �
 from __future__ import annotations
 
 import argparse
+import os as _os
 import re
 import struct
 import sys
+
+# ★ 2026-09-20：解码器换成 tools/arm_dis.py 的**完整 ARMv7-A 解码器**。
+#   动机：本文件原自带"够用就好"的局部解码器，实测**未识别率 32%**
+#   （134511 条指令里 43047 条解不出），漏掉的全是最基本的指令：
+#       cmp r0,#0 (1596) · ldr r0,[pc,r0] (932) · mvn r0,#0 (408) · bx lr (164) · lsl r1,r1,#1 (152)
+#   后果不是"少显示几行"，而是把下游「逐函数等价性差分」（tools/prop_equiv.py）
+#   的助记符相似度判据彻底污染（我们侧一半是 `?` ⇒ 该指标显示"无信息量"）。
+#   `arm_dis.py` 带 40 个锚点自证，实测真未识别率 **0.00%**。
+sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import arm_dis as _arm_dis          # noqa: E402
 
 
 # ---------------------------------------------------------------- ELF 读取
@@ -172,105 +183,18 @@ def rot_imm(w: int) -> int:
 
 
 def dec(w: int, addr: int, elf: Elf):
-    """返回 (mnemonic, 备注)。只覆盖本任务需要的指令类。
+    """**兼容入口**：转发到 `tools/arm_dis.py` 的完整解码器。
 
-    ★ 掩码纪律：ARM 的 Rd 在 bits 15:12、Rn 在 bits 19:16 ⇒ 判"指令类"必须用
-      `0xFFF0F000`（保留 opcode+Rn）或 `0xFFF00000`（保留 opcode），
-      写成 `0xFFFFF000` 只匹配 Rd=0 ⇒ **会静默漏掉全部带寄存器字段的指令**
-      （本项目 2026-09-20 踩过：`ldr r4,[pc,#1088]` 落进 "ldr Rd,[Rn,#imm]" 分支，
-       随后 `add r4,pc,r4` 因打印成 `[r15,…]` 而未被识别 ⇒ GOT 解算整体失效）。
+    保留本函数（而不是让调用方直接 import arm_dis）的原因：
+      `dis_assemble()` 与若干下游工具都用 `dec(w, addr, elf) -> (text, note)` 签名，
+      且**同时**用它做 GOT 解算 —— 正则依赖两种精确文本形态：
+          ldr rD, [pc, #imm]        （字面量池取址）
+          add rD, pc, rM            （池值 + pc ⇒ 绝对地址）
+      `arm_dis.dec()` 保证输出这两种形态（有专门的锚点覆盖）。
+
+    历史：本函数曾是局部实现，未识别率 32%，2026-09-20 弃用（改为转发）。
     """
-    cond = (w >> 28) & 0xF
-    ctxt = {0x0: "eq", 0x1: "ne", 0x2: "cs", 0x3: "cc", 0xA: "ge", 0xB: "lt",
-            0xC: "gt", 0xD: "le", 0xE: ""}.get(cond, "?c%x" % cond)
-
-    # ---- ldr / str（立即数偏移，bit23=U）
-    if (w & 0x0F000000) == 0x05000000:          # 0x05x: ldr/str 立即数
-        imm = w & 0xFFF
-        rd, rn = (w >> 12) & 0xF, (w >> 16) & 0xF
-        if w & 0x00100000:                      # ldr
-            m = "ldr"
-        else:
-            m = "str"
-        sign = "" if (w >> 23) & 1 else "-"
-        if rn == 15:                            # ★ pc 相对
-            eff = addr + 8 + (imm if (w >> 23) & 1 else -imm)
-            tgt = eff & ~3
-            note = "池@0x%x" % tgt
-            val = elf.rd32(tgt)
-            if val is not None:
-                note += " = 0x%x" % val
-            return "%s %s, [pc, #%s%d]" % (m, r(rd), sign, imm), note
-        off = (", #%s%d" % (sign, imm)) if imm else ""
-        return "%s %s, [%s%s]" % (m, r(rd), r(rn), off), ""
-
-    # ---- add / sub 立即数      0x024(SUB) / 0x028(ADD) —— bit24:21 = 0010/0100
-    if (w & 0x0F000000) == 0x02000000:
-        op = "add" if ((w >> 21) & 0xF) == 0x4 else ("sub" if ((w >> 21) & 0xF) == 0x2 else "op%x" % ((w >> 21) & 0xF))
-        rd, rn = (w >> 12) & 0xF, (w >> 16) & 0xF
-        return "%s %s, %s, #%d" % (op, r(rd), r(rn), rot_imm(w)), ""
-
-    # ---- add/sub Rd, Rn, Rm（寄存器）0x004/0x008 且 bits11:4 = 0
-    if (w & 0x0FF00FF0) == 0x00800000:
-        op = "add" if ((w >> 21) & 0xF) == 0x4 else ("sub" if ((w >> 21) & 0xF) == 0x2 else "op%x" % ((w >> 21) & 0xF))
-        rd, rn, rm = (w >> 12) & 0xF, (w >> 16) & 0xF, w & 0xF
-        if rn == 15:
-            return "%s %s, pc, %s" % (op, r(rd), r(rm)), ""
-        return "%s %s, %s, %s" % (op, r(rd), r(rn), r(rm)), ""
-
-    # ---- cmp 寄存器 / 立即数
-    if (w & 0x0FF00000) == 0x01500000:
-        if (w & 0x0FF00FF0) == 0x01500000:
-            return "cmp %s, %s" % (r((w >> 16) & 0xF), r(w & 0xF)), ""
-        return "cmp %s, #%d" % (r((w >> 16) & 0xF), rot_imm(w)), ""
-
-    # ---- mov 立即数
-    if (w & 0x0FF00000) == 0x03A00000:
-        return "mov %s, #%d" % (r((w >> 12) & 0xF), rot_imm(w)), ""
-    # ---- mov 寄存器（含条件）
-    if (w & 0x0FE00FF0) == 0x01A00000:
-        return "mov%s %s, %s" % (ctxt, r((w >> 12) & 0xF), r(w & 0xF)), ""
-
-    # ---- movw / movt
-    if (w & 0x0FF00000) == 0x03000000:
-        return "movw %s, #0x%x" % (r((w >> 12) & 0xF), ((w >> 4) & 0xF000) | (w & 0xFFF)), ""
-    if (w & 0x0FF00000) == 0x03400000:
-        return "movt %s, #0x%x" % (r((w >> 12) & 0xF), ((w >> 4) & 0xF000) | (w & 0xFFF)), ""
-
-    # ---- b / bl（bits27:24 = 1010=B / 1011=BL；cond=0xF 表示 BLX）
-    if (w & 0x0E000000) == 0x0A000000:
-        imm = w & 0xFFFFFF
-        if imm & 0x800000:
-            imm -= 0x1000000
-        tgt = addr + 8 + imm * 4
-        if (w >> 24) & 1:
-            kind = "bl"
-        elif (w >> 28) == 0xF:
-            kind = "blx"
-        else:
-            kind = "b" + ctxt
-        return "%s 0x%x" % (kind, tgt), ""
-
-    # ---- push / pop
-    if (w & 0x0FFF0000) == 0x092D0000:
-        return "push {0x%x}" % (w & 0xFFFF), ""
-    if (w & 0x0FFF0000) == 0x08BD0000:
-        return "pop {0x%x}" % (w & 0xFFFF), ""
-
-    # ---- sdiv / udiv         0x0710F010 / 0x0730F010
-    if (w & 0x0FF0F0F0) == 0x0710F010:
-        return "sdiv %s, %s, %s" % (r((w >> 16) & 0xF), r(w & 0xF), r((w >> 8) & 0xF)), ""
-
-    # ---- mul / mla
-    if (w & 0x0FE000F0) == 0x00000090:
-        return "mul %s, %s, %s" % (r((w >> 16) & 0xF), r(w & 0xF), r((w >> 8) & 0xF)), ""
-
-    # ---- ldr/str 多寄存器（简单列出）
-    if (w & 0x0E000000) == 0x08000000 and ((w >> 25) & 0x7) in (4, 5):
-        m = "ldm" if (w >> 20) & 1 else "stm"
-        return "%s %s, {...}" % (m, r((w >> 16) & 0xF)), ""
-
-    return "?", "raw=0x%08x" % w
+    return _arm_dis.dec(w, addr, elf)
 
 
 def dis_assemble(elf: Elf, start: int, size: int, resolve_got: bool = True):

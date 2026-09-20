@@ -30,11 +30,25 @@ NROOT="$(cygpath -w "$ROOT" 2>/dev/null || echo "$ROOT")"
 #   使「本地失败集合」≈「CI 失败集合」。ABI 与错误判定以 CI 为准。
 # ★ 与工厂对齐（见 recon_build.sh 顶部说明）
 FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=uninitialized -Wno-error=return-type -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
+# ★★ 2026-09-20（GAP 16.33）：**优化级别默认 -Os**（此前 -O1）。
+#   依据：单变量抽样实测（zig cc -target arm-linux-gnueabihf.2.29，逐个编译同一份 src）
+#     SPI_RR         工厂  92 B ⇒ -O1 384 B (4.17x)  vs  **-Os  92 B (1.00x，精确到字节)**
+#     gameType       工厂  60 B ⇒ -O1 276 B (4.60x)  vs  **-Os  52 B (0.87x)**
+#     Convert_Stereo 工厂  56 B ⇒ -O1 412 B (7.36x)  vs  **-Os  76 B (1.36x)**
+#     outputblankxy  工厂 220 B ⇒ -O1 644 B (2.93x)  vs  **-Os 272 B (1.24x)**
+#     DrawSelectBar  工厂 168 B ⇒ -O1 488 B (2.90x)  vs  **-Os 196 B (1.17x)**
+#     SPI_WW         工厂 104 B ⇒ -O1 296 B (2.85x)  vs  **-Os  96 B (0.92x)**
+#     DrawFrame      工厂 552 B ⇒ -O1 644 B (1.17x)  vs  **-Os 508 B (0.92x)**
+#   ⇒ **工厂 rkgame 是用 -Os 编译的**；-O1 会把"常量次数的小循环"完全展开
+#     （源码里的 `do{...}while(cVar2 != 0)`，次数为编译期常量），制造 4~7x 的
+#     **纯编译差异**，被 tools/prop_equiv.py 的 size 比值判据误报成 FAIL。
+#   ★ 单变量纪律：想回到旧口径做对照，用 `OPT=-O1 sh tools/recon_build.sh`。
+OPT="${OPT:--Os}"
+CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=uninitialized -Wno-error=return-type -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
 # ★ 严格口径：把 int-conversion / incompatible-pointer / implicit-int 升为 error。
 #   用于「消除假绿」——只有它通过，才代表类型真正正确（否则 FILE*/int 混用等会真崩）。
 #   只对宽松通过的文件重测，成本不翻倍。
-CFLAGS_STRICT="-c -O1 -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
+CFLAGS_STRICT="-c $OPT -Wall -Werror=int-conversion -Werror=incompatible-pointer-types -Werror=implicit-int -Wno-error=implicit-function-declaration -Wno-error=unused-parameter -Wno-error=unused-variable -target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon -I$NROOT/src/compat $FIDELITY"
 
 # zig 缓存 + 中间产物全放 C: 盘原生临时目录
 NTMP="C:/Users/Administrator/AppData/Local/Temp/zigcache1to1"
