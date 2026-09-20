@@ -223,6 +223,129 @@ bt_probe() {
     sed -n '1,70p' "$bs" 2>/dev/null || true
 }
 
+# ---- gr_blit 格式探针（`CGM_GBLIT_PROBE=1`；默认关，不拖慢常规轮次）------------------
+#   来历（2026-09-20，GAP 16.29）：rebuild 的 stdout 里 1871 行中有 1816 行是同一句
+#     `gr_blit: source has wrong format`
+#   ⇒ 菜单已进入 60fps 渲染循环，但 driver.so 的 `gr_blit_b` 每次都判定"格式不匹配"。
+#   静态反汇编已定位判定式（driver.so @0x34fc）：
+#       cur  = *(driver_base + 0x171cc)        ; 「当前帧」= open_drm()->slot0() 的返回值
+#       if (cur->[12] != source->[12]) puts("gr_blit: source has wrong format");
+#   而 source = rkgame 经 `video_driver_disp_frame` 传入的 `&frame`，其 [12] = colormode（.data 初值 = 2）。
+#   ⇒ **本探针唯一职责**：在同一时刻读出 source/cur 两侧的 [0][4][8][12][16]，
+#     外加 colormode / gr_colormode / DRM 上下文 / 格式表 4 槽 ⇒ 一次分辨"谁填了什么"。
+#   ★ 必须复用 mk_wrap（而不是外部自己拼环境）：wrapper 里已含 shim + 三桩 LD_LIBRARY_PATH + CGM_* 转发，
+#     外部拼装实测会因 cwd/相对路径/容器回收而 rc=139 且零输出（白跑）。
+gblit_probe() {
+    label="$1"
+    [ "$label" = "rebuild" ] || { echo "   [skip] gr_blit 探针只跑 rebuild"; return 0; }
+    if ! command -v gdb-multiarch >/dev/null 2>&1; then
+        echo "   [skip] 无 gdb-multiarch"
+        return 0
+    fi
+    port=12348
+    wrap="$OUT/run_guest_gl_${label}.sh"
+    mk_wrap "$wrap" "-g $port"
+    gp="$OUT/gblit_${label}.py"
+    out="$OUT/gblit_${label}.txt"
+    cat > "$gp" <<'GPYEOF'
+import gdb
+
+def u(e):
+    try:
+        return int(gdb.parse_and_eval(e))
+    except Exception:
+        return -1
+
+def u32(a):
+    v = u("*(unsigned int*)%d" % a)
+    return v
+
+BASE = [0]
+GB = [None]
+
+class GBK(gdb.Breakpoint):
+    """gr_blit_b 入口：直接读 source(r0) 与「当前帧」(*0x171cc) 的所有字段。"""
+    def __init__(s, addr, base):
+        gdb.Breakpoint.__init__(s, "*0x%x" % addr, internal=False)
+        s.silent = True
+        s.base = base
+        s.n = 0
+        s.rec = []          # 记录 (src12, cur12) 序列，用于判"是否恒定"
+    def fld(s, p, off):
+        if p is None or p <= 0x1000:
+            return None
+        v = u32(p + off)
+        return v if v != -1 else None
+    def stop(s):
+        s.n += 1
+        b = s.base
+        r0 = u("$r0")
+        cur = u32(b + 0x171cc)
+        a = s.fld(r0, 12)
+        c = s.fld(cur, 12)
+        s.rec.append((a, c))
+        if s.n <= 3 or s.n == 100:
+            print("GB#%d source=0x%x [0]=%s [4]=%s [8]=%s [12]=%s [16]=0x%x" % (
+                s.n, r0, s.fld(r0, 0), s.fld(r0, 4), s.fld(r0, 8), a, (s.fld(r0, 16) or 0)))
+            print("GB#%d cur=0x%x [0]=%s [4]=%s [8]=%s [12]=%s [16]=0x%x  ==> %s" % (
+                s.n, cur, s.fld(cur, 0), s.fld(cur, 4), s.fld(cur, 8), c, (s.fld(cur, 16) or 0),
+                ("相等(应继续)" if (a == c and a is not None) else "★不等(将报 wrong format)")))
+            print("GB#%d colormode=%s gr_colormode=%s ctx=0x%x frame_tbl=%s" % (
+                s.n, u32(b + 0x171a4), u32(b + 0x171b4), u32(b + 0x171bc),
+                [hex(u32(b + o)) for o in (0x171d4, 0x171d8, 0x171dc, 0x171e0)]))
+            for i, o in enumerate((0x171d4, 0x171d8, 0x171dc, 0x171e0)):
+                pp = u32(b + o)
+                if pp > 0x1000:
+                    print("GB#%d   tbl[%d] @0x%x [0]=%s [4]=%s [8]=%s [12]=%s [16]=%s [24]=%s" % (
+                        s.n, i, pp, s.fld(pp, 0), s.fld(pp, 4), s.fld(pp, 8), s.fld(pp, 12),
+                        s.fld(pp, 16), s.fld(pp, 24)))
+        if s.n == 400:
+            uniq = sorted(set(s.rec))
+            print("SAMP 前 400 次 (source[12], cur[12]) 去重 = %s  命中总数=%d" % (uniq[:12], s.n))
+        return False
+
+class DF(gdb.Breakpoint):
+    """先在 dispFlip（rkgame 自己的符号）命中时反推 driver.so 基址，再挂 gr_blit_b 断点。"""
+    def __init__(s):
+        gdb.Breakpoint.__init__(s, "dispFlip", internal=False)
+        s.silent = True
+    def stop(s):
+        vdf = u("(unsigned)video_driver_frame")
+        if vdf > 0x1000 and GB[0] is None:
+            base = vdf - 0x6590          # video_driver_disp_frame 的 vaddr（.dynsym 权威）
+            print(">>> driver.so base = 0x%x（由 video_driver_frame=0x%x - 0x6590 反推）" % (base, vdf))
+            print(">>> gr_blit_b @0x%x  frame(0x17220)=0x%x  cur_slot(0x171cc)=0x%x" % (
+                base + 0x34fc, u32(base + 0x17220), u32(base + 0x171cc)))
+            GB[0] = GBK(base + 0x34fc, base)
+        return False
+
+DF()
+gdb.execute("continue")
+GPYEOF
+    echo ""
+    echo "########## gr_blit 格式探针 ${label}（qemu gdbstub :$port）##########"
+    set +e
+    "$wrap" >/dev/null 2>&1 &
+    qpid=$!
+    sleep 3
+    timeout 180 gdb-multiarch -q -batch \
+        -ex "set confirm off" \
+        -ex "set pagination off" \
+        -ex "set sysroot $SYSROOT" \
+        -ex "file $GUEST" \
+        -ex "target remote localhost:$port" \
+        -ex "handle SIGSEGV nostop noprint pass" \
+        -ex "handle SIGBUS nostop noprint pass" \
+        -ex "source $gp" \
+        > "$out" 2>&1
+    grc=$?
+    kill "$qpid" 2>/dev/null || true
+    wait "$qpid" 2>/dev/null || true
+    set -e
+    echo "   gdb 退出码 = $grc → $out"
+    grep -a "^>>>\|^GB#\|^SAMP" "$out" 2>/dev/null | head -40 || true
+}
+
 # ---- 执行轨迹探针：`-d exec` 记录**每一个被执行的翻译块**（含已缓存块）----
 #   为什么需要它：`-d in_asm` 只在"新翻译一个块"时写一行，所以**已缓存块里的坏访存/
 #   坏跳转不会留下痕迹**（实测：日志尾部停在 spi_driver_init 的 `pop {…,pc}`，
@@ -496,6 +619,11 @@ else
     echo "!! CGM_CONTROL=0 ⇒ 本轮没有确定性控制组（门禁退化为全量严格比较）"
 fi
 run_side rebuild "$REBUILD"
+
+# ★ gr_blit 格式探针（显式开关；默认关 ⇒ 常规轮次行为一字不变）
+if [ "${CGM_GBLIT_PROBE:-0}" = "1" ]; then
+    gblit_probe rebuild || { echo "::error::gr_blit 探针失败（仪器故障）"; exit 1; }
+fi
 
 # 重建侧额外做一次翻译级探针（崩溃现场的最后指令）
 echo ""
