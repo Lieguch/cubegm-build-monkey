@@ -33,7 +33,23 @@ case "$CC" in
 esac
 # ★ 与工厂对齐（见 recon_build.sh 顶部说明）：关掉 canary 与 FORTIFY
 FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-CFLAGS="-c -O1 -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH $FIDELITY"
+# ★★ 2026-09-20（GAP 16.33）：**优化级别默认 -Os**（此前 -O1）。
+#   本脚本是**唯一**把 src/proprietary/*.c 编成 build/obj/*.o 的地方（cnb_env.sh [6/7] 调它），
+#   所以"编译口径"在这里定，而不是在 link_full.sh（那只做链接）。
+#   ── 依据（单变量抽样实测，zig cc -target arm-linux-gnueabihf.2.29，同一份 src 逐个编译）──
+#     SPI_RR         工厂  92 B ⇒ -O1 384 B (4.17x)  vs  **-Os  92 B (1.00x，精确到字节)**
+#     gameType       工厂  60 B ⇒ -O1 276 B (4.60x)  vs  **-Os  52 B (0.87x)**
+#     Convert_Stereo 工厂  56 B ⇒ -O1 412 B (7.36x)  vs  **-Os  76 B (1.36x)**
+#     outputblankxy  工厂 220 B ⇒ -O1 644 B (2.93x)  vs  **-Os 272 B (1.24x)**
+#     DrawSelectBar  工厂 168 B ⇒ -O1 488 B (2.90x)  vs  **-Os 196 B (1.17x)**
+#     SPI_WW         工厂 104 B ⇒ -O1 296 B (2.85x)  vs  **-Os  96 B (0.92x)**
+#     DrawFrame      工厂 552 B ⇒ -O1 644 B (1.17x)  vs  **-Os 508 B (0.92x)**
+#   ⇒ **工厂 rkgame 是用 -Os 编译的**。`-O1` 会把"次数为编译期常量的小循环"完全展开
+#     （源码里的 `do{...}while(cVar2 != 0)`），制造 4~7x 的**纯编译差异**，
+#     被 tools/prop_equiv.py 的 size 比值判据误报成 FAIL（7 个 FAIL 里 5+ 个源于此）。
+#   ★ 单变量纪律：`OPT=-O1 sh tools/link_audit.sh <out>` 可回到旧口径做对照。
+OPT="${OPT:--Os}"
+CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH $FIDELITY"
 
 mkdir -p "$OBJD" "$(dirname "$REP")"
 rm -f "$OBJD"/*.o 2>/dev/null
