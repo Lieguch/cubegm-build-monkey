@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - '1to1/**'
+      # ★★ 2026-09-20：排除纯文档（理由同 1to1-qemu-behav.yml 的同一处理）。
+      - '!1to1/*.md'
       - '.github/workflows/1to1-verify.yml'
 
 permissions:
