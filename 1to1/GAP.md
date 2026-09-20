@@ -2075,3 +2075,53 @@ rkgame 侧 Frame_data / Frame_width = 0      ← 另一套帧描述符（DrawFra
 - **`objdump -d --disassemble=<sym>`** 对付**有符号**的厂商 DSO 极有效；无符号时才需绝对地址。
 - **绝对地址断点必须区分"文件 vaddr"与"运行时地址"**：`break *0xd8e4` 命中 0 次，
   而符号断点 `dispFlip` 命中 13000+ 次（该 ELF 的 `dispFlip` 实际在 `0x500387c`）。
+
+### 16.28 ★★★★★ GOT 全解算：`S` = `frame`、`S->[12]` = `colormode` —— 并暴露一个必须解决的矛盾
+
+**方法**：**纯静态**（Python 按 `PT_DYNAMIC` → `DT_REL` 解 `R_ARM_GLOB_DAT`，不依赖任何 ARM 工具链）
+—— 因为容器被回收，反而发现"GOT 解算根本不需要设备/容器"。
+
+**driver.so 的完整 GOT 表（0x17000–0x17200，26 项）**
+
+| GOT 项 | 符号 | GOT 项 | 符号 |
+|---|---|---|---|
+| 0x17128 | `__cxa_finalize` | 0x17144 | **`frame`** ★ |
+| 0x17130 | `mutex` | 0x17148 | `DisplayThreadflag` |
+| 0x17134 | **`colormode`** ★ | 0x17150 | `gr_colormode` |
+| 0x17138 | `ScaleDisplayThread` | 0x17154 | `stdout` |
+| 0x1713c | `cond` | 0x17158 | `DisplayThread` |
+| 0x17140 | `stderr` | 0x1715c | `video_aspect_ratio_idx` |
+
+**解算结果**
+```c
+/* video_driver_disp_frame() —— GOT 0x17144 = frame, 0x17134 = colormode */
+S = &frame;                                  /* 注意：GOT 内容 = 符号地址 ⇒ r3 = &frame */
+if (S->[0] != w || S->[4] != h || S->[8] != pitch) {
+    S->[0]  = w;
+    S->[4]  = h;
+    S->[12] = colormode;                     /* ★ 直接取 colormode 全局的值 */
+    S->[8]  = pitch;
+}
+S->[16] = data;
+gr_next_frame();
+gr_blit_b(S, ...);
+```
+⇒ 结合 16.27 的实测（`colormode = 2`、`frame` 指向结构体的 `[12] = 2`）：
+**`source->[12] = colormode = 2`，且 `frame->[12] = 2` ⇒ 两侧应当相等。**
+
+**★ 必须解决的矛盾（下一轮唯一入口）**
+`gr_blit: source has wrong format` 却出现 **1816 次** ⇒ 上述"应当相等"与实测冲突。三种候选解释（必须用实验排除）：
+1. **`gr_blit_b` 的 `P` 不是 `frame`** —— 我按 `add r3,pc,r3` 算出的 GOT 地址是 `0x171cc`，
+   但 `0x171cc` **不在**已解析的 GOT 区间（0x17128–0x17168）⇒ 该处要么是 `.data` 里的
+   **指针变量**（不是 GOT 项），要么我的 pc 基准取错（`ldr` 的 pc = 该指令 +8）。
+2. **双缓冲**：`gr_next_frame` 切换后，`frame` 全局指向的缓冲与 blit 用的 source 不是同一个。
+3. **报错的 source 不是 `S`**：`gr_blit_b` 可能还有 other 调用点（本模块内**经 PLT** 调用）。
+
+**⇒ 排除方法（唯一决定性）**：**把断点直接设在 `gr_blit_b` 入口**（而不是像 16.27 那样在 `dispFlip` 里采样），
+在同一时刻读 **`r0`（source）的 `[0]/[4]/[8]/[12]/[16]`** 与 **`P->[12]`** ⇒ 一次就能分辨三种解释。
+
+**★ 方法论增量**
+- **GOT 解算可以完全脱离 ARM 工具链**：按 `PT_DYNAMIC` 找 `DT_REL/DT_RELSZ/DT_RELENT`，
+  对 `R_ARM_GLOB_DAT`(21) 的 `r_offset` 与 `r_info>>8` 取 `.dynsym` 名即可。
+- **`VaddrToOffset` 必须遍历 `PT_LOAD`**（节表在某些 `.so` 上不含 `.dynamic`；实测该 DSO 的
+  `.dynamic` **只能**从 program header 拿到，用节表解析会 `IndexError`）。
