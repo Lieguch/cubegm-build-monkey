@@ -24,6 +24,14 @@ M4 DRM 显示      stdout 含 `open drm!`；失败会伴随 stderr `cannot find/
 M5 main_Menu 入口 stdout 含 `root_path:`
 M6 UI 资源包打开  出现 `find <item> in <path>.zip fail`（说明**包打开了**、只是条目不在）⇒ 打开成功；
                  仅出现 `open <path>.zip fail` ⇒ 打开失败
+                 ★ 口径警告（2026-09-20）：本判据**不具区分度** —— 三侧都会打
+                   `find font.ttf ... fail`（font.ttf 本就不在 ui_cn.zip 内）。要看"条目是否真读到"，
+                   请用下面的 **M6R**。
+M6R 资源条目读取  ★★ 2026-09-20 新增。只看**包内应当存在**的条目：
+                   `ui.cfg`（`get_items_from_zipfile` 取）与 `menu.raw`（`mui_LoadUIResource` 取）。
+                   两者都**没有**报缺 ⇒ ✓；任一报缺 ⇒ ✗（并列出缺哪个）。
+                   ⚠️ 已知局限：若一侧在到达这两处查找**之前**就退出，本判据可能给假 ✓
+                   ⇒ 必须结合 MX(终止) 与 exec_set_diff 复核。
 M7 菜单存活      到达 M5（菜单入口）且**未被信号终止**：exit < 128
                 （0=自行退出；124=GNU timeout 超时被杀 ⇒ **一直在跑**）；
                 128+N = 被信号 N 杀死 ⇒ ✗（134=SIGABRT / 139=SIGSEGV / 137=SIGKILL 一律算"死"）
@@ -74,6 +82,26 @@ def side_marks(scen_dir, label):
     openfail = re.search(r"open .+?\.zip fail", out) is not None
     marks["M6"] = opened
     detail["M6"] = "包已打开(条目缺失)" if opened else ("打开失败" if openfail else "未走到")
+    # ★★ M6R「资源条目读取」（2026-09-20 新增；判据具区分度）
+    #   动机见模块 docstring 与 GAP 16.44：旧 M6 对三侧一律 ✓（`font.ttf` 本就不在包内），
+    #   把"工厂读不出条目 / 我们读得出条目"这唯一真实分歧**抹平**了。
+    #   新判据只查**包内应当存在**的两个条目（已用标准 zipfile 列出该包 6 个条目）：
+    #     `ui.cfg`   ← get_items_from_zipfile（mui_LoadConfig 调）
+    #     `menu.raw` ← mui_LoadUIResource（mui_menu 调）
+    _must = ("ui.cfg", "menu.raw")
+    _missing = [it for it in _must
+                if re.search(r"find %s in .+?\.zip fail" % re.escape(it), out)
+                or re.search(r"find %s fail" % re.escape(it), out)]
+    if not opened:
+        marks["M6R"] = False
+        detail["M6R"] = "未走到(无 zip 打开证据)"
+    elif _missing:
+        marks["M6R"] = False
+        detail["M6R"] = "缺:" + ",".join(_missing)
+    else:
+        marks["M6R"] = True
+        detail["M6R"] = "ui.cfg+menu.raw 均读到"
+
     # M7：**菜单存活** —— 语义 = 到达菜单入口(M5) 且 **未被信号终止**。
     # ★★ 口径修正（2026-09-19，实测驱动；旧判据产生过**假绿**）
     #   旧式：`ex not in (None, 139)` —— 只排除 SIGSEGV ⇒ **把 134(SIGABRT) 也判成"存活"**。
@@ -151,6 +179,44 @@ def selftest():
         print("  %-6s exit=%-5s M5=%-5s → M7=%-5s (期望 %-5s)  %s"
               % ("✓" if ok else "★FAIL", ex, m5, got, want, note))
         shutil.rmtree(d, ignore_errors=True)
+    # ---- M6R 锚点（资源条目读取）：正负双向，全部来自本轮 CI 实测 ----
+    m6r_cases = [
+        # (stdout 内容, 期望 M6R, 说明)
+        ("root_path:/sdcard\n"
+         "find ui.cfg in /sdcard/cubegm//ui_cn.zip fail\n"
+         "find font.ttf in /sdcard/cubegm//ui_cn.zip fail\n"
+         "find menu.raw fail\n", False,
+         "★ 工厂 C5 实测：ui.cfg 与 menu.raw 都报缺 ⇒ ✗（旧 M6 在这里给了 ✓）"),
+        ("root_path:/sdcard\n"
+         "find font.ttf in /sdcard/cubegm//ui_cn.zip fail\n", True,
+         "★ 重建侧 C5 实测：只缺 font.ttf（**本就不在包内**）⇒ 不得判缺"),
+        ("root_path:/sdcard\nfind menu.raw fail\n", False,
+         "只缺 menu.raw ⇒ ✗"),
+        ("root_path:/sdcard\nfind ui.cfg in /sdcard/cubegm//ui_cn.zip fail\n", False,
+         "只缺 ui.cfg ⇒ ✗"),
+        ("nothing here\n", False,
+         "未走到（无 zip 打开证据）⇒ ✗，不得假绿"),
+    ]
+    print("  " + "-" * 74)
+    print("  M6R 锚点（资源条目读取）")
+    for out_txt, want, note in m6r_cases:
+        d = tempfile.mkdtemp(prefix="cgm_ms6r_")
+        lb = "factory"
+        rd = os.path.join(d, "rundir_" + lb)
+        os.makedirs(rd)
+        with open(os.path.join(rd, "stdout.txt"), "w", encoding="utf-8") as f:
+            f.write(out_txt)
+        with open(os.path.join(d, "behav_%s.json" % lb), "w", encoding="utf-8") as f:
+            _json.dump({"exit_code": 0}, f)
+        marks, _detail = side_marks(d, lb)
+        got = bool(marks.get("M6R"))
+        ok = (got == want)
+        if not ok:
+            bad += 1
+        print("  %-6s M6R=%-5s (期望 %-5s)  %s"
+              % ("✓" if ok else "★FAIL", got, want, note))
+        shutil.rmtree(d, ignore_errors=True)
+
     print("-" * 78)
     print("  结论：%s" % ("★ 有锚点未通过 ⇒ 判据不可信，必须修" if bad else "全部锚点通过 ✓"))
     return 1 if bad else 0
@@ -163,9 +229,9 @@ def main():
     if not dirs:
         print(__doc__)
         return 1
-    order = ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7"]
+    order = ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M6R", "M7"]
     names = {m[0]: m[1] for m in MILESTONES}
-    names.update({"M6": "UI 资源包打开", "M7": "菜单存活"})
+    names.update({"M6": "UI 资源包打开", "M6R": "资源条目读取", "M7": "菜单存活"})
     print("=" * 78)
     print("功能里程碑矩阵（✓=到达  ✗=未到达  ·=未走到该分支）")
     print("=" * 78)
@@ -192,6 +258,8 @@ def main():
                     cell = "✗(%s)" % detail[mid]
                 elif mid == "M6" and v and "M6" in detail:
                     cell = "✓(%s)" % detail["M6"]
+                elif mid == "M6R" and "M6R" in detail:
+                    cell = ("✓(%s)" if v else "✗(%s)") % detail["M6R"]
                 elif mid == "M7" and "M7" in detail:
                     # ★ M7 必须带出**判定依据**（exit 值）：否则 "M7 ✗" 无法区分
                     #   "被信号打死" 与 "压根没到菜单入口" —— 这是两个完全不同的结论。
