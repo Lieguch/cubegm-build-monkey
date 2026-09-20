@@ -2912,3 +2912,65 @@ do { local_30 = 0; do { local_30 = local_30 + 1; } while (local_30 < 0x27); iVar
 >    症状 = **源码有该常量、产物没有** + **条件分支数骤减**。
 >
 > 共同点：**体积比只能"顶出来"，定性必须靠结构证据**（重定位集合 / 循环常量在不在）。
+
+### 16.42 ★★★★ 仪器化：`tools/cmp_calls.py`（被调函数集合对拍）+ 一个**开放项**
+
+**动机**：本轮排查 5 个"偏小"项时，我发现最便宜、最决定性的第一步是
+**"工厂调用过的函数，我们是否也调用了"**。把它做成工具后，一次跑完 213 个函数。
+
+**判据**：工厂 `t1` 的所有 `bl @name` 归一化后，必须是重建侧该函数 `bl`/`blx` 目标集合的子集。
+
+**开发中踩到的三类假阳性（都已在工具里消掉，并写进注释）**
+
+| 类别 | 现象 | 处理 |
+|---|---|---|
+| **thunk 包装** | 我们侧 libc 调用走 `__ARMv7ABSLongThunk_sprintf` 桩 | `norm()` 剥前缀 |
+| **GCC 克隆后缀** | 工厂叫 `run_process.constprop.0` / `mui_outputxy_length.isra.19` | 剥 `.constprop/.isra/.part.N` |
+| **可内联内建** | `memcpy`/`strlen`/`malloc`/`__aeabi_*idiv`/ctype 族（glibc 里是宏） | 白名单（实测：不设白名单时 36 个函数被误报，设后降到 9，再剥后缀+分段修正后降到 8）|
+
+**残留 8 项的逐条归类（这就是本工具的真正价值：把噪声压到能逐条看）**
+
+| 函数 | 缺的符号 | 归类 |
+|---|---|---|
+| `DeinitDisplay` / `InitDisplay` | `run_process` | 疑似**内联**（工厂调 `.constprop.0` 克隆体） |
+| `DisplayLine_list` / `EmuCore_Line` | `mui_outputxy_length` | 同上 |
+| `mui_run_game` / `shoucang` | `code_convert` | 同上 |
+| `UpdateROM` | `OpenZipU`/`UnzipItem`/`GetZipItemA`/`CloseZipU`/`DateToTmuDate` | **编译器分段**（GAP 16.34 已定性：`st_size` 只覆盖第一段，第二段被链接器放到别处） |
+| `mui_setting` | `UnDrawSelectBar` | **★ 开放项**（见下） |
+
+**★ 开放项：`mui_setting` 少了一次 `UnDrawSelectBar` 调用**
+
+源码 `src/proprietary/mui/FUN_0002b2b4_mui_setting.c:143` 是**活代码**：
+```c
+if (-1 < DAT_003af27c) {
+    UnDrawSelectBar(local_56c + DAT_003af27c * 4,(int)DAT_003af294,0);   /* ← 擦掉上一个选中项 */
+    mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
+    ...
+}
+iVar9 = iVar11;
+if (-1 < iVar11) { DrawSelectBar(local_56c + iVar11 * 4); ... }           /* ← 画新的选中项：我们侧在 */
+```
+
+**已排除的解释（都有实测）**
+1. **不是命名问题**：`UnDrawSelectBar` 在我们产物里就叫这个名字（160 B），`prop_equiv` 也认它；
+2. **不是内联**：拿 `UnDrawSelectBar` 的指令签名（去寄存器、留助记符+立即数）在 `mui_setting` 体内
+   做子序列匹配 ⇒ **最长连续匹配 1/30 条** ⇒ 没有被内联；
+3. **不是分段**：全可执行段搜"目标 = `UnDrawSelectBar` 地址"的 `bl` ⇒ 命中 8 处，**全部落在
+   `mui_joystick_setting`(×5)/`mui_video_setting`(×3) 的 `st_size` 之内**，没有任何一处来自
+   `mui_setting` 区域；
+4. **不是尾部合并**：同一函数里确实能看到尾部合并的痕迹（`mui_outputxy_t` 13→8、`mui_DispBlock` 6→5、
+   `dir_serial_list` 13→10），但尾部合并**只能让调用点共用，不可能把 1 次降到 0 次**。
+
+**旁证**：我们 `mui_setting` 是 **7700 B vs 工厂 6500 B（1.185×，属 OK 区，不是偏小）** ⇒
+"少一次调用却更大"本身说明代码膨胀/重排也在发生，两件事并不互斥。
+
+**★ 这个开放项**：**不宣称是真缺陷，也不排除**。下一步的判据（已想清楚，成本低）：
+> 在 `mui_setting` 里定位"`-1 < DAT_003af27c` 检查 + 紧随其后的 `mui_DispBlock`"这一对，
+> 与工厂同位置逐条对比 —— 若那一块整体在、只少一条 `bl`，就是**真缺陷**（
+> 少了"擦除上一个选中条"⇒ 菜单残影）；若那一块整体不在、且另一块已被复用，则是**控制流合并**。
+
+**工具定位（重要）**：`tools/cmp_calls.py` 目前**是报告级，不接 CI 门禁** ——
+残留项的"内联 vs 分段 vs 缺失"还需要人工判一次。等开放项结论出来后，
+把残留项登记成基线（带理由）即可升级为门禁。
+**不接门禁的理由要写清**：判据的**假阳性率**当前无法降到可接受水平（36 → 8 已尽力），
+而门禁一旦长期带假阳性就会被人忽略 —— 这比没有门禁更糟。
