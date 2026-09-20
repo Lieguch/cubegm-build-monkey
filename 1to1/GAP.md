@@ -2372,3 +2372,103 @@ CI 里 `J / M / N / O / P` 五个场景跑的是**默认口径**（jammy sysroot
 在那些场景里 `driver.so` 根本没加载（M3 ✗）⇒ 它们**从来没有真正走到菜单渲染**，
 所以"列表是否被填充""菜单是否被驱动"这些**它们本来要回答的问题，一条也没被回答过**。
 ⇒ 下一轮：把这五个场景**重挂到「设备真机 sysroot + 三桩」的深口径**（并把历史数字标注为"浅口径基线"，不可与深口径直接比较）。
+
+### 16.31 ★★★★ 下一个瓶颈的因果链（`.dat` 路径）+ 一个**仪器级缺陷**：CI 的 J/M/N/O/P 一直在浅口径上空转
+
+**① `open /sdcard//.dat fail` ×29 的完整因果链（全部有源码/机器码证据）**
+
+```c
+/* 症状来源：mui_DisplayThumbnail()（缩略图线程体，由 filelist_run_game 起的 pthread） */
+mui_extract_basepath(basepath, &file_info_list[DAT_003af27c * 0x404], 0x80);
+sprintf(path, "%s/%s/%s.dat", root_path, basepath, basepath);   /* ← 拼出 /sdcard//.dat */
+iVar1 = OpenZipU(path, 0, 2);
+if (iVar1 == 0) RARCH_LOG("open %s fail\n", path);              /* ← ×29 */
+
+/* 列表填充者：dir_serial_list(param_1) —— 结构 0x404 B：name[0x100] + d_type(在 +0x100) */
+iVar2 = scandir(path, &list, NULL, alphasort);
+两个回环：① 先收「目录」(d_type & 4) ② 再收「文件」
+硬闸门： if (DAT_003af394 <= iVar11) 跳过;      /* ★ DAT_003af394 = GameList_count（ui.cfg 里的键）*/
+         strcpy(&file_info_list + iVar11*0x404, pdVar8->d_name);
+
+/* 索引来源：mui_menu() */
+DAT_003af27c = (m_menulog_blob)._284_4_;        /* 当前选中项，来自 menu.log 的 blob */
+```
+
+⇒ **因果链**：`GameList_count == 0`（或 `scandir` 看不到任何目录）
+⇒ `file_info_list` **一个条目都不写** ⇒ `DAT_003af27c = 0` 指向**全 0 的空条目**
+⇒ `basepath = ""` ⇒ 路径退化成 `/sdcard//.dat` ⇒ 缩略图线程每轮打一行失败。
+- ★ 这条链在项目里**早有记录**（`tools/patch_uicfg.py` 的文件头就写了"它为 0 时缩略图路径退化成 `/sdcard//.dat`"）
+  ⇒ 所以 **29 行不是新缺陷**，而是 **J 口径（未补 `GameList_count`）的预期症状**；
+  真正的下一步不是修 `.dat`，而是**让列表被填起来**（`CGM_UICFG=1` + `CGM_GAMEDIRS=2`）。
+- `[8] = [0] × [12]`、`d_type & 4` 先收目录 ⇒ **菜单第一层是"平台目录"列表**，
+  与项目已知的 folder-to-core 映射（000=fba / 001=FC / …）一致。
+
+**② 仪器级缺陷：CI 里的 J/M/N/O/P 一直在**默认口径**上跑（= 观测一个不存在的路径）**
+
+| 场景 | 原口径 | 后果 |
+|---|---|---|
+| A（基线） | jammy，无桩 | 预期（浅） |
+| C | jammy + libkms | 观测 driver.so 解锁 |
+| C4 / C5 | **device + 三桩** | 真机路径 |
+| **J / M / N / O / P** | **jammy，无桩** | ★ `dlopen(driver.so)` 失败 ⇒ **M3 ✗ ⇒ 从来没走到菜单渲染** |
+
+⇒ 这五个场景**本来要回答的问题**（"列表是否被填充""菜单是否被驱动""缩略图是否加载"）
+**一条也没被回答过** —— 它们在观测一条根本不经过菜单的路径。
+（`dir_serial_list` / `mui_DisplayThumbnail` / `mui_menu` 全都在 `driver.so` 加载之后才可能执行。）
+
+**③ 修正（提交 `1ef9bd56`，纯 CI 口径修改，不动被测代码）**
+- 这五个场景统一改为 `SYSROOT=/arm-root-device` + `CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1`；
+- 场景 J 的 step 里补**桩构建 + 硬校验**（`[ -f ... ] || exit 1`）⇒
+  **深口径不成立就显式失败**，不允许静默退化成浅口径（这正是这一轮暴露出来的失败模式）；
+- ★ 在 step 注释里明确标注：**历史数字属"浅口径基线"，与深口径不可直接比较**（口径变了 ⇒ 不是单变量）。
+
+**④ ★★★★ 深组合实验的**负面结果**（实测）：三个开关**全部无效**
+
+| 组 | 新开开关 | factory / rebuild 覆盖率 | stdout | `.dat` 行 | M6/M7 |
+|---|---|---|---|---|---|
+| `fx_j` | （基线） | 52 / 73 | 51 行 | 25 | ✓ / rebuild ✓124 |
+| `fx_n` | +`CGM_GAMEDIRS=2` +`CGM_UICFG=1` | 52 / 73 | 51 行 | 25 | 同 |
+| `fx_p` | +`CGM_ALLFILES=1` | 52 / 73 | 51 行 | 25 | 同 |
+
+**三组逐位完全相同**（覆盖率、stdout 每一行、里程碑、终止码）
+⇒ **`CGM_UICFG=1`（补 `GameList_count`）/ `CGM_GAMEDIRS=2`（游戏目录）/ `CGM_ALLFILES=1`（游戏索引）
+目前一个都没有产生可观测量差异。**
+
+**⑤ 为什么无效：`dir_serial_list` 的调用点根本不在 `mui_menu` 里（新结构洞察）**
+
+```
+grep 全仓调用点：
+  dir_serial_list     ← **只被 mui_setting 调用**（4 处：fW 302 / 319 / 336 / 340），**不在 mui_menu**
+  mui_do_file_list    ← 被 mui_menu 调用（80 / 114 / 119 / 197）—— 它只**显示**已填好的 file_info_list
+  mui_type_file_list  ← 被 mui_type 调用
+```
+⇒ `file_info_list` 由 **`mui_setting`（"设置/类型"屏）**填充；`mui_menu` 只负责**显示**。
+⇒ **要让列表被填起来，必须让流程进入 `mui_setting`**（`CGM_MENULOG_SCREEN=5`），
+否则补 `ui.cfg` / 造游戏目录**都只是在给一个不会被执行的循环准备数据**。
+
+**⑥ ★ 我的实验设计缺陷（记账，与"漏 KEY2"同类）**
+
+我在 `fx_n` / `fx_p` 里写了
+```
+run fx_n $J CGM_GAMEDIRS=2 CGM_UICFG=1        # $J 里已经含 CGM_MENULOG_SCREEN=0
+```
+`env` 的语义是**后写覆盖先写** ⇒ `CGM_MENULOG_SCREEN` 仍是 **0**，
+**这三组从头到尾都没进过 `mui_setting`** ⇒ 当然三组相同。
+⇒ **纪律：给基础开关集"追加"变量时，必须显式检查是否有重名，并把覆盖项放在最后；
+否则你以为在改一个变量，其实什么都没改（而结果看起来像"该变量无效"）。**
+
+**⑦ 顺带完成的一项保真度核对（工厂侧 `dir_serial_list` 的真身，`0x2142c`）**
+
+```asm
+0x21440  mov  sb, r0           ; param_1 → sb(r9)（用于后续索引）
+0x21450  add  r1, sp, #20      ; &namelist
+0x21430  mov  r2, #0           ; 第 3 参数 = NULL
+0x2145c  sub  r0, r0, #2000 / sub r0, r0, #4   ; r0 = 0x3c99ec = **全局 path[256]**（不是参数！）
+0x21464  ldr  r3, [ip, r3]     ; 第 4 参数 = *(0x3b1e3c)
+0x21468  bl   0x99e8           ; scandir(path, &namelist, NULL, compar)
+```
+- `dis_got.py --rel` 解出：**`0x3b1e3c` = `alphasort` 的 GOT 槽（`R_ARM_GLOB_DAT`）**
+  ⇒ 工厂侧 = `scandir(path, &list, NULL, alphasort)`；**与我们重建的写法逐字一致** ✅
+  **⇒ `dir_serial_list` 无保真度差异**；路径确实取全局 `path`（0x3c99ec，与 `gdb_globals.sh` 的 `A_PATH` 同一个）。
+- ★ 附带能力：**`dis_got.py` 对工厂二进制同样有效**（它是带 113 个 dynsym 的 ELF；`--rel` 能把工厂侧的
+  GOT 项翻成符号名，`--addr` 可按绝对地址反汇编）⇒ **工厂侧也进入了"可定点提问"的状态**。
