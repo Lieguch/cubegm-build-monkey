@@ -215,39 +215,6 @@ jobs:
             exit 1
           fi
 
-      # ★★ 场景 D：判定「key2 的内容到底来自哪里」——这是 M6（UI 资源包打开 = 57% 重构量的入口）
-      #   的唯一堵点。背景：崩溃现场实测 key2 = `00 00 00 00 00 7d 1e 47`
-      #   （既不是我们注入的签名、也不是 shim 现有任何一种 KY 派生载荷；且全 .text 75 万条指令里
-      #     **没有一条**直接构造 key2 的地址 ⇒ 写入者走 GOT 间接指针，静态两次漏判）。
-      #   本场景把**所有 SFC 数据读**的载荷统一填成 0xC7（芯片ID/UniqueID 保持真实以免走错启动分支）：
-      #     · key2 变成 C7 重复 ⇒ 链路 = SFC 读 → key2 ⇒ 沙箱修法 = 仿真正确的 security 载荷；
-      #     · key2 不变        ⇒ 来源与 SFC 无关 ⇒ 下一步改用「key2 页写陷阱」抓写入者的 pc/lr。
-      - name: 执行集合差集（比 stdout 前缀更早暴露分歧机制；观测项）
-        if: always()
-        run: |
-          cd 1to1
-          # 背景（2026-09-17 场景 E 实测）：行为门禁只比对 stdout 的**最长公共前缀**，
-          #   于是"两侧都不打印、但走的代码路径不同"这类分歧它看不见。
-          #   场景 E 前缀 18/18 PASS，而执行集合差集立刻露出：
-          #     仅我们执行 = mui_outputxy_t(904B 字体渲染) / mui_DispBlock / get_item_from_line
-          #                  / UnzipItem / strtrim{,l,r}
-          #     仅工厂执行 = ClearBuffer
-          #   机制：mui_InitFont 失败后工厂不再调用 mui_outputxy_t，我们照样调用
-          #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
-          # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
-          #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
-          for sc in qemu qemu_c qemu_j qemu_m qemu_n qemu_o qemu_p; do
-            for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
-              [ -f "$f" ] || continue
-              o="$(echo "$f" | sed s/_factory/_rebuild/)"
-              [ -f "$o" ] || continue
-              echo "=========== $sc ==========="
-              python tools/exec_set_diff.py --factory "$f" --ours "$o" \
-                --label "$sc" --out report/$sc/exec_set_diff.txt || true
-              break
-            done
-          done
-
       - name: 行为采集·场景 J（起始屏幕=0 + 合成 root.dat；M/N/O/P 的对照基线）
         run: |
           cd 1to1
@@ -384,6 +351,46 @@ jobs:
             --ours report/qemu_p/coverage_rebuild.txt --label j_vs_p \
             --out report/qemu_p/j_vs_p.txt || true
           sed -n "1,20p" report/qemu_p/j_vs_p.txt 2>/dev/null || true
+
+      # ★★ 2026-09-20（GAP 16.43）：本步**必须放在所有场景之后**。
+      #   历史坑：它原先排在场景 J/M/N/O/P **之前**，且场景清单**漏了 `qemu_c4`/`qemu_c5`**
+      #   ⇒ 设备真机口径（C4/C5）与 J/M/N/O/P 的差集**从来没被产出过**。
+      #   而这份"仅工厂执行 / 仅我们执行"正是**最便宜、最决定性**的刻度：
+      #   C5 实测（手工补算）：**仅工厂执行只有 2 个**（run_process.constprop.0 80B / ClearBuffer 32B，
+      #   均为内联/尾调用形态），而**仅我们执行 24 个**（mui_do_file_list/ReadUSBJoy/mui_outputxy_t…）
+      #   ⇒ 分歧机制在"仅我们执行"那一侧（与本文件既有的场景 E 案例同源）。
+      # ★★ 场景 D：判定「key2 的内容到底来自哪里」——这是 M6（UI 资源包打开 = 57% 重构量的入口）
+      #   的唯一堵点。背景：崩溃现场实测 key2 = `00 00 00 00 00 7d 1e 47`
+      #   （既不是我们注入的签名、也不是 shim 现有任何一种 KY 派生载荷；且全 .text 75 万条指令里
+      #     **没有一条**直接构造 key2 的地址 ⇒ 写入者走 GOT 间接指针，静态两次漏判）。
+      #   本场景把**所有 SFC 数据读**的载荷统一填成 0xC7（芯片ID/UniqueID 保持真实以免走错启动分支）：
+      #     · key2 变成 C7 重复 ⇒ 链路 = SFC 读 → key2 ⇒ 沙箱修法 = 仿真正确的 security 载荷；
+      #     · key2 不变        ⇒ 来源与 SFC 无关 ⇒ 下一步改用「key2 页写陷阱」抓写入者的 pc/lr。
+      - name: 执行集合差集（比 stdout 前缀更早暴露分歧机制；观测项）
+        if: always()
+        run: |
+          cd 1to1
+          # 背景（2026-09-17 场景 E 实测）：行为门禁只比对 stdout 的**最长公共前缀**，
+          #   于是"两侧都不打印、但走的代码路径不同"这类分歧它看不见。
+          #   场景 E 前缀 18/18 PASS，而执行集合差集立刻露出：
+          #     仅我们执行 = mui_outputxy_t(904B 字体渲染) / mui_DispBlock / get_item_from_line
+          #                  / UnzipItem / strtrim{,l,r}
+          #     仅工厂执行 = ClearBuffer
+          #   机制：mui_InitFont 失败后工厂不再调用 mui_outputxy_t，我们照样调用
+          #   ⇒ 无效字体传进去 ⇒ 崩在 stbtt_GetFontVMetricsOS2+0x8（ldrd 且 r0 无效）。
+          # ★ 场景 A 的覆盖率报告名是 coverage_*.stdout.txt（B/C/E 是 coverage_*.txt）
+          #   ⇒ 两种都要试，否则 A 静默不产出差集（实测踩坑）。
+          for sc in qemu qemu_c qemu_c4 qemu_c5 qemu_j qemu_m qemu_n qemu_o qemu_p; do
+            for f in report/$sc/coverage_factory.txt report/$sc/coverage_factory.stdout.txt; do
+              [ -f "$f" ] || continue
+              o="$(echo "$f" | sed s/_factory/_rebuild/)"
+              [ -f "$o" ] || continue
+              echo "=========== $sc ==========="
+              python tools/exec_set_diff.py --factory "$f" --ours "$o" \
+                --label "$sc" --out report/$sc/exec_set_diff.txt || true
+              break
+            done
+          done
 
       # ★★ 2026-09-20（GAP 16.32）：**新增静态逐函数等价性门禁**。
       #   ★ 位置：放在**所有运行时观测场景之后**、artifact 上传之前 ——
