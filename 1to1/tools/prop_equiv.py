@@ -166,8 +166,26 @@ def mnem_seq(elf, vaddr, size):
 
 # ---------------------------------------------------------------- 主流程
 def load_factory():
-    j = json.load(io.open(FACTORY_JSON, encoding="utf-8"))
-    return j["functions"]
+    """读工厂侧函数级模型。
+
+    ★ **必须支持 `.json.gz`**：仓库里入库的是压缩版（`push_1to1.py` 显式登记
+      `golden/factory.funcs.json.gz`，3.67 MB），未压缩的 21 MB `.json` **只在本地**。
+      首跑 CI 就因为只找 `.json` 而报 `缺 golden/factory.funcs.json` 直接失败 —— 这是
+      "本地能跑、CI 跑不了"的典型形态，必须两种都试。
+    """
+    plain = FACTORY_JSON
+    gz = FACTORY_JSON + ".gz"
+    if os.path.exists(plain):
+        j = json.load(io.open(plain, encoding="utf-8"))
+        src = plain
+    elif os.path.exists(gz):
+        import gzip
+        with gzip.open(gz, "rb") as f:
+            j = json.loads(f.read().decode("utf-8"))
+        src = gz
+    else:
+        return None, None
+    return j["functions"], src
 
 
 def proprietary_names():
@@ -459,12 +477,14 @@ def main():
     if a.selftest:
         return selftest()
 
-    if not os.path.exists(FACTORY_JSON):
-        print("!! 缺 %s（应由 tools/extract_factory_funcs.py 产出）" % FACTORY_JSON)
+    fac, src = load_factory()
+    if fac is None:
+        print("!! 缺 %s 或 %s.gz（应由 tools/extract_factory_funcs.py 产出）"
+              % (FACTORY_JSON, FACTORY_JSON))
         return 1
-    fac = load_factory()
     names = proprietary_names()
-    print("  工厂模型函数 %d 个；专有清单（src/proprietary）%d 个" % (len(fac), len(names)))
+    print("  工厂模型 %s：%d 个函数；专有清单（src/proprietary）%d 个"
+          % (src, len(fac), len(names)))
 
     elf = None
     re_syms = {}

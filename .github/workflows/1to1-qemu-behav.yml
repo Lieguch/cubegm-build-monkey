@@ -93,26 +93,6 @@ jobs:
           echo '--- 被测二进制 ---'
           ls -la build/rkgame.rebuilt.elf golden/factory.rkgame.bin
 
-      # ★★ 2026-09-20（GAP 16.32）：**新增静态逐函数等价性门禁**。
-      #   为什么加：此前唯一的进度刻度是「QEMU 跑整体 + 函数级覆盖率」，它有两个硬伤 ——
-      #     ① 只回答"能跑到哪"，不回答"写得对不对"（实测：修掉 1816 次忙循环，覆盖率一动不动）；
-      #     ② 只覆盖 34%（76/223），**66% 的函数从未被任何判据检验过**；
-      #     ③ 每轮推进要"重启容器 → bootstrap → 改 workflow → 等 CI"（8~12 分钟），且靠猜环境变量。
-      #   本步改为**逐函数比对工厂与重建产物的机器码特征**：零 QEMU、几秒钟、覆盖 213/213。
-      #   数据两侧都已在仓库里（`golden/factory.funcs.json` + 构建产物的 symtab）。
-      #   判据：size_ratio（重建字节 / 工厂指令数×4），WARN>=1.6 FAIL>=2.5（沿用项目已验证阈值）；
-      #         薄函数（工厂<=16B 空桩）与校准锚点（__libc_csu_*）由工具自动隔离，
-      #         避免"工具链样板差异"被误判成"实现不符"（这是首跑实测出的失真，已被锚点抓住）。
-      #   已知项由 `tools/prop_equiv_baseline.txt` 豁免（棘轮，修好必须删行）。
-      - name: ★ 专有函数等价性差分（静态；零 QEMU；213/213 覆盖）
-        run: |
-          cd 1to1
-          mkdir -p report
-          echo '--- 判据自证（锚点必须全绿）---'
-          python3 tools/prop_equiv.py --selftest
-          echo '--- 逐函数差分 ---'
-          python3 tools/prop_equiv.py --json report/prop_equiv.json
-
       - name: 行为采集 + 差分 ★ 硬门禁
         run: |
           cd 1to1
@@ -405,6 +385,27 @@ jobs:
             --out report/qemu_p/j_vs_p.txt || true
           sed -n "1,20p" report/qemu_p/j_vs_p.txt 2>/dev/null || true
 
+      # ★★ 2026-09-20（GAP 16.32）：**新增静态逐函数等价性门禁**。
+      #   ★ 位置：放在**所有运行时观测场景之后**、artifact 上传之前 ——
+      #     静态门禁若失败不应跳掉运行时观测（首跑实测：放在前面时后面 4 个场景全被 skipped）。
+      #   为什么加：此前唯一的进度刻度是「QEMU 跑整体 + 函数级覆盖率」，它有两个硬伤 ——
+      #     ① 只回答"能跑到哪"，不回答"写得对不对"（实测：修掉 1816 次忙循环，覆盖率一动不动）；
+      #     ② 只覆盖 34%（76/223），**66% 的函数从未被任何判据检验过**；
+      #     ③ 每轮推进要"重启容器 → bootstrap → 改 workflow → 等 CI"（8~12 分钟），且靠猜环境变量。
+      #   本步改为**逐函数比对工厂与重建产物的机器码特征**：零 QEMU、几秒钟、覆盖 213/213。
+      #   数据两侧都已在仓库里（`golden/factory.funcs.json` + 构建产物的 symtab）。
+      #   判据：size_ratio（重建字节 / 工厂指令数×4），WARN>=1.6 FAIL>=2.5（沿用项目已验证阈值）；
+      #         薄函数（工厂<=16B 空桩）与校准锚点（__libc_csu_*）由工具自动隔离，
+      #         避免"工具链样板差异"被误判成"实现不符"（这是首跑实测出的失真，已被锚点抓住）。
+      #   已知项由 `tools/prop_equiv_baseline.txt` 豁免（棘轮，修好必须删行）。
+      - name: ★ 专有函数等价性差分（静态；零 QEMU；213/213 覆盖）
+        run: |
+          cd 1to1
+          mkdir -p report
+          echo '--- 判据自证（锚点必须全绿）---'
+          python3 tools/prop_equiv.py --selftest
+          echo '--- 逐函数差分 ---'
+          python3 tools/prop_equiv.py --json report/prop_equiv.json
       - name: 上传行为指纹与原始输出
         if: always()
         uses: actions/upload-artifact@v4
