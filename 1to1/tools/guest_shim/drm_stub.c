@@ -195,21 +195,50 @@ static u32 ioc_size(unsigned long r) { return (u32)((r >> 16) & 0x3fffu); }
  *   · 未知的 DRM 命令**零填**整个参数缓冲（尺寸由请求自带）后返回 0 ——
  *     这既确定（全 0，不依赖栈垃圾），又不会把未初始化结构体交给被测程序
  *     （这正是 shim 当初拒绝拦 ioctl 的理由，这里被原地消解）。 */
+/* ---- CREATE_DUMB：**必须尊重请求**（2026-09-20 修正，GAP 16.30）------------------
+ * 旧实现把 width/height/bpp **写死**（1280/720/32）且 pitch 恒 = w*4。
+ * 实测后果：driver.so 读回 pitch 后算出「每像素字节数 = pitch/width = 4」，
+ * 而 rkgame 侧 `video_driver_disp_frame` 写入的 `frame->[12] = colormode = 2`
+ * （.data 初值，**全库只有一条指令引用 colormode，没有任何写者**）
+ * ⇒ driver.so 的 `gr_blit_b` 判定 `cur->[12] (4) != source->[12] (2)` 恒成立
+ * ⇒ 30 s 内刷 **1816 次** `gr_blit: source has wrong format`（忙循环）。
+ *
+ * 正确语义（与内核 drm_mode_create_dumb 一致）：
+ *   in : height, width, bpp, flags        ← **调用者填的，必须原样保留**
+ *   out: handle, pitch, size
+ *   pitch = width * ceil(bpp / 8)；size = pitch * height
+ * ⇒ 这样 bpp=16（RG16/RGB565，pitch=w*2）才会被如实回填成 2 字节/像素。
+ * ★ 顺序纪律：**先读输入，再 zfill** —— 反了就把调用者填的字段抹成 0（旧实现踩过）。
+ */
 static void dumb_fill(unsigned long req, void *arg)
 {
     u32 sz = ioc_size(req);
-    u32 pitch = 1280u * 4u;                       /* XRGB8888 行距 */
-    u64 bytes = (u64)pitch * (u64)720u;
     u32 *p = (u32 *)arg;
+    u32 h, w, bpp, rowbytes, pitch;
+    u64 bytes;
 
     if (arg == 0) return;
-    zfill(arg, sz);
-    p[0] = 720u;                                  /* height */
-    p[1] = 1280u;                                 /* width  */
-    p[2] = 32u;                                   /* bpp    */
-    p[3] = 0u;                                    /* flags  */
+
+    h   = p[0];                                   /* height（输入）*/
+    w   = p[1];                                   /* width （输入）*/
+    bpp = p[2];                                   /* bpp   （输入）*/
+
+    zfill(arg, sz);                               /* 清空后再写输出字段 */
+
+    if (w == 0u)  w = 1280u;                      /* 调用者未填时的保守默认 */
+    if (h == 0u)  h = 720u;
+    if (bpp == 0u) bpp = 16u;                     /* ★ 默认 16bpp（与 colormode=2 一致），不是 32 */
+
+    rowbytes = (bpp + 7u) / 8u;
+    pitch = w * rowbytes;
+    bytes = (u64)pitch * (u64)h;
+
+    p[0] = h;                                     /* 原样保留输入 */
+    p[1] = w;
+    p[2] = bpp;
+    p[3] = 0u;                                    /* flags */
     p[4] = FAKE_FB_ID;                            /* handle（输出）*/
-    p[5] = pitch;                                 /* pitch（输出）*/
+    p[5] = pitch;                                 /* pitch = w * ceil(bpp/8)（输出）*/
     if (sz >= 32u)      *(u64 *)(void *)((u8 *)arg + 24) = bytes;
     else if (sz >= 28u) *(u64 *)(void *)((u8 *)arg + 20) = bytes;
 }

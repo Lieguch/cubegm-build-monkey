@@ -2125,3 +2125,136 @@ gr_blit_b(S, ...);
   对 `R_ARM_GLOB_DAT`(21) 的 `r_offset` 与 `r_info>>8` 取 `.dynsym` 名即可。
 - **`VaddrToOffset` 必须遍历 `PT_LOAD`**（节表在某些 `.so` 上不含 `.dynamic`；实测该 DSO 的
   `.dynamic` **只能**从 program header 拿到，用节表解析会 `IndexError`）。
+
+
+### 16.29 ★★★★★ 用自研反汇编器把 driver.so 的**图形链路**整体解开（含 71 条 PLT↔符号表）
+
+**新仪器 `tools/dis_got.py`**（纯 Python，**不需要任何 ARM 工具链**）：
+最小 ARM32 反汇编 + GOT/PLT 解算 + 地址 xref。用法：
+```
+python3 tools/dis_got.py <elf> --func gr_blit_b          # 反汇编并自动解「字面量池 → 绝对地址 → 符号名」
+python3 tools/dis_got.py <elf> --pltrange 1870:1c00      # 全 PLT ↔ 符号表
+python3 tools/dis_got.py <elf> --rel                     # 全部重定位
+python3 tools/dis_got.py <elf> --xref 0x171cc            # 谁引用了这个地址（3 种模式）
+```
+
+**① driver.so 的结构（program header 权威）**
+```
+PT_LOAD1 vaddr=0x0      filesz=0x6d88  RX   ← 代码 + 只读（含 "gr_blit: source has wrong format" @0x69d8）
+PT_LOAD2 vaddr=0x16ef4  filesz=0x2b8   RW   ← .data（colormode@0x171a4 初值 = 2）
+BSS：gr_colormode@0x171b4 / 0x171bc / 0x171c4 / 0x171c8 / 0x171cc / frame@0x17220
+GOT 基址 = 0x17000（`PLTGOT`）; DT_REL 28 条 + **DT_JMPREL 71 条**（★ 只读 DT_REL 会漏掉整个 PLT）
+```
+
+**② 完整 PLT↔符号表（71 条，节选与图形/音频相关的）**
+```
+0x1a08 puts        0x1a14 malloc    0x1a2c open       0x1a50 mmap       0x1a98 memset
+0x1aa4 snd_pcm_hw_params_set_format   0x1ad4 gr_rotate    0x1aec gr_flip
+0x1b04 open_drm ★  0x1b28 drmGetCap   0x1b40 pthread_cond_wait
+0x1a5c gr_blit_b ★ 0x1a8c gr_next_frame ★ 0x199c gr_init   0x1b4c gr_exit
+（另有 drmModeSetCrtc/GetResources/AddFB2/SetPlane/PageFlip/…、snd_pcm_* 20 个、pthread_*）
+```
+
+**③ `video_driver_disp_frame(data, w, h, pitch)` —— 判定式的来源（@0x6590）**
+```c
+if (w & 15)  w = ((w > 0 ? w : w + 15) >> 4 << 4) + 16;   /* 16 对齐；h 同理 */
+S = &frame;                                   /* ★ GOT 0x17144（.dynsym 里 frame@0x17220）*/
+if (S->[0] != h || S->[4] != w' || S->[8] != pitch) {
+    S->[0] = ...; S->[4] = ...; S->[8] = ...;
+    S->[12] = *(GOT 0x17134) = **colormode**;  /* ★★ 池@0x67c8 = 0x134 —— 判定用的就是它 */
+}
+S->[16] = data;
+if (gr_next_frame() != 0) gr_blit_b(S, ...);  /* 0x1a8c / 0x1a5c 均经 PLT */
+```
+
+**④ `gr_blit_b(r0 = source)` 的判定式（@0x34fc）**
+```asm
+352c  r3 = 0x171cc ; r3 = *r3          ; cur = 「当前帧」
+3538  r2 = [r3 + 12]                   ; r2 = cur->[12]
+3540  r3 = [source + 12]               ; r3 = source->[12]
+3544  cmp r2, r3 ; beq 3560            ; 相等 ⇒ 继续
+354c  puts("gr_blit: source has wrong format")   ; ★ 1816 次的就是这里
+```
+
+**⑤ `P` 的来历：driver.so 内部有一个**图形后端 vtable**（这是本轮最重要的结构发现）**
+```c
+/* open_drm() @0x58b4 —— 只有 36 字节，就是 `return (void*)0x1717c;` */
+void *open_drm(void) { return (void *)0x1717c; }
+
+/* 0x1717c 起的 9 槽函数表（全部由 R_ARM_RELATIVE 在加载期绑定 ⇒ 局部函数）*/
+0x1717c → 0x4b68    0x17180 → 0x52fc   0x17184 → 0x5208
+0x17188 → 0x40bc    0x1718c → 0x543c   0x17190 → 0x5710
+0x17194 → 0x546c    0x17198 → 0x55c8   0x1719c → 0x57b0
+
+/* gr_init() @0x3c24 */
+if (*0x171cc == 0) {
+    puts("open drm!");                       /* ← 实测 stdout 两侧共有的那一行 */
+    *0x171bc = open_drm();                   /* DRM 上下文 */
+    *0x171cc = (*(void**)0x171bc)->[0](ctx); /* ★★★ cur = ctx->slot0(ctx) */
+}
+/* gr_next_frame() @0x3a90 : *0x171cc = ctx->[0x14](ctx); return *0x171cc; */
+/* gr_select(mode) @0x3bc4 : *0x171cc = ctx->[8](ctx, mode);                  */
+```
+
+**⑥ `colormode` 与 `gr_colormode` 是**两个不同东西**（此前混用过）**
+```c
+/* video_driver_setting(struct{u32 m,a,b;}*) @0x67d8 */
+printf("video_driver_setting %d %d %d", p->[0], p->[4], p->[8]);
+*(&gr_colormode) = p->[0];        /* ★ 写的是 gr_colormode（GOT 0x17150），不是 colormode */
+return 1;
+```
+- 实测：`gr_colormode = 0`（由 rkgame 的 `video_driver_set_colormode(0)` 写入，见 `Core_Load.c:92`）
+- `colormode = 2` 是 **.data 编译期初值，运行期没有任何代码写它** ⇒ `S->[12]` 恒为 **2**
+
+**⑦ fourcc → bpp 映射 `0x42a4`（"Unknown format" 就出自这里）**
+```c
+int fmt_bpp(u32 fourcc) {
+    if (fourcc == "RG24") return 24;
+    if (fourcc ∈ {"AB24","XB24","BA24","BX24","XR24","RX24"}) return 32;
+    if (fourcc == "RG16") return 16;
+    printf("Unknown format %d", fourcc);      /* ← 实测 `Unknown format 875713089` */
+    return 32;                                /* 875713089 = 0x34325241 = "AR24" ⇒ 不在支持表里 */
+}
+```
+
+**⑧ 格式探测 @0x4ee0..0x5068：逐个 fourcc 试建 dumb buffer**
+```c
+/* 0x43a4(w,h,fourcc)：calloc(1,28) + memset + drmIoctl(fd, 0xC02064B2, &req) */
+/*   0xC02064B2 ⇒ _IOC_NR = 0xB2 = DRM_IOCTL_MODE_CREATE_DUMB（_IOC_SIZE = 0x20 = 32 字节私有结构）*/
+/* 探测序列与落点（BSS 表 0x171d4 + 0/4/8/12）*/
+t[0] = probe("RG16");   t[1] = probe("RG16");   t[2] = probe("RG16");   t[3] = probe("AR24");
+if (!(t[0] && t[1] && t[2] && t[3])) {  释放各槽（0x4164）; 0x171e4/0x171e8/0x171ec = 0; }
+```
+⇒ **`Unknown format 875713089` 正是 driver.so 在探测 `AR24` 时打的**，
+与 16.25 的"两侧 stdout 前 24 行**逐字相同**"完全吻合 ⇒ **它不是分歧点**。
+
+**⑨ 判定式两侧的语义（本轮结论）**
+
+| 侧 | 值 | 来源 |
+|---|---|---|
+| `source->[12]` | **2** | `colormode`（.data 初值，无人改写） |
+| `cur->[12]` | **待实测** | `open_drm()->slot0()` 返回的「当前帧」——由 DRM 层按探测到的格式填 |
+
+⇒ **`gr_blit: source has wrong format` 的充要条件 = DRM 层选的格式码 ≠ 2。**
+
+**⑩ 新增探针（本轮的仪器交付）**
+
+`tools/ci_qemu_behav.sh` 新增 `gblit_probe()`，`CGM_GBLIT_PROBE=1` 显式启用（默认关、常规轮次行为一字不变）：
+- **复用 `mk_wrap`**（wrapper 里已含 shim + 三桩 `LD_LIBRARY_PATH` + `CGM_*` 转发）—— 外部自行拼环境实测会 `rc=139` 零输出；
+- 先在 `dispFlip`（rkgame 自己的符号）命中时反推 `driver_base = video_driver_frame - 0x6590`，
+  再挂 `*<base+0x34fc>`（`gr_blit_b`）断点 ⇒ **绕开 `stop-on-solib-events` 的坑**；
+- 在 `gr_blit_b` 入口**同一时刻**读：`source`/`cur` 的 `[0][4][8][12][16]`、
+  `colormode`/`gr_colormode`、DRM 上下文指针、格式表 4 槽（及其对象的字段）
+  ⇒ **一次分辨"谁填了什么"**。
+
+**★ 本轮工具踩的 4 个坑（都会产生"看似合理但错误"的结果）**
+1. **数据处理的旋转立即数**：`imm12 = (rotate<<8)|imm8`，值 = `ror(imm8, 2*rotate)`。
+   忘了它，`add ip, pc, #0x600`（rotate=6,imm8=0）会被读成"加 0x600"（实为 **0**），
+   `add ip, ip, #0xA15` 会被读成"加 0xA15"（实为 **0x15000**）⇒ PLT 目标算成 0x30A9（未对齐、落在 .text）
+   而误判"这不是 PLT"。
+2. **`DT_JMPREL` 必须单独读**：该 DSO 的 `DT_REL` 只有 28 条（全是数据符号的 GLOB_DAT），
+   PLT 重定位全在 `DT_JMPREL`（71 条）⇒ 只读 DT_REL 会得到"PLT 目标全部未知"的假象。
+3. **PLT 桩长 12 字节**（`add ip,pc,#imm` / `add ip,ip,#imm` / `ldr pc,[ip,#N]!`），
+   按 16 字节步进会**漏掉一半**桩。
+4. **判"指令类"的掩码必须含寄存器字段位**：ARM 的 Rd 在 bits15:12、Rn 在 bits19:16，
+   用 `0xFFFFF000` 判 `ldr Rd,[pc,#imm]` 只匹配 Rd=0 ⇒ 静默漏掉绝大多数指令。
