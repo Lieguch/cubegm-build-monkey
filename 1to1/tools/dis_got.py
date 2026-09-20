@@ -211,7 +211,10 @@ def dis_assemble(elf: Elf, start: int, size: int, resolve_got: bool = True):
         # 记录 ldr rD,[pc,#imm]
         if mn.startswith("ldr ") and "[pc," in mn:
             rd = int(re.search(r"ldr r(\d+)", mn).group(1))
-            imm = int(re.search(r"#(\d+)", mn).group(1))
+            # ★ 必须容忍**负偏移**（`ldr rD, [pc, #-4]`）：新解码器 arm_dis 会输出符号，
+            #   旧正则 `#(\d+)` 在负偏移上 group(1) 为 None ⇒ AttributeError 直接崩（实测踩过）。
+            _m = re.search(r"#(-?\d+)", mn)
+            imm = int(_m.group(1)) if _m else 0
             tgt = (addr + 8 + imm) & ~3
             val = elf.rd32(tgt)
             pending[rd] = (tgt, val, addr)

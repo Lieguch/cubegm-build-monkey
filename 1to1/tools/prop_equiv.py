@@ -18,13 +18,21 @@ P5 阶段长期用「QEMU 跑整体 + 函数级覆盖率」作为唯一进度刻
       835 个函数，每项：addr / n(指令条数) / t1(逐条反汇编文本) / t2(助记符序列) / b(基本块数)
   · 重建侧 `build/rkgame.rebuilt.elf` 的 **SHT_SYMTAB**（1661 个 FUNC + size）
 
-判据（均沿用项目**已验证**的阈值，见 GAP / `scan_upstream_fingerprint.py`）
+判据（**双侧对称**，因为"偏大"与"偏小"的成因完全不同）
 ------------------------------------------------------------------------
-同一份源码、不同编译器（工厂 GCC vs 我们 zig/clang），函数体量通常差 < 2×；
-> 2.5× 就是"实现/版本不符"的强信号。三档：
-    OK   ratio < warn(1.6)
-    WARN warn <= ratio < fail(2.5)     ← 需人工看（可能是编译器差异，也可能真不一样）
-    FAIL ratio >= fail(2.5)            ← 强信号
+★ 前提：**编译口径必须已对齐原厂**（见 `tools/link_audit.sh` 的 `OPT` 与 GAP 16.33）。
+  本项目工厂 rkgame = `-Os`；口径不对齐时"常量次数小循环被展开"会造成 4~7× 的**纯噪声**，
+  让这个判据完全失效（先把口径对齐，再谈实现差异）。
+
+两侧都要管：
+    ratio = 重建字节数 / 工厂(指令数×4)
+    skew  = max(ratio, 1/ratio)          ← 对称偏离度
+    · ratio 偏大（>1）多为**循环展开/内联差异**（编译器）
+    · ratio 偏小（<1）多为**我们少实现了东西**（真差异）
+三档（对 skew 而言）：
+    OK   skew < warn(1.6)
+    WARN warn <= skew < fail(2.5)
+    FAIL skew >= fail(2.5)
 
 三个独立刻度（任一超标都报，取最恶劣者定级）：
     1. size_ratio   = 重建函数字节数 / 工厂 (n*4)      ← 主判据（沿用项目阈值）
@@ -300,7 +308,15 @@ def compare(fac, re_syms, elf, names, baseline=None, verbose=False):
             sim = difflib.SequenceMatcher(None, fseq, seq).ratio()
         size_ratio = rsz / float(fmem)
         n_ratio = (rn / float(fn)) if rn else None
-        worst = max([size_ratio] + ([n_ratio] if n_ratio else []))
+        # ★★ 两侧对称（2026-09-20 修正）：`|ratio-1|` 取最小是**错**的判据 ——
+        #   · ratio 偏大（>1）多为**循环展开**（纯编译器噪声；用 -Os 对齐口径后即消失）
+        #   · ratio 偏小（<1）多为**我们少实现了东西**（真差异）
+        #   两者成因完全不同，却都偏离 1 ⇒ 必须**分别设阈值**，而不是取绝对值。
+        #   本项目实证（容器全量 213 函数）：`-O1` 口径下"逐函数 |ratio-1| 更小"者比 `-Os` 多，
+        #   但那些"更优"项全是 `init_user_joy_key_mask` 0.51 / `popwindows` 0.86 这种**偏小**项
+        #   —— 是"从 1.55 变成 0.80"被误当成改善。改成对称后，偏小同样会报。
+        skew = max(size_ratio, (1.0 / size_ratio) if size_ratio > 0 else 1e9)
+        worst = max([skew] + ([max(n_ratio, 1.0 / n_ratio)] if n_ratio else []))
 
         is_thin = fmem <= THIN_BYTES
         is_calib = nm in CALIB_ANCHORS or nk in CALIB_ANCHORS
@@ -395,6 +411,13 @@ def report(rows, top=None, only=None):
                 tag = " ←薄桩（工具链样板主导）"
             elif r.get("calib"):
                 tag = " ←校准锚点（两侧来源不同但功能等价）"
+            elif r.get("size_ratio") and r["size_ratio"] < 0.6 and r.get("fac_b", 0) >= 64:
+                # ★ 偏小提示（2026-09-20 加）：本项目实测，编译器会把一个函数**拆成多段**
+                #   （热路径 + 主体），而 symtab 的 st_size **只覆盖第一段** ⇒ 表现为"偏小"。
+                #   实证：`UpdateROM` 工厂 976 B，我们符号 116 B；但紧随那个字面量池之后
+                #   就是主体代码（`mov r1, #480` = `scr_h_size = 0x1e0`，与源码常量逐字对应）。
+                #   ⇒ 看到本提示时，**先去反汇编"紧随地址"**，再判"少实现"还是"分段"。
+                tag = " ←★偏小：疑编译器分段（查紧随地址）或真的少实现"
             print("  %-34s %-6s %9d %9d %7.3f %7s%s" % (
                 r["name"][:34], r["status"], r["fac_b"], r["reb_b"],
                 r["size_ratio"], r["n_ratio"], tag))
@@ -426,7 +449,8 @@ def selftest():
         if fac_b <= THIN_BYTES:
             return "THIN"
         r = reb_b / float(fac_b)
-        return "FAIL" if r >= FAIL else ("WARN" if r >= WARN else "OK")
+        skew = max(r, 1.0 / r) if r > 0 else 1e9
+        return "FAIL" if skew >= FAIL else ("WARN" if skew >= WARN else "OK")
 
     A = [
         (100 * 4, 100 * 4, "OK",   "同编译器级别：完全一致"),
@@ -439,7 +463,11 @@ def selftest():
         #   且 `__libc_csu_fini` 是**我们从未写过**的工具链样板 ⇒ 必须归 THIN 而非 FAIL。
         (4,      12,       "THIN", "★ 空桩（工厂 bx lr = 4B）→ 我们侧带序言 12B ⇒ 不得判 FAIL"),
         (16,     48,       "THIN", "THIN 上界（工厂 4 条指令）"),
-        (20,     60,       "OK",   "刚过 THIN 上界：20B→60B = 3.0x 但已属常规判定（会判 FAIL）"),
+        (20,     60,       "FAIL", "刚过 THIN 上界：20B→60B = 3.0x ⇒ FAIL"),
+        # ★ 双侧对称锚点（2026-09-20 加）：偏小同样必须报
+        (100 * 4, 25 * 4,  "FAIL", "★ 偏小 4.0x（我们只实现了 1/4）⇒ 必须 FAIL（旧判据会放过）"),
+        (100 * 4, 62 * 4,  "WARN", "偏小 1.61x = 刚过 WARN"),
+        (100 * 4, 63 * 4,  "OK",   "偏小 1.59x = 未过 WARN"),
     ]
     bad = 0
     print("=" * 84)
@@ -447,11 +475,7 @@ def selftest():
     print("=" * 84)
     for fac_b, reb_b, want, note in A:
         got = grade(fac_b, reb_b)
-        # 特例：20B→60B 按 ratio 3.0 会判 FAIL，锚点写明这一事实
-        if want == "OK" and got == "FAIL":
-            want2 = "FAIL"
-        else:
-            want2 = want
+        want2 = want
         ok = "✓" if got == want2 else "✗"
         if got != want2:
             bad += 1
