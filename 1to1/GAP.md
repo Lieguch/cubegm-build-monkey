@@ -2258,3 +2258,95 @@ if (!(t[0] && t[1] && t[2] && t[3])) {  释放各槽（0x4164）; 0x171e4/0x171e
    按 16 字节步进会**漏掉一半**桩。
 4. **判"指令类"的掩码必须含寄存器字段位**：ARM 的 Rd 在 bits15:12、Rn 在 bits19:16，
    用 `0xFFFFF000` 判 `ldr Rd,[pc,#imm]` 只匹配 Rd=0 ⇒ 静默漏掉绝大多数指令。
+
+### 16.30 ★★★★★ 根因锁定：`gr_blit` 忙循环 = **我们桩里 `CREATE_DUMB` 的硬编码**（不是 rkgame 的问题）
+
+**① 探针实测（`CGM_GBLIT_PROBE=1`，新探针第一次运行即到位，J 口径）**
+```
+>>> driver.so base = 0x40a83000（由 video_driver_frame=0x40a89590 - 0x6590 反推）
+>>> gr_blit_b @0x40a864fc   frame(0x17220)=0x5086ef0   cur_slot(0x171cc)=0x5086e88
+
+GB#1 source=0x5086ef0 [0]=1280 [4]=720  [8]=2560 [12]=2 [16]=0x45758008   ← rkgame 的帧
+GB#1 cur   =0x5086ea8 [0]=1280 [4]=1280 [8]=5120 [12]=4 [16]=0x41130000   ★不等 ⇒ 报 wrong format
+GB#1 colormode=2  gr_colormode=0  ctx=0x40a9a17c
+GB#1 frame_tbl = [0x5086e88, 0x5086ea8, 0x5086ec8, 0x5086f08]   ← 4 个「格式探测」缓冲，全部 [12]=4
+```
+- **`[12]` 就是"每像素字节数"**：`[8] (pitch) = [0] (宽) × [12]` 精确成立（1280×4=5120、1280×2=2560）
+- `cur` 在 `tbl[0..2]` 之间轮转（`gr_next_frame` 逐个轮换 dumb buffer）
+
+**② 两个决定性静态证据（`tools/dis_got.py`）**
+```c
+/* 证据 A：S->[12] 取的就是 colormode，且 colormode 全库【只有一条指令引用】*/
+0x66bc  ldr r2,[r4,r3]  ; r3=0x134 ⇒ GOT[0x17134] = colormode
+0x66c4  ldr r2,[r2]     ; r2 = colormode 的值
+0x66c8  str r2,[r3,#12] ; S->[12] = colormode
+/* 扫全 .text：池值 == 0x134 的引用 ⇒ 【仅 1 处】= video_driver_disp_frame+0x12c
+   ⇒ 没有任何代码写 colormode ⇒ 它在任何设备上恒为 .data 初值 2（16bpp）*/
+
+/* 证据 B：CREATE_DUMB 的输入字段被我们覆盖 */
+```
+
+**③ 根因：桩 `libdrm.so.2` 的 `dumb_fill()` 把 width/height/bpp **写死**（旧实现）**
+```c
+u32 pitch = 1280u * 4u;      /* ★ 恒定 4 字节/像素 */
+zfill(arg, sz);              /* ★ 先清空 ⇒ 把调用者填的 height/width/bpp 全抹成 0 */
+p[0] = 720u; p[1] = 1280u; p[2] = 32u;   /* ★ 写死 */
+p[5] = pitch;                /* ★ 输出 pitch 恒 = 1280*4 = 5120 */
+```
+driver.so 读回 `pitch` 后算出 **每像素 4 字节** ⇒ 它的 4 个 dumb buffer 描述符全是 `[12]=4`；
+而 rkgame 经 `disp_frame` 写入的 `frame->[12] = colormode = 2` ⇒
+`gr_blit_b` 判定恒不等 ⇒ **30 s 内 1816 次 `gr_blit: source has wrong format`（忙循环）**。
+
+⇒ **⇒ 这一条推翻了我此前"rkgame 侧参数/保真度有问题"的所有怀疑：rkgame 侧完全正确（1280×720、pitch=2560=w×2、16bpp）。**
+
+**④ 修正（提交 `38d1c9b8`，**单变量：只改 `dumb_fill`**）**
+```c
+h = p[0]; w = p[1]; bpp = p[2];      /* ★ 先读输入 */
+zfill(arg, sz);                       /* 再清空 */
+if (w==0) w=1280; if (h==0) h=720; if (bpp==0) bpp=16;   /* ★ 缺省 16bpp，与 colormode=2 一致 */
+rowbytes = (bpp + 7) / 8;
+pitch = w * rowbytes;                 /* ★ 尊重请求 */
+bytes = (u64)pitch * h;
+p[0]=h; p[1]=w; p[2]=bpp; p[3]=0; p[4]=FAKE_FB_ID; p[5]=pitch;
+```
+- 与内核 `drm_mode_create_dumb` 语义一致：`height/width/bpp/flags` 是**输入**（原样保留），`handle/pitch/size` 是**输出**
+- **顺序纪律**：必须"先读输入，再 zfill"—— 反了就把输入抹成 0（旧实现踩过）
+
+**⑤ 新增仪器（本轮交付）**
+- `tools/dis_got.py`：纯 Python 最小 ARM32 反汇编 + GOT/PLT 解算 + xref（不需 ARM 工具链）
+- `tools/ci_qemu_behav.sh` 的 `gblit_probe()`：`CGM_GBLIT_PROBE=1` 启用，复用 `mk_wrap` 的完整环境，
+  一次读出 `source`/`cur` 两侧字段 + 格式表 4 槽
+
+**★ 方法论增量（本轮最值钱的一条）**
+> **"厂商代码报错"未必是厂商代码错，也未必是被测程序错 —— 先看**桩回填了什么**。**
+> 本例中 `gr_blit: source has wrong format` 出现在 driver.so 里、由 rkgame 触发，
+> 但真正的输入（dumb buffer 的 pitch）是**我们桩伪造的** ⇒ 桩的伪造必须**尊重调用者的请求**，
+> 否则桩就从"假硬件"变成了"假语义"。**判据：桩的每个输出字段都应能追溯到请求字段或明确的硬件常量，
+> 不能是无条件的硬编码。**
+
+**⑥ 修正后的实测（`38d1c9b8`，J 口径逐字复刻 `dv_y` 的开关集）**
+
+| 观测 | 修正前 | **修正后** |
+|---|---|---|
+| `tbl[0]/[1]/[2]`（driver 的 RG16 探测缓冲） | `[8]=5120  [12]=4`（32bpp） | **`[8]=2560  [12]=2`（16bpp）** |
+| `tbl[3]`（AR24 探测） | `[8]=5120 [12]=4` | `[8]=5120 [12]=4`（符合 `fmt_bpp("AR24")==32`） |
+| `gr_blit_b` 的判定（探针逐次打印） | 恒 `★不等(将报 wrong format)` | **`==> 相等(应继续)`** |
+| rebuild stdout | 1871 行，其中 **1816 × `gr_blit: source has wrong format`** | **55 行，`wrong format` 归零** |
+| rebuild stdout 最多的行 | `gr_blit: source has wrong format` ×1816 | `open /sdcard//.dat fail` ×29（已知 CGM_GAMEDIRS） |
+| 覆盖率（device 口径） | 73/223 = 32.74% | 73/223 = 32.74%（同 —— 见下） |
+| M7 / 终止 | rebuild ✓(124) · factory ✗(139) | rebuild ✓(124) · factory ✗(139) |
+
+- ★★ **`gr_blit: source has wrong format` 从 1816 次降到 0 次 ⇒ 唯一的忙循环被消除。**
+- ★ 覆盖率仍为 73：**符合预期** —— `gr_blit_b` 本来就已经在执行（只是每次都提前 `return`），
+  修正是让它**把函数体走完**（基本块级差异），而覆盖率是按**函数**计数（`qemu_coverage.py`）⇒ 不涨。
+  ⇒ **这正说明"覆盖率"这个刻度对"同函数内的行为差异"不敏感**；本轮的判据必须是
+  **`wrong format` 计数 = 0** 这种**语义判据**，不能只看覆盖率。
+- 仍存的 M7 差异（rebuild 124 vs factory 139）是既有的、跨口径稳定的现象（GAP 16.26）。
+
+**⑦ 下一步（唯一入口，已量化）**
+`rebuild` 现在稳定在 60fps 渲染 + 跑到超时（124），下一个可见的异常是
+```
+29 × open /sdcard//.dat fail          ← 路径里"目录名"是空的（`/sdcard//.dat`）
+```
+⇒ 下一步 = 定位这个 `.dat` 路径由哪个变量拼出（与 `CGM_GAMEDIRS` / `GameList` 相关），
+确认是"沙箱缺目录"还是"rkgame 侧路径拼装差异"。

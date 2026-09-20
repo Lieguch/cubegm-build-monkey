@@ -187,6 +187,34 @@ jobs:
           echo '--- 场景 C5：差分方向（工具应自判"哪一侧更健康"）---'
           grep -aE "门禁结果|方向|疑似" report/qemu_c5/behav_diff.txt 2>/dev/null | head -4 || true
 
+      # ★★★ 格式一致性硬断言（2026-09-20，GAP 16.30）——**为什么必须是独立硬门禁**：
+      #   桩 libdrm 的 `CREATE_DUMB` 曾把 width/height/bpp 写死（pitch 恒 = 1280*4、且先 zfill 再读输入），
+      #   ⇒ driver.so 的 dumb buffer 全被伪造成 32bpp，而 rkgame 侧 `frame->[12] = colormode = 2`（16bpp）
+      #   ⇒ `gr_blit_b` 判定恒不等 ⇒ 30 s 内刷 **1816 次**同一句 `gr_blit: source has wrong format`
+      #   ⇒ rebuild 表面"活着（exit=124）"，实际**一帧都没画出去**（忙循环）。
+      #   ★ 这条回归**覆盖率抓不到**：`gr_blit_b` 本来就在执行，只是每次都提前 return；
+      #     `qemu_coverage.py` 按**函数**计数 ⇒ 73/223 一动不动。
+      #   ⇒ 必须有一条**语义判据**：wrong-format 计数 **必须为 0**。
+      - name: ★ 格式一致性硬断言（C5 的 wrong-format 计数必须为 0）
+        run: |
+          cd 1to1
+          f=report/qemu_c5/rundir_rebuild/stdout.txt
+          if [ ! -f "$f" ]; then
+            echo "::error::缺少 $f（C5 未产出 rebuild stdout ⇒ 仪器故障，判定不存在）"
+            exit 1
+          fi
+          n=$(grep -ac 'gr_blit: source has wrong format' "$f" || true)
+          n=${n:-0}
+          echo "重建侧 gr_blit wrong-format 计数 = $n（期望 0）"
+          total=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+          echo "重建侧 stdout 总行数 = ${total:-?}"
+          if [ "$n" != "0" ]; then
+            echo "::error::rebuild 侧出现 $n 次 'gr_blit: source has wrong format' ⇒ 帧格式又对不上了（回归）"
+            echo "        最后 3 条现场："
+            grep -a 'wrong format' "$f" | tail -3
+            exit 1
+          fi
+
       # ★★ 场景 D：判定「key2 的内容到底来自哪里」——这是 M6（UI 资源包打开 = 57% 重构量的入口）
       #   的唯一堵点。背景：崩溃现场实测 key2 = `00 00 00 00 00 7d 1e 47`
       #   （既不是我们注入的签名、也不是 shim 现有任何一种 KY 派生载荷；且全 .text 75 万条指令里
