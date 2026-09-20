@@ -198,7 +198,7 @@ extern gh_u4 PauseMenu(); /* K&R: 参数不可信/不可解析 */
 extern void joystick_poll(); /* K&R: 参数不可信/不可解析 */
 extern gh_u4 PlayFrame(gh_u4 param_1,gh_u4 param_2);
 extern gh_u4 gpsp_unzip(gh_u4 param_1,char *param_2); /* 体内 RARCH_LOG %s 使用 param_2 */
-extern void log_dummy(gh_uint param_1,gh_u4 param_2);
+extern void log_dummy(gh_uint param_1, char *param_2, ...);
 extern gh_bool joystick_input(gh_uint param_1,gh_u4 param_2,gh_u4 param_3,int param_4);
 extern gh_u4 environment(int param_1,gh_uint *param_2);
 extern void UIDebug(void *param_1,int param_2,gh_u4 param_3,gh_uint param_4);

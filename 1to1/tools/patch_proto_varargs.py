@@ -33,6 +33,12 @@ PATH = os.path.join(ROOT, 'src', 'compat', 'proto.h')
 # 函数名 -> 真实原型（证据均见对应 .c 文件的头部注释）
 VARARGS = {
     'RARCH_LOG': 'char *param_1, ...',
+    # ★ 2026-09-20：同一类缺陷的第二个实例（Ghidra 丢 `...`）。证据见
+    #   src/proprietary/core/FUN_002b4f14_log_dummy.c 头部（原厂 `push {r1,r2,r3}` +
+    #   `add r1, sp, #16` + `bl RARCH_LOG_V` ⇒ 必须传 (fmt, va_list) 两个参数）。
+    #   注意它的原声明**不是**空声明而是 `(gh_uint, gh_u4)` —— 因为 Ghidra 解析出了
+    #   两个固定参数。所以匹配逻辑也必须容许「带参数的声明行」（旧实现只匹配 `fn()`）。
+    'log_dummy': 'gh_uint param_1, char *param_2, ...',
 }
 
 
@@ -46,15 +52,25 @@ def main():
         want = 'extern void %s(%s);\n' % (fn, proto)
         if want in s:
             continue
-        # 找到该函数的空声明行（允许行尾带注释）
+        # 找到该函数的声明行并替换。
+        # ★ 2026-09-20 放宽：旧实现只匹配**空声明** `extern void fn();`，但 Ghidra 对
+        #   「有固定参数 + `...`」的函数会渲染成 `(gh_uint, gh_u4)` 这种**带参数**的声明
+        #   （实例：`log_dummy`）⇒ 旧匹配找不到、静默 warn 跳过。改为匹配任意
+        #   `extern void <fn>(...);` 且要求**参数列表里不含 `...`**（幂等：已改过就不动）。
+        import re as _re
         lines = s.split('\n')
+        pat = _re.compile(r'^extern\s+void\s+%s\s*\(([^)]*)\)\s*;' % _re.escape(fn))
         for i, ln in enumerate(lines):
-            if ln.startswith('extern void %s();' % fn):
-                lines[i] = want.rstrip('\n')
-                changed.append((fn, ln.strip()))
-                break
+            m = pat.match(ln)
+            if not m:
+                continue
+            if '...' in m.group(1):
+                break                      # 已是真原型 ⇒ 幂等跳过
+            lines[i] = want.rstrip('\n')
+            changed.append((fn, ln.strip()))
+            break
         else:
-            print('   [warn] 未找到 %s 的空声明（可能已被改过或名字不同）' % fn)
+            print('   [warn] 未找到 %s 的声明（可能已被改过或名字不同）' % fn)
             continue
         s = '\n'.join(lines)
     if changed:

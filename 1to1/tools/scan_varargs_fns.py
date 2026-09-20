@@ -40,6 +40,18 @@ REBUILT = os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf')
 
 PUSH_R0_R3 = 0xE92D000F          # push {r0, r1, r2, r3}
 
+# ★★ 2026-09-20 放宽（本轮发现的**门禁盲区**）：旧判据只认 `push {r0,r1,r2,r3}`，
+#   但 GCC 只保存**真正需要**的变参寄存器 —— 若 r0 是已消费的固定参数（实例：
+#   `log_dummy(int lvl, const char *fmt, ...)` 里的 `lvl`），序言就是
+#   `push {r1, r2, r3}`（`0xE92D000E`）⇒ 旧判据整族漏掉（实测 `log_dummy` 因此
+#   一直没被发现，直到 `prop_equiv` 用它 52B→16B 的 0.31x 偏小把它顶出来）。
+#   新判据：`STMDB sp!, {…}` 的寄存器列表里**必须同时含 r1,r2,r3**（低 4 位掩码 & 0xE == 0xE），
+#   r0 可有可无。宁可放宽（本门禁是"逐个人工核对"性质，多列一个可接受），不可漏。
+STMDB_SP_MASK = 0xFFFF0000
+STMDB_SP_OP   = 0xE92D0000
+VARARG_RLOW   = 0x000E           # r1|r2|r3
+VARARG_PROLOGUE_LIMIT = 32       # 变参序言必须落在函数入口 +N 字节内（实测 log_dummy = +8）
+
 
 def load(path):
     if not os.path.exists(path):
@@ -84,22 +96,52 @@ def owner_lookup(syms, lo, hi):
     return owner
 
 
+def owner_lookup_full(syms, lo, hi):
+    """同 owner_lookup，但**同时返回符号起点地址**（位置判据需要）。"""
+    items = sorted((v, k) for k, v in syms.items() if lo <= v < hi)
+    starts = [v for v, _ in items]
+
+    def owner(ea):
+        i = bisect.bisect_right(starts, ea) - 1
+        return (items[i][1], items[i][0]) if i >= 0 else ('?', -1)
+    return owner
+
+
 def factory_varargs(d, S):
-    """工厂里带 `push {r0,r1,r2,r3}` 的函数名（A32 变参序言的强特征）。"""
+    """工厂里带 A32 变参「寄存器保存区」序言的函数名。
+
+    判据（2026-09-20 放宽后）：`STMDB sp!, {…}` 且寄存器列表**同时含 r1,r2,r3**。
+      · 旧判据只认 `push {r0,r1,r2,r3}`（低 4 位 == 0xF）⇒ 漏掉「r0 是已消费的固定参数」
+        那一族（实例 `log_dummy(int lvl, const char *fmt, ...)` ⇒ `push {r1,r2,r3}`）。
+      · 放宽后仍要求 r1..r3 三者齐备，故不会误收普通的 `push {r4,lr}` 之类。
+    """
     ta, to, ts = S['.text']
-    owner = owner_lookup(_SYMS_F, ta, ta + ts)
+    owner = owner_lookup_full(_SYMS_F, ta, ta + ts)
     hits = {}
     for k in range(0, ts - 4, 4):
-        if struct.unpack_from('<I', d, to + k)[0] == PUSH_R0_R3:
-            hits.setdefault(owner(ta + k), ta + k)
+        w = struct.unpack_from('<I', d, to + k)[0]
+        if (w & STMDB_SP_MASK) != STMDB_SP_OP or (w & 0xFFFF & VARARG_RLOW) != VARARG_RLOW:
+            continue
+        nm, base = owner(ta + k)
+        if nm == '?' or base < 0:
+            continue
+        # ★★ 位置判据（2026-09-20 补）：变参序言必须**在函数入口附近**。
+        #   放宽掩码后立刻抓到假阳性 —— `PauseMenu`（真序言 `push {r4..fp,lr}`）被判成
+        #   "重建侧丢了变参"，因为函数**体内部**（入口 +2128 B 处）恰好有一条
+        #   `push {r1,r2,r3}`（GCC 用它把 3 个字压栈）。**不做位置约束，判据就没有意义。**
+        #   实测口径：`log_dummy` 的序言在入口 +8B（`cmp`/`bxls` 之后），故 32B 足够。
+        if ta + k - base > VARARG_PROLOGUE_LIMIT:
+            continue
+        hits.setdefault(nm, ta + k)
     return hits
 
 
 def has_varargs_epilogue_free(d, S, va, limit=64):
     """重建侧：序言区（前 limit 字节）里是否有「把 {r1,r2,r3} 一起存出去」的指令。
 
-    覆盖两种形状：
+    覆盖三种形状：
       · GCC/原厂：`push {r0, r1, r2, r3}`（STMDB sp!, mask=0xF）
+      · GCC/原厂：`push {r1, r2, r3}`     （STMDB sp!, mask=0xE —— r0 是已消费的固定参数）
       · LLVM    ：`sub sp,#12` + `stm rX, {r1, r2, r3}`（Rn 为普通寄存器，mask 含 r1,r2,r3）
     """
     ta, to, ts = S['.text']
@@ -108,7 +150,7 @@ def has_varargs_epilogue_free(d, S, va, limit=64):
     off = to + (va - ta)
     for p in range(off, min(off + limit, to + ts - 4), 4):
         ins = struct.unpack_from('<I', d, p)[0]
-        if ins == PUSH_R0_R3:
+        if (ins & STMDB_SP_MASK) == STMDB_SP_OP and (ins & 0xFFFF & VARARG_RLOW) == VARARG_RLOW:
             return True
         # STM/LDM：bits27..25 = 100；L = bit20
         if (ins & 0x0E000000) == 0x08000000:
@@ -135,7 +177,7 @@ def main():
     print('变参函数保真度门禁')
     print('=' * 72)
     hits = factory_varargs(d_f, S_f)
-    print('工厂变参函数（含 `push {r0,r1,r2,r3}`）：%d 个' % len(hits))
+    print('工厂变参函数（序言含 `STMDB sp!, {…r1,r2,r3}`）：%d 个' % len(hits))
     bad = []
     rows = []
     for nm, va in sorted(hits.items(), key=lambda kv: kv[1]):

@@ -299,7 +299,19 @@ def compare(fac, re_syms, elf, names, baseline=None, verbose=False):
         if not fn:
             rows.append({"name": nm, "status": "NODATA", "missing": "n"})
             continue
-        fmem = fn * 4                                  # 工厂：ARM 定长 4 字节
+        # ★★ 第七个校准点（2026-09-20）：**工厂体积要扣除字面量池**。
+        #   `golden/factory.funcs.json` 的 `t1/t2` 把函数**尾部/内嵌的字面量池**也列成
+        #   `.word` 条目（1 条目 = 4 B），而 `n` 把它们算进了指令数 ⇒ `n*4` 把池当代码。
+        #   而 ARM 的 `ldr rX,[pc,#imm]` 需要池，所以"指令多、池也多"的函数会被系统性高估，
+        #   表现为我们的产物"偏小"（假阳性）。
+        #   ── 实证（CI 8096d9ac, -Os 口径）：`GetWorkPath` 工厂 n=7（含 **2** 个 .word）
+        #      ⇒ 按 n*4 算比值 0.571（WARN）；按**纯指令** 5*4=20 B 算比值 **0.800 → OK**。
+        #      `sunxi_gpio_output` 64 条里 6 个是池（232→256 虚高 24 B）。
+        #   ⇒ 主判据改用**纯指令字节数**；原始 `n`/`n*4` 仍写进 JSON 备查（可审计）。
+        _t1 = f.get("t1") or []
+        n_pool = sum(1 for _x in _t1 if isinstance(_x, str) and _x.startswith(".word"))
+        fn_code = fn - n_pool if _t1 else fn
+        fmem = fn_code * 4                             # 工厂：ARM 定长 4 字节（仅代码）
         seq, unk = mnem_seq(elf, rv, rsz) if elf else ([], 0)
         rn = len(seq)
         fseq = f.get("t2") or []
@@ -330,6 +342,7 @@ def compare(fac, re_syms, elf, names, baseline=None, verbose=False):
             status = "KNOWN"
         rows.append({"name": nm, "status": status,
                      "fac_n": fn, "fac_b": fmem, "reb_b": rsz, "reb_n": rn,
+                     "fac_pool": n_pool, "fac_b_raw": fn * 4,
                      "size_ratio": round(size_ratio, 3),
                      "n_ratio": round(n_ratio, 3) if n_ratio else None,
                      "mnem_sim": round(sim, 3) if sim is not None else None,
