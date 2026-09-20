@@ -38,8 +38,29 @@
 """
 import json
 import os
+import re
 import sys
 import difflib
+
+
+# ---- 跨二进制不稳定的行：**栈内容转储** ------------------------------------------
+#   `E|[shim] [sp+ 4] = ADDR -> /arm-root/lib/.../libc.so.6 + __fstatat64_time64`
+#   它记录的是"崩溃时栈上**恰好**残留什么地址"，取决于栈布局 / 寄存器分配 / 编译产物。
+#
+#   ★ 实测（2026-09-20）：把编译口径从 `-O1` 改成 `-Os`（对齐工厂）后，同一场景这类行的
+#     **可解析项集合**发生变化（重建侧多解析出一项 `__fstatat64_time64`）⇒ B2 判 FAIL。
+#     但控制组（**同一份**二进制跑两遍）是 38/38 完全一致 ⇒ **确定性没问题**；
+#     变的只是"跨二进制的偶然栈内容"，它**不携带可比信息**。
+#
+#   ⇒ 整体丢弃这一类行。崩溃位置（`pc(出错点)` / `lr(调用者)` / `故障指令`）另有独立行记录，
+#     语义判决能力**不受影响**；而"栈上残留了哪个地址"本来就不该是行为等价性的判据。
+_VOLATILE_RE = re.compile(r'^E\|\[shim\] \[sp\+\s*\d+\]\s*=')
+
+
+def _drop_volatile(ev):
+    """丢弃"栈内容转储"行（跨二进制偶然），返回 (保留的序列, 丢弃行数)。"""
+    keep = [x for x in ev if not _VOLATILE_RE.match(x)]
+    return keep, len(ev) - len(keep)
 
 
 def load(p):
@@ -150,12 +171,17 @@ def main():
 
     # ---- B0c 确定性控制：求参考实现自身的**可复现前缀** ----
     ea, eb = a.get('events', []), b.get('events', [])
+    ea, na = _drop_volatile(ea)
+    eb, nb = _drop_volatile(eb)
+    if na or nb:
+        print('  [note] 已折叠「栈内容转储」行（跨二进制偶然，不参与判据）：参考侧 %d 行 / 重建侧 %d 行'
+              % (na, nb))
     det_prefix = None          # None = 无控制组（退化为全量严格比较）
     volatile = False
     ec = None
     exit_volatile = False
     if c is not None:
-        ec = c.get('events', [])
+        ec, _nc = _drop_volatile(c.get('events', []))
         k = 0
         while k < len(ea) and k < len(ec) and ea[k] == ec[k]:
             k += 1

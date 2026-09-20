@@ -49,3 +49,4 @@ stbtt_GetNumberOfFonts stbtt__isfont LOW
 SPI_Read sunxi_gpio_output LOW
 SPI_Write sunxi_gpio_output LOW
 xmp3_Subband xmp3_PolyphaseStereo LOW
+  mui_do_file_list IsShoucang LOW
