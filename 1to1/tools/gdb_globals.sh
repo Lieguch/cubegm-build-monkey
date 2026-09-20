@@ -38,6 +38,12 @@ A_GATE="${CGM_A_GATE:-0x3af394}"         # 列表循环上界 = GameList_count
 A_FILIST="${CGM_A_FILIST:-0x3b2220}"     # file_info_list（每项 0x404 字节）
 A_MENULOG="${CGM_A_MENULOG:-0x3c9830}"   # m_menulog（与 menu.log 头 4 字节同源）
 A_PATH="${CGM_A_PATH:-0x3c99ec}"         # 全局 path[256]（scandir 的实参）
+# ★ 2026-09-20 新增：屏幕缓冲描述符三件套 = dispFlip / mui_WaitNMI 的实参
+#   为什么加：桩链打通后 rebuild 卡在 driver.so 的 `gr_blit: source has wrong format`
+#   （30 s 里 1816 次）⇒ 必须看这三个量的**运行期真值**才能判断"格式哪里错"。
+A_SCRBUF="${CGM_A_SCRBUF:-0x3af29c}"     # DAT_003af29c：屏幕缓冲**指针**（dispFlip 第 1 实参）
+A_SCRW="${CGM_A_SCRW:-0x3af2a0}"         # DAT_003af2a0：width（第 2 实参；pitch = 它 << 1）
+A_SCRH="${CGM_A_SCRH:-0x3af2a4}"         # DAT_003af2a4：height（第 3 实参）
 
 [ -f "$BIN" ] || { echo "★ 找不到 $BIN"; exit 1; }
 command -v qemu-arm-static >/dev/null 2>&1 || { echo "★ 缺 qemu-arm-static（先跑 cnb_env.sh）"; exit 1; }
@@ -72,6 +78,26 @@ def strs(a, n, stride, k=6):
             print('   %-24s = %r' % ('%s[%d]' % (n, i), gdb.execute('x/s 0x%x' % ad, to_string=True).strip()))
         except Exception as e:
             print('   %-24s = <读不到 %s>' % ('%s[%d]' % (n, i), e)); break
+def scr(a_buf, a_w, a_h):
+    # ★ 屏幕缓冲三件套 + 派生量：bpp 由"格式约定"推断 ⇒ 一眼看出"格式对不对"
+    #   依据：所有 dispFlip 调用点都传 `pitch = width << 1` ⇒ 每像素 2 字节（RGB565）
+    try:
+        p = int(gdb.parse_and_eval('*(unsigned*)%d' % a_buf))
+        w = int(gdb.parse_and_eval('*(unsigned*)%d' % a_w))
+        h = int(gdb.parse_and_eval('*(unsigned*)%d' % a_h))
+    except Exception as e:
+        print('   scr = <读不到 %s>' % e); return
+    print('   %-24s = %s (%d)' % ('屏幕缓冲指针(dispFlip#1)', hex(p), p))
+    print('   %-24s = %d' % ('width(dispFlip#2)', w))
+    print('   %-24s = %d' % ('height(dispFlip#3)', h))
+    if w:
+        print('   %-24s = %d  (约定 pitch = width<<1)' % ('pitch(推定,dispFlip#4)', w * 2))
+        print('   %-24s = %d  ⇒ %s' % ('每像素字节', 2, 'RGB565(16bpp)，与帧缓冲类型 gh_u2* 一致'))
+    else:
+        print('   ★ width == 0 ⇒ driver.so 判不出 source 格式 ⇒ 极可能就是 wrong format 的根因')
+    if p == 0:
+        print('   ★ 屏幕缓冲指针 == NULL ⇒ 同上（driver.so 拿到 NULL source）')
+
 def dump(tag):
     print('\n===== %s =====' % tag)
     u32($A_RUNNING,  'running')
@@ -81,6 +107,7 @@ def dump(tag):
     ptr($A_FILIST,   '&file_info_list')
     ptr($A_MENULOG,  '&m_menulog')
     ptr($A_PATH,     '&path(全局)')
+    scr($A_SCRBUF, $A_SCRW, $A_SCRH)
     s($A_MENULOG,    'm_menulog[0..3]')
     strs($A_FILIST,  'file_info_list', 0x404)
 dump('断点前的初始值')

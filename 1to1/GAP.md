@@ -2007,3 +2007,71 @@ CI `1e864b09`（run `35449551215`，21 steps 全 ✓）跑出新判据下的矩�
 3. ★ **新判据的信息增益**：旧判据会把 `qemu_j` 的 factory(`139`) 误判成 `M7 ✓`（制造"两侧都活着"的假象）；
    新判据直接印出 `✗(被信号终止(exit=139))` vs `✓(活着(exit=124))` ⇒
    **"谁活着、为什么"从"要靠人推断"变成"矩阵里直接可读"**。
+
+### 16.27 ★★★★★ 逐层剥到 driver.so 内部：`gr_blit` 的"格式不匹配"判定与运行期实测值
+
+**方法：三种观测粒度，全部零源码改动**
+1. `rundir_*/stdout.txt` 的**唯一行**结构（见 16.25）
+2. `arm-linux-gnueabihf-objdump -d --disassemble=<符号>`（driver.so **有符号**，导出 61 个）
+3. gdb（`gdb-multiarch` + `dispFlip` **符号断点** + gdb-Python `stop()` 回调）读**运行期**实参与全局
+
+**① 实参实测（断 `dispFlip`，采样第 1/3/50/200/1000/3000 次…）**
+```
+DF#1     w=1280 h=720 pitch=2560 data=0x45758008
+DF#2000  w=1280 h=720 pitch=2560 data=0x45758008
+全局      scrbuf=0x45758008  w=1280  h=720      ← 与实参完全一致
+```
+- `pitch / w = 2` ⇒ **16bpp（RGB565）**，与所有调用点的 `width << 1` 约定一致 ⇒ **参数没有错**
+- 220 s 内命中 **13000+ 次**（≈59/s）⇒ **60fps 每帧渲染**，菜单确实在持续跑
+
+**② `video_driver_disp_frame(data,w,h,pitch)` 的机制（反汇编）**
+```asm
+; 仅当 (w,h,pitch) 与内部结构 S 的 [0],[4],[8] 不一致时才【重建】：
+  S->[0]  = w
+  S->[4]  = h
+  S->[12] = <某全局的值>        ← ★ 格式字段（懒初始化）
+  S->[8]  = pitch
+; 之后统一：
+  S->[16] = data
+  bl gr_next_frame@plt           ; 双缓冲切换
+  bl gr_blit_b@plt(...)          ; ★ 实际被调用的是 gr_blit_b，不是 gr_blit
+```
+
+**③ `gr_blit_b` 的判定（反汇编）**
+```asm
+gr_blit_b(r0 = source):
+  if (source == 0) return;
+  r2 = (<全局指针 P>)->[12];
+  r3 = source->[12];
+  if (r2 != r3) { puts("gr_blit: source has wrong format"); return; }   ← 就是这一行
+```
+- `gr_blit`（无 `_b`）内有**逐字相同**的一段，但全库**没有对 `gr_blit` 的直接 `bl`**
+  ⇒ **打印该消息的是 `gr_blit_b`**（第一次探针断在 `gr_blit` 上命中 0 次，正是因此）
+
+**④ 运行期实测（在 `dispFlip` 断点内反推 driver.so 基址后读）**
+```
+vdf = video_driver_frame = 0x40a89590   ⇒ driver.so base = 0x40a83000
+frame 全局(.bss@0x17220) = 0x5086ef0
+frame->[12] :  第 1 次 = 12388（★ 脏值）  →  第 3 次起 = 2（稳定）
+colormode    = 2   (.data@0x171a4)
+gr_colormode = 0   (.bss @0x171b4)          ← ★ 两个"颜色模式"本身就不一致
+rkgame 侧 Frame_data / Frame_width = 0      ← 另一套帧描述符（DrawFrame/core 回调用），未启用
+```
+⇒ **`frame->[12]` 存在"初始化窗口"**（12388 → 2）；且 `colormode=2` 与 `gr_colormode=0` **不一致本身就是线索**。
+
+**⑤ 当前状态与下一步（明确）**
+- **已排除**：`dispFlip` 的实参、rkgame 侧全局（scrbuf/w/h 三者一致、16bpp）
+- **已确认**：不匹配发生在 **driver.so 内部**的 `gr_blit_b`（`P->[12]` vs `source->[12]`）
+- **下一步**：解析 `gr_blit_b` 里 `P`（GOT@3964）与 `disp_frame` 里 `S->[12]`（GOT@67c8）**各自对应哪个符号**
+  （候选只有 `frame` / `colormode` / `gr_colormode`），并确认**双缓冲**（`gr_next_frame`）
+  是否使 `frame` 指向的 `[12]` 与 `source` 的 `[12]` 来自**不同缓冲**。
+
+**★ 方法论增量（可复用，已写进记忆）**
+- **gdb-Python 回调断点 + 符号反推 DSO 基址**：`base = video_driver_frame - 0x6590`
+  （`video_driver_frame` 是 rkgame 的 BSS **函数指针**，由 `dlsym("video_driver_disp_frame")` 填入
+  ⇒ 其值就是 driver.so 内该函数的运行地址）⇒ **无需 `stop-on-solib-events`**
+  （实测该法在 `batch` + Python 循环下不可靠：会卡在首次 solib 事件并报
+  `Cannot execute this command while the target is running`）。
+- **`objdump -d --disassemble=<sym>`** 对付**有符号**的厂商 DSO 极有效；无符号时才需绝对地址。
+- **绝对地址断点必须区分"文件 vaddr"与"运行时地址"**：`break *0xd8e4` 命中 0 次，
+  而符号断点 `dispFlip` 命中 13000+ 次（该 ELF 的 `dispFlip` 实际在 `0x500387c`）。
