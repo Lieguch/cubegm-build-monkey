@@ -138,35 +138,34 @@ def main():
     work = os.path.join(ROOT, 'build', '_freshchk')
     os.makedirs(work, exist_ok=True)
 
-    # ---------- 判据 2：入库/可推送性 ----------
+    # ---------- 判据 2：**真正起作用的机制** —— push 脚本会不会把它推上去 ----------
+    #   ★ 修正（2026-09-21）：上一版查 `.gitignore` 是错的口径 —— 本项目**不用 git 推送**
+    #     （`push_1to1.py` 走 GitHub Git Data API，自带文件白名单与跳过规则），
+    #     所以 `.gitignore` 对"会不会入库"**没有任何约束力**。真正决定的是 push 脚本里的
+    #     `rel.endswith((".pyc", ".o", ...))` 那条跳过规则，以及**有没有给它开例外**。
+    push_py = os.path.join(ROOT, 'tools', 'push_1to1.py')
+    push_txt = io.open(push_py, 'rb').read().decode('utf-8', 'replace') \
+        if os.path.exists(push_py) else ''
+    skip_ok = ('.o"' in push_txt or "'.o'" in push_txt) and ('.pyc' in push_txt)
+    # 例外句式的特征：`if rel.endswith("src/upstream/xunzip/XUnzip.o"):` + 单独的 pass
+    has_exc = ('endswith("src/upstream/xunzip/XUnzip.o")' in push_txt
+               or "endswith('src/upstream/xunzip/XUnzip.o')" in push_txt)
+    if not skip_ok:
+        print('  [判据2a] ★ FAIL —— push 脚本里找不到 `*.o` 的跳过规则（构建产物可能被推送）')
+    elif has_exc:
+        print('  [判据2a] ★ FAIL —— push 脚本里**仍为 XUnzip.o 开了入库例外**（陈旧对象会被钉住）')
+    else:
+        print('  [判据2a] ✓ push 脚本会把 `*.o` 当构建产物跳过，且未给 XUnzip.o 开例外')
+
+    # 附注：.gitignore 只作提示（本仓库不用 git 推送）
+    gi = os.path.join(ROOT, '.gitignore')
+    gi_txt = io.open(gi, 'rb').read().decode('utf-8', 'replace') if os.path.exists(gi) else ''
+    ign_ok = True
+    print('  [附注] 仓库根 .gitignore %s `src/upstream/xunzip/*.o`（本仓库不走 git 推送）'
+          % ('已含' if 'src/upstream/xunzip/*.o' in gi_txt else '不含'))
     #   ★ 口径要精确：**本地存在** `*.o` 是正常的（构建产物）；要判的是
     #     "它**会不会被推送进仓库**"。若会 ⇒ 陈旧对象会在仓库里被钉住（历史三次复发）。
     #     判据 = ① `.gitignore` 是否排除它；② 若本地是 git 仓库，它是否被 track。
-    gi = os.path.join(ROOT, '.gitignore')
-    gi_txt = io.open(gi, encoding='utf-8', errors='replace').read() if os.path.exists(gi) else ''
-    ign_ok = 'src/upstream/xunzip/*.o' in gi_txt
-    if not ign_ok:
-        print('  [判据2a] ★ FAIL —— `.gitignore` 未排除 `src/upstream/xunzip/*.o`')
-        print('            （不排除就有被推送进仓库的风险 ⇒ 陈旧对象会被钉住）')
-    else:
-        print('  [判据2a] ✓ `.gitignore` 已排除 `src/upstream/xunzip/*.o`')
-
-    tracked = None
-    if os.path.isdir(os.path.join(ROOT, '.git')):
-        try:
-            r = subprocess.run(['git', 'ls-files', '--error-unmatch',
-                                'src/upstream/xunzip/XUnzip.o'],
-                               cwd=ROOT, capture_output=True)
-            tracked = (r.returncode == 0)
-        except OSError:
-            tracked = None
-    if tracked is True:
-        print('  [判据2b] ★ FAIL —— `XUnzip.o` 仍被 git 跟踪（入库）')
-    elif tracked is False:
-        print('  [判据2b] ✓ `XUnzip.o` 未被 git 跟踪')
-    else:
-        print('  [判据2b] · 无 git 仓库，跳过跟踪检查（推送走 API，由 push 脚本的白名单负责）')
-
     # 本地存在 `*.o` 只作提示（构建产物）
     if os.path.exists(OBJ):
         print('  [提示] 本地存在构建产物 %s（%d B）—— 正常，它不再入库' %
@@ -211,7 +210,7 @@ def main():
         if bad:
             print('  [判据1b] ★ FAIL —— 链接进 ELF 的不是当前源码的对象（陈旧链接物）')
 
-    fail = (not ign_ok) or (tracked is True) or (CS is not None and any(
+    fail = (not (skip_ok and not has_exc)) or (CS is not None and any(
         FS[k] != CS[k] for k in FS if ZIPFAM(k) and k in CS)) or (ES is not None and any(
         FS[k] != ES[k] for k in FS if ZIPFAM(k) and k in ES))
     print()
