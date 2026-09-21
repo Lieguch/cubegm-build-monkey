@@ -15,15 +15,7 @@
 这正是固件差分测试的标准做法（Laelaps, ACM 10.1145/3427228.3427280：
 导出翻译块执行轨迹 → 对齐 → 定位首个分歧）。
 
-## 三个视图（从细到粗，都报）
-
-| 视图 | 归一方式 | 用途 |
-|---|---|---|
-| ① 逐次执行 | `函数名+0x偏移` | 最细：指令级分歧（含同一函数内的不同路径）|
-| ② 按函数名 | `函数名`（丢偏移） | 中等：同一函数内的偏移差异不算分歧 |
-| ③ 按函数转移 | 折叠连续重复后取 `A→B→C` 序列 | 最可读：直接看"两边走过的高层路径" |
-
-## 关键设计：**只对齐主程序自身代码段内的执行**
+## 关键设计 1：只对齐主程序自身代码段，并按各自 symtab 归一
 
 两侧是**两个不同的二进制**（地址不同、还各自链了不同版本的 libc/ld.so）⇒
 地址序列**天然不可直接比**。所以：
@@ -32,12 +24,31 @@
 （★ 字段映射已逐条校验：qemu `-d exec` 行第 2 个 16 进制字段就是 PC，
   且 qemu 追加的符号名与本仓 symtab **逐条一致**，实测 8/8。）
 
+## 关键设计 2（★ 首跑踩坑后加的）：**必须从"锚点"开始比，不能从下标 0**
+
+首跑实测（CI `20ba70e4`，C5）三个视图**全部报"第 0 次就不同"** —— 这是**仪器缺陷**，不是发现：
+两个不同二进制的 **CRT / loader 前导天然不同**
+（factory 首个主程序帧 = `main+0x1ec`，rebuild = `_init+0x8`），从下标 0 比必然立刻分歧，
+于是整份报告变成"两侧入口不同"这种**废话**，真正的分歧点被前导噪声顶掉了。
+
+⇒ 改为**锚点对齐**：取两侧**共有的第一个"实质"符号**（默认 `main`；可选 `--anchor`），
+从它各自**首次出现**的位置开始比；锚点之前的差异只作**信息性**记录（前导长度），不参与判决。
+若定不到锚点 ⇒ 判 `INCONCLUSIVE`（exit 3），**不给"无分歧"这种假绿**。
+
+## 三个视图（都报；锚点之后）
+
+| 视图 | 归一方式 | 用途 |
+|---|---|---|
+| ① 逐次执行 | `函数名+0x偏移` | 最细：同一函数内走了不同路径 |
+| ② 按函数名 | `函数名`（丢偏移） | 中等：偏移差异不算分歧 |
+| ③ 按函数转移 | 折叠连续重复 → `A→B→C` | 最可读：高层路径是否走偏 |
+
 ## 用法
 
     python3 tools/exec_align.py --factory report/qemu_c5/exec_factory.log \
                                 --ours    report/qemu_c5/exec_rebuild.log \
-                                --out     report/qemu_c5/exec_align.txt
-退出码：0 = 三视图都无分歧；1 = 有分歧（**观测项**）；3 = 无法判定（缺日志/缺 ELF）。
+                                [--anchor main] [--out report/qemu_c5/exec_align.txt]
+退出码：0 = 锚点之后三视图都无分歧；1 = 有分歧（**观测项**）；3 = 无法判定（缺日志/定不到锚点）。
 """
 import argparse
 import bisect
@@ -48,6 +59,18 @@ import sys
 
 LINE = re.compile(r'^Trace\s+\d+:\s+0x[0-9a-fA-F]+\s+\[([0-9a-fA-F]{8})/([0-9a-fA-F]{8})/'
                   r'([0-9a-fA-F]{8})/([0-9a-fA-F]{8})\]')
+
+# ★★ CRT / loader 样板符号：两侧必然不同（链的 crt 版本、ld 不同）⇒ **不参与分歧判决**。
+#    不排除它们的后果实测过：三个视图全部在第 0 次报分歧，报告变成废话。
+CRT_RE = re.compile(
+    r'^(_init|_fini|_start|__libc_csu_init|__libc_csu_fini|__libc_start_main|'
+    r'__ARMv7ABSLongThunk_|__ARMv7A_LongThunk_|_dl_|frame_dummy|'
+    r'register_tm_clones|deregister_tm_clones|__do_global_dtors_aux|'
+    r'__gnu_|@nosym|@0x)')
+
+
+def is_crt(nm):
+    return bool(CRT_RE.match(nm))
 
 
 def elf_exec_ranges_and_syms(path):
@@ -65,7 +88,6 @@ def elf_exec_ranges_and_syms(path):
     e_shoff = struct.unpack_from('<I', d, 32)[0]
     shentsize = struct.unpack_from('<H', d, 46)[0]
     shnum = struct.unpack_from('<H', d, 48)[0]
-    shstrndx = struct.unpack_from('<H', d, 50)[0]
 
     rng = []
     for i in range(phnum):
@@ -113,7 +135,7 @@ def read_trace(path, rng):
 
 
 def normalize(pcs, syms):
-    """PC 序列 → [(函数名, 函数名+偏移)]。找不到符号的用 `@0x...`（少见，落在段内但无符号）。"""
+    """PC 序列 → [(函数名, 函数名+偏移)]。找不到符号的用 `@0x...`。"""
     starts = [v for v, _ in syms]
     out = []
     for pc in pcs:
@@ -124,6 +146,47 @@ def normalize(pcs, syms):
         base, nm = syms[i]
         out.append((nm, '%s+0x%x' % (nm, pc - base)))
     return out
+
+
+def first_index_of(seq, name, key=0):
+    for i, x in enumerate(seq):
+        if x[key] == name:
+            return i
+    return -1
+
+
+def find_anchor(nf, nr, want=None):
+    """定锚：返回 (锚点名, factory 侧首次下标, rebuild 侧首次下标)；定不到返回 (None, -1, -1)。
+
+    规则：
+      1. `--anchor` 指定时先试它；
+      2. 否则试 `main`（两侧都有，且是"业务代码起点"的自然锚）；
+      3. 再否则退化为"factory 侧首个**非 CRT** 且 rebuild 侧也出现过的符号"。
+    ★ 为什么需要锚：见模块 docstring「关键设计 2」——CRT/loader 前导天然不同，
+      从下标 0 比会把真正的分歧点顶掉。
+    """
+    cands = []
+    if want:
+        cands.append(want)
+    else:
+        cands.append('main')
+    rb_first = {}
+    for i, x in enumerate(nr):
+        rb_first.setdefault(x[0], i)
+    for nm in cands:
+        ia = first_index_of(nf, nm)
+        ib = rb_first.get(nm, -1)
+        if ia >= 0 and ib >= 0:
+            return nm, ia, ib
+    if want:
+        return None, -1, -1
+    for i, x in enumerate(nf):
+        nm = x[0]
+        if is_crt(nm):
+            continue
+        if nm in rb_first:
+            return nm, i, rb_first[nm]
+    return None, -1, -1
 
 
 def transitions(seq, key=0):
@@ -147,21 +210,19 @@ def first_diff(a, b):
 def show_ctx(title, fa, fb, i, width=6):
     L = ['  --- %s ---' % title]
     if i < 0:
-        L.append('     ✓ 两侧**完全一致**（长度 %d）' % len(fa))
+        L.append('     ✓ 锚点之后两侧**完全一致**（各 %d / %d 次）' % (len(fa), len(fb)))
         return L
-    L.append('     ★ 首个分歧点 = 第 %d 次（0 基）；之前 %d 次完全一致' % (i + 1, i))
-    if i == 0:
-        L.append('       ⚠️ 第 0 次就不同 ⇒ 两侧入口/初始化路径不同（多为链接/启动差异，非实现差异）')
+    L.append('     ★ 首个分歧点 = 锚点之后第 %d 次（0 基）；之前 %d 次完全一致' % (i + 1, i))
     lo = max(0, i - width)
     L.append('     %-6s %-34s | %s' % ('idx', 'factory', 'rebuild'))
     for k in range(lo, min(len(fa), len(fb), i + 3)):
         mark = '★' if k == i else ' '
         L.append('     %s%-5d %-34s | %s' % (mark, k, str(fa[k])[:34], str(fb[k])[:34]))
     if i >= len(fa):
-        L.append('     ⚠️ factory 侧轨迹在此处**已结束**（共 %d 次 vs rebuild %d 次）'
+        L.append('     ⚠️ factory 侧锚点后只剩 %d 次（rebuild %d 次）⇒ 之后的分歧都是"早逝的影子"'
                  % (len(fa), len(fb)))
     if i >= len(fb):
-        L.append('     ⚠️ rebuild 侧轨迹在此处**已结束**（共 %d 次 vs factory %d 次）'
+        L.append('     ⚠️ rebuild 侧锚点后只剩 %d 次（factory %d 次）⇒ 之后的分歧都是"早逝的影子"'
                  % (len(fb), len(fa)))
     return L
 
@@ -172,6 +233,7 @@ def main():
     ap.add_argument('--ours', required=True, help='-d exec 原始日志（rebuild 侧）')
     ap.add_argument('--factory-elf', default='golden/factory.rkgame.bin')
     ap.add_argument('--ours-elf', default='build/rkgame.rebuilt.elf')
+    ap.add_argument('--anchor', default=None, help='锚点符号（默认 main）')
     ap.add_argument('--label', default='')
     ap.add_argument('--out', default=None)
     ap.add_argument('--selftest', action='store_true')
@@ -200,23 +262,58 @@ def main():
     L.append('  轨迹总行数：factory %d / rebuild %d' % (tf, tr))
     L.append('  落在**主程序自身代码段**的执行数：factory %d / rebuild %d' % (len(pf), len(pr)))
     L.append('     （其余是 libc/ld.so 的帧 —— 两侧链的库不同，地址不可直接比 ⇒ 已过滤）')
+
+    anchor, ia, ib = find_anchor(nf, nr, a.anchor)
+    if anchor is None:
+        L.append('')
+        L.append('  ★ 无法定锚（两侧没有可用的共同非 CRT 符号）⇒ **INCONCLUSIVE**：')
+        L.append('    不能判"无分歧" —— 那会是假绿。请用 --anchor 指定一个两侧都执行的符号。')
+        txt = '\n'.join(L) + '\n'
+        print(txt, end='')
+        if a.out:
+            os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
+            open(a.out, 'w', encoding='utf-8', newline='\n').write(txt)
+        return 3
+
     L.append('')
-    L.append('  三个视图的**首个分歧点**：')
-    d1 = first_diff([x[1] for x in nf], [x[1] for x in nr])
-    L += show_ctx('① 逐次执行（函数名+偏移）', [x[1] for x in nf], [x[1] for x in nr], d1)
+    L.append('  ★ 锚点 = `%s`（默认取两侧共有的业务代码起点；可用 --anchor 覆盖）' % anchor)
+    L.append('     锚点**之前**（CRT/loader 前导）执行数：factory %d / rebuild %d ——'
+             % (ia, ib))
+    L.append('     两个不同二进制的 crt/ld 版本不同，**前导天然不同 ⇒ 不参与分歧判决**（只作记录）。')
+    L.append('     ⚠️ 首跑教训（CI 20ba70e4）：不做锚点对齐时，三个视图**全部**报"第 0 次就不同"'
+             '（factory `main+0x1ec` vs rebuild `_init+0x8`）⇒ 报告退化成废话。')
+
+    sf, sr = nf[ia:], nr[ib:]
+    tfa, trb = transitions(sf), transitions(sr)
     L.append('')
-    d2 = first_diff([x[0] for x in nf], [x[0] for x in nr])
-    L += show_ctx('② 按函数名（丢偏移）', [x[0] for x in nf], [x[0] for x in nr], d2)
+    L.append('  锚点之后：factory %d 次执行 / %d 次转移；rebuild %d 次执行 / %d 次转移'
+             % (len(sf), len(tfa), len(sr), len(trb)))
     L.append('')
-    tfa, trb = transitions(nf), transitions(nr)
+    L.append('  三个视图的**首个分歧点**（锚点之后）：')
+    d1 = first_diff([x[1] for x in sf], [x[1] for x in sr])
+    L += show_ctx('① 逐次执行（函数名+偏移）', [x[1] for x in sf], [x[1] for x in sr], d1)
+    L.append('')
+    d2 = first_diff([x[0] for x in sf], [x[0] for x in sr])
+    L += show_ctx('② 按函数名（丢偏移）', [x[0] for x in sf], [x[0] for x in sr], d2)
+    L.append('')
     d3 = first_diff(tfa, trb)
     L += show_ctx('③ 按函数转移（折叠连续重复）', tfa, trb, d3)
-    L.append('     （序列长度：factory %d 次转移 / rebuild %d 次转移）' % (len(tfa), len(trb)))
+    L.append('')
+
+    # 锚点之后的"只在一侧出现"的符号（排除 CRT）—— 比逐次对齐更抗噪声
+    setf = {x[0] for x in sf if not is_crt(x[0])}
+    setr = {x[0] for x in sr if not is_crt(x[0])}
+    only_f = sorted(setf - setr)
+    only_r = sorted(setr - setf)
+    L.append('  锚点之后的**符号集合差集**（排除 CRT 样板）：')
+    L.append('     仅 factory 执行（%d 个）：%s' % (len(only_f), ', '.join(only_f[:14]) or '（无）'))
+    L.append('     仅 rebuild 执行（%d 个）：%s' % (len(only_r), ', '.join(only_r[:14]) or '（无）'))
     L.append('')
     L.append('  ★ 读法（顺序不能反）：')
-    L.append('     1) 先看**两侧轨迹长度**与终止状态 —— 一侧若提前结束，后面的分歧都是"早逝的影子"；')
+    L.append('     1) 先看**两侧锚点后的长度**与终止状态 —— 一侧若提前结束，后面的分歧都是"早逝的影子"；')
     L.append('     2) 再看 ② 与 ③（按函数名/转移）—— 它们才是"高层路径是否走偏"的判据；')
-    L.append('     3) ① 只用于定位"同一函数内的哪一段"；第 0 次就不同通常是链接/启动差异，不是实现差异。')
+    L.append('     3) ① 只用于定位"同一函数内的哪一段"；')
+    L.append('     4) ③ 的首个分歧点往往是最有用的一个：它给出"两侧最后一次在同一个函数里"的位置。')
     txt = '\n'.join(L) + '\n'
     print(txt, end='')
     if a.out:
@@ -229,9 +326,9 @@ def main():
 def selftest():
     """★ 仪器自证（正负双向）。锚点人工核对过。
 
-    为什么必须有：本工具的"过滤 + 归一"是最容易悄悄失效的一环 ——
-    过滤区间写错 ⇒ 全部帧被丢掉（序列为空，看起来"无分歧"）；归一写错 ⇒ 序列恒不同。
-    两者都会产生**看起来正常**的输出。
+    为什么必须有：本工具的"过滤 + 归一 + 定锚"三环都极易**悄悄失效** ——
+    过滤区间写错 ⇒ 序列为空（看起来"无分歧"）；归一写错 ⇒ 序列恒不同；
+    定锚写错 ⇒ 又把 CRT 前导算进判决（**首跑就是这样错的**）。三者都会产出"看起来正常"的输出。
     """
     cases = [
         # (a, b, 期望 first_diff)
@@ -242,7 +339,7 @@ def selftest():
         ([], ['A'], 0, '空序列 vs 非空 ⇒ 0'),
     ]
     print('=' * 78)
-    print('exec_align 自证（对齐原语）')
+    print('exec_align 自证（对齐原语 + 归一 + 定锚）')
     print('=' * 78)
     bad = 0
     for a, b, want, note in cases:
@@ -252,7 +349,6 @@ def selftest():
         print('  %-6s %-16s vs %-16s → %-3s (期望 %-3s)  %s'
               % ('✓' if ok else '★FAIL', a, b, got, want, note))
 
-    # 归一化 + 过滤锚点（用真实符号区间构造）
     syms = [(0x1000, 'Foo'), (0x1100, 'Bar')]
     got = normalize([0x1004, 0x1104], syms)
     want = [('Foo', 'Foo+0x4'), ('Bar', 'Bar+0x4')]
@@ -260,12 +356,46 @@ def selftest():
     bad += (not ok)
     print('  %-6s 归一化 [0x1004,0x1104] → %s (期望 %s)' % ('✓' if ok else '★FAIL', got, want))
 
-    # 转移折叠
-    got = transitions([x for x in [('A', ''), ('A', ''), ('B', ''), ('B', ''), ('A', '')]])
+    got = transitions([('A', ''), ('A', ''), ('B', ''), ('B', ''), ('A', '')])
     want = ['A', 'B', 'A']
     ok = (got == want)
     bad += (not ok)
     print('  %-6s 转移折叠 → %s (期望 %s)' % ('✓' if ok else '★FAIL', got, want))
+
+    # ---- CRT 过滤 ----
+    crt_names = ['_init', '_start', '__libc_csu_init', '__ARMv7ABSLongThunk_memcpy',
+                 'frame_dummy', '@nosym', '__gnu_thumb1_case_uqi']
+    non_crt = ['main', 'mui_menu', 'ReadUSBJoy']
+    got = [is_crt(n) for n in crt_names + non_crt]
+    want = [True] * len(crt_names) + [False] * len(non_crt)
+    ok = (got == want)
+    bad += (not ok)
+    print('  %-6s CRT 识别（%d 个应真 / %d 个应假）→ %s'
+          % ('✓' if ok else '★FAIL', len(crt_names), len(non_crt), '正确' if ok else got))
+
+    # ---- 定锚：★ 首跑踩的坑就是这里 ----
+    # 构造与实测同形的前导：factory 以 main 开头，rebuild 以 _init 开头
+    nf = [('main', 'main+0x1ec'), ('main', 'main+0x200'), ('mui_menu', 'mui_menu+0x0')]
+    nr = [('_init', '_init+0x8'), ('__libc_csu_init', 'x'),
+          ('main', 'main+0x10'), ('main', 'main+0x20'), ('mui_menu', 'mui_menu+0x0')]
+    an, ia_, ib_ = find_anchor(nf, nr)
+    ok = (an == 'main' and ia_ == 0 and ib_ == 2)
+    bad += (not ok)
+    print('  %-6s 定锚（默认 main）→ %s @factory[%d] / rebuild[%d] (期望 main @0 / @2)'
+          % ('✓' if ok else '★FAIL', an, ia_, ib_))
+    sf, sr = nf[ia_:], nr[ib_:]
+    got = first_diff([x[0] for x in sf], [x[0] for x in sr])
+    ok = (got == -1)
+    bad += (not ok)
+    print('  %-6s ★ 锚点之后应**无分歧**（前导差异不得算进判决）→ %s (期望 -1)'
+          % ('✓' if ok else '★FAIL', got))
+
+    # ---- 定不到锚 ⇒ 必须 INCONCLUSIVE（不许假绿）----
+    an2, _, _ = find_anchor([('_init', 'x')], [('_init', 'y')])
+    ok = (an2 is None)
+    bad += (not ok)
+    print('  %-6s 两侧只有 CRT 符号 ⇒ 定不到锚（必须 INCONCLUSIVE，不许假绿）→ %s'
+          % ('✓' if ok else '★FAIL', an2))
 
     print('-' * 78)
     print('  结论：%s' % ('★ 有锚点未通过 ⇒ 判据不可信，必须修' if bad else '全部锚点通过 ✓'))
