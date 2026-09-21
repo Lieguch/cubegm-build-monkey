@@ -3242,3 +3242,189 @@ C5 实测（同一 artifact）：
 它读同场景的 `behav_{factory,rebuild,control}.json` 取 `exit_code`，并按三种情形给不同结论：
 两侧同形态 / 形态不同但控制组与 factory 同判（可复现 ⇒ 环境缺陷）/ 控制组与 factory 不同判（⇒ 参照侧不确定，一切结论不可信）。
 ⇒ **"控制组"是唯一能区分"环境缺陷"与"行为分歧"的仪器**，现在它被强制出现在每一份差集报告里。
+
+### 16.50 ★★★★ `exec_align` 首跑暴露的**仪器缺陷**：两个二进制**不能从下标 0 对齐**
+
+**首跑结果**（CI `20ba70e4`，C5）：三个视图**全部**报"首个分歧点 = 第 1 次（0 基）"：
+
+| 视图 | factory | rebuild |
+|---|---|---|
+| ① 逐次执行 | `main+0x1ec` | `_init+0x8` |
+| ② 按函数名 | `main` | `_init` |
+| ③ 按函数转移 | `main` | `_init` |
+
+**这是仪器缺陷，不是发现**：两个**不同的二进制**的 **CRT / loader 前导天然不同**
+（链的 crt 版本、ld.so、`_init`/`__libc_csu_init` 布局都不一样）⇒
+从下标 0 比**必然**立刻分歧，于是整份报告退化成"两侧入口不同"这种废话，
+**真正的分歧点被前导噪声顶掉**。
+
+**修法：锚点对齐**（`--anchor`，默认 `main`）
+- 取两侧**共有的那一个"实质"符号**（默认 `main`；定不到时退化为"factory 侧首个非 CRT 且 rebuild 也有的符号"），
+  从它各自**首次出现**的位置开始比；
+- 锚点**之前**的差异只作**信息性**记录（"前导执行数 factory N / rebuild M"），**不参与判决**；
+- **定不到锚 ⇒ `INCONCLUSIVE`（exit 3）**，绝不输出"无分歧"这种假绿。
+- `CRT_RE` 排除：`_init/_fini/_start/__libc_csu_*/__libc_start_main/__ARMv7ABSLongThunk_*/_dl_*/`
+  `frame_dummy/*_tm_clones/__do_global_dtors_aux/__gnu_*/@nosym/@0x*`。
+- `--selftest` 从 7 → **11 个锚点**（新增：CRT 识别 10 项、定锚（默认 main）、
+  **"锚点之后应无分歧（前导差异不得算进判决）"**、**"两侧只有 CRT 符号 ⇒ 必须 INCONCLUSIVE"**）。
+  ★ 第 3 条正是首跑错的那个地方；第 4 条防的是"定不到锚却报绿"。
+
+### 16.51 ★★★★★ C5 的 **zip 路径关键地址普查**：18 个判决点，一次跑完钉死工厂走了哪条分支
+
+**为什么不再继续推理**：已知链是硬的 ——
+`OpenZipU` 成功 ⇔ `unzOpenInternal` 返回非 NULL ⇔ **EOCD 搜索 + 中央目录解析都成功**；
+而工厂**仍然"找不到"包内确实存在的条目**（打了 `find ui.cfg … fail`），我们找到了。
+⇒ 失败点**只能**在「逐条读中央目录项的**文件名**并比对」这一段。
+再往下推理就是猜，所以改用项目**已有**的仪器：`CGM_TRACE_ADDRS`（关键地址命中普查，
+`ci_qemu_behav.sh` 在**删完整日志之前**逐地址 `grep -c`）。
+
+**地址清单**（工厂侧绝对地址，取自 `factory.rkgame.bin` 的 `SHT_SYMTAB`）：
+
+| 地址 | 含义 |
+|---|---|
+| `00010fec` | SearchCentralDir：**命中**（算出了 EOCD 位置）|
+| `00011064` | SearchCentralDir：**短读 ⇒ 返回 0**（`lufread != 1`）|
+| `00010ff8` | SearchCentralDir：循环结束仍未找到 / malloc 失败 ⇒ 返回 0 |
+| `00010ed8` | SearchCentralDir：入口 seek 失败 ⇒ 返回 0 |
+| `0001168c` | `unzOpenInternal` 入口 |
+| `00011074` | `unzGetGlobalInfo` 入口（`unzLocateFile` 循环前先取 `number_entry`）|
+| `0001162c` | `unzGoToFirstFile` 入口 |
+| `00011868` | `unzGoToNextFile` 入口（**命中次数 = 循环迭代了几次**）|
+| `000110d4` | `unzlocal_GetCurrentFileInfoInternal` 入口（每次读一条中央目录项）|
+| `0001190c` | `unzLocateFile` 入口 |
+| `00010ea0` | `unzStringFileNameCompare` 入口（大小写不敏感比对，仅 16 B）|
+| `00012608` / `000128dc` | `TUnzip::Open` / `TUnzip::Find` 入口 |
+| `00012cd0` / `00012ebc` | `OpenZipU` / `FindZipItemA` 入口 |
+| `00017e9c` | `mui_LoadUIResource`：`FindZipItemA != 0` ⇒ **"找不到条目"** |
+| `00017eb4` | `mui_LoadUIResource`：`OpenZipU == 0` ⇒ "打不开" |
+| `00017e48` | `mui_LoadUIResource`：**成功**路径 |
+
+**读法（已写进 workflow 注释）**：先看 `00010fec` 与 `00011064` 哪个非零 —— 直接区分
+"EOCD 没搜到"与"搜到了但条目比对失败"；再看 `000110d4` / `00011868` 的次数：
+若各约 6~7 次 ⇒ 循环确实遍历了全部 6 个条目而名字没匹配上（问题在**文件名字段读取**或**比对函数**），
+而不是"没进循环"。
+
+### 16.52 ★★★★★ 本轮最值钱的产出：**四个"仪器自身的静默失效"**（全部当场踩到并修掉）
+
+| # | 失效 | 症状 | 修法 / 纪律 |
+|---|---|---|---|
+| 1 | **连续两次 `write` 用同一个原始字符串** | 第二次把第一次的替换**覆盖**掉；而脚本**照样打印了 ✓** ⇒ 地址清单被静默丢弃 | 累积到 `s`、**最后只写一次**；★ **写完必须独立校验**（读回文件 grep 一遍），不信脚本自己的 ✓ |
+| 2 | **shell heredoc 把 `\\` 变成 `\`** | Python 三引号串里 `\<换行>` 是**行接续**（吞掉换行）⇒ 锚点**永远**匹配不上 | 带反斜杠的补丁脚本**一律写成文件再执行**（`"$PY" patch.py`），不经 shell 转义层 |
+| 3 | **地址必须 8 位十六进制** | 写成 6 位 `010fec` ⇒ `grep "/010fec/"` 与轨迹里的 `/00010fec/` 不相等 ⇒ **恒 0 命中**；而"0 命中"**看起来恰好等于**"这条分支没走到" ⇒ **会把结论带向完全相反的方向** | 一律 `'%08x' % addr`；并在 workflow 注释里写明这条 |
+| 4 | **0 命中缺少"阳性对照"** | `grep` 的 0 命中有两种含义：① 该分支真没走到；② **普查链路本身坏了**。没有阳性对照就**分不清** | 普查清单里**必须放一个已知必然命中的地址**。本项目的天然阳性对照：`00017dac`(`mui_LoadUIResource` 入口) 与 `00012ebc`(`FindZipItemA` 入口) —— 工厂打了 `find ui.cfg … fail`，这两条链**一定**都进过 |
+
+**共性（一句话）**：
+> **"看起来正常"的输出是最危险的输出。** 这四条都不是"程序报错"，而是"程序给了我一个
+> **读起来合理、但方向相反**的结论"。⇒ 纪律：任何新仪器/新判据上线，必须
+> ①带**正负双向锚点**自证；②**产物与写入分离校验**（写完读回来 grep）；
+> ③**关键量必须有阳性对照**。三者缺一，就要靠人肉发现错误 —— 而这次是靠人肉发现的三次。
+
+### 16.53 状态与下一步
+
+- 提交：`ed628ede`（exec_align 首上线）→ `20ba70e4` → `0a7c9e27`（锚点对齐修复）→
+  `a422859f` → **`37748097`**（8 位地址普查，CI 运行中，已挂监控）。
+- 另一条并行的确认：**"仅工厂执行/仅我们执行"在两个场景之外全为 0** 的结论在
+  `exec_align` 上线后仍成立（C5/J 的 24 个多执行函数 = 工厂早逝的影子）。
+- **下一步（唯一入口）**：读 `37748097` 的普查表 ⇒ 工厂侧 zip 枚举失败的**精确分支**；
+  若 `00010fec > 0`（EOCD 搜到了）而 `000110d4`/`00011868` 约为 6~7 次
+  ⇒ 问题在**中央目录项的文件名字段读取**或 `unzStringFileNameCompare`，
+  那正好落在 `TUnzip::Get`(152 B + `.part.5` 888 B) / `unzlocal_GetCurrentFileInfoInternal`(1304 B)
+  这两个"上游版本不符"的台账项上 —— 与 `tools/upstream_fingerprint_baseline.txt` 的剩余三项汇合。
+
+### 16.54 ★★★★★ **根因定位：我们 vendor 了错的 `unzip.cpp` 变体**（一次机械对拍解决，而不是继续逐符号手工对齐）
+
+**先承认绕圈的模式**：过去几轮我在**逐符号手工对齐** `src/upstream/xunzip/unzip.cpp`
+（第 45 轮修 `TUnzip::Open`、第 46 轮改 `TUnzip::Unzip`、…），每轮还要再配一件新仪器。
+而项目**已经有一条被证明有效的机械方法**：编译口径 `-Os` 是怎么定的？
+——「**同一份源码 × 逐个候选配置 → 编译 → 解 `SHT_SYMTAB` 逐函数比 size**」，一次命中到字节。
+我把这条方法只用在了编译选项上，**没想到可以用在"库版本"上**。
+
+**★ 决定性线索（在我自己文件的头部注释里）**：
+
+```
+src/upstream/xunzip/unzip.cpp:3   原始来源：Wischik zip_utils 的 **tomyqg/helix_mp3 变体** unzip.cpp
+                            :10   新增：ZIPENTRYW + GetZipItemW/FindZipItemW（**工厂有，本变体缺失**，按…重建）
+```
+
+⇒ **工厂用的不是 helix_mp3 变体，而是 Wischik 原版** —— 而**原版就在仓里**
+（`src/upstream/zip_utils.zip!unzip.cpp`，144,408 B，2004-06-25）。
+
+**实验（`tools/zipver_sweep.py`，本地 ~1 分钟）**
+口径：`zig c++ -std=gnu++14 -Os -target arm-linux-gnueabihf.2.29`（与原厂 GCC 6.2 的默认方言一致；
+★ 原版含 `register`，`-std` 不对连编译都过不去 —— 方言也是"口径"的一部分）。
+
+| 符号 | 工厂 | **原版 Wischik** | 现用(helix_mp3) |
+|---|---|---|---|
+| `unzStringFileNameCompare` | 16 | **16 (1.00)** ✅ | 140 (8.75×) |
+| `unzClose` | 60 | **60 (1.00)** ✅ | 144 |
+| `unzGetGlobalInfo` | 32 | **32 (1.00)** ✅ | 44 |
+| `unzGoToFirstFile` | 96 | **96 (1.00)** ✅ | 100 |
+| `unzlocal_DosDateToTmuDate` | 64 | **64 (1.00)** ✅ | 72 |
+| `unzGetCurrentFileInfo` | 64 | **64 (1.00)** ✅ | 68 |
+| `unzlocal_getByte` | 92 | **100 (1.09)** | 212 (2.30×) |
+| `unzlocal_getShort` | 96 | **92 (0.96)** | 376 (3.92×) |
+| `unzlocal_getLong` | 156 | **152 (0.97)** | 720 (4.62×) |
+| `unzGoToNextFile` | 164 | **160 (0.98)** | 172 |
+| `SearchCentralDir` | 452 | **416 (0.92)** | 844 (1.87×) |
+| `unzOpenInternal` | 476 | **500 (1.05)** | 524 |
+| `GetCurrentFileInfoInternal` | 1304 | **1100 (0.84)** | 1428 |
+| `unzLocateFile` | 240 | **292 (1.22)** | 528 (2.20×) |
+| `unzeof` / `unztell` | 44 / 36 | **36 (0.82) / 28 (0.78)** | 56 / 48 |
+| `TUnzip::Close` | 68 | **56 (0.82)** | 168 (2.47×) |
+
+**⇒ 原版在 ±33% 内命中工厂 `20 / 25`（80%），其中 6 个精确到字节；
+   而现用的 helix_mp3 变体几乎每一行都偏 2×** —— 这就是那串"系统性 2× 偏差"的来源。
+
+**★ 但工厂 ≠ 纯原版**：5 处方向明确的改动（原版 → 工厂）
+1. `unzOpenCurrentFile`：原版 **双参** `_Z18unzOpenCurrentFileP5unz_sPKc`(440 B) → 工厂 **单参**
+   `_Z18unzOpenCurrentFileP5unz_s`(316 B) ⇒ **砍掉了 password 参数**（内嵌加密能力被裁）；
+2. `TUnzip::Find`：原版 `...PKcb...`（**bool**）→ 工厂 `...PKch...`（**unsigned char**）
+   （★ 现用变体**这一点已经改对了**，文件头注释有记）；
+3. `TUnzip::Unzip`：原版 848 B 单一大函数 → 工厂 **28 B + `.part.7`(488 B)**
+   ⇒ "薄封装 + GCC 冷热分割"；
+4. `TUnzip::Get`：原版 920 B → 工厂 **152 B + `.part.5`(888 B)**，同上；
+5. `TUnzip::Open`：原版 192 B → 工厂 **84 B**。
+
+**⇒ 最优解（下一步的唯一入口）**：把 vendored 源从 helix_mp3 变体换成
+**「Wischik 原版 + 上述 5 处工厂改动」**，并保留项目已用机器码核实过的三处增量
+（POSIX 垫片 / `key2` 全局 + 改写的 `unzlocal_SearchCentralDir` / `zopenerror` 别名）。
+**验收标准已量化**：`python3 tools/zipver_sweep.py` 的命中率要从 **~0/25 → ≥23/25**。
+这是一次**结构性替换**，能一次性消掉整族偏差，而不是像现在这样逐符号手工对齐。
+
+### 16.55 ★★★★★ 关键地址普查**正面证实**了同一处根因（两条独立证据链汇合）
+
+第一轮不接 `CGM_TRACE_ADDRS` 时地址写成了 6 位（见 16.52 #3）⇒ 全部恒 0 命中；
+改成 8 位后重跑（CI `37748097`），**工厂侧**结果（control 侧逐字相同 ⇒ 可复现）：
+
+| 地址 | 含义 | factory | control |
+|---|---|---|---|
+| `00012ebc` | **阳性对照** FindZipItemA 入口 | **4** | 4 |
+| `00017e9c` | **阳性对照** mui_LoadUIResource「找不到条目」分支 | **1** | 1 |
+| `00010fec` | SearchCentralDir **命中（算出 EOCD 位置）** | **1** | 1 |
+| `00011064` | SearchCentralDir 短读 ⇒ 返回 0 | **0** | 0 |
+| `000110d4` | `GetCurrentFileInfoInternal` 入口 | **1** | 1 |
+| **`00011868`** | **`unzGoToNextFile` 入口** | **0** ← **循环一次都没迭代** | 0 |
+| **`00010ea0`** | **`unzStringFileNameCompare` 入口** | **0** ← **从未比对过** | 0 |
+| `0001190c` | `unzLocateFile` 入口 | 4 | 4 |
+| `00017eb4` / `00017e48` | OpenZipU==0 分支 / 成功分支 | 0 / 0 | 0 / 0 |
+
+**读法（先看阳性对照 ⇒ 普查链路是通的，0 才可信）**：
+- **EOCD 搜到了、包打开了**（`00010fec`=1，`00011064`=0）—— 与"没打 `open ... fail`"一致；
+- **`GetCurrentFileInfoInternal` 只被调 1 次、`unzGoToNextFile` 0 次、`unzStringFileNameCompare` 0 次**
+  ⇒ **工厂的 `unzLocateFile` 在"读第一条中央目录项"这一步就失败返回
+  「列表结束」**，于是 `Find` 报 NOTFOUND → 打 `find menu.raw fail`
+  → `mui_LoadUIResource` 失败**不给 `*param_1` 赋值** ⇒ `DAT_003af28c` 留 NULL
+  ⇒ `mui_menu:75` 空指针 ⇒ **工厂 exit=139**（16.44 的链）。
+- ⇒ **失败点正是"中央目录项的文件名字段读取"** —— 而这一族的实现
+  （`unzlocal_getByte/getShort/getLong`、`GetCurrentFileInfoInternal`、`unzLocateFile`）
+  **恰好全部在那张 2× 偏差表里**。**两条独立证据链（版本对拍 + 地址普查）汇合到同一处根因。**
+
+**★ `exec_align`（锚点对齐后）给出的第三个独立视角**（C5，锚点 = `main`）：
+- 锚点之后 factory 84077 次执行 / 73785 次转移；rebuild 1353162 / 463844（我们活得久）；
+- **符号集合差集（排除 CRT）**：
+  · 仅 factory：`unzGoToFirstFile`、`unzlocal_getByte`、`lufopen/lufseek/luftell/lufclose`、`ClearBuffer`、`mxml*`
+  · 仅 rebuild：**`UnzipItem` + `inflateInit2/inflate_fast/inflate_codes/huft_build`**、`ReadUSBJoy`、`GetJoystickConfig` …
+  ⇒ **我们真的解压了（跑了 inflate），工厂连第一条目录项都没读出来**。
+- ⚠️ 已知残留：视图 ①/②/③ 的首个分歧点仍在锚点后第 1~2 次（factory `@nosym` vs rebuild
+  `__ARMv7ABSLongThunk_puts`）—— 那是 **crt/PLT 垫片层的差异**，锚点取 `main` 还不够深。
+  ⇒ 改进方向：锚点改用**业务函数**（如 `main_Menu`），或锚点后跳过前 K 帧。

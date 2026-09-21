@@ -182,18 +182,20 @@ jobs:
             CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 \
             CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 \
             CGM_EXEC_ALIGN=1 \
-            CGM_TRACE_ADDRS="00010fec 00011064 00010ff8 00010ed8 0001168c 000110d4 0001162c 00011868 0001190c 00011074 00010ea0 00012608 000128dc 00012cd0 00012ebc 00017e9c 00017eb4 00017e48" \
+            CGM_TRACE_ADDRS="00017dac 00010fec 00011064 00010ff8 00010ed8 0001168c 000110d4 0001162c 00011868 0001190c 00011074 00010ea0 00012608 000128dc 00012cd0 00012ebc 00017e9c 00017eb4 00017e48" \
             sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_c5 || true
           # ★★★ 关键地址命中普查的**地址清单与含义**（2026-09-21）——为什么要它：
           #   已知链：C5 里两侧都能**打开** ui_cn.zip（没打 `open ... fail`），但**工厂"找不到"
           #   包内确实存在的条目**（打了 `find ui.cfg/… fail`），我们找到了。
           #   而 OpenZipU 成功 ⇔ unzOpenInternal 非 NULL ⇔ EOCD 搜索 + 中央目录解析都成功
           #   ⇒ 失败点只可能在「逐条读中央目录项的**文件名**并比对」这一段。
-          #   下面 18 个地址就是这条链上的**每一个判决点**（工厂侧绝对地址，取自 factory symtab）：
+          #   下面 19 个地址（含 1 个阳性对照）就是这条链上的**每一个判决点**（工厂侧绝对地址，取自 factory symtab）：
           #     010fec  SearchCentralDir：**命中**（算出了 EOCD 位置）
           #     011064  SearchCentralDir：**短读 ⇒ 返回 0**（lufread != 1）
           #     010ff8  SearchCentralDir：循环结束仍未找到 / malloc 失败 ⇒ 返回 0
-          #     010ed8  SearchCentralDir：入口 seek 失败 ⇒ 返回 0
+          #     010ed8  SearchCentralDir：**共享的 return-0 块** —— `0x010ed4 beq +0x38` 未取（seek 失败）
+          #             与 `0x010f10 beq +0x28` 取（malloc 失败）**都汇到这里** ⇒ 单独看它分不清是哪一种；
+          #             要分开就把 `010f10`（malloc 失败判定）也加进普查。
           #     01168c  unzOpenInternal 入口
           #     011074  unzGetGlobalInfo 入口（unzLocateFile 循环前先取 number_entry）
           #     01162c  unzGoToFirstFile 入口
@@ -210,6 +212,11 @@ jobs:
           #     再看 0110d4 / 011868 次数：若各约 6~7 次，说明循环确实遍历了全部 6 个条目而名字没匹配上
           #     （⇒ 问题在**文件名字段读取**或**比对函数**），而不是"没进循环"。
           #   ★ 这些是**工厂侧**地址：rebuild/control 列接近 0 属正常（布局不同），只有 factory 列可读。
+          #   ★★ **阳性对照**：`00017dac`（mui_LoadUIResource 入口）与 `00012ebc`（FindZipItemA 入口）
+          #     在工厂侧**必然非零** —— 因为它打了 `find ui.cfg … fail`，这两条链一定都进过。
+          #     **解读任何 0 命中之前，先确认这两个非零**：`grep "/addr/"` 的 0 命中有两种含义
+          #     （① 该分支真没走到；② 普查链路本身坏了）—— 没有阳性对照就分不清，
+          #     而两者会把结论带向**相反**方向。
           #   ⚠️⚠️ **地址必须是 8 位十六进制**（轨迹里的 PC 字段是 `%08x`）：
           #     写成 6 位 `010fec` ⇒ `grep "/010fec/"` 与 `/00010fec/` 不相等 ⇒ **恒 0 命中**，
           #     而"0 命中"看起来恰好等于"这条分支没走到" ⇒ 结论会被带向**相反**方向。
