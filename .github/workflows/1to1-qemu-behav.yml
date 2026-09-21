@@ -182,11 +182,47 @@ jobs:
             CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 \
             CGM_MENULOG_SCREEN=0 CGM_ROOTDAT=2 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_KEY2_PROBE=1 CGM_IO_TRACE=1 \
             CGM_EXEC_ALIGN=1 \
+            CGM_TRACE_ADDRS="00010fec 00011064 00010ff8 00010ed8 0001168c 000110d4 0001162c 00011868 0001190c 00011074 00010ea0 00012608 000128dc 00012cd0 00012ebc 00017e9c 00017eb4 00017e48" \
             sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_c5 || true
+          # ★★★ 关键地址命中普查的**地址清单与含义**（2026-09-21）——为什么要它：
+          #   已知链：C5 里两侧都能**打开** ui_cn.zip（没打 `open ... fail`），但**工厂"找不到"
+          #   包内确实存在的条目**（打了 `find ui.cfg/… fail`），我们找到了。
+          #   而 OpenZipU 成功 ⇔ unzOpenInternal 非 NULL ⇔ EOCD 搜索 + 中央目录解析都成功
+          #   ⇒ 失败点只可能在「逐条读中央目录项的**文件名**并比对」这一段。
+          #   下面 18 个地址就是这条链上的**每一个判决点**（工厂侧绝对地址，取自 factory symtab）：
+          #     010fec  SearchCentralDir：**命中**（算出了 EOCD 位置）
+          #     011064  SearchCentralDir：**短读 ⇒ 返回 0**（lufread != 1）
+          #     010ff8  SearchCentralDir：循环结束仍未找到 / malloc 失败 ⇒ 返回 0
+          #     010ed8  SearchCentralDir：入口 seek 失败 ⇒ 返回 0
+          #     01168c  unzOpenInternal 入口
+          #     011074  unzGetGlobalInfo 入口（unzLocateFile 循环前先取 number_entry）
+          #     01162c  unzGoToFirstFile 入口
+          #     011868  unzGoToNextFile 入口（**命中次数 = 循环迭代了几次**）
+          #     0110d4  unzlocal_GetCurrentFileInfoInternal 入口（每次读一条中央目录项）
+          #     01190c  unzLocateFile 入口
+          #     010ea0  unzStringFileNameCompare 入口（大小写不敏感比对，仅 16 B）
+          #     012608  TUnzip::Open 入口      0128dc  TUnzip::Find 入口
+          #     012cd0  OpenZipU 入口          012ebc  FindZipItemA 入口
+          #     017e9c  mui_LoadUIResource：`FindZipItemA != 0` ⇒ **"找不到条目"**
+          #     017eb4  mui_LoadUIResource：`OpenZipU == 0` ⇒ "打不开"
+          #     017e48  mui_LoadUIResource：**成功**路径
+          #   ★ 读法：**先看 010fec 与 011064 哪个非零** —— 直接区分"EOCD 没搜到"与"搜到了但条目比对失败"；
+          #     再看 0110d4 / 011868 次数：若各约 6~7 次，说明循环确实遍历了全部 6 个条目而名字没匹配上
+          #     （⇒ 问题在**文件名字段读取**或**比对函数**），而不是"没进循环"。
+          #   ★ 这些是**工厂侧**地址：rebuild/control 列接近 0 属正常（布局不同），只有 factory 列可读。
+          #   ⚠️⚠️ **地址必须是 8 位十六进制**（轨迹里的 PC 字段是 `%08x`）：
+          #     写成 6 位 `010fec` ⇒ `grep "/010fec/"` 与 `/00010fec/` 不相等 ⇒ **恒 0 命中**，
+          #     而"0 命中"看起来恰好等于"这条分支没走到" ⇒ 结论会被带向**相反**方向。
+          #     纪律：一律 `'%08x' % addr`；并先用一个**必然命中**的地址（如 main 入口）自检链路。
           echo '--- 场景 C5：里程碑（rebuild 应 M6 ✓ / M7 ✓）---'
           cat report/qemu_c5/milestones.txt 2>/dev/null || true
           echo '--- 场景 C5：★ 执行轨迹对齐（首个分歧点；Laelaps 法）---'
           sed -n '1,40p' report/qemu_c5/exec_align.txt 2>/dev/null || echo '   （无 exec_align.txt）'
+          echo '--- 场景 C5：★★ zip 路径关键地址命中普查（factory 列可读；其余列地址不同，接近 0 正常）---'
+          for s in factory rebuild control; do
+            echo "   [${s}]"
+            cat report/qemu_c5/trace_hits_${s}.txt 2>/dev/null | sed 's/^/      /' || echo "      （无）"
+          done
           echo '--- 场景 C5：★★ zip 路径关键地址命中普查（factory 列可读；其余列地址不同，接近 0 正常）---'
           for s in factory rebuild control; do
             echo "   [${s}]"
