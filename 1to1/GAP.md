@@ -3669,3 +3669,61 @@ int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensitivity)
 ★ 同时记一条**纪律**：发现"看起来能解释一切的机制"（SPI 钩子+空函数）时，
 **必须先确认它所处的分支是否真的会被走到** —— 我差点把它当成结论写进 GAP。
 本次靠"`ui_cn.zip` 走 FILE\* 分支"这条硬事实当场否掉。
+
+### 16.62 ★★★ 工厂 `GetCurrentFileInfoInternal` **被厂商删掉了 magic 比对**（反汇编逐条证实）
+
+`_Z35unzlocal_GetCurrentFileInfoInternal…` @ `0x110d4` 前 9 条调用序列：
+
+| 序 | 工厂指令 | 对应原版源码 |
+|---|---|---|
+| 1 | `bl @unzlocal_getShort` @0x11134 | `version` |
+| 2 | `bl @unzlocal_getShort` @0x11148 | `version_needed` |
+| 3 | `bl @unzlocal_getShort` @0x1115c | `flag` |
+| 4 | `bl @unzlocal_getShort` @0x11170 | `compression_method` |
+| 5 | `bl @unzlocal_getLong`  @0x11184 | `dosDate` |
+| 6 | `bl @DosDateToTmuDate`  @0x11198 | 同名 |
+| 7 | `bl @unzlocal_getLong`  @0x111a4 | `crc` |
+
+而原版 `unzip.cpp:3040-3044` 在 `version` **之前**还有一段
+`getLong(&uMagic)` + `else if (uMagic!=0x02014b50) err=UNZ_BADZIPFILE;`。
+**工厂反汇编里完全没有这一段** ⇒ 厂商删除了中央目录 magic 校验。
+⇒ **推论**：上一轮把"magic 比对失败"列为头号嫌疑**不成立**（静态反汇编即能否掉，比内核证据更早）。
+
+### 16.63 ★★★★★ 仪器缺陷：「入口命中数 = 调用次数」**这个前提从未自证**
+
+本轮用 `CGM_TRACE_ADDRS` 得到 `unzOpenInternal`=4 而 `unzGoToFirstFile`=1。
+上一轮据此推断"4 次 open 中 3 次在到达 GoToFirstFile 前就失败"——**该推断不可靠**。
+
+理由：`unzOpenInternal` 末尾的 `unzGoToFirstFile(...)` 是**可被 GCC 内联**的
+（函数体仅 `push {r4,lr}` + 约 10 条指令）。一旦内联，**out-of-line 入口的命中数就不再等于调用次数**。
+同类风险同样适用于 `GetCurrentFileInfoInternal`（9 寄存器入栈、体量适中）。
+
+⇒ **纪律（与 16.52 的四条并列）**：
+① **"入口命中数"只能证明"至少走到过"，不能证明"调用了几次"**；
+② 要论"次数"必须配一条**不可内联的旁证**（如 strace 的 syscall 计数、或 `bl` 现场的唯一调用点）；
+③ 任何用来推"次数/顺序"的仪器，上线前必须用一个**已知内联情形**做反向自证。
+
+### 16.64 ★★★★ 内核 strace 给出的模型无关硬事实（本轮唯一站得住的证据）
+
+对照基准（真实 `golden/sdcard_min/ui_cn.zip`）：`filesize=4,951,281`、`EOCD@4,951,259`、
+`offset_central_dir=4,950,716`、`size_central_dir=543`、`entries=6`、`comment=0`。
+
+| 观测 | factory | rebuild |
+|---|---|---|
+| 对 zip 的 `_llseek` 目标种类 | **6 种** | **82 种** |
+| `seek(4951281)`(=EOF) | ×9 | ×29 |
+| `seek(4947968)`(=filesize−3313) | ×3 | ×3 |
+| **是否 seek 到真实中央目录偏移 4,950,716** | **✗ 从未** | **✗ 从未** |
+| `read` 4096 / 12288（顺序读资源数据） | **✗ 无** | **✓ 有**（`seek(4096)|(20480)|(36864)… → read(12288)`，步长 16384） |
+| IO 序列前 12 步 | — | **与 factory 逐条相同** |
+
+⇒ 两条硬结论：
+1. **两侧都不按"中央目录偏移"直读**（都只 seek 到 `filesize−3313`）⇒ zip 访问**很可能是内存模式**
+   （`TUnzip::Open(void*, unsigned, unsigned)` 这一签名本身就是"传缓冲区"的内存模式 API，命中 1 次）
+   —— 这**重新激活**了 16.61 里那个被否掉的 `lufread` 内存分支 / `spi_memcpy` 空函数假设，**必须重查**。
+2. **分歧实锤在"读到中央目录之后"**：rebuild 有 12,288 字节步长的顺序读（读 `menu.raw` 等资源本体），
+   工厂**完全没有**。⇒ **工厂确实没有走通"定位并读出条目内容"**，与 9 场景 exit=139 一致。
+
+**下一步（唯一入口，且不再依赖命中计数）**：用 strace 的**读字节数**判定内存模式的长度参数
+（`TUnzip::Open` 的 `len`）是否为 0 —— 若为 0，则内存模式读 0 字节 ⇒ 全 0 ⇒ 与厂商删掉 magic 校验后
+"err 仍非 OK" 的另一个置错点吻合。
