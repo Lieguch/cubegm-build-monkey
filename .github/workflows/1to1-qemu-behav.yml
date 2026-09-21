@@ -186,7 +186,12 @@ jobs:
           echo '--- 场景 C5：里程碑（rebuild 应 M6 ✓ / M7 ✓）---'
           cat report/qemu_c5/milestones.txt 2>/dev/null || true
           echo '--- 场景 C5：★ 执行轨迹对齐（首个分歧点；Laelaps 法）---'
-          sed -n '1,40p' report/qemu_c5/exec_align.txt 2>/dev/null || echo '   （无 exec_align.txt）' 
+          sed -n '1,40p' report/qemu_c5/exec_align.txt 2>/dev/null || echo '   （无 exec_align.txt）'
+          echo '--- 场景 C5：★★ zip 路径关键地址命中普查（factory 列可读；其余列地址不同，接近 0 正常）---'
+          for s in factory rebuild control; do
+            echo "   [${s}]"
+            cat report/qemu_c5/trace_hits_${s}.txt 2>/dev/null | sed 's/^/      /' || echo "      （无）"
+          done
           echo '--- 场景 C5：两侧覆盖率（★ 期望 rebuild = 73/223 = 32.74%，本地已测）---'
           for s in factory rebuild control; do printf '%-8s ' "$s"; grep -aE "已执行" report/qemu_c5/coverage_$s.txt 2>/dev/null | head -1; done
           echo '--- 场景 C5：stdout 行数（rebuild 应远超 factory ⇒ 菜单真在跑，不是"没崩但没干活"）---'
