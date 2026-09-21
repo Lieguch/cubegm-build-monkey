@@ -3727,3 +3727,69 @@ int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensitivity)
 **下一步（唯一入口，且不再依赖命中计数）**：用 strace 的**读字节数**判定内存模式的长度参数
 （`TUnzip::Open` 的 `len`）是否为 0 —— 若为 0，则内存模式读 0 字节 ⇒ 全 0 ⇒ 与厂商删掉 magic 校验后
 "err 仍非 OK" 的另一个置错点吻合。
+
+### 16.65 ★★★★ `-wrap` 在 zig 下必须写**单横线**（`-Wl,-wrap=` 可用，`-Wl,--wrap=` 被拒）
+
+为给设备做诊断，需要链接期重定向 libc 调用（设备启动链全是原厂文件 ⇒ **无任何地方能注入
+`LD_PRELOAD`/环境变量** ⇒ 只能用链接期手段）。实测七种写法：
+
+| 写法 | 结果 |
+|---|---|
+| `-Wl,--wrap=open` | ✗ `error: unsupported linker arg: --wrap` |
+| **`-Wl,-wrap=open`** | **✓ 可用** |
+| `-Wl,--wrap open` | ✗ 同 `--wrap` |
+| `-Xlinker --wrap=open` | ✗ 同 `--wrap` |
+| `-Xlinker --wrap -Xlinker open` | ✗ 同 `--wrap` |
+| `-Xlinker=--wrap=open` | ✗ `Unknown Clang option` |
+| `-Wl,--defsym=…` | ✗ `unsupported linker arg: --defsym` |
+
+⇒ 结论：**zig 的驱动层只放行单横线形式**（lld 本身两者都认）。`tools/diag_wraps.sh` 按编译器分派：
+zig → `-wrap=`，GCC(GNU ld) → `--wrap=`。
+
+**行为自证**（不能只看参数被接受）：不加 wrap 时产物未定义符号含 `open`；加 `-Wl,-wrap=open` 后
+`open` 从产物未定义符号里**消失** ⇒ 重定向真的发生了。
+
+### 16.66 ★★★★★ 设计门禁的"缺陷态"时：**必须用"被引用"的符号**
+
+同一件事我做了两次反证，第一次**假绿**：
+
+- 第一次：往 `WRAPS` 塞一个无人引用的假符号 `__no_such_symbol_at_all`
+  ⇒ 门禁不响、**链接也不报错**、照常出产物（exit 0）。我一度以为"门禁没生效"。
+  **真因**：`-wrap=X` **只在有东西引用 `X` 时**才把引用重定向到 `__wrap_X` ⇒
+  无人引用的符号**根本不会产生未定义符号**，`-z undefs` 下更是无声通过。
+- 第二次：用**被引用**的符号 `fflush`（真链接时第一个报的就是 `undefined symbol: __wrap_fflush`）
+  ⇒ 门禁 exit 11、链接器也如期报错。✓
+
+⇒ **纪律**：造缺陷态要问的不是"这个符号不存在吗"，而是"**这个缺陷本来会以什么方式显现**"。
+    若缺陷的正常显现方式是"某处引用解析不到"，缺陷态就必须放一个**会被引用的**东西。
+
+### 16.67 ★★★ 门禁自身踩了"原生程序只认 Windows 形式路径"这个老坑 —— 幸好留了守卫
+
+`diag_wraps.sh` 里用 `$PY`（**原生 Windows python.exe**）去读 `src/diag/cgm_wrap.c`。
+而 `ROOT` 由 `pwd` 得到，是 **MSYS 形式 `/d/output/...`** ⇒ 原生 python **打不开** ⇒
+判据恒假（`MISS` 为空 ⇒ 门禁永远 PASS）。
+
+**唯一没让它变成假绿的原因** = 门禁里写了"读不到文件也必须 exit 11"这条守卫：
+
+```
+try:    t = io.open(sys.argv[1], ...).read()
+except: print('__READ_ERROR__'); sys.exit(0)
+...
+[ "$GATE_MISS" = "__READ_ERROR__" ] && exit 11
+```
+
+修法：门禁内部自己对路径做 `winpath()`（`cygpath -m`），并保留 `command -v winpath` 的回退定义。
+
+⇒ 通则（与 16.52④ 同源）：**任何门禁都必须能区分"判据不成立"与"判据压根没跑起来"**；
+    前者 PASS、后者也必须 **FAIL**。这一条在这次真的救了场。
+
+### 16.68 ★★ `-wrap=X` 的清单与实现必须一一对应（且失败必须响亮）
+
+`WRAPS` 列表里 65 个符号，`cgm_wrap.c` 里必须有 65 个 `__wrap_<sym>`。
+本项目实测**漏了 6 个**（`fflush`/`statfs`/`select`/`vfork`/`clock_gettime`/`sigaction`）
+⇒ `ld.lld: error: undefined symbol: __wrap_fflush`。链接器**硬失败是对的**，
+但报错在 200 行之后、信息量低 ⇒ 加了 `diag_wraps.sh` 自检，把它提前成一句人话，
+并**移到编译之前**（旧版本放在 [4/5]，一个列表错误要先白编 213 个文件 ≈ 2 分钟）。
+
+三态自证（`tools/_diag_gate_selftest.py`）：正常态 exit 0 / 缺陷态（去 `__wrap_fflush`）exit 11 /
+近似态（挪走 `cgm_wrap.c`）exit 11。**1 秒内跑完**，因为它不依赖编译。

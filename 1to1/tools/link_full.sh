@@ -71,13 +71,21 @@ if [ ! -f "$CRTOBJ" ] || [ "$ROOT/src/compat/crt_init.S" -nt "$CRTOBJ" ]; then
     echo "  crt_init.o 已编译"
 fi
 
+# ★★ 诊断版扩展点（2026-09-21）：默认值与旧行为**逐字节等价**；只有 tools/build_diag.sh 会改它们。
+#   DIAG_OBJD   —— 专有函数对象目录（默认 build/obj；诊断版用 build/diag_obj，多带 -finstrument-functions）
+#   DIAG_XUNZIP —— XUnzip 对象（默认 src/upstream/xunzip/XUnzip.o；诊断版用插桩版）
+#   DIAG_EXTRA  —— 额外对象（诊断仪自身：cgm_diag.o / cgm_wrap.o）
+DIAG_OBJD="${DIAG_OBJD:-$ROOT/build/obj}"
+DIAG_XUNZIP="${DIAG_XUNZIP:-$ROOT/src/upstream/xunzip/XUnzip.o}"
+
 OBJS=""
-for o in "$ROOT"/build/obj/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
+for o in "$DIAG_OBJD"/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
 [ -f "$CXXOBJ" ] && OBJS="$OBJS $CXXOBJ"
 [ -f "$CRTOBJ" ] && OBJS="$OBJS $CRTOBJ"
 for o in "$ROOT"/build/upstream/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
-[ -f "$ROOT/src/upstream/xunzip/XUnzip.o" ] && OBJS="$OBJS $ROOT/src/upstream/xunzip/XUnzip.o"
+[ -f "$DIAG_XUNZIP" ] && OBJS="$OBJS $DIAG_XUNZIP"
 [ -f "$ROOT/build/factory_local.o" ] && OBJS="$OBJS $ROOT/build/factory_local.o"
+[ -n "${DIAG_EXTRA:-}" ] && OBJS="$OBJS $DIAG_EXTRA"
 n=$(printf '%s' "$OBJS" | wc -w)
 echo "== 对象数: $n =="
 
@@ -118,6 +126,7 @@ $CC $ARCH $FIDELITY -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
     -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \
+    ${DIAG_LDFLAGS:-} \
     $WOBJS "$LIBZ_W" -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
 rc=$?
 echo "链接 rc=$rc"
