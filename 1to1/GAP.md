@@ -3567,3 +3567,105 @@ unzip.cpp 当前哈希 : 9ee99732b8e96f6fed0ba67eded0118feac1fe97ad7f75275159c47
 
 ⇒ ① `link_audit.sh` 的"每次必重编"在 CI 上生效（`39476 B` = `-Os` 新对象，不再是 `147896 B` 的 `-O1` 旧物）；
    ② 判据 1 的**编译器多级解析**在 CI 上命中 `env CC`（不必依赖本地 Windows 路径）。
+
+### 16.59 ★★★ CI 构建步骤**吞掉了 link_audit.sh 的返回码** —— 新加的硬失败形同虚设
+
+`link_audit.sh` 改成交付"编译失败 ⇒ `exit 1`"之后，发现 CI 里那一行是：
+
+```sh
+PY=python3 sh tools/link_audit.sh report/link_audit.txt || \
+  echo "[warn] link_audit 非零（对象已产出，继续）: rc=$?"
+```
+
+⇒ **返回码被 `||` 吞掉**（注释还写着"它自身的门禁结论由 1to1-verify 负责，这里只为拿对象，故 rc 不强判"）。
+于是本步里新加的硬失败**不生效**。
+
+**修法**：加一条**基于文件存在性**的直接断言（不看 rc，因为 rc 被吞了）：
+
+```sh
+[ -s src/upstream/xunzip/XUnzip.o ] || { echo "::error::XUnzip.o 未产出（源码编译失败）—— 禁止继续（否则会链接到陈旧对象）"; exit 1; }
+echo "XUnzip.o 就绪：$(wc -c < src/upstream/xunzip/XUnzip.o) B"
+```
+
+（`1to1-verify` 侧另有 `[ "$rc" = "0" ] || exit "$rc"` 的强判，两处互补。）
+
+★ 教训：**给某个脚本加了硬失败之后，必须去它的每个调用点确认返回码没有被吞** ——
+否则"我加了门禁"只是心理安慰。
+
+### 16.60 ★★★★★ 第二轮关键地址普查：**把 zip 解析失败断在 `GetCurrentFileInfoInternal` 内部**
+
+**第一轮（19 个地址）已经把链条收到一个函数**，且四个数字互相印证：
+
+| 地址 | 符号 | 命中 |
+|---|---|---|
+| `00010fec` / `00010ff8` | SearchCentralDir **命中** / **成功返回** | **1 / 1** |
+| `0001168c` | `unzOpenInternal` | **4** |
+| `0001162c` | `unzGoToFirstFile` | **1** |
+| `000110d4` | `unzlocal_GetCurrentFileInfoInternal` | **1** |
+| **`00011074`** | **`unzGetGlobalInfo`** | **0** |
+| **`00011868`** | **`unzGoToNextFile`** | **0** |
+| **`00010ea0`** | **`unzStringFileNameCompare`** | **0** |
+| `0001190c` | `unzLocateFile` | **4** |
+
+**这四个数字精确吻合原版源码的一条 early-return**（`_pristine/unzip.cpp:3247`）：
+
+```c
+int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensitivity)
+{ ...
+  s=(unz_s*)file;
+  if (!s->current_file_ok)                              // ← 3246-3247
+      return UNZ_END_OF_LIST_OF_FILE;
+  ...
+  err = unzGoToFirstFile(file);                         // ← 3252
+  while (err == UNZ_OK) { ... unzStringFileNameCompare ... }
+```
+
+推断（唯一能同时解释 4:1:0:0 的序列）：
+1. `unzOpenInternal` 打开 `ui_cn.zip` 成功（SearchCentralDir 命中 ⇒ EOCD 找到、EOCD 字段读完）；
+2. `unzOpenInternal:2954` 末尾调 `unzGoToFirstFile`（**那 1 次**）→ 它调
+   `unzlocal_GetCurrentFileInfoInternal`（**1 次**）**失败** ⇒ `current_file_ok=false`；
+3. 之后 **4 次** `unzLocateFile` 全部在第 3247 行**直接 return** ⇒ 于是 `GoToNextFile`=0、`Compare`=0。
+4. `unzGetGlobalInfo`=0 也吻合（`unzOpenInternal` 是直接赋值 `s->gi.number_entry`，不调该函数）。
+
+**⇒ 唯一失败点 = `unzlocal_GetCurrentFileInfoInternal` 的首次调用。**
+**⇒ 第二轮普查（新增 7 个地址，共 26 个）把这个函数内部切开**（工厂侧地址）：
+
+| 地址 | 含义 |
+|---|---|
+| `00010b74` | `lufseek` 入口 |
+| **`0001111c`** | **`lufseek` 失败标记**（`mvn r4,#0`）—— 命中 >0 ⇒ **seek 就失败** |
+| `00011144` / `00011158` | 第 1 / 第 2 个字段读取失败标记（`mvnne r4,#0`） |
+| `00010d24` / `00010d84` | `unzlocal_getShort` / `unzlocal_getLong` 入口 |
+| `00010cc8` | `unzlocal_getByte` 入口（底层读字节；命中次数直接反映"读了几次就断"） |
+
+**两条互斥结论由 `0001111c` 一票区分**：
+- `>0` ⇒ seek 失败 ⇒ 问题在 `pos_in_central_dir` / `byte_before_the_zipfile` 的**计算**
+  （`unzOpenInternal` 里 `byte_before_the_zipfile = central_pos + fin->initial_offset - (offset_central_dir + size_central_dir)`）；
+- `=0` 且 `00011144/00011158 > 0` ⇒ seek 成功但**字段读短** ⇒ 问题在 `fread`/短读。
+
+### 16.61 ★★★ 已定性的一处**保真度差异**：`lufread` 内存分支少了厂商的 `spi_memcpy` 钩子
+
+并排反汇编（工厂 `lufread` 168 B / 40 条 vs 我们）发现工厂的内存分支付多一层**运行期开关**：
+
+```asm
+17| ldr r2,[pc,#92]      ; GOT 槽
+18| ldr r3,[r3,r2]       ; r3 = 指向某全局的指针
+20| ldr r3,[r3]          ; r3 = 该全局的值
+21| cmp r3,#0
+24| bne L_spi
+25| bl  @memcpy@plt
+33| L_spi: bl @spi_memcpy      ; ← 工厂多这一支
+```
+
+而工厂的 `spi_memcpy` @ `0x29ce4` **只有 4 字节 = 空函数**（`bx lr`）。
+我们的移植（`unzip.cpp:2696-2701`）**硬编码 `memcpy`，没有这个开关**。
+
+**★ 但它不是本次失败的原因**（已排除，避免错误归因）：
+该分支在 `flags==1`（内存缓冲）时才走，而 `ui_cn.zip` 是
+`OpenZipU(path,0,2)` ⇒ `flags==2` ⇒ `lopen` 里走 `fopen("r+b")` 的 **FILE\*** 分支。
+⇒ 登记为**待收口的保真度差异**（若将来有调用点传 `flags==1`，行为会不同），
+本轮**不去改它**（改了也无法由当前观测窗口验证）。
+
+★ 同时记一条**纪律**：发现"看起来能解释一切的机制"（SPI 钩子+空函数）时，
+**必须先确认它所处的分支是否真的会被走到** —— 我差点把它当成结论写进 GAP。
+本次靠"`ui_cn.zip` 走 FILE\* 分支"这条硬事实当场否掉。
