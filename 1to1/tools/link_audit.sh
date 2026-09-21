@@ -77,33 +77,65 @@ echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 
 # 上游组件对象（已预编译 / 本脚本内编译）一并纳入符号审计
 XUPOBJ="$ROOT/src/upstream/xunzip/XUnzip.o"
-# ★★ 血泪（P5 第七个真实分歧排查时踩到两次）：
-#   ① 原先只在 .o **缺失**时编译 ⇒ 改了 unzip.cpp 却不重编；
-#   ② 改成 `-nt`（源码更新）后**在 CI 上仍然失效** —— 仓库里残留着旧的 `XUnzip.o`
-#      （push_1to1.py 把 `.o` 当构建产物**排除**，推送不了新对象），而 git checkout 会把
-#      `unzip.cpp` 与 `XUnzip.o` 的时间戳都设成 checkout 时刻，先后不可靠。
-#   ⇒ 改用**源码内容 hash 缓存**：hash 与上次不同就重编。hash 文件是文本，会被正常推送。
 XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
-XUHASH="$ROOT/src/upstream/xunzip/.XUnzip.src.sha256"
-_xu_cur=""
-[ -f "$XUSRC" ] && _xu_cur=$(sha256sum "$XUSRC" 2>/dev/null | cut -d' ' -f1)
-_xu_old=$(cat "$XUHASH" 2>/dev/null || echo "")
-if [ ! -f "$XUPOBJ" ] || [ -z "$_xu_cur" ] || [ "$_xu_cur" != "$_xu_old" ]; then
-    XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
-    if [ -f "$XUSRC" ]; then
-        XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
-        case "$CC" in
-          *zig*)
-            # zig cc 按扩展名自动按 C++ 编译 .cpp
-            XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
-            $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && { echo "XUnzip.o 已编译"; echo "$_xu_cur" > "$XUHASH"; } || echo "XUnzip.o 编译失败"
-            ;;
-          *)
-            XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
-            $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUPOBJ")" 2>>"$ROOT/report/_link_bad.txt" && { echo "XUnzip.o 已编译"; echo "$_xu_cur" > "$XUHASH"; } || echo "XUnzip.o 编译失败"
-            ;;
-        esac
+
+# ★★★ 2026-09-21（GAP 16.56）：**每次必重编**，不再用「源码哈希缓存」做跳过依据。
+#
+# ── 为什么废掉哈希缓存（这是本项目最贵的一次静默失效，代价 ≈ 十几轮）──
+#   旧逻辑：`if [ ! -f .o ] || [ hash(src) != 记账值 ]; then 编; fi`
+#   失效实况（2026-09-21 实测）：
+#     · 记账哈希 == 当前源码哈希（9ee99732…）⇒ **永远判定"无需重编"**；
+#     · 而仓库里的 `XUnzip.o`（147,896 B，**带 7 个 .debug_* 节 = 早期 -g 编的**）
+#       **不是由当前源码编出来的** —— 同一份源码用本脚本的 CFLAGS 重编只要 **0.96 秒**，
+#       编出来的对象与工厂命中 **21/30（7 个精确到字节）**，而那个陈旧对象只有 **11/30**。
+#     · `build/rkgame.rebuilt.elf` 里的 zip 符号与**陈旧对象逐字一致** ⇒ 一直在链接它。
+#   后果：`TUnzip::Open/Get/Unzip/Close`、`unz*many`、`unzStringFileNameCompare` 等
+#        整整一族符号的 size 全部偏离工厂（1.5×~48×），而**我们的源码其实是对的**。
+#   更早两轮还踩过它的两个前身：① 只在 .o 缺失时编；② 用 `-nt` 比时间戳（checkout 后
+#     两边 mtime 都等于 checkout 时刻，判定不可靠）⇒ 已登记进 GAP 的"同一根因三次复发"。
+#
+# ── 为什么"缓存"本身就该废 ──
+#   本对象编译 **0.96 秒**。任何缓存带来的收益都远小于它引入的"静默陈旧"风险：
+#   陈旧对象**不报错、不告警**，只是让所有基于符号 size / 反汇编的判据读出**错误结论**
+#   （实测：我因此把"源码不对"当结论，去做了一件完全没必要的大改）。
+#
+# ── 失败必须**硬失败** ──
+#   旧逻辑编译失败只 `echo "XUnzip.o 编译失败"` 就继续 ⇒ 链接脚本见 .o 存在照样链接
+#   ⇒ 推送时又把旧 .o 带上 ⇒ **陈旧对象永久循环**（`push_1to1.py` 当时还专门给它开了
+#   "必须入库"的例外，等于把陈旧对象钉死在仓库里）。现在：编译失败 ⇒ 删掉目标 ⇒ 中止。
+XUFAIL=0
+if [ -f "$XUSRC" ]; then
+    XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
+    XUTMP="$XUPOBJ.new"
+    rm -f "$XUTMP"
+    case "$CC" in
+      *zig*)
+        # zig cc 按扩展名自动按 C++ 编译 .cpp
+        XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
+        $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
+        ;;
+      *)
+        XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
+        $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
+        ;;
+    esac
+    if [ -s "$XUTMP" ]; then
+        mv -f "$XUTMP" "$XUPOBJ"
+        echo "XUnzip.o 已重编（$(wc -c < "$XUPOBJ" 2>/dev/null || echo '?') B，源码 hash $(sha256sum "$XUSRC" 2>/dev/null | cut -c1-12)）"
+        sha256sum "$XUSRC" 2>/dev/null | cut -d' ' -f1 > "$ROOT/src/upstream/xunzip/.XUnzip.src.sha256"
+    else
+        rm -f "$XUTMP" "$XUPOBJ"
+        echo "★★ XUnzip.o 编译失败 —— 已删除目标对象并中止（禁止链接陈旧对象）"
+        echo "   详见 $ROOT/report/_link_bad.txt"
+        XUFAIL=1
     fi
+else
+    echo "★★ 缺 $XUSRC —— 中止"
+    XUFAIL=1
+fi
+
+if [ "$XUFAIL" = 1 ]; then
+    exit 1
 fi
 
 : > "$ROOT/report/_link_syms.tsv"
