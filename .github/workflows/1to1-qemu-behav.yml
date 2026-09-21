@@ -92,6 +92,13 @@ jobs:
           # 它自身的门禁结论由 1to1-verify 负责，这里只为拿对象，故 rc 不强判。
           PY=python3 sh tools/link_audit.sh report/link_audit.txt || \
             echo "[warn] link_audit 非零（对象已产出，继续）: rc=$?"
+          # ★★★ 2026-09-21（GAP 16.59）：**基于文件的直接断言** —— 上一行的 `||` 会吞掉返回码，
+          #   于是 `link_audit.sh` 里新加的「XUnzip.o 编译失败即 exit 1」在本步**不生效**。
+          #   而"对象陈旧/缺失"恰恰是所有 size 类判据的生死线（16.56：陈旧对象让命中率 11/41 而非 27/41，
+          #   且判据不报错、只给出方向相反的结论）。⇒ 用**文件存在性**兜底，不看 rc。
+          #   （`1to1-verify` 侧另有 `[ "$rc" = "0" ] || exit "$rc"` 的强判，两处互补。）
+          [ -s src/upstream/xunzip/XUnzip.o ] || { echo "::error::XUnzip.o 未产出（源码编译失败）—— 禁止继续（否则会链接到陈旧对象）"; exit 1; }
+          echo "XUnzip.o 就绪：$(wc -c < src/upstream/xunzip/XUnzip.o) B"
           PY=python3 sh tools/build_upstream.sh build/upstream
           PY=python3 sh tools/link_full.sh build/rkgame.rebuilt.elf
           echo '--- 动态段 / 初始化链自洽门禁（跑起来之前先静态拦一遍）---'
