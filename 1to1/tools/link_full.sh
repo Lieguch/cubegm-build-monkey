@@ -189,13 +189,31 @@ fi
 
 # ★★★ 2026-09-22（GAP 16.76）：**MMIO 访存宽度门禁**。
 #   真机实证：`sfc_init` 读 SFC 寄存器时 SIGBUS —— 工厂是 `ldr`（32 位），
-#   我们被 GCC 把 `g_sfc_reg[0xb] & 0xffff` 窄化成了 `ldrh`（16 位）。
+#   我们被**编译器**把 `g_sfc_reg[0xb] & 0xffff` 窄化成了 `ldrh`（16 位）。
+#   （★ 更正：不是 GCC 而是 **clang 21.1.0** —— 工厂才是 GCC 6.2.0；见 ROUTE-DECISION.md 3.1）
 #   **宽度是 MMIO 契约的一部分**，且窄化还会连带改变「写/读顺序」。
 if [ -f "$OUT" ]; then
     echo "== MMIO 访存宽度门禁（设备寄存器必须与工厂同宽：整字）=="
     if ! $PY "$(winpath "$ROOT/tools/mmio_width_audit.py")" "$(winpath "$OUT")"; then
         echo "★★ MMIO 访存宽度门禁 FAIL —— 本产物**禁止**上机（窄访问可能直接总线报错）" >&2
         exit 15
+    fi
+fi
+
+# ★★★ 2026-09-22（ROUTE-DECISION.md §五②）：**设备访存"类级"检测器**（取代白名单式抽检）。
+#   旧门禁（exit 15）只硬判 2 个函数白名单，其余只提示 —— 这正是"逐个差异当根因、
+#   每轮只采样一个成员"的成因。本门禁改为：
+#     ① 函数集**机械推导**（源码里 `X = mmap(..., 0x1xxxxxxx|0x2xxxxxxx)` ⇒ 设备全局 ⇒
+#        引用了它的文件 ⇒ 函数名；再并上反汇编里出现外设常量的函数），**无手写白名单**；
+#     ② 判据单向且可判定：**对同一立即数偏移，我们不得比工厂"更窄"**（更宽不算缺陷）；
+#     ③ 自带两态自证：喂"修复前产物"必须报错、自比必须零差异（本机 `--selftest` 跑）。
+#   前置：`golden/factory.funcs.json.gz`（3.67 MB）+ `golden/factory.rkgame.bin` —— **已在仓库**，
+#         CI 检出即可用（已核实远端 `1to1/golden/` 含这两份）。
+if [ -f "$OUT" ] && [ -f "$ROOT/tools/mmio_access_audit.py" ]; then
+    echo "== 设备访存 类级检测器（防『比工厂更窄』：偏移级，函数集机械推导）=="
+    if ! $PY "$(winpath "$ROOT/tools/mmio_access_audit.py")" "$(winpath "$OUT")"; then
+        echo "★★ 设备访存类级门禁 FAIL —— 本产物**禁止**上机（有偏移比工厂窄，可能总线报错）" >&2
+        exit 16
     fi
 fi
 exit $rc

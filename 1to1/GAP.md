@@ -4072,3 +4072,94 @@ COMPOSITE(SCLK_SFC, "sclk_sfc", ..., RK2928_CLKGATE_CON(10), 5, GFLAGS),
 
 ⇒ **GAP 16.72（采样率 44100）与 16.71（RELRO）两处修复都在真机上被证实有效**；
 `_snd_pcm_rate_linear_open_conf` 那条 fatal 是"采样率天文数字 → ALSA 去加载 rate 插件"的**后果**（已随修复消失）。
+
+### 16.80 ★★★★★ 工厂工具链指纹（`.comment` + `.note.gnu.gold-version`）—— 我们与它是**跨编译器家族**
+
+一直以为差异是"版本新旧"，实测不是：
+
+| 项 | 工厂（能跑） | 我们 |
+|---|---|---|
+| `.comment` | **`GCC: (GNU) 6.2.0`** + `GCC: (Linaro GCC 4.9-2016.02) 4.9.4 20151028 (prerelease)` | （zig 不写 .comment） |
+| 链接器 | **`.note.gnu.gold-version` = `GNU gold 1.12`** | **lld** |
+| 编译器 | **GCC 6.2.0**（+ 启动文件来自 Linaro 4.9.4） | `zig cc` = **clang 21.1.0** |
+| GCC 特化符号足迹 | `.constprop.`×2 / `.isra.`×5 / `.part.`×5 | — |
+| `.note.gnu.property` | 无（GCC≥11 才有） | 无 |
+
+⇒ 差异是 **GCC ↔ clang、gold ↔ lld** 的**家族级**差异，不是版本号差异。
+⇒ **项目自带 `tools/cnb_env.sh` 第 38 行本来就会 `apt-get install gcc-arm-linux-gnueabihf`**，
+   构建脚本默认值也是 `CC="${CC:-arm-linux-gnueabihf-gcc}"` —— **这条工具链一直在手边，本项目从未用过**。
+   已登记为"单命令可做的对照实验"（见 `ROUTE-DECISION.md` §五④）。
+
+### 16.81 ★★★★★ 判决实验：MMIO 窄化的**边界条件**（已固化为门禁 `tools/mmio_semantics_test.py`）
+
+clang 21.1.0 `-Os` 实测（`ldrh` = 窄化，`ldr` = 正确）：
+
+| 变体 | 写法 | 产出 | 判定 |
+|---|---|---|---|
+| A | 非 volatile 指针 + **只用低半字** | **`ldrh r1,[r0,#44]`**，且排在 `str` **之前** | ✗ 宽度错 + 顺序错 |
+| B | **整块**寄存器指针 `volatile` | `str r1,[r0]` → `ldr r0,[r0,#44]` | ✓ 宽度+顺序都对 |
+| **C ★** | **只对单次访问强转** `*(volatile u32*)&regs[0xb]` | `ldr` 对了，**但仍排在 `str` 之前** | ★ **反例** |
+| D | 内联汇编访问原语 | `ldr`/`str` 落在 `@APP/@NO_APP` 内 | ✓ 编译器**零自由度** |
+
+★ C 是本次最有价值的一条：**单次强转只锁"宽度"，锁不住"顺序"**。
+   ⇒ 纪律：**凡从 mmap 设备基址派生的指针，声明与所有派生游标必须"整块" `volatile`**；
+     要彻底与编译器解耦，则走内联汇编访问原语（Linux 内核做法，见 16.82）。
+
+### 16.82 ★★★★ 联网核实：`volatile` 不足以保证 MMIO 语义（决定路线的外部依据）
+
+- **LKML / RISC-V sw-dev（Arnd Bergmann 原话）**：内核一律把 MMIO 走**内联汇编宏**，
+  因为 `volatile` **不解决**下列任何一项：① 编译器把访问进一步拆成更小宽度；② 重排；
+  ③ 合并；④ 缺 fence；⑤ 64 位访问两半的顺序；⑥ 与 DMA/锁的次序。
+  ⇒ 这正是"**宽度是 MMIO 契约的一部分**"的权威表述。
+- **TinyUSB/DWC2 在 Cortex-M7 的实测分析**：`armclang`（clang 家族）对位域/窄值会生成 `LDRH`，
+  而 **GCC / IAR 生成合适宽度** —— 与我们的观测同族（我们窄化、工厂 GCC 6.2.0 不窄化）。
+- **QEMU memory API 官方文档**：memory region 的 `.valid.min_access_size` / `.valid.max_access_size`
+  定义可接受宽度，越界即"设备与总线相关行为（**machine check**）"；`.valid.accepts` 可直接**拒绝**事务。
+  ⇒ **沙箱可以复现我们的 SIGBUS**（这是打破"每轮一次上机"的关键仪器改造方向）。
+- **上游 `drivers/spi/spi-rockchip-sfc.c`**：一律 `readl`/`writel`/`readl_poll_timeout`（32 位访问器），
+  寄存器模型 `SFC_CTRL`/`SFC_CMD`/`SFC_ADDR`/`SFC_DATA`/`SFC_SR`/`SFC_FSR`/`SFC_VER`… ⇒ 权威寄存器参照。
+
+### 16.83 ★★★ 我第一版判决实验**构造错了**（差点据此否定上一轮结论）
+
+第一版让上半字也参与运算（`t | (regs[0xb] & 0xffff0000u)`）⇒ 编译器**无法**窄化 ⇒ 复现不出 `ldrh`，
+我一度准备宣布"窄化不存在、上一轮解释错了"。
+真实代码形状是 **只用低半字**（`3 < (g_sfc_reg[0xb] & 0xffff)`），按真实形状重做后才复现。
+⇒ **纪律：判据/实验的"缺陷态"必须与真实代码形状逐字同构**；否则会得出方向相反的结论。
+
+### 16.84 ★★★★★ 新增门禁：`tools/mmio_access_audit.py`（**类级**，取代白名单抽检）
+
+**为什么加**：旧门禁 `mmio_width_audit.py` 的硬判据 **W1 只覆盖 2 个函数白名单**，
+其余 200+ 函数只有"提示" —— 这正是"逐个差异当根因、每轮只采样一个成员"的**成因**。
+
+**设计**（三条都为了"可判定且不造假 FAIL"）：
+① 函数集**机械推导**，无手写白名单：`X = mmap(…, 0x1xxxxxxx|0x2xxxxxxx)` ⇒ 设备全局 ⇒
+   引用它的 `.c` 文件（BFS 到不动点）⇒ 函数名；并上"反汇编里出现外设常量"的函数。
+   实测推出 **11 个**函数：`sfc_init` `sfc_request` `sfc_uninit` `sunxi_gpio_init/cleanup/get_cfgpin/
+   output/set_cfgpin/input` `mui_DisplayGameSum` `popoffwindows`。
+② 判据**单向**：同一立即数偏移上，**我们不得比工厂"更窄"**（更宽不算缺陷）。
+   真机故障只发生在"更窄"这一侧。
+③ **两态自证**：喂 `build/_prewidth.rebuilt.elf`（修复前产物）必须报错；
+   同一份数据自比必须零差异。
+
+**自证实测**：
+```
+自证① 修复前产物 → 报出 3 处"更窄"：sfc_request+44 工厂[4]→我们[2] / +36 工厂[4]→我们[1] / …
+自证② 自比       → 零差异（无假阳性）
+```
+⇒ 它**独立复现了 16.76 那次修复**（同一判据在修复前报错、修复后通过）—— 这就是"类级"与"抽样"的区别。
+
+**噪声登记**：全量扫描另有 **19 处**范围外偏差（`stbtt_*`/`xmp3_*` 的 `+4` 等**结构体窄字段**），
+**只登记不判决** —— 若当硬判据会造出 19 个假 FAIL（即 16.57 的"脆弱辅助判据烧掉整轮 CI"）。
+
+**已钉进 `tools/link_full.sh`（exit 16）**；前置文件 `golden/factory.funcs.json.gz`(3.67 MB)
+与 `golden/factory.rkgame.bin`(3.9 MB) **已核实存在于远端 `1to1/golden/`**，CI 检出即可用。
+
+### 16.85 ★★★ 旧门禁 `mmio_width_audit.py` 的 W1 是"白名单式"，类**未被覆盖**（漏洞登记）
+
+- W1 硬判只有 `sfc_init` / `sunxi_gpio_init` 两个函数名写死在脚本里 ⇒ **新增的设备访问函数不会被判**。
+- W1 只看"宽度"，**不看"顺序"** ⇒ 16.81 的 C 变体（宽度对、顺序错）它查不出来。
+- 已由 16.84 的类级检测器补上函数集覆盖；"顺序"一项目前仍**只在 `mmio_semantics_test.py` 里
+  用法条级断言守着**（未做全函数顺序对拍）—— 这是**已知的剩余缺口**，如实登记。
+- **同类未证实例**（登记、不臆断为缺陷）：`sunxi_gpio_init.c` 里 CRU/GRF/GPIO0-2 五个 mmap 基址
+  **全部没有 `volatile`**（`g_sfc_reg` 已修）。它今天**没有**窄访问（类级检测器判 PASS），
+  所以**不是已证缺陷**，是"编译器自由度未被移除"的卫生问题 —— 按纪律"只修已证实的，对未证实的建检测器"。
