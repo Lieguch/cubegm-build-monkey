@@ -159,4 +159,31 @@ if [ -f "$OUT" ]; then
         exit 12
     fi
 fi
+
+# ★★★ 2026-09-22（GAP 16.71）：**RELRO 门禁** —— 同样钉进链接脚本。
+#   为什么必须钉在这：`PT_GNU_RELRO` 一旦覆盖 `.data`，**链接与所有静态门禁照样全绿**，
+#   但内核按页取整后会把我们的全局变量所在页设成**只读** ⇒ 进程**第一次写自己的全局变量**
+#   就 SIGSEGV。真机实证（探针 v3 / t2=diag）：`si_addr=0x4e1010`（diag 的 `g_lvl`）、
+#   PC 在 `cgm_diag_boot` —— 连 `-finstrument-functions` 的插桩都没跑起来。
+#   这类缺陷只在"**写一个 .data 全局变量**"这一刻暴露，属于典型的"静态看不出来"。
+if [ -f "$OUT" ]; then
+    echo "== RELRO 门禁（防『.data 被圈进只读』：页面级判据）=="
+    if ! $PY "$(winpath "$ROOT/tools/relro_audit.py")" "$(winpath "$OUT")"; then
+        echo "★★ RELRO 门禁 FAIL —— 本产物**禁止**上机（.data 会在运行期变成只读）" >&2
+        exit 13
+    fi
+fi
+
+# ★★★ 2026-09-22（GAP 16.72）：**「立即数被误反编译成符号名」门禁**（源码级，秒级）。
+#   真机实证：工厂 `InitSound` 是 `movw r1,#44100`，而 44100 == 0xAC44 == 工厂里
+#   `UpdateROM` 的地址 ⇒ Ghidra 反编译成 `UpdateROM`，重建原样抄下 ⇒ 我们产物里该符号
+#   被链接到 0x4e4060 ⇒ 传给 driver.so 的采样率变成 5,128,288 ⇒ `hwparams -22(EINVAL)`。
+#   这一类**任何静态/二进制判据都看不出来**（符号尺寸、等价性、ABI 全绿），必须机器码对拍。
+if [ -f "$ROOT/tools/lint_const_args.py" ]; then
+    echo "== 立即数 vs 符号名 门禁（工厂机器码 ↔ 源码实参，防 Ghidra 常量混淆）=="
+    if ! $PY "$(winpath "$ROOT/tools/lint_const_args.py")"; then
+        echo "★★ 常量/符号混淆门禁 FAIL —— 先修源码再链接" >&2
+        exit 14
+    fi
+fi
 exit $rc

@@ -370,25 +370,42 @@ def _dec_extra_ldst(w, c):
     rd = (w >> 12) & 0xF
     b76 = (w >> 4) & 0xF
     sign = "" if U else "-"
-    if b76 in (0b1011, 0b1111):            # 半字
-        m = "ldrh" if L else "strh"
-        if I:
-            imm = ((w >> 4) & 0xF0) | (w & 0xF)
-            return "%s%s %s, [%s, #%s%d]" % (m, c, r(rd), r(rn), sign, imm), ""
-        return "%s%s %s, [%s, %s%s]" % (m, c, r(rd), r(rn), sign, r(w & 0xF)), ""
-    if b76 in (0b1101,):                   # 有符号字节/半字
-        m = ("ldrsb" if (w >> 5) & 1 == 0 else "ldrsh")
-        if I:
-            imm = ((w >> 4) & 0xF0) | (w & 0xF)
-            return "%s%s %s, [%s, #%s%d]" % (m, c, r(rd), r(rn), sign, imm), ""
-        return "%s%s %s, [%s, %s%s]" % (m, c, r(rd), r(rn), sign, r(w & 0xF)), ""
-    if b76 in (0b1100, 0b1110):            # 双字
-        m = "ldrd" if L else "strd"
-        if I:
-            imm = ((w >> 4) & 0xF0) | (w & 0xF)
-            return "%s%s %s, [%s, #%s%d]" % (m, c, r(rd), r(rn), sign, imm), ""
-        return "%s%s %s, [%s, %s%s]" % (m, c, r(rd), r(rn), sign, r(w & 0xF)), ""
-    return None
+    imm = ((w >> 4) & 0xF0) | (w & 0xF)
+    mem = "[%s, #%s%d]" % (r(rn), sign, imm) if I else "[%s, %s%s]" % (r(rn), sign, r(w & 0xF))
+    # ★★★ 2026-09-22 修正（GAP 16.70）：`b76==0b1111` 不是半字！
+    #   ARM ARM A8.8.73/74：立即数形式下 D(bits7:4) 的语义是
+    #     I=1: 1011=LDRH/STRH · 1101=LDRSB/LDRSH(bit6 选) · **1111=LDRD/STRD**
+    #     I=0: 1011=LDRH/STRH · 1100=LDRD · 1101=LDRSB · 1110=STRD · 1111=LDRSH
+    #   旧代码把 1111 归到半字 ⇒ 把 `strd r6,r7,[sp]`（存 64 位：偏移入参！）误报成
+    #   `strh r6,[sp]` ⇒ 我曾据此断言 sfc_init「没把 mmap 的第 6 参数入栈」，**是假的**
+    #   （真值：strd 把 r6/r7 一起写进 [sp]/[sp+4]，与工厂逐条等价）。
+    #   ⇒ 教训：**用工具产出的"缺陷"必须先反汇编验证工具本身**。
+    if I:
+        if b76 == 0b1011:                       # 半字
+            m = "ldrh" if L else "strh"
+            return "%s%s %s, %s" % (m, c, r(rd), mem), ""
+        if b76 == 0b1111:                       # ★ 双字（LDRD/STRD）
+            m = "ldrd" if L else "strd"
+            return "%s%s %s, %s, %s" % (m, c, r(rd), r(rd + 1), mem), ""
+        if b76 == 0b1101:                       # 有符号字节/半字
+            m = ("ldrsh" if (w >> 5) & 1 else "ldrsb") if L else None
+            if m is None:
+                return None
+            return "%s%s %s, %s" % (m, c, r(rd), mem), ""
+        return None
+    else:
+        if b76 == 0b1011:
+            m = "ldrh" if L else "strh"
+            return "%s%s %s, %s" % (m, c, r(rd), mem), ""
+        if L and b76 == 0b1100:
+            return "ldrd%s %s, %s, %s" % (c, r(rd), r(rd + 1), mem), ""
+        if (not L) and b76 == 0b1110:
+            return "strd%s %s, %s, %s" % (c, r(rd), r(rd + 1), mem), ""
+        if L and b76 == 0b1101:
+            return "ldrsb%s %s, %s" % (c, r(rd), mem), ""
+        if L and b76 == 0b1111:
+            return "ldrsh%s %s, %s" % (c, r(rd), mem), ""
+        return None
 
 
 def _dec_ldm_stm(w, c):

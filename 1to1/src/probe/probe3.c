@@ -147,6 +147,18 @@ static void wnum(long v, int base, int width)
     *o = 0;
     wstr(b);
 }
+/* ★ 2026-09-22：**地址/寄存器一律用这个**。
+ *   上一轮日志里出现 `si_addr = 0x-490d4fd4`、`PC = 0x-...` 这种带负号的十六进制：
+ *   根因是 `wnum((long)v, 16, 0)` 先把高位置 1 的 32 位值当成**有符号负数**，
+ *   于是先印 '-' 再印绝对值 ⇒ 真值要自己换算（0x-490d4fd4 实为 0xB6F2B02C）。
+ *   地址永远是无符号 32 位 ⇒ 掩到 32 位、定宽 8 位零填充。 */
+static void whex(unsigned long v)
+{
+    char b[16]; char *o = b;
+    o = fmt_hex(o, v & 0xFFFFFFFFul, 8);
+    *o = 0;
+    wstr(b);
+}
 static int open_log(const char *p)
 {
     return (int)sc4(NR_openat, AT_FDCWD, (long)p, O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -312,7 +324,7 @@ static void test_cand(struct cand *c, int idx)
                 if (sig == SIGTRAP && !got_exec_stop) {
                     got_exec_stop = 1;
                     wstr("    >>> exec 成功（已停在第一条指令）—— 此时完整映射：\n");
-                    dump_maps(pid, 1400);
+                    dump_maps(pid, 3800);
                     sc4(NR_ptrace, PTRACE_CONT, pid, 0, 0);
                     continue;
                 }
@@ -331,24 +343,28 @@ static void test_cand(struct cand *c, int idx)
                     for (i = 0; i < 32; i++) si[i] = 0;
                     if (sc4(NR_ptrace, PTRACE_GETSIGINFO, pid, 0, (long)si) == 0) {
                         wstr("        crash addr (si_addr) = 0x");
-                        wnum(si[3], 16, 0);
+                        whex(si[3]);
                         wstr("\n");
                     } else {
                         wstr("        (GETSIGINFO 失败)\n");
                     }
                     for (i = 0; i < 20; i++) regs[i] = 0;
                     if (sc4(NR_ptrace, PTRACE_GETREGS, pid, 0, (long)regs) == 0) {
-                        wstr("        PC(r15) = 0x"); wnum(regs[15], 16, 0); wstr("\n");
-                        wstr("        LR(r14) = 0x"); wnum(regs[14], 16, 0); wstr("\n");
-                        wstr("        SP(r13) = 0x"); wnum(regs[13], 16, 0); wstr("\n");
-                        wstr("        r0      = 0x"); wnum(regs[0], 16, 0); wstr("\n");
+                        wstr("        PC(r15) = 0x"); whex(regs[15]); wstr("\n");
+                        wstr("        LR(r14) = 0x"); whex(regs[14]); wstr("\n");
+                        wstr("        SP(r13) = 0x"); whex(regs[13]); wstr("\n");
+                        wstr("        r0      = 0x"); whex(regs[0]); wstr("\n");
+                        wstr("        r1..r3  = 0x"); whex(regs[1]); wstr(" 0x"); whex(regs[2]); wstr(" 0x"); whex(regs[3]); wstr("\n");
+                        wstr("        r4..r6  = 0x"); whex(regs[4]); wstr(" 0x"); whex(regs[5]); wstr(" 0x"); whex(regs[6]); wstr("\n");
+                        wstr("        r7..r9  = 0x"); whex(regs[7]); wstr(" 0x"); whex(regs[8]); wstr(" 0x"); whex(regs[9]); wstr("\n");
+                        wstr("        r10..r12= 0x"); whex(regs[10]); wstr(" 0x"); whex(regs[11]); wstr(" 0x"); whex(regs[12]); wstr("\n");
                     } else {
                         wstr("        (GETREGS 失败)\n");
                     }
                     if (!dumped_crash_maps) {
                         dumped_crash_maps = 1;
                         wstr("        崩溃时的映射：\n");
-                        dump_maps(pid, 1400);
+                        dump_maps(pid, 3800);
                     }
                     fatal = 1;
                     sc4(NR_ptrace, PTRACE_KILL, pid, 0, 0);

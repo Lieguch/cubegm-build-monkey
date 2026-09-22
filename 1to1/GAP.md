@@ -3866,3 +3866,94 @@ lld 按"属性分组"建段 ⇒ `.fini_array` 与 `.data` 进了**同一个 RW �
 用原始系统调用往 7 个路径写文件 + 往 `/dev/fb0` 涂满 + 追加 + 重命名，
 用来把"内核不肯 exec 我们的产物"与"跑了但写不出文件"这两件事**彻底分开**。
 它也过同一道几何门禁。
+
+### 16.70 ★★ 工具缺陷（我自己的仪器报假缺陷）：arm_dis 把 `strd` 解成 `strh`
+
+**经过**：真机 t1 崩在 `sfc_init+0x6c`（SIGBUS，`si_addr` 落在库区）。我用 `tools/arm_dis.py`
+反汇编我们产物里的 `sfc_init`，看到 `0x501b5c: strh r6, [sp, #0]` 且**全文没有把偏移常量
+（0x10208000）入栈**的指令 ⇒ 我据此断定「`mmap` 的第 6 实参是垃圾值」——**这是假的**。
+
+**真值**：`0xE1CD60F0` 是 `strd r6, r7, [sp, #0]`（64 位存储：r6→[sp]，r7→[sp+4]）。
+解码依据（ARM ARM A8.8.73/74）：立即数形式下 bits[7:4] 的语义是
+`1011=LDRH/STRH`、`1101=LDRSB/LDRSH`、**`1111=LDRD/STRD`**；旧代码把 `1111` 归进半字分支。
+
+**影响**：`sfc_init` 与工厂**逐条等价**（同样的 `mmap(NULL,1024,3,1,fd,0x10208000)`、
+同样的 `ldrh [base+0x2C]` / `str [base]` / `str [base+0x88]`）。已修 `tools/arm_dis.py`
+并加了 4 条编码回归自证（`0xE1CD60F0` / `0xE1D012BC` / `0xE1C000B0` / `0xE5900000`）。
+
+⇒ **纪律（与 16.52 并列）**：**工具产出的"缺陷"必须先验证工具本身**再写进结论。
+  判据：拿一条**已知编码**做回归；解码器的每个分支都要有正例。
+
+### 16.71 ★★★★★ `PT_GNU_RELRO` 把 `.data` 圈成只读 ⇒ 写自己的全局变量即 SIGSEGV（真机实证）
+
+**现象**（探针 v3，t2 = 诊断版）：`SIGSEGV`，`si_addr = 0x4e1010`，`PC = cgm_diag_boot+0x184`
+—— 崩在**写自己的全局变量 `g_lvl`**（该地址在 `RW` 段里，设计上就该可写），
+连 `-finstrument-functions` 的插桩都没跑起来（所以 `_diag/` 里一个文件都没有）。
+
+**根因**：`ld.lld` 的 `PT_GNU_RELRO` = 「本 RW 段内**第一个 relro 节**的起点 → **最后一个
+relro 节**的终点」。此前链接脚本把 `.data.rel.ro`/`.got` 混在 `.data` 输出段里，而 lld
+又把 `.dynamic` 自动排到 `.data` **之后** ⇒ RELRO = 0x4e00e0 .. 0x4e2b9c
+⇒ **`.data`（0x4e1000）整段在 RELRO 内** ⇒ 内核按页取整把 0x4e0000-0x4e3000 设只读
+⇒ **第一次写 `.data` 全局变量即 SIGSEGV**。
+
+**对照原厂（正确范例）**：`PT_GNU_RELRO = 0x3ae5c4 + 2620`，终点 `0x3aefe0`
+**恰好停在页对齐的 `.data`(0x3af000) 之前** ⇒ 原厂 `.data` 完全可写。
+
+**修法**（`linker/factory.ld`）：`.data.rel.ro` / `.got` / `.dynamic` 各自成段并**排在
+`.data` 之前**，`.data` 页对齐。修后实测：
+`PT_GNU_RELRO = 0x4e00e0 + 7060`（页区间 0x4e0000-0x4e2000），`.data` @ **0x4e2000**（页对齐、可写）。
+
+**为何此前 15 道门禁全绿**：所有判据都在看"地址对不对/符号在不在段里"，**没有一条看
+「可写节是否落在 RELRO 页里」** —— 而这正是"运行期第一秒就死"的直接原因。
+新增 `tools/relro_audit.py`（R1 页面级判据 + 三态自证），已钉进 `tools/link_full.sh`（失败 exit 13）。
+
+### 16.72 ★★★★★ 工厂是「立即数」，重建写成了「符号名」⇒ 采样率变成 5,128,288
+
+**真机证据**：原厂自己打印 `snd_pcm_start failed: -32`（EPIPE，无害，它继续活着）；
+我们打印 `failed to apply hwparams: -22`（EINVAL，致命）。两边都走到了音频初始化。
+
+**机器码级对照**（工厂 `InitSound` @0xdb4c）：
+
+| | 工厂机器码 | 我们（修复前） |
+|---|---|---|
+| 第 3 参 | `mov r2, #2` | `mov r2, #2` ✅ |
+| **第 2 参** | **`movw r1, #44100`** | `ldr r1,[pc,..]` + `ldr r1,[pc,r1]`（**从 GOT 取符号地址**）❌ |
+| 第 1 参 | `ldr r0,[=USE_HDMI_OUT]` | 同 ✅ |
+
+`44100 == 0xAC44`，**恰好等于**工厂里 `UpdateROM` 的函数地址 `0x0000ac44`
+⇒ **Ghidra 把"立即数 44100"反编译成了符号 `UpdateROM`**，重建原样抄下。
+工厂布局下两者数值相同（"碰巧无害"），但我们的产物把 `UpdateROM` 链接到 `0x4e4060` 附近
+⇒ 传给 `driver.so` 的采样率 ≈ **5,128,288 Hz**。
+
+`driver.so` 的 `sound_driver_init` 用它算缓冲区（`[fp,#-24] = (40*(arg2+1))/100` 再取 2 的幂）
+⇒ `SoundDataBufferLen/period` 变成天文数字 ⇒ `snd_pcm_hw_params()` 返回 **-22(EINVAL)**
+⇒ 音频初始化失败（原厂同一处只是无害的 -32）。
+
+**修法**：`(*sound_driver_init)(USE_HDMI_OUT,44100,2)`；修后产物机器码 = `movw r1, #0xac44`
+（**与工厂逐条一致**）。
+
+**新增门禁** `tools/lint_const_args.py`：对 213 个重建函数，把「工厂函数体里的立即数 V」
+与「V 对应的工厂符号名在我们源码里被当值使用」做对拍；三态自证（正常 PASS / 把 44100
+还原成 `UpdateROM` 必被抓到 / 缺 golden 必 exit 11）。
+
+**同类风险已排查**：全源码扫描后**仅此一处**（`InitDisplay` 的 `video_driver_setting`
+传的是 `&{0,1,1}` 三整型，经机器码核对与工厂等价）。
+
+### 16.73 ★ 对上一轮结论的更正：`sfc_init` **不是**缺陷
+
+我在 16.70 之前一度写下「`sfc_init` 的第 6 实参 fmmap 偏移没入栈、是垃圾值」。
+**该结论作废**：真值是 `strd r6, r7, [sp, #0]`（工具误报，见 16.70）。
+`sfc_init` 与工厂逐条等价 —— t1 的 `SIGBUS` **另有原因**（未定；下一轮用修好的探针 v3
+（已修十六进制符号打印 + maps 上限 3800 + 补印 r1-r12）重新采集现场）。
+
+### 16.74 本轮门禁总表（新增 3 道，共 18 道）
+
+| # | 门禁 | 抓手 | 钉在哪 | 失败码 |
+|---|---|---|---|---|
+| 16 | `elf_load_audit.py` | PT_LOAD 几何（重叠/跨洞/最高地址/体积） | `link_full.sh` | 12 |
+| 17 | **`relro_audit.py`** | **RELRO 页区间 ∩ 可写数据节** | `link_full.sh` | 13 |
+| 18 | **`lint_const_args.py`** | **工厂立即数 vs 源码符号名** | `link_full.sh` | 14 |
+
+修后本地全绿：`link_audit`（未定义 0 / 重复定义 0）· `elf_load_audit` PASS ·
+`relro_audit` PASS · `abi_check` PASS · `dyn_audit` PASS(WARN 1) · `check_obj_fresh` PASS ·
+`lint_const_args` PASS（213 函数对拍）。

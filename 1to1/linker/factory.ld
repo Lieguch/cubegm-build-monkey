@@ -43,7 +43,24 @@ SECTIONS
   .rodata 0x00410000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }
   .init_array ALIGN(4) : { PROVIDE_HIDDEN(__init_array_start = .); KEEP(*(.init_array)) KEEP(*(.init_array.*)) }
   .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }
-  .data ALIGN(0x1000) : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }
+  /* ---- ③a RELRO 族（必须与 `.data` 分开，否则运行期会把我们的全局变量改成只读）----
+   * ★★★ 2026-09-22（GAP 16.71）：**ld.lld 的 `PT_GNU_RELRO` = 「本 RW 段内第一个 relro 节
+   *   的起点 → 最后一个 relro 节的终点」**。此前 `.data` 的输出段里混进了
+   *   `*(.data.rel.ro) *(.got)`，而 lld 又把 `.dynamic` 自动排到 `.data` **之后** ⇒
+   *   RELRO 起点 = `.fini_array`（0x4e00e0）、终点 = `.dynamic` 末尾（0x4e2b9c）
+   *   ⇒ **`.data`（0x4e1000）整段落在 RELRO 里**，内核把该页取整区间
+   *   （0x4e0000-0x4e3000）设成只读 ⇒ **进程写自己的全局变量即 SIGSEGV**。
+   *   真机实证（探针 v3，t2=diag）：`SIGSEGV  si_addr=0x4e1010`（正是 diag 的 `g_lvl`），
+   *   PC 在 `cgm_diag_boot` —— 连 `-finstrument-functions` 的插桩都还没跑起来就崩。
+   *   对照：原厂 `PT_GNU_RELRO` = 0x3ae5c4 + 2620，**终点 0x3aefe0 恰好停在 `.data`
+   *   （0x3af000，页对齐）之前** ⇒ 原厂 `.data` 完全可写。
+   *   修法 = ① 把 `.data.rel.ro`/`.got`/`.dynamic` 放进**独立的、排在 `.data` 之前**的输出段；
+   *          ② `.data` **页对齐**，保证 RELRO 的页取整区间不侵入 `.data`。
+   *   门禁 = `tools/relro_audit.py`（已钉进 link_full.sh）。 */
+  .data.rel.ro ALIGN(4) : { *(.data.rel.ro) *(.data.rel.ro.*) }
+  .got ALIGN(4) : { *(.got) *(.got.*) }
+  .dynamic ALIGN(4) : { *(.dynamic) }
+  .data ALIGN(0x1000) : { *(.data) *(.data.*) }
   .bss  ALIGN(0x1000) : { *(.bss) *(.bss.*) *(COMMON) }
   .text ALIGN(0x1000) : { *(.init) *(.text) *(.text.*) *(.fini) }
   .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }
