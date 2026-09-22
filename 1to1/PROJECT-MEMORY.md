@@ -20,10 +20,34 @@
 
 ---
 
-## 0. 一句话
+## 0. 一句话 + ★★ 两条并行线（2026-09-22 发现，此前记忆的**重大盲点**）
 
-把原厂 `rkgame`（闭源 ARM32 菜单引擎）**用我们自己写的源码功能等价地重建**，产物同名覆盖到 SD 卡后**设备能正常开机使用**。
+目标：把原厂 `rkgame`（闭源 ARM32 菜单引擎）**用我们自己写的源码功能等价地重建**，
+产物同名覆盖 SD 卡的 `cubegm/rkgame` 后**设备能正常开机使用**。
 远端仓库 `Lieguch/cubegm-build-monkey`，本地 `D:/output/rkgame-1to1/`。
+
+★★★ **同一仓库里存在两条独立的重建线** —— 本记忆此前只记了 A 线，
+这是一个**重大盲点**，并导致我给用户的"替代差距评估"是**片面的**（需更正）：
+
+| | **A 线：`1to1/`**（本记忆主线） | **B 线：`rkgame-rebuild/`**（2026-09-22 才发现） |
+|---|---|---|
+| 目标 | **逐函数保真**（对齐原厂地址 / 符号 / 反汇编） | **功能等价**（不追求字节级一致；明确接受"格式替代"） |
+| 构建 | `tools/link_audit.sh` + `zig cc` | `rkgame-rebuild/build.sh` + `CMakeLists.txt` + `arm-linux-gnueabihf-gcc` |
+| 规模 | `src/proprietary/*.c` 213 文件 + 上游库 | **`rkgame-rebuild/src/` 90+ 源文件**：完整 `ui_*.c` 一整套 / `cpd.c`（.cpd=ZIP 资源）/ `sram.c` / `evdev.c` / `disp.c` / `audio.c`(minimp3) / `font.c`(stb_truetype) / `game_list.c` / `thumbnail.c` / `dbg_overlay.c` |
+| CI | `1to1-verify` + `1to1-qemu-behav` ⚠（**文件名与线名相反，勿混**） | `build.yml`（workflow name = **`rkgame-rebuild`**） |
+| 产物 | `build/rkgame.rebuilt.elf` 5.4 MB | `output/rkgame` **1,031,860 B** |
+| **真机状态** | **从未成功**（零日志 —— 见 §2.10 / §9） | **已上机过**：有 `V15-ARM-GATE-CHECKLIST.md`（真机验证清单，引用 pre-v15 的设备日志 `J:\cubegm\rkgame.log`）；设备侧 `recent.lst` / `favorites.lst` / `setting.xml` 即其产物所写 |
+| 自评覆盖 | 符号落位 92.2%（§7） | **`gap-audit-v6.md` 自报 ~96%（22/23 项真实现）** |
+| 活跃度 | **活跃**（2026-09-21/22 连续迭代） | 停在 **v15（2026-09-10）**；但 `build.yml` **每次 push 仍自动跑 qemu e2e 并 PASS**，产物持续写入 `artifacts` 分支 |
+
+- 提交者：`Lieguch`（用户本人）**与 `WorkBuddy Agent`** ⇒ 修订 §1 红线 4：
+  **这个仓库不止一个 agent 在推送过**（2026-09-09/10 那批是另一条线的工作）。
+- B 线自报的"可接受偏离"举例：`menu.log` 原厂是**二进制**，B 线改为 `recent.lst` + `favorites.lst`（CSV）。
+- **B 线的 qemu e2e 不是假绿**：PASS 由 **8 条硬断言**判定（banner / session start / found shm /
+  signal handlers installed / heartbeat 文件 / SIGTERM 后存活 / redraws 日志 / 心跳≥5 ticks），
+  `exit=124` 只是被 `kill -KILL` 的标注、**不是判据**。
+- ⇒ **任何"还差多少能替代"的结论都必须同时覆盖两条线。** B 线已在真机跑过，
+  它是"能否直接替代"这个问题上**最有力的既有证据**，而 A 线（我的主线）目前是**零真机成功**。
 
 ---
 
@@ -95,7 +119,7 @@ CI 构建步骤用 `|| echo "[warn]"` 吞掉 `link_audit.sh` 的 rc ⇒ 新加�
 ### 2.9 ★ 台账的 `status` 列不可当刻度
 `ledger/functions.csv` **223 行全部仍是 `TODO`**（从未维护），而 213 个源文件已实装 ⇒ 进度只能用**符号落位 / 等价性**量。
 
-### 2.10 ★★★★★ PT_LOAD 几何畸形 ⇒ 真机上 `exec` 直接失败（GAP 16.69，**首次真机测试的根因**）
+### 2.10 ★★★★★ PT_LOAD 几何畸形（**真缺陷、已修 —— 但它不是真机失败的根因**）〔GAP 16.69 + 2026-09-22 更正〕
 - 症状：**用户实测 16.6 MB 产物无法开机，`_diag/` 零日志**（"零"= 代码根本没执行到写日志那一步）。
 - 根因：`linker/factory.ld` 把自有节**钉死在任意高地址**（`.data 0x01000000` / `.bss 0x02000000` / `.text 0x05000000`）。
   带写属性的 `.fini_array` 落在 `.rodata` 末尾（VMA `0x4e00e0`），lld 把它与 `.data` 归进**同一个 RW 段**
@@ -112,6 +136,11 @@ CI 构建步骤用 `|| echo "[warn]"` 吞掉 `link_audit.sh` 的 rc ⇒ 新加�
 - **门禁自身两个坑（已修，GAP 16.69 内记录）**：
   ① A1 第一版把**合法的 NOBITS 跳段**判成跨洞 ⇒ **正常态直接 FAIL**（判据基准必须是"段必须覆盖的最外跨度"）；
   ② 只注入**一个**缺陷态就验证全部判据 ⇒ 误判"门禁未生效"；改成**每条判据各有缺陷态**后 4/4 命中。
+- ★★★★ **2026-09-22 更正（必须记住）**：修掉 11 MB 空洞后的 5.4 MB 产物**在真机上仍然零日志**。
+  ⇒ 这个几何缺陷**是真实的、值得修的**（它确实让 ELF 畸形、13 道门禁都没查过它），
+  但**它不是我宣称的"根因"**。我当时把一个**未经验证的因果**当成了结论写下来 —— 这是本项目反复出现的
+  同一类错误（对比 §2.1、"判据换刻度"）。
+  **教训**：**"找到一个真缺陷" ≠ "找到根因"**。修完必须回真机复测，才允许写"根因"二字。
 
 ### 2.11 实验纪律
 与历史数字对比**必须逐字复刻历史那组的完整开关集**（含旁路注入如 `CGM_KEY2_SEED`），否则不是单变量。
@@ -177,6 +206,44 @@ CI 构建步骤用 `|| echo "[warn]"` 吞掉 `link_audit.sh` 的 rc ⇒ 新加�
 - ★ **sysroot 是一等实验变量**：device(2.29) vs jammy(2.35) **执行路径实质不同**，结论必须标口径。
 - ★ `root.dat` / `NNN.dat` **不是标准 ZIP**：4 字节伪装签名（本地头 `57 51 57 03`、EOCD `57 51 57 01`），
   字段未混淆、CRC 逐位过。
+
+### 5.1 ★ SD 卡盘符与设备侧写入痕迹（2026-09-22 实测）
+
+- **SD 卡 = `L:` 盘**（顶层：`000`–`008` / `cubegm` / `Roms` / `root.dat`）。
+  ⚠ 过去清单里的 `J:` 已不存在；**每次都要重新确认盘符**，别按记忆里的字母找。
+- **设备侧写入的文件 mtime = `01-01 00:00`（或 1980-01-01）** ⇒ 设备时钟未设置，
+  这正是**"这个文件是设备写的、不是电脑拷的"的判据**（电脑拷入的文件是当前时间）。
+- `L:/cubegm/` 里由**设备侧**写出的文件（⇒ 说明曾有产物成功跑起来）：
+  `recent.lst`(5,580 B) · `favorites.lst`(1,779 B) · `setting.xml`(819 B) · `menu.log`(444 B) · `PROBE.txt`(422 B)
+- `L:/cubegm/rkgame.bak` = **3,921,108 B = 原厂 rkgame**（用户已备份 ✓，可作阳性对照）。
+- `L:/cubegm/rkgame` 会随每次投放被覆盖 ⇒ **读它之前先记 size/sha256**，否则无法回溯测的是哪一版。
+
+### 5.2 本地资产地图（`D:/output/` 下与本项目相关的目录）
+
+| 目录 | 内容 |
+|---|---|
+| `rkgame-1to1/` | **本记忆所在（A 线主仓）** |
+| `rkgame/` | 早期工作区：原厂 `rkgame`(3,921,108 B) + `decompiled/` + `ghidra_proj/` + `icube_analysis/` + `sramshim/` |
+| `rkgame-rebuild/` · `cnb-rkgame/` · `cnb-rkgame-final/` | **B 线**的三个本地副本 |
+| `rkgame-first-successful-build/` | B 线 2026-09-09 一天内 6 次迭代的产物（rkgame / v2 / v3 / v4 / v5 / v7） |
+| `v15-rkgame/` | **B 线 v15 产物**（1,031,860 B）+ **`V15-ARM-GATE-CHECKLIST.md`（真机验证清单）** |
+| `v9-backup/` · `v10-backup/` · `v12push/` · `v13push/` | B 线历史版本与**推送工具链**（`push_v13/v14/v15.py` + `monitor_ci.py` + 构建日志 152/180 KB） |
+| `qemu_art70..75` · `_art*` | 各轮 CI artifact 的本地解包 |
+| `_pristine/` | 上游 `unzip.cpp` 原版（对比基准） |
+| `原厂SD卡根目录结构/` | 整张原厂 TF 卡快照 |
+
+### 5.3 远端仓库结构（⚠ 与本地路径**不是**一一对应）
+
+| 远端 | 说明 |
+|---|---|
+| `1to1/**` | A 线全部内容（由 `tools/push_1to1.py` 从本地 `rkgame-1to1/` 推上去） |
+| `rkgame-rebuild/**` | B 线源码 + `output/rkgame` |
+| `.github/workflows/`（**根级**） | 三个 workflow：`1to1-verify.yml`、`1to1-qemu-behav.yml`、`build.yml`。★ **根级 workflow 也由 `push_1to1.py` 推送**（本地 `.github/workflows/*.yml` → 远端**根级**同路径；第 92–93 行显式登记 + 第 196 行 glob 自动纳入）⇒ **本地没有的 workflow 就是"孤儿"，无法维护** |
+| `artifacts` 分支 | **B 线的 `build.yml` 自动写入**：`auto: rkgame build artifact (N bytes)` + `auto: qemu e2e test PASS/FAIL` |
+
+- ★ `build.yml` 的 `on: push: branches: [main]` **没有 paths 过滤** ⇒ 每次推送（含纯文档）都会跑一轮（实测约 1 分钟）。
+  **这不是浪费**：它是 B 线唯一的持续验证；且带 `concurrency: cancel-in-progress: true` ⇒ 连续推送不会累积。
+  **结论：不要为了省这一分钟去改它**（改它 = 破坏 B 线的验证链，且它有既定的设计意图）。
 
 ---
 
@@ -248,7 +315,16 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 | 验收矩阵 N1–N6 | N1/N2/N3 **PASS**；N4/N5 进行中；**N6 真机验收：2026-09-21 首次做 = 失败（§2.10），已修，待复测** | `STATUS.md` §四 |
 
 **体积**：工厂 3,921,108 B（动态链接，7 个 `DT_NEEDED`）；修复后重建 **5,663,812 B**（5 个 NEEDED，少 `libstdc++`/`libgcc_s`，已登记可接受）。
-修复前是 17,331,448 B（含 11.1 MB 空洞）—— **那个产物就是真机开机失败的那一份**。
+修复前是 17,331,448 B（含 11.1 MB 空洞）—— 那个产物是真机开机失败的第一份。
+
+### 7.0 ★★ 两条线的真机成绩（**这是"能否替代"的最关键一行**）
+
+| 线 | 产物 | 真机结果 |
+|---|---|---|
+| **A 线（本仓 `1to1/`）** | 5.4 MB / 5.7 MB | **从未成功**：17.3 MB 与 5.4 MB 两次上机均**零日志**；只有 3.5 KB 的**静态探针**能跑（见 §9.1） |
+| **B 线（`rkgame-rebuild/`）** | 1,031,860 B | **已上机跑过**（`V15-ARM-GATE-CHECKLIST.md` 引用 pre-v15 设备日志；设备侧 `recent.lst`/`favorites.lst`/`setting.xml` 为其所写） |
+
+⇒ **在"设备能不能正常用"这个问题上，B 线是领先的一方。** A 线的领先项只有"结构忠实度"。
 
 ### 7.1 符号落位算法（可复用刻度）
 工厂 symtab 每个 `FUNC` 名 → 查产物 symtab 的 `st_value`：
@@ -320,13 +396,71 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 
 ## 9. 待办与下一步
 
-### 9.1 当前阻塞：真机复测（两步）
-1. **先试修复版**：`_sdcard_drop/cubegm/rkgame`（5.4 MB，sha256 `278f04fb46e88118`）+ `cubegm/rkgame.probe` 拷到 SD 卡，
-   插卡开机**等满 90 秒**。
-   - **有日志** ⇒ §2.10 的根因成立，修复有效 → 把 `_diag/` 发回来，继续推进。
-   - **仍无日志** ⇒ 做第 2 步。
-2. **最小探针**：`rkgame.probe` 改名成 `rkgame` 再跑一次 ⇒ 一票分开"内核拒载" vs "写不出文件"，**不需要再改代码**。
-- 回退：把 `rkgame.factory.orig`（用户备份的原厂件）改名回 `rkgame` 即可。**用户实测回退路径有效**。
+### 9.1 当前阻塞：**动态加载失败**（真机实测已收窄到一点）
+
+**用户真机实测（2026-09-22，决定性）**
+
+| 测的东西 | 类型 | 结果 |
+|---|---|---|
+| 5.4 MB 修复版（sha256 `278f04fb46e88118`） | **动态**（有 `.interp` + 5 NEEDED） | **零日志** |
+| `rkgame.probe` v1（3,572 B） | **静态**（无 interp / 无 NEEDED） | **成功**：写了 `PROBE.txt`(422 B) + rename 通道也成功 |
+
+`PROBE.txt` 内容（`pid=319/322`，`target_index=0/1`）证明：
+- ★ **内核能 exec 我们的静态产物**
+- ★ **`/sdcard/cubegm/` 与 `/sdcard/cubegm/_diag/` 都可写**（`openat rc=3`）
+⇒ **"写不出文件"被彻底排除。**
+
+**⇒ 范围收窄为：「静态能跑、动态起不来」。但还差一步 —— 必须区分三种成因：**
+1. **内核在 `load_elf_binary` 阶段拒绝** ⇒ `execve` 返回 errno
+2. **内核放行、ld.so 加载/重定位失败** ⇒ `execve` 返回 errno
+3. **exec 成功、程序在写第一行日志前自崩** ⇒ 子进程被**信号**杀掉
+
+**已排除的**（纯本地查证）：
+- NEEDED 的 6 个库（`libz.so.1` / `libm.so.6` / `libc.so.6` / `libpthread.so.0` / `libdl.so.2` / `librt.so.1`）
+  与 `.interp`（`/lib/ld-linux-armhf.so.3`）**在设备 sysroot 里全部存在**（`golden/device_rootfs_min/`，26 文件）⇒ **不是"库找不到"**。
+- 段几何（无重叠 / 页内偏移一致 / `filesz<=memsz` / vaddr 升序 / entry 落在可执行段）**全部合法**；
+  `DT_INIT`/`DT_FINI` 非 0 且落在 LOAD 段内（不是 §2.10 那个 `DT_INIT=0` 的老问题）。
+
+**与原厂（能跑）的结构差异**（候选嫌疑，但**未证**）：
+
+| 项 | 原厂 | 我们 |
+|---|---|---|
+| PT_LOAD 段数 | **2** | **9** |
+| `PT_GNU_STACK` memsz | 0 | **16,777,216**（16 MB） |
+| `DT_INIT_ARRAYSZ` | 4 | **0**（rebuilt） |
+| 首个 LOAD | `R-X`（含 rodata） | `R--`（`.fimg_text` 3.8 MB 单独一段） |
+
+**下一步：探针 v2 上机（一次定案）**
+- 投放包：`_sdcard_drop2/`（说明见其中 `READ-ME-FIRST.txt`）
+  | 目标 | 内容 | sha256 前 16 |
+  |---|---|---|
+  | `cubegm/rkgame` | **探针 v2**（8,268 B，静态无 interp） | `b951ea562504f98c` |
+  | `cubegm/rkgame.t4` | **最小动态 ELF**（2,628 B，只 NEEDED libc） | `40c21f787db83e9f` |
+  | `cubegm/rkgame.t1` | A 线 rebuilt 5.4 MB（已知失败） | `b6b4ee6d8364e7e9` |
+  | `cubegm/rkgame.t2` | A 线 diag 5.7 MB（已知失败） | `278f04fb46e88118` |
+  | `cubegm/rkgame.bak` | **阳性对照**（原厂，**必须已在卡上**） | — |
+- 探针 v2 做的三件事：① `fork`+`execve` 每个候选，记 `errno` / 子进程信号 / 退出码；
+  ② 读 `/proc/sys/vm/mmap_min_addr`、`/proc/mounts`、`/proc/self/maps`、`/proc/version`
+  （★ `mmap_min_addr` 若 > 产物最低 vaddr `0x9000` ⇒ 内核 EPERM 拒载；`/proc/self/maps` 可反推内核**页大小**）；
+  ③ 先测**原厂对照** —— 它必须成功，否则探针自身的结论不可信。
+- 判读表：
+
+  | 观测 | 结论 | 下一步 |
+  |---|---|---|
+  | 原厂对照也失败 | 探针 exec 机制有问题 | 先修探针 |
+  | t4 成功 | 动态链接链路 OK | 问题在我们产物的**结构/规模** ⇒ 向原厂 2 段布局靠拢 |
+  | t4 失败 errno=8 (ENOEXEC) | 内核拒绝该 ELF | 修段布局 / ELF 结构 |
+  | t4 失败 errno=2 (ENOENT) | 解释器/依赖路径问题 | 查 loader 解析路径 |
+  | 候选被信号杀 | exec 成功、程序初始化崩 | 查 CRT / 重定位 / `.init_array` |
+
+- 回退：把 `cubegm/rkgame.bak` 复制成 `cubegm/rkgame` 即恢复原厂（**用户实测回退路径有效**）。
+- 仪器源码：`src/probe/probe2.c` + `src/probe/start.S`；构建 `sh tools/build_probe2.sh`（含几何门禁 + syscall 号自证）；
+  投放 `python3 tools/stage_sd_probe2.py`。
+
+### 9.1b ★ 另一条更有希望的捷径（B 线）
+B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e2e 每次 push 都 PASS、自报覆盖 96%。
+⇒ **在 A 线继续攻坚前，值得先确认 B 线的产物在设备上的实际表现**（它有 `V15-ARM-GATE-CHECKLIST.md`
+列出的 3 个具体 bug 的修复版）。这可能**直接给出"能用的版本"**，而 A 线的价值在于"结构忠实度"。
 
 ### 9.2 后续（真机通了之后）
 | 序 | 事项 | 状态 |
@@ -357,3 +491,4 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 | 时间 | 事件 |
 |---|---|
 | 2026-09-22 | **用户指出 `MEMORY.md` 不该记单项目内容**。本项目记忆从 `D:\output\.workbuddy\memory\MEMORY.md`（长期被压到 12.7 KB、仍超 3,000 字符限制、尾部注入时被截断）**迁到本文件**（项目文件夹内，不受限制）。workspace 那份改为**指针**；`~/.workbuddy/MEMORY.md` 中的 CubeGM 项目内容同步迁往 `C:\Users\Administrator\cubegm-work\PROJECT-MEMORY.md`，只留跨项目偏好。 |
+| 2026-09-22 | ★ **发现 B 线 `rkgame-rebuild/`**（见 §0）：此前记忆**完全没有这条线**，导致"替代差距评估"片面。同时收到用户真机实测结果（动态零日志 / 静态成功）⇒ §9.1 重写；**更正 §2.10**（PT_LOAD 不是根因）。新增 §5.1 SD 卡盘符（=`L:`）、§5.2 本地资产地图、§5.3 远端结构。 |
