@@ -167,11 +167,12 @@ static const char *LOGPATHS[] = {
 struct cand { const char *path; const char *note; };
 
 static struct cand CANDS[] = {
-    { "/sdcard/cubegm/rkgame.bak", "1 阳性对照: 原厂 rkgame"      },
-    { "/sdcard/cubegm/rkgame.t4",  "2 最小动态 ELF(仅 NEEDED libc)" },
-    { "/sdcard/cubegm/rkgame.t1",  "3 A: rebuilt 5.4MB"           },
-    { "/sdcard/cubegm/rkgame.t2",  "4 B: diag 5.7MB"              },
-    { "/sdcard/cubegm/rkgame.t3",  "5 C: 2段布局新版"              },
+    { "/sdcard/cubegm/rkgame.bak", "1 阳性对照: 原厂 rkgame"        },
+    { "/sdcard/cubegm/rkgame.t5",  "2 ★ B线 v15 (真机曾跑过)"       },
+    { "/sdcard/cubegm/rkgame.t4",  "3 最小动态 ELF(仅 NEEDED libc)"  },
+    { "/sdcard/cubegm/rkgame.t1",  "4 A线 rebuilt 5.4MB"            },
+    { "/sdcard/cubegm/rkgame.t2",  "5 A线 diag 5.7MB"               },
+    { "/sdcard/cubegm/rkgame.t3",  "6 2段布局新版(若已备)"            },
 };
 #define NCAND ((int)(sizeof(CANDS) / sizeof(CANDS[0])))
 

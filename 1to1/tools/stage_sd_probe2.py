@@ -30,6 +30,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, '_sdcard_drop2')
 ITEMS = [
     (os.path.join(ROOT, 'build', 'rkgame.probe2'),        'cubegm/rkgame'),
     (os.path.join(ROOT, 'build', 'rkgame.t4'),            'cubegm/rkgame.t4'),
+    (os.path.join(ROOT, 'build', 'rkgame.brebuild'),      'cubegm/rkgame.t5'),
     (os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf'),   'cubegm/rkgame.t1'),
     (os.path.join(ROOT, 'build', 'rkgame.diag'),          'cubegm/rkgame.t2'),
 ]
@@ -74,11 +75,12 @@ README = """============================================================
      ★ 这是本测试的"阳性对照"。它不在包里。若不存在，请先把原厂 rkgame
        复制成 rkgame.bak 再继续。
 
-  2) 把本包 cubegm/ 里的这 4 个文件拷到 SD 卡 cubegm/（会覆盖同名文件）：
+  2) 把本包 cubegm/ 里的这 5 个文件拷到 SD 卡 cubegm/（会覆盖同名文件）：
         rkgame         (8,268 B)   ← 探针，必须覆盖原来的
-        rkgame.t1      (5.4 MB)    ← 已知失败的 A
-        rkgame.t2      (5.7 MB)    ← 已知失败的 B（诊断版）
-        rkgame.t4      (2,628 B)   ← 新的最小动态样件
+        rkgame.t5      (1.0 MB)    ← ★ B 线 v15：**已在真机跑过**的那一版
+        rkgame.t4      (2,628 B)   ← 最小动态样件（只依赖 libc）
+        rkgame.t1      (5.4 MB)    ← A 线重建产物（已知：零日志）
+        rkgame.t2      (5.7 MB)    ← A 线诊断版（已知：零日志）
      并把 cubegm/_diag/ 整个目录也拷过去（若已存在则合并）。
 
   3) 插卡开机，**等满 90 秒**。
@@ -107,12 +109,21 @@ README = """============================================================
 
   对应结论：
     · 原厂对照也失败        → 探针的 exec 机制有问题，我会先修探针
-    · t4(最小动态) 成功     → 动态链接没问题 ⇒ 问题在我们产物的结构/规模
+    · **t5(B线 v15) 成功**   → ★ **设备直接可用的版本可能就是它**（它已在真机跑过）
+                              ⇒ 下一步就把它正式装成 rkgame，逐项走查（菜单/游戏/存档/音频）
+    · t4(最小动态) 成功     → 动态链接没问题 ⇒ 问题在 A 线产物的结构/规模
     · t4 也失败 + errno=8   → 内核拒绝该 ELF ⇒ 修段布局/ELF 结构
     · t4 也失败 + errno=2   → 解释器或依赖库路径问题 ⇒ 查 loader
     · 候选被信号杀(如 11)   → exec 成功、程序初始化崩 ⇒ 查 CRT/重定位
 
   无论哪种结果，都是**可操作的**（不是又一轮猜）。
+
+【已经知道的三方结构差异（供你理解为什么要测 t5）】
+
+  A 线(零日志) 9 个 PT_LOAD、GNU_STACK memsz=16MB flags=RW-
+  B 线 v15(跑过) 2 个 PT_LOAD、GNU_STACK memsz=0   flags=RWX、ET_DYN(PIE)
+  原厂(正常)     2 个 PT_LOAD、GNU_STACK memsz=0   flags=RWX、ET_EXEC
+  ⇒ A 线在"装载模型"上与另两者不同；B 线与原厂一致。
 ============================================================
 """
 

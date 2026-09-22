@@ -430,15 +430,35 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 | `DT_INIT_ARRAYSZ` | 4 | **0**（rebuilt） |
 | 首个 LOAD | `R-X`（含 rodata） | `R--`（`.fimg_text` 3.8 MB 单独一段） |
 
+**★★ 三方结构对比（2026-09-22，这是"为什么一个能跑一个不能"的直接材料）**
+
+| 项 | **A 线（零日志）** | **B 线 v15（真机跑过）** | **原厂（正常）** |
+|---|---|---|---|
+| 文件大小 | 5,663,812 | 1,031,860 | 3,921,108 |
+| `e_type` | ET_EXEC | **ET_DYN (PIE)** | ET_EXEC |
+| `e_flags` / `INTERP` | ✓ / `/lib/ld-linux-armhf.so.3` | ✓ / 同 | ✓ / 同 |
+| **PT_LOAD 段数** | **9** ← 三者中独有 | **2** | **2** |
+| **`PT_GNU_STACK`** | **memsz=16,777,216；flags=6 (RW-)** ← 独有 | **memsz=0；flags=7 (RWX)** | **memsz=0；flags=7 (RWX)** |
+| 最低 vaddr | 0x9000 | 0x0 | 0x8000 |
+| program headers | 16 | 9 | 10 |
+| 可疑段 | **段#6 `filesz=0, memsz=12`** 单独成段，且与段#7 共用 file offset | 无 | 无 |
+
+⇒ **A 线在"装载模型"上与另两者都不同；B 线与原厂一致。**
+   注意 `ET_EXEC` 本身**不是**问题（原厂也是 ET_EXEC 且正常）。
+   最可疑两项：**9 个 PT_LOAD** 与 **`GNU_STACK memsz=16 MB / flags=RW-`**（栈被标 NX）。
+
 **下一步：探针 v2 上机（一次定案）**
 - 投放包：`_sdcard_drop2/`（说明见其中 `READ-ME-FIRST.txt`）
   | 目标 | 内容 | sha256 前 16 |
   |---|---|---|
-  | `cubegm/rkgame` | **探针 v2**（8,268 B，静态无 interp） | `b951ea562504f98c` |
+  | `cubegm/rkgame` | **探针 v2**（8,348 B，静态无 interp） | `c136fbb2d248c15e` |
+  | **`cubegm/rkgame.t5`** | ★ **B 线 v15（1,031,860 B）—— 已在真机跑过的那一版** | `5dce646b9ce3a1ed` |
   | `cubegm/rkgame.t4` | **最小动态 ELF**（2,628 B，只 NEEDED libc） | `40c21f787db83e9f` |
   | `cubegm/rkgame.t1` | A 线 rebuilt 5.4 MB（已知失败） | `b6b4ee6d8364e7e9` |
   | `cubegm/rkgame.t2` | A 线 diag 5.7 MB（已知失败） | `278f04fb46e88118` |
   | `cubegm/rkgame.bak` | **阳性对照**（原厂，**必须已在卡上**） | — |
+
+  ★ `t5` 的 sha256 与 `V15-ARM-GATE-CHECKLIST.md` 记录值**逐字一致** ⇒ 确认测的就是那一份。
 - 探针 v2 做的三件事：① `fork`+`execve` 每个候选，记 `errno` / 子进程信号 / 退出码；
   ② 读 `/proc/sys/vm/mmap_min_addr`、`/proc/mounts`、`/proc/self/maps`、`/proc/version`
   （★ `mmap_min_addr` 若 > 产物最低 vaddr `0x9000` ⇒ 内核 EPERM 拒载；`/proc/self/maps` 可反推内核**页大小**）；
@@ -448,7 +468,8 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
   | 观测 | 结论 | 下一步 |
   |---|---|---|
   | 原厂对照也失败 | 探针 exec 机制有问题 | 先修探针 |
-  | t4 成功 | 动态链接链路 OK | 问题在我们产物的**结构/规模** ⇒ 向原厂 2 段布局靠拢 |
+  | **t5(B线 v15) 成功** | ★ **设备直接可用的版本可能就是它** | **把它正式装成 `rkgame`，逐项走查**（菜单/游戏/存档/音频） |
+  | t4 成功 | 动态链接链路 OK | 问题在 A 线产物的**结构/规模** ⇒ 向原厂 2 段布局靠拢 |
   | t4 失败 errno=8 (ENOEXEC) | 内核拒绝该 ELF | 修段布局 / ELF 结构 |
   | t4 失败 errno=2 (ENOENT) | 解释器/依赖路径问题 | 查 loader 解析路径 |
   | 候选被信号杀 | exec 成功、程序初始化崩 | 查 CRT / 重定位 / `.init_array` |
