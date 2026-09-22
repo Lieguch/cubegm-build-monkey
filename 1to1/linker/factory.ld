@@ -27,13 +27,25 @@ SECTIONS
   .rel.plt : { *(.rel.plt) }
   .plt : { *(.plt) *(.plt.*) }
 
-  /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）---- */
+  /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）----
+   * ★★★ 2026-09-22（GAP 16.69）：**这里曾把 `.data`/`.bss`/`.text` 钉在
+   *   0x01000000 / 0x02000000 / 0x05000000**，结果 lld 把「WA 属性的 `.fini_array`（在
+   *   `.rodata` 末尾 ~0x4e00e0）」和「钉在 0x01000000 的 `.data`」归入**同一个 RW 段**，
+   *   该段的 p_filesz 于是跨过两者之间的 **11.1 MB VMA 空洞** ⇒ 产出一份畸形 ELF：
+   *     · PT_LOAD 段数 2 → **9**；文件 3.9 MB → **17.3 MB**（11 MB 是填充）
+   *     · 最高 vaddr 4 MB → **268 MB**（内核据此把 brk 也推到 268 MB）
+   *     · 该 11 MB 段与承载**全部代码**的 `.text` 段**在地址上重叠**
+   *   ⇒ 在 qemu/PC 上被容忍（所以 CI 一路全绿），**在真机上直接 exec 失败、一条日志都不产生**
+   *     （2026-09-21 真机实测：换成本产物后无法开机，`_diag/` 内零文件；换回原厂即正常）。
+   *   修法 = **不再钉死这几个地址**，让自有节紧接 `.rodata` 连续排布（与工厂的 2 段形态一致）。
+   *   ★ 自有节的地址本来就无契约（工厂的 .data/.bss 在 0x3AF000/0x3B2178，由 `.fimg_*` 复刻），
+   *     钉死它们纯属历史遗留 ⇒ 移动不影响任何「烧死的绝对地址」。 */
   .rodata 0x00410000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }
   .init_array ALIGN(4) : { PROVIDE_HIDDEN(__init_array_start = .); KEEP(*(.init_array)) KEEP(*(.init_array.*)) }
   .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }
-  .data 0x01000000 : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }
-  .bss 0x02000000 : { *(.bss) *(.bss.*) *(COMMON) }
-  .text 0x05000000 : { *(.init) *(.text) *(.text.*) *(.fini) }
+  .data ALIGN(0x1000) : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }
+  .bss  ALIGN(0x1000) : { *(.bss) *(.bss.*) *(COMMON) }
+  .text ALIGN(0x1000) : { *(.init) *(.text) *(.text.*) *(.fini) }
   .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }
 }

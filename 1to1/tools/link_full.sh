@@ -145,4 +145,18 @@ else
     echo "（无产物）错误摘要："
     grep -aE "error|undefined|overlap" "$ROOT/report/link_full_err.txt" | head -12
 fi
+
+# ★★★ 2026-09-22（GAP 16.69）：**PT_LOAD 几何门禁** —— 钉在链接脚本里，本地/CI 都绕不过。
+#   为什么必须钉在这：产出一份**畸形程序头表**的 ELF 时，下面这些都会通过——
+#     · abi_check（只看 ELF 头 4 个字段）· dyn_audit（只看动态段）· verify_layout（只看
+#       符号是否落在 PT_LOAD 内 —— 畸形段**也是** PT_LOAD，符号照样"在里面"）
+#   于是在 PC/qemu 上一路全绿，在真机上 exec 失败、**零日志**（2026-09-21 实测）。
+if [ -f "$OUT" ]; then
+    echo "== PT_LOAD 几何门禁（防『畸形段』这一类：重叠 / 跨洞 / 最高地址 / 体积）=="
+    if ! $PY "$(winpath "$ROOT/tools/elf_load_audit.py")" "$(winpath "$OUT")"; then
+        echo "★★ PT_LOAD 几何门禁 FAIL —— 本产物**禁止**上机（详见上面的 [FAIL] 行）" >&2
+        echo "   历史教训：畸形段在 qemu 上跑得通，在真机上 exec 直接失败、一条日志都不产生。" >&2
+        exit 12
+    fi
+fi
 exit $rc
