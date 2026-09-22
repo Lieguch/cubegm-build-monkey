@@ -129,6 +129,17 @@
 「green 不等于 correct，判据必须先自证」的反面。改为**符号级统计**后真数字是 **175 个符号 / 2,548 处**。
 **纪律：任何新判据上线前，必须用一个已知答案的样本做正反双向自证。**
 
+### ★★★★ 方法论纪律（2026-09-22 教训，比技术结论更重要）
+**在动手改任何东西之前，先把「用户已给的全部数据」读完。**
+本轮我连续提出并证伪 **6 个假设**（PT_LOAD 几何 / `GNU_STACK` / `DT_INIT` / 跨段页冲突 /
+文本重定位 / 工厂镜像引用），**全部基于 ELF 结构推演**；而真正的原因
+**就在用户给的 `p3_*_out.txt`（程序自己的 stdout/stderr）里，一眼可见**
+（原厂 `snd_pcm_start: -32` vs 我们 `apply hwparams: -22`）。
+⇒ **代价**：6 轮无效推演 + 2 次给用户错误数字（9,997 与「8,672 处调用未重编函数」），
+   还改了两次记忆。**这就是「边看边下结论」的代价。**
+⇒ **纪律**：① 数据先读全（含每个附件、每个日志的**尾部**）；② 一次整体分析；
+   ③ 再动手；④ 新判据上线前用已知答案的样本做**正反双向自证**。
+
 ### 明确不再做的事
 - ✗ 为「让它跑」而做的结构适配（例如把 `.fimg_text` 段改成 `R-X` 让工厂机器码可执行）——
   那是「造能跑的混合体」，**正是被放弃那条路的方向**。
@@ -505,73 +516,49 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 
 ## 9. 待办与下一步
 
-### 9.1 当前阻塞：**A 线产物 exec 成功、但在初始化阶段崩**（真机实测已定案到这一层）
+### 9.1 ★★★★★ **已确证根因：音频（ALSA）初始化序列与原厂不同**（2026-09-22，看完设备全部数据后）
 
-**探针 v3 的真机结果（2026-09-22，用户实测）**
+**证据来源**：程序**自己打印的** stdout/stderr（探针 v3 把子进程 fd1/fd2 重定向落盘）
+= `_diag/p3_<N>_out.txt`。★ 这是最直接的一手证据 —— **一眼就能看出差异**。
 
-| 候选 | exec | 结局 | 崩溃位置（已符号化） | `si_addr` |
-|---|---|---|---|---|
-| 1 原厂对照 | 成功 | 存活至超时 | — | — |
-| 2 最小动态 ELF (t4) | 成功 | **正常退出 exit=0** | — | — |
-| 3 **A 线 rebuilt** | 成功 | **SIGBUS(7)** | **`sfc_init+0x6c`** | `0xB6F2B02C`（库/栈区） |
-| 4 **A 线 diag** | 成功 | **SIGSEGV(11)** | **`cgm_diag_boot+0x184`**（`str r0,[r1]`） | **`0x4e1010` = `g_lvl`**（我们自己的全局变量） |
-| 5 B 线 v15 | 成功 | 存活至超时 | — | — |
-
-★ 全部 6 个候选（含不存在的 t3 跳过）**都通过了 exec** ⇒ 加载层无责（同 §2.14(b)）。
-★ **崩点落在我们自己的代码/数据上** ⇒ 不是「跳到工厂机器码」那种直接原因；
-   diag 是「写自己的全局变量 `g_lvl` 时 SIGSEGV」⇒ 指向**运行期映射/可写性**问题。
-   ⚠ **尚未确证**：探针抓 `/proc/PID/maps` 时只取到 1 行（ptrace-stop 状态下读取不完整之嫌，
-   或抓取时机在 ld.so 入口处）⇒ **maps 不能作为证据**。要确证需让程序自己在崩溃前 dump maps。
-★ **但按 §0.1：不再沿「为什么崩」这条线继续挖** —— 转去收敛刻度 A/B。
-
-
-
-**探针 v2 的真机结果（2026-09-22，用户实测，决定性）**
-
-| 候选 | 结局 | 判定 |
+| 候选 | 程序自身输出（关键行） | 结局 |
 |---|---|---|
-| 1 原厂 `rkgame.bak` | 存活至超时 | ✅ **阳性对照通过** ⇒ 探针结论可信 |
-| 2 B 线 v15 | 存活至超时 | exec 成功（但见 §0 澄清：其功能深度很浅） |
-| 3 **t4 最小动态 ELF**（2,628 B） | **正常退出 exit_code=0** | ✅ **动态链接链路完全正常** |
-| 4 **A 线 rebuilt**（5.4 MB） | **被信号终止 signal=7** | ★ **SIGBUS（总线错误）** |
-| 5 **A 线 diag**（5.7 MB） | **被信号终止 signal=11** | ★ **SIGSEGV（段错误）** |
+| **原厂 `rkgame.bak`** | `rkgame v1.42` → `open driver.so sucess` → `video_driver_setting 0 1 1` → `open drm!` → **`snd_pcm_start failed: -32`** | **存活至超时** |
+| **t1 = A 线 rebuilt** | 同样 `open driver.so sucess` → `open drm!` → **`failed to apply hwparams: -22`** | **SIGBUS(7)** |
+| **t2 = A 线 diag** | 同上 | **SIGSEGV(11)** |
+| **t5 = B 线 v15** | `=== rkgame rebuild starting ===` ×2 → **`failed to apply hwparams: -22`** | 存活（但**根本没走到 DRM/音频**） |
 
-★ 全程**没有任何 `EXECVE-FAILED`** ⇒ **内核与 ld.so 都放行了** ⇒ 加载层（含内核、`.interp`、
-NEEDED、重定位、RELRO）**全部无责**。崩在**程序自己的初始化阶段**，且在写第一行日志之前。
+ld.so 侧（`_diag/ldd_.*`）同一时刻的轨迹：
 
-**设备环境事实（探针带回，权威）**
-| 项 | 值 |
-|---|---|
-| `vm.mmap_min_addr` | **32768 (0x8000)** ← 原厂最低 vaddr 正好贴线；我们 `0x9000` 更安全 |
-| kernel | **Linux 4.4.194**（Linaro GCC 6.3.1，编译于 2022-11-07） |
-| 根文件系统 | `/dev/root` **squashfs ro** |
-| SD 卡 | `/dev/mmcblk0p1` → **`/mnt/sdcard`** `vfat rw,noatime,uid=1000,gid=1000,fmask=0022,dmask=0022` |
-| `/dev/shm` | `tmpfs rw,mode=777`（可用） |
-| `/sdcard` | 存在且可写（探针写 `/sdcard/...` 全部成功；应是指向 `/mnt/sdcard` 的链接或同挂载） |
-| 静态 ELF 的映射 | 探针自身 4 段：`0x10000/0x20000/0x31000/0x41000` —— **段间 64 KB 间隔** |
+```
+calling init: /mnt/sdcard/cubegm//driver.so        ← driver.so 打开**成功**
+calling init: /lib/libnss_files.so.2
+/usr/lib/libasound.so.2: error: symbol lookup error:
+    undefined symbol: _snd_pcm_rate_linear_open_conf (fatal)
+```
 
-**下一步：探针 v3（抓崩溃现场）—— 投放包 `_sdcard_drop3/`**
+**⇒ 根因链（已确证）**
+1. A 线产物**成功**打开 `driver.so`、**成功**初始化 DRM，走到了 **ALSA 音频初始化**；
+2. 设备上的 `libasound.so.2` **缺少插件符号 `_snd_pcm_rate_linear_open_conf`**（`(fatal)`）；
+3. 我们的调用序列命中了这个缺口 ⇒ `apply hwparams` 返回 **-22 (EINVAL)** ⇒ 进程被杀（SIGBUS/SIGSEGV）；
+4. **原厂在同一个位置只报 `snd_pcm_start: -32 (EPIPE)` 并继续存活** ⇒
+   **我们的 ALSA 调用序列与原厂不同** ⇒ **这就是 1:1 该对齐的点**。
 
-| 目标 | 内容 | sha256 前 16 |
-|---|---|---|
-| `cubegm/rkgame` | **探针 v3**（9,440 B，`ptrace` 版） | `4df33d7f2dcb40da` |
-| `cubegm/rkgame.t4` | 最小动态 ELF（2,628 B） | `40c21f787db83e9f` |
-| `cubegm/rkgame.t1` | A 线 rebuilt 5.4 MB（SIGBUS） | `b6b4ee6d8364e7e9` |
-| `cubegm/rkgame.t2` | A 线 diag 5.7 MB（SIGSEGV） | `278f04fb46e88118` |
-| `cubegm/rkgame.t5` | B 线 v15（对照） | `5dce646b9ce3a1ed` |
-| `cubegm/rkgame.bak` | **阳性对照**（原厂，须已在卡上） | — |
+**★★ 重要反转（必须记住）**：**A 线不是"坏"，而是"走得更远才崩"。**
+它走到了 `driver.so` + DRM + 音频；而 B 线 v15 连 DRM/音频都没走到
+（只有 `rkgame rebuild starting` 两行）⇒ 所以 B 线"看起来能跑"。
+**A 线功能比 B 线深得多** —— 这正是 1:1 复刻该走的深度。
 
-v3 新增四项能力（v2 做不到）：
-1. `ptrace` 让父进程当 tracer ⇒ **exec 成功后停在第一条用户指令**，dump 此时**完整 `/proc/PID/maps`**
-   ⇒ 直接看出**有没有段没映射上**；
-2. 崩溃时 `PTRACE_GETSIGINFO` 取 **`si_addr`**、`PTRACE_GETREGS` 取 **PC/LR/SP** ⇒ **可离线符号化到函数**；
-3. 子进程 **stdout/stderr 重定向到 `_diag/p3_<N>_out.txt`** ⇒ 目标程序与 glibc 的错误全部落盘；
-4. 传 `LD_DEBUG=libs,init` + `LD_DEBUG_OUTPUT` ⇒ ld.so 自己的步骤日志（`_diag/ldd_<pid>`）。
+**★ 崩溃现场（探针 v3，保留为事实）**
+- t1：`SIGBUS(7)`，PC = **`sfc_init+0x6c`**，`si_addr = 0xB6F2B02C`
+- t2：`SIGSEGV(11)`，PC = **`cgm_diag_boot+0x184`**（`str r0,[r1]`），`si_addr = 0x4e1010` = `g_lvl`
+- ⚠ 探针抓的 `/proc/PID/maps` 只取到 1 行（ptrace-stop 状态下读取不完整之嫌）⇒ **maps 不作为证据**。
 
-**要取回的文件**：`_diag/PROBE3.txt`（主）+ `_diag/p3_0..5_out.txt` + `_diag/ldd_*`（若有）。
-
-**已排除项（不要再重复查）**：PT_LOAD 几何、`GNU_STACK`、`DT_INIT/DT_FINI`、跨段页冲突、
-文本重定位、NEEDED/INTERP 存在性、`mmap_min_addr`。逐条证据见 §2.14(b)。
+**★★★ 下一步（1:1 方向，明确且很小）**
+**对齐原厂的 ALSA 初始化序列**：把原厂反汇编里 `snd_pcm_*` 的调用顺序/参数
+与 `src/proprietary/*` 里的实现逐条对照，差异即缺陷。
+（相关入口：`FUN_0000d678_InitDisplay.c` 等 `hw/` 下的音频初始化路径；
+`dlopen(..., 2)` 的 2 = `RTLD_NOW`，需与原厂（反汇编里的 flags）核对。）
 
 ### 9.1b ★ 另一条更有希望的捷径（B 线）
 B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e2e 每次 push 都 PASS、自报覆盖 96%。
