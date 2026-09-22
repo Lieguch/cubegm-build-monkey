@@ -186,4 +186,16 @@ if [ -f "$ROOT/tools/lint_const_args.py" ]; then
         exit 14
     fi
 fi
+
+# ★★★ 2026-09-22（GAP 16.76）：**MMIO 访存宽度门禁**。
+#   真机实证：`sfc_init` 读 SFC 寄存器时 SIGBUS —— 工厂是 `ldr`（32 位），
+#   我们被 GCC 把 `g_sfc_reg[0xb] & 0xffff` 窄化成了 `ldrh`（16 位）。
+#   **宽度是 MMIO 契约的一部分**，且窄化还会连带改变「写/读顺序」。
+if [ -f "$OUT" ]; then
+    echo "== MMIO 访存宽度门禁（设备寄存器必须与工厂同宽：整字）=="
+    if ! $PY "$(winpath "$ROOT/tools/mmio_width_audit.py")" "$(winpath "$OUT")"; then
+        echo "★★ MMIO 访存宽度门禁 FAIL —— 本产物**禁止**上机（窄访问可能直接总线报错）" >&2
+        exit 15
+    fi
+fi
 exit $rc

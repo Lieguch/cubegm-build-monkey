@@ -96,9 +96,11 @@ static char *p_int(char *o, long v, int base, int zero, int width) {
     return p_uint(o, (unsigned long)v, base, zero, width);
 }
 
-/* 变参格式化：dst/cap/f 之后直接接参数（调用点写 vfmt(buf, cap, "%d", x)） */
-static int vfmt(char *dst, int cap, const char *f, ...) {
-    va_list ap; va_start(ap, f);
+/* 变参格式化（两段式）：
+ *   · vfmt_ap(dst, cap, fmt, va_list) —— 真正干活；**转发必须走这个**
+ *   · vfmt(dst, cap, fmt, ...)        —— 薄包装，供直接传实参的调用点用
+ * ★★★ AArch32 上 `va_list` 是 struct，**不能当普通实参传**（见文件头 GAP 16.75）。 */
+static int vfmt_ap(char *dst, int cap, const char *f, va_list ap) {
     const char *fmt = f;
     char *o = dst; char *end = dst + cap - 1;
 #define PUT(ch) do { if (o < end) *o++ = (char)(ch); } while (0)
@@ -129,8 +131,15 @@ static int vfmt(char *dst, int cap, const char *f, ...) {
     }
 #undef PUT
     *o = 0;
-    va_end(ap);
     return (int)(o - dst);
+}
+
+/* 薄包装：直接传实参的调用点用这个（内部转成 va_list 再交给 vfmt_ap） */
+static int vfmt(char *dst, int cap, const char *f, ...) {
+    va_list ap; va_start(ap, f);
+    int n = vfmt_ap(dst, cap, f, ap);
+    va_end(ap);
+    return n;
 }
 
 /* ---------------- 单调毫秒（粗采样，避免每次 syscall） ---------------- */
@@ -176,6 +185,9 @@ void cgm_diag_boot(const char *how)
 }
 
 /* 供 --wrap 用：把可变参数拼成一行日志 */
+/* ★ 加 format 属性：否则 -Wformat 对自定义格式化函数**一律不检查**
+ *   （这就是我此前"编译无警告"却带着参数错位的原因）。 */
+__attribute__((format(printf, 2, 3)))
 void cgm_putline(const char *tag, const char *fmt, ...);   /* 见下 */
 void cgm_putline(const char *tag, const char *fmt, ...)
 {
@@ -192,7 +204,7 @@ void cgm_putline(const char *tag, const char *fmt, ...)
     for (int i = 0; tag[i] && n < 20; i++) buf[n++] = tag[i];
     buf[n++] = ' ';
     va_list ap; va_start(ap, fmt);
-    n += vfmt(buf + n, (int)sizeof(buf) - n - 4, fmt, ap);
+    n += vfmt_ap(buf + n, (int)sizeof(buf) - n - 4, fmt, ap);   /* ★ 用 vfmt_ap 转发 va_list */
     va_end(ap);
     buf[n++] = '\n';
     if (g_logbytes > CGM_LOG_MAX_BYTES) {          /* 轮转一次 */

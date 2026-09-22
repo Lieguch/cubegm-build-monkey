@@ -13,9 +13,9 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
 {
   gh_uint uVar1;
   gh_uint uVar2;
-  gh_uint *puVar3;
+  volatile gh_uint *puVar3;   /* ★ SFC 寄存器块指针：必须 volatile */
   gh_uint uVar4;
-  gh_uint *puVar5;
+  volatile gh_uint *puVar5;   /* ★ FIFO/寄存器游标：必须 volatile */
   gh_uint *puVar6;
   int iVar7;
   gh_uint *puVar8;

@@ -3957,3 +3957,118 @@ relro 节**的终点」。此前链接脚本把 `.data.rel.ro`/`.got` 混在 `.d
 修后本地全绿：`link_audit`（未定义 0 / 重复定义 0）· `elf_load_audit` PASS ·
 `relro_audit` PASS · `abi_check` PASS · `dyn_audit` PASS(WARN 1) · `check_obj_fresh` PASS ·
 `lint_const_args` PASS（213 函数对拍）。
+
+### 16.75 ★★★★★ 诊断仪自身的致命缺陷：AArch32 上 `va_list` **不能当普通实参转发**
+
+**现象**（真机 `_diag/trace.log`，7913 B）：所有带实参的调用**参数整体错位一格且全是垃圾**：
+```
+12254 IO readlink "??乱码??" ret=-1098885516
+12254 IO fopen "??乱码??" mode="(null)" ret=0xbe8047c8
+12254 IO fclose 0xbe8047d0 ret=-1226887448
+```
+随后 10 帧走到 `>>InitDisplay` 就死：`SIGSEGV  PC=vfmt+0x1c4  si_addr=0x32323534`（= ASCII 数字当指针），
+`frames.bin`=0 B、`frames.snap.bin` 只有 10 帧 ⇒ **诊断版连插桩都没跑起来**（`_diag/` 里没有 BEGIN/crash）。
+
+**根因**：`cgm_putline()` 里
+```c
+va_list ap; va_start(ap, fmt);
+n += vfmt(buf + n, ..., fmt, ap);     /* ★ 把 va_list 当成一个普通实参 */
+```
+在 **AArch32 上 `va_list` 是一个 struct（x86-64 是数组）** ⇒ 传进去后 `vfmt` 自己的 `va_start`
+把「那个 va_list 对象」当作第一个变参 ⇒ 第一个 `%s` 读到调用者参数区的指针（垃圾）⇒ 全参数错位；
+一旦那个"指针"不可读 ⇒ SIGSEGV。
+
+**★ 为什么一直没被发现**：这个缺陷在 x86-64 上**不复现**（那边 va_list 是数组，按普通实参传恰好可用）
+⇒ 任何"本机编译/本机自测通过"都拦不住它，**只有设备端日志能暴露**。
+
+**修法**：拆成 `vfmt_ap(dst,cap,fmt,va_list)`（真正干活）+ 薄包装 `vfmt(...)`（供其余 20 个调用点）；
+转发一律走 `vfmt_ap`。并给 `cgm_putline` 加 `__attribute__((format(printf,2,3)))`
+—— 此前**没有 format 属性 ⇒ `-Wformat` 对自定义格式化函数一律不检查**（这就是"编译零警告却带着参数错位"的原因）。
+
+**纪律**：① 变参转发必须用 `v…` 家族；② 自定义格式化函数**必须**加 `format` 属性，否则编译器的
+参数检查形同虚设；③ **凡"本机不复现"的缺陷，只能靠设备端证据定位**。
+
+### 16.76 ★★★★★ MMIO 访存宽度被编译器窄化 ⇒ 真机 SIGBUS（本轮真正的拦路虎）
+
+**真机证据**（探针 v3，`t1` 交付版）：
+```
+SIGBUS(7)  PC=sfc_init+0x6c   si_addr=<mmap基址>+0x2C
+r7 = 0x10208000（mmap 偏移）  r0 = mmap 基址  r5 = &g_sfc_reg
+```
+与工厂逐条对照，**唯一差异就是这个读的宽度**：
+
+| | 工厂 | 我们（修复前） |
+|---|---|---|
+| 写 [base] | `str r0,[r2]` | `str r4,[r0]` ✓ |
+| **读 [base+0x2C]** | **`ldr r3,[r2,#44]`（32 位）** + `uxth` | **`ldrh r1,[r0,#44]`（16 位）** ★ |
+| 写 [base+0x88] | `strhi r3,[r2,#136]` | `strne r1,[r0,#136]` ✓ |
+| **顺序** | **先写后读** | **先读后写** ★ |
+
+**根因**：源码 `g_sfc_reg[0xb] & 0xffff`（指针是 `gh_u4*`），GCC 只用到低半字就把 32 位加载
+**窄化**成 `ldrh`，并顺手把「先写后读」重排成「先读后写」。对普通内存是合法优化，
+**对设备寄存器是改硬件行为** —— 宽度与顺序都是 MMIO 契约的一部分。
+
+**同一惯用法还有第二处**：`sfc_request`（`puVar3[0xb] & 0xffff`，9 个调用者：
+`spi_read`/`spi_write`/`UpdateROM`/`sfc_request`…）⇒ **那是下一处必然崩溃**。
+
+**修法**：设备寄存器指针一律 `volatile`
+· `sfc_init`：局部 `volatile gh_u4 *regs`
+· `globals.h`：`extern volatile gh_u4 * g_sfc_reg;`
+· `sfc_request`：局部 `puVar3`/`puVar5` 加 `volatile`
+
+**修后机器码（与工厂等价）**：
+```
+str r4,[r0]           ← 先写
+ldr  r1,[r0,#44]      ← 32 位读（不再是 ldrh）
+tst  r1,#~3 / strne r1,[r0,#136]
+```
+`sfc_request` 同步变为 `ldr r5,[r0,#44]`（原来 `ldrh r6,[r0,#44]`）。
+
+**新门禁** `tools/mmio_width_audit.py`：对照「工厂 vs 我们」在**直接访问设备寄存器的函数**上的
+访存宽度直方图；我们不得引入工厂没有的窄访问。三态自证（正常 PASS / 喂修复前快照
+`build/_prewidth.rebuilt.elf` 必 FAIL / 缺文件 exit 11）。已钉进 `link_full.sh`（**exit 15**）。
+
+### 16.77 ★★★ 联网核实的硬件事实：`0x10208000` = **RK3036 的 SFC（串行 Flash 控制器）**
+
+上游设备树（`arch/arm/boot/dts/rk3036.dtsi`，Chris Morgan/Jon Lin 2021 系列补丁）：
+```dts
+sfc: spi@10208000 { compatible = "rockchip,sfc";
+                    clocks = <&cru SCLK_SFC>, <&cru HCLK_SFC>;
+                    clock-names = "clk_sfc", "hclk_sfc";
+                    status = "disabled"; };
+```
+`drivers/clk/rockchip/clk-rk3036.c`（实测取自 torvalds/linux master）：
+```c
+GATE(HCLK_SFC, "hclk_sfc", "hclk_peri", 0, RK2928_CLKGATE_CON(3), 14, GFLAGS),
+COMPOSITE(SCLK_SFC, "sclk_sfc", ..., RK2928_CLKGATE_CON(10), 5, GFLAGS),
+```
+⇒ **SFC 的两个时钟分别在 `CLKGATE_CON(3) bit14` 与 `CLKGATE_CON(10) bit5`**；
+而厂商 `sunxi_gpio_init` 写的是 `CRU+0xF0`（厂商自称 `CRU_CLKGATE8_CON`，置 bits25-27、清 bits9-11）
+—— **与 SFC 时钟无关** ⇒ 厂商并没有自己开 SFC 时钟，它依赖的是"设备上这些寄存器本来就可达"
+（内核/引导阶段保留）。⇒ **本轮不应把方向放在"时钟没开"上，而要放在"访问方式是否与工厂一致"**，
+这正好由 16.76 的宽度差异解释。
+
+### 16.78 ★★★ 另一条线（B 线）的设备实证：不碰 SFC 也能进菜单
+
+`L:/cubegm/rkgame.log`（357 KB / 10,413 行，**B 线 v1.7.0 rebuild 自己的日志**，28 个会话，
+单会话最长 205 s 存活）里反复出现：
+```
+[RK-I] sfc_init: stub (no SFC hardware; libretro core handles emulation)
+[RK-I] spi_driver_init: stub (no SPI hardware on RK3036G rebuild path)
+```
+⇒ ① 它当时就判断"这台机器没有 SFC 硬件"并**直接 stub 掉**，照样进菜单并长期存活；
+   ② 这也反向说明：**SFC 读取不是菜单/游戏路径的必要条件**。
+**但对 A 线（1:1 复刻）不适用**：目标是"与工厂逐条等价"，不能凭空跳过；正确做法是
+**让访问方式与工厂一致**（16.76）。B 线日志同时证实 `driver.so` 加载、`setting.xml` 解析、
+`joystick.zip` 配置、菜单渲染都在这台机器上正常工作 —— 环境侧没有其它拦路石。
+
+### 16.79 第 4 轮真机实测的成功项（修复被设备证实）
+
+| 项 | 第 3 轮（修复前） | 第 4 轮（修复后） |
+|---|---|---|
+| 音频行（应用自己打印） | `failed to apply hwparams: -22`（致命） | **`snd_pcm_start failed: -32`** ← 与**原厂逐字相同** |
+| ld.so 侧 | `/usr/lib/libasound.so.2: symbol lookup error: undefined symbol: _snd_pcm_rate_linear_open_conf (fatal)` | **无任何错误**（ldd 日志干净收尾于 `calling init: /lib/libnss_files.so.2`） |
+| 诊断版能否起来 | 起不来（`PT_GNU_RELRO` 把 `.data` 圈成只读 ⇒ 写 `g_lvl` 即 SIGSEGV） | **起来了**：`env.txt`/`trace.log`/`maps.start.txt`/`frames.snap.bin` 全部写出，`main → get_executable_path → GetConfig → dispmeninfo → InitDisplay` 的调用链完整 |
+
+⇒ **GAP 16.72（采样率 44100）与 16.71（RELRO）两处修复都在真机上被证实有效**；
+`_snd_pcm_rate_linear_open_conf` 那条 fatal 是"采样率天文数字 → ALSA 去加载 rate 插件"的**后果**（已随修复消失）。

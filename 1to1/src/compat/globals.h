@@ -4648,7 +4648,8 @@ extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003cfaac undefined4 */ extern unsigned int ticks_ptr;
 /* @0x003cfab0 undefined4 */ extern unsigned int AutoRestoreKey;
 /* @0x003cfab4 undefined1 */ extern unsigned char _mxml_key_once;
-/* retyped */ extern gh_u4 * g_sfc_reg;  /* 证据：g_sfc_reg[8]/[4] 为 32 位寄存器 */
+/* retyped */ extern volatile gh_u4 * g_sfc_reg;   /* ★ GAP 16.76：设备寄存器基址 ⇒ volatile，
+ *   否则 `g_sfc_reg[n] & 0xffff` 会被 GCC 窄化成 ldrh（真机 SIGBUS；工厂是 32 位 ldr）。 */  /* 证据：g_sfc_reg[8]/[4] 为 32 位寄存器 */
 /* @0x003cfabc undefined4 */ extern unsigned int FlashSize;
 /* @0x003cfac0 undefined8 */ extern unsigned long long UniqueID;
 /* @0x003cfac8 undefined1[16000] */ extern unsigned char corecfg[16000];

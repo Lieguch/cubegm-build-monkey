@@ -650,3 +650,42 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
 
 判读：t1 起来 ⇒ 进入逐项走查（菜单/游戏/存档/音频）；仍崩但有 `_diag/` 日志 ⇒
 按符号表定位到源码；连 t2 都零日志 ⇒ 崩在 init_array 之前，继续收敛。
+
+## ★ 2026-09-22 第二轮真机定案（续：读全设备数据后）
+
+### A. 设备实测确认（第 4 轮，`_sdcard_drop4` = 探针 v3 + 修复版 t1/t2）
+
+| 项 | 结果 |
+|---|---|
+| **采样率 44100 修复** | ★ **被真机证实**：应用自己打印 `snd_pcm_start failed: -32` —— 与**原厂逐字相同**（此前是致命的 `failed to apply hwparams: -22`）；ld.so 侧 `undefined symbol: _snd_pcm_rate_linear_open_conf` 的 fatal 随之消失 |
+| **RELRO 修复** | ★ **被真机证实**：诊断版这次**真的跑起来了**（`env.txt`/`trace.log`/`maps.start.txt`/`frames.snap.bin` 全写出；maps 里 `.data` 为 `rw-p`）；帧序列 = `main → get_executable_path → GetConfig → dispmeninfo → InitDisplay` |
+| 剩余阻塞 | `t1` 崩在 `sfc_init` 读 SFC 寄存器：`SIGBUS(7) si_addr=<mmap基址>+0x2C PC=sfc_init+0x6c`，`r7=0x10208000 r0=mmap基址` |
+
+### B. 第三/四个根因（本轮已修，机器码级证据）
+
+| # | 根因 | 证据 | 修法 | 新门禁 |
+|---|---|---|---|---|
+| **C** | **MMIO 访存宽度被编译器窄化** | 工厂 `ldr r3,[r2,#44]`（32 位读 SFC+0x2C）+ **先写后读**；我们成了 `ldrh r1,[r0,#44]`（16 位）+ **先读后写**（同一惯用法在 `sfc_request` 里还有一处，9 个调用者） | 设备寄存器指针一律 `volatile`：`sfc_init` 局部 `regs`、`globals.h` 的 `g_sfc_reg`、`sfc_request` 的 `puVar3/puVar5` | `tools/mmio_width_audit.py`（对照工厂访存宽度直方图，三态自证）→ `link_full.sh` **exit 15** |
+| **D** | **诊断仪自身：AArch32 上 `va_list` 被当普通实参转发** | `trace.log` 全参数错位 + `SIGSEGV PC=vfmt+0x1c4 si_addr=0x32323534` | 拆 `vfmt_ap(...va_list)` + 薄包装 `vfmt(...)`；并给 `cgm_putline` 加 `format(printf,2,3)` 属性（此前 `-Wformat` 对它**完全不检查**） | 编译期 format 检查（现 0 警告） |
+
+★ **D 类缺陷在 x86-64 上不复现**（那边 va_list 是数组）⇒ 只能靠设备端证据抓。
+
+### C. 联网核实的硬件事实
+
+`0x10208000` = **RK3036 SFC**（`sfc: spi@10208000`，`compatible = "rockchip,sfc"`，
+**`status = "disabled"`**）；时钟 `hclk_sfc` = `CLKGATE_CON(3) bit14`、`sclk_sfc` = `CLKGATE_CON(10) bit5`。
+厂商写的 `CRU+0xF0`（"CLKGATE8_CON"）**与 SFC 时钟无关** ⇒ 厂商并未自行开 SFC 时钟，
+说明这些寄存器在设备上本来可达 ⇒ 方向应是**"访问方式与工厂一致"**，而不是"补时钟"。
+
+### D. B 线的设备实证（供参考，不用于 A 线决策）
+
+`rkgame.log`（B 线自己写的 10,413 行日志，28 个会话、单会话最长 205 s）反复打印
+`sfc_init: stub (no SFC hardware; …)` / `spi_driver_init: stub` ⇒ ① 当时就判定"无 SFC 硬件"并跳过，
+照样进菜单；② 它也证实 `driver.so`/`setting.xml`/`joystick.zip`/菜单渲染在本机都正常。
+**A 线仍按"与工厂逐条等价"处理**（不开跳过先例）。
+
+### E. 下一步（唯一动作）
+
+第 5 轮真机投放 `_sdcard_drop5/`：`cubegm/rkgame`=探针 v3、`rkgame.t1`=三处修复后的交付版、
+`rkgame.t2`=修复后的诊断版（**这次应写出 `_diag/` 全套日志**）、t4/t5 对照、`rkgame.bak` 阳性对照。
+判读：t1 进菜单 ⇒ 进入逐项走查；仍崩但有 `crash.txt`/`frames.bin` ⇒ 直接按符号表定位。
