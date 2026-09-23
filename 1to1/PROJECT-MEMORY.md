@@ -846,3 +846,24 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
   `(w1&0xfffff000)==0xe28cc000`、`(w2&0xfffff000)==0xe5bcf000`（我曾用 `0xffff0fff` 而 0 命中）。
 - **判定"某库桩是否被采用"不能只看行为**：要直接解析调用点落到哪个符号；
   本次正是靠这一步发现"崩因根本不是 libdrm 桩"。
+
+
+---
+
+## ★ 真实设备路线（2026-09-23）—— 用户"不要假桩"的落地
+
+**原则转变**：不再用 shim「让硬件初始化假成功」，改为**用真实内核驱动提供真实设备**。
+
+| 需求 | 真实方案（非桩） | 实测证据 |
+|---|---|---|
+| DRM | `-global virtio-mmio.force-legacy=false -device virtio-gpu-device` + 内核 `virtio_gpu` | `/dev/dri/card0` major 226、`[drm] Initialized virtio_gpu` |
+| ALSA | 内核 `snd-dummy` | `/dev/snd/controlC0` + `pcmC0D0p` |
+| 模块来源 | `tools/fetch_kmods.sh`（Alpine modloop-lts 同版本同构建） | 2449 .ko |
+| 注入 | 新增 `/etc/init.d/S00cgmmod` | 不动任何原厂文件 |
+
+**突破**：`cannot find/open drm` 21→**0**、`gr_init` 崩 21→**0**、`DRM_IOCTL` 0→**63**、rkgame 进入 **21 轮主循环**。
+**新卡点**：`DRM_IOCTL_MODE_CREATE_DUMB failed ret=-1`（需取 errno）→ `Unknown format XR24` → `double free`。
+**下一跳**：ARM32 探针取 errno；若因 virtio-gpu 能力不足 ⇒ 需 qemu 侧 RK VOP 模型。
+
+**关键判据（已实测）**：`-global virtio-mmio.force-legacy=false` 是**必须的**（qemu 默认 legacy ⇒ 不加 `VIRTIO_F_VERSION_1`
+⇒ 内核 `virtgpu_kms.c:110` 拒绝加载 ⇒ `/dev/dri` 永不出现）。加后 `virtio0.status` 由 `0x83` → **`0x0f`**。

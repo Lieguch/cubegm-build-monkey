@@ -4555,3 +4555,64 @@ libdrm.so.2 / libasound.so.2 桩 → /sdcard/cubegm/lib   ← 原厂 S80icube �
 对 DRM ioctl 返回成功并填合法结构），而不是继续做 `libdrm.so.2` 桩。
 `fake_mem.c` 已有 `open`/`mmap` 拦截设施（用于 `/dev/mem`）与 `PROT_NONE`+信号处理器的 MMIO 观测，
 扩展点是现成的。
+
+
+---
+
+## 16.93 ★★★★★ 真实设备接入成功：rkgame 走过全部已知卡点（第 53 轮）
+
+用户口径：**「不要补丁、不要凭经验、不要假桩、不要假实现」** ⇒ 放弃"用 shim 让初始化假成功"，改为
+**用真实内核驱动提供真实设备**。联网核实 + 实测三步走：
+
+### 一、联网核实的三个硬事实
+
+| 问题 | 结论（附来源） |
+|---|---|
+| qemu 有 RK3036 机器模型吗 | **没有**。qemu 官方 107 个机器无 Rockchip；`rockchip-linux` 只有 kernel/u-boot/rkbin/mppe，无 qemu。qemu 树里的 `rk3036.dtsi` 只是打包的 U-Boot 的一部分。 |
+| 加一个最简 SoC 机器要多少代码 | **52 行**（`hw/arm/xlnx-zynq-mp-generic.c` 全文，qemu-devel 原补丁）⇒ 贵的是外设语义，不是机器骨架 |
+| `/dev/mem` 能访问 RK 外设吗 | **能**。`arch/arm/mm/mmap.c` 的 `devmem_is_allowed()`：`if (!page_is_ram(pfn)) return 1;` ⇒ `STRICT_DEVMEM=y` **只禁止 RAM，非 RAM 外设区允许** ⇒ **不需要重编内核** |
+
+### 二、真实设备路线（全部是内核驱动，非桩）
+
+| 需求 | 方案 | 证据 |
+|---|---|---|
+| DRM（`/dev/dri`） | qemu `-device virtio-gpu-device` + 内核 `virtio_gpu` | `[drm] Initialized virtio_gpu 0.1.0` / `/dev/dri/card0` major 226 |
+| ALSA（`snd_pcm_*`） | 内核 `snd-dummy` | `/dev/snd/controlC0` + `pcmC0D0c` + `pcmC0D0p` |
+| 输入（`/dev/input/js*`） | 内核 `uinput` + `joydev` | 模块加载成功（节点需再触发） |
+| 模块来源 | `tools/fetch_kmods.sh`（Alpine `modloop-lts`，与内核**同版本同构建**） | 2449 个 .ko |
+| 注入方式 | 新增 `/etc/init.d/S00cgmmod`（rcS 按 S?? 顺序自动执行） | **不改任何原厂文件** |
+
+### 三、★ 关键坑（联网核实后实测确认）
+
+```
+qemu hw/virtio/virtio-mmio.c:712   只有 proxy->legacy == false 时才添加 VIRTIO_F_VERSION_1
+qemu hw/virtio/virtio-mmio.c:722   默认 proxy->legacy = true
+linux virtgpu_kms.c:110            if (!virtio_has_feature(dev, VIRTIO_F_VERSION_1)) return -ENODEV;
+```
+⇒ 不加 `-global virtio-mmio.force-legacy=false` 时：`virtio0` 存在（device=0x0010 GPU ✓）但
+`virtio_gpu` 引用计数恒为 0（驱动拒绝加载），`/dev/dri` 永远不出现。
+加上后 `status` 从 `0x83` 变为 **`0x0f`**（ACK+DRIVER+FEATURES_OK+DRIVER_OK），`card0` 出现。
+
+### 四、突破（A/B 对照，同一环境只差设备）
+
+| 指标 | 无真实设备（旧） | **有真实设备（新）** |
+|---|---|---|
+| `cannot find/open a drm device` | **21 次** | **0** |
+| `[shim] 真崩溃` / `gr_init` 崩 | 21 次 | **0** |
+| `DRM_IOCTL`（真实 DRM 调用） | 0 | **63** |
+| `MemFree` rkgame 主循环 | 无 | **21 轮** |
+
+⇒ **`open_drm()` 真实成功、`gr_init` 不再崩、rkgame 进入主循环。**
+
+### 五、新卡点（更深一层，已定位到 API 名）
+
+```
+open drm!
+DRM_IOCTL_MODE_CREATE_DUMB failed ret=-1     ← dumb buffer 创建失败（driver.so 只打印 ret，没打印 errno）
+Unknown format 875713089                     ← = 0x34325258 = "XR24" = DRM_FORMAT_XRGB8888
+double free or corruption (fasttop)          ← 失败路径上的堆损坏
+```
+⇒ driver.so 用 `drmIoctl(DRM_IOCTL_MODE_CREATE_DUMB)` 创帧缓冲，`virtio-gpu` 侧返回失败。
+**下一步**：写一个 ARM32 取 errno 的最小探针（`open("/dev/dri/card0")` + `CREATE_DUMB` + `perror`），
+把 `ret=-1` 变成具体 errno；再对照 `virtio_gpu_mode_dumb_create` 的入参要求定位是「参数不被接受」
+还是「virtio-gpu 能力不足（如不支持该 bpp/format）」。后者意味着需要 qemu 侧的 RK VOP 模型。
