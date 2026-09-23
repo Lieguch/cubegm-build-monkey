@@ -4507,3 +4507,51 @@ libdrm.so.2 / libasound.so.2 桩 → /sdcard/cubegm/lib   ← 原厂 S80icube �
 `gr_init`（driver.so + 0x3ca8）处 `ldr r3,[r3,#0]` 且 `r3=0` —— 与 `build_libdrm_stub.sh` 头注释预言完全一致。
 ⇒ **下一步：确认 `libdrm.so.2` 桩是否真被 `gr_init` 采用**（用 `LD_DEBUG=libs` 或给桩加"加载自证"打印），
    必要时把桩也写进 `/etc/ld.so.preload` 强制预加载。
+
+
+---
+
+## 16.92 ★★★★★ 启动链模拟的**第一个卡点已闭环到指令级**：`gr_init` → `open_drm()` 返回 NULL
+
+### 现场（设备/sandbox 一致，21 次循环每次都同一点）
+
+```
+[shim] ★ 真崩溃 @0x00000000 不在设备页 (base=0x0) pc=...c a8 lr=...e68 sp=...
+        r0=0x00000000 r1=0x00020000 r2=0x0 r3=0x0 r4=... r5=0x002dc468 r6=0x0 r7=0x003b21c8
+[shim]   pc -> /mnt/sdcard/cubegm//driver.so + 0x3ca8   符号=gr_init
+[shim]   栈回溯: video_drivers_init (sp+4/sp+12/sp+20) → rkgame + 0x3a9fc4 (sp+36)
+[shim]   故障指令 0xe5933000 = ldr r3,[r3,#0]  (r3=0)
+```
+
+### 完整根因链（纯离线静态分析得出，不需要真机）
+
+| 步 | 证据 | 结论 |
+|---|---|---|
+| 1 | `.rel.plt` 71 项；直接解码 `.plt` 三元组（PLT0 含字面量 = 20 B ⇒ 首项 **0x1870**，每项 12 B，共 71 项，与 `.rel.plt` 一一对应） | PLT 映射可信 |
+| 2 | `gr_init` 处 `0x3c4c bl 0x1a08` → `rel.plt[34]` = **`puts`** | driver.so 自己打印 |
+| 3 | `0x3c50 bl 0x1b04` → `rel.plt[55]` = **`open_drm`**（`.dynsym` shndx=10 ⇒ **driver.so 自身定义**） | **关键调用** |
+| 4 | `0x3c54 mov r3,r0` → `0x3c64 str r2,[.bss]` | 把 `open_drm()` 的**返回值**存进 `.bss` 槽 |
+| 5 | `0x3c9c ldr r3,[pc,#176]`；`[0x3d54]=0x13524` ⇒ 目标 = `0x3ca8+0x13524` = **0x171cc**，落在 `.bss(0x171b0..0x17288)` | 同一槽（PIC 取址） |
+| 6 | `0x3ca4 ldr r3,[r3]`；`0x3ca8 ldr r3,[r3]` ★，现场 `r3=0` | **`open_drm()` 返回了 NULL** |
+| 7 | `.rel.dyn` 仅 7 个外部符号（`_ITM_*`/`__cxa_finalize`/`__gmon_start__`/`stderr`/`stdout`），**全与 drm 无关** | 崩因**不是**外部库桩缺失 |
+
+### 为什么覆盖 `/usr/lib` 的 libdrm 桩**无效**（已实测排除）
+
+实测把桩覆盖到沙箱 rootfs 的 `/usr/lib/libdrm.so.2.4.0`（含 `libkms.so.1.0.0`、`libasound.so.2.0.0`）后重跑：
+**崩点逐字不变**（仍 `driver.so + 0x3ca8`，`r3=0`）。
+
+⇒ **`open_drm()` 走的是 `open("/dev/dri/card0")` + `ioctl()` 系统调用，绕过 libdrm API** ⇒
+**任何 `libdrm.so.2` 桩都拦不住它**。这解释了 `cannot find/open a drm device: No such file or directory`
+是**「open(2) 级」**失败（沙箱没有 `/dev/dri/card0`，也没有 RK 的 DRM 驱动）。
+
+### 与真机自洽
+
+真机有 `/dev/dri/card0`（Rockchip DRM + `libdrm_rockchip.so`）⇒ `open_drm()` 成功 ⇒ `gr_init` 继续。
+⇒ 沙箱要复现真机，**必须在系统调用层伪造 `/dev/dri/card0`**。
+
+### 下一跳（明确、单点）
+
+**给 `tools/guest_shim/fake_mem.c` 增加 `/dev/dri/card0` 的 `open()`/`ioctl()` 拦截**（返回可用的假 fd +
+对 DRM ioctl 返回成功并填合法结构），而不是继续做 `libdrm.so.2` 桩。
+`fake_mem.c` 已有 `open`/`mmap` 拦截设施（用于 `/dev/mem`）与 `PROT_NONE`+信号处理器的 MMIO 观测，
+扩展点是现成的。

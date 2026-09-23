@@ -822,3 +822,27 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
 - **不可再犯**：`-nodefaults`（无串口输出）／手写 cpio padding（差 2 字节）／`vmlinuz-virt`（404，正确名是 `vmlinuz-lts`）／
   `setsid` 后台 + ssh 轮询（CNB 环境闲置 3–5 分钟即回收）
 - **下一跳**：`gr_init` @ driver.so+0x3ca8 的 `ldr r3,[r3]`，r3=0 ⇒ 查 libdrm 桩是否被采用
+
+
+---
+
+## ★ 启动链第一个卡点闭环（2026-09-23）—— `gr_init` → `open_drm()` 返回 NULL
+
+**根因（离线静态分析，指令级）**：
+`driver.so` 的 `gr_init` 调 **`open_drm()`（driver.so 自身实现，非 libdrm）**，
+`open_drm()` 直接 `open("/dev/dri/card0")` + `ioctl()` ⇒ 沙箱无该设备 ⇒ 返回 NULL
+⇒ 存入 `.bss(0x171cc)` ⇒ `0x3ca8 ldr r3,[r3]`（`0xe5933000`）解引用 NULL ⇒ 崩。
+
+**已实测排除的错误方向**：把 `libdrm.so.2` / `libkms.so.1` / `libasound.so.2` 桩
+覆盖到沙箱 `/usr/lib` 后，**崩点逐字不变** ⇒ `open_drm()` 不走 libdrm API ⇒ **桩拦不住**。
+
+**下一跳**：给 `tools/guest_shim/fake_mem.c` 加 `/dev/dri/card0` 的 `open()`/`ioctl()` 拦截
+（系统调用层伪造），而不是继续做 libdrm 桩。
+
+**方法学收获（可复用）**：
+- ARM32 `.plt` 的项长需**实测**：本项目 `driver.so` 是 **PLT0=20 B（含字面量）+ 每项 12 B**，
+  共 71 项与 `.rel.plt` 一一对应 ⇒ 才能把 `bl <plt_va>` 精确落到外部符号。
+- PLT 三元组的匹配掩码必须**掩掉 bit0-11(imm12)**：`(w0&0xfffff000)==0xe28fc000`、
+  `(w1&0xfffff000)==0xe28cc000`、`(w2&0xfffff000)==0xe5bcf000`（我曾用 `0xffff0fff` 而 0 命中）。
+- **判定"某库桩是否被采用"不能只看行为**：要直接解析调用点落到哪个符号；
+  本次正是靠这一步发现"崩因根本不是 libdrm 桩"。
