@@ -4389,3 +4389,121 @@ snd_pcm_start failed: -32  ← -EPIPE
 | `tools/stage_sd_probe4.py` | 投放包 v4：7 候选 + `DEPLOY-MANIFEST`（含 sha256 对账）+ 无歧义 `cfg.ini` |
 | `src/diag/cgm_diag.c` | 修 `cfg` 行解析 / 横幅换行 / 中文改 ASCII / 新增 `VARCHK` 自证 |
 | `src/diag/cgm_wrap.c` | `BOOT` 行打印全部 7 个参数（判错位） |
+
+### 16.97 ★★★★ 平台分工定案：cnb.cool 托管 + cnb.cool 云开发 + GitHub 构建
+
+| 角色 | 平台 | 体制 |
+|---|---|---|
+| **托管** | `cnb.cool/lieguch/cubeGM`（`main = 2dc38af`） | Git + CNB 流水线（`.cnb.yml`：`setup-sysroot` → `build` → `test-emu`） |
+| **云开发** | CNB 云原生开发环境（`sn=cnb-uq8-1k36cqrdk`） | 可 SSH 的容器：8 核 / 16 G / root / apt |
+| **构建** | GitHub Actions `Lieguch/cubegm-build-monkey` | `1to1-verify` + `1to1-qemu-behav` 等门禁（**不动**） |
+| 归档 | `git.acwing.com/lieguch/cubegm-rkgame` | 只托管，无 Runner（不再作为主路径） |
+
+**为什么回归**：本机 Windows **没有 qemu**（第十四轮实测）；CNB 云开发环境里
+`tools/cnb_env.sh` 一条命令就能把 **qemu-arm-static + armhf sysroot + gcc + gdb-multiarch +
+/sdcard 真机工作目录** 全装好，**不烧 GitHub Actions 分钟**（原话：把 25 分钟/轮的反馈压到秒级）。
+云开发是**出站 SSH**，不在本机开端口，符合用户既有偏好。
+
+**实测自证（云端一轮）**：
+```
+qemu-arm version 10.0.13 (Debian)
+工厂 : ELF 32-bit LSB executable, ARM, EABI5, dynamically linked
+重建 : ELF 32-bit LSB executable, ARM, EABI5, dynamically linked
+golden MANIFEST : 核验 14 项，异常 0 项
+功能里程碑矩阵：factory / rebuild / control  → 两侧差集：空（完全同步）
+```
+
+★ **口径警告**：云端重建产物 = **17,346,896 B（`arm-linux-gnueabihf-gcc` 链路）**，
+本地 = **5,663,928 B（zig cc）**。**两边产物不可混用**；跨环境比字节前先认工具链指纹。
+
+### 16.98 ★★★ 镜像同步工具泛化 + 三条 git 坑（都已固化进脚本注释）
+
+`tools/sync_mirror.py --remote cnb|acgit`：复用 `push_1to1.py --list-only` **同一份清单**，
+dry-run 会区分"纯新增"与"非纯新增"（后者才是需要盯的）——本轮 dry-run 显示
+**1288 项全为新增、非纯新增 0 项** ⇒ 对 `cubeGM` 是**纯增量、零破坏**。
+
+| # | 坑 | 症状 | 正解 |
+|---|---|---|---|
+| 1 | `credential.helper` 自定义命令缺 `!` | `git: 'credential-cnb' is not a git command` | `credential.https://cnb.cool.helper = '!cnb git-credential'` |
+| 2 | `git push HEAD:main` / `git fetch <refspec>` 单参数 | `ssh: Could not resolve hostname head`（被当成仓库名 ⇒ 拼成 SSH 主机） | 显式给远端：`git push origin HEAD:main`；`git fetch origin +refs/heads/main:refs/remotes/origin/main` |
+| 3 | 脚本内 `reset --soft origin/main` | dry-run 后未推送的提交变**悬挂对象**、HEAD 回到远端点 | dry-run 只能看；正式同步会重新 commit（本次 `e82f633` 即如此） |
+
+
+---
+
+## 16.91 ★★★★★ 启动链模拟：**在 qemu 里跑通原厂完整启动链**（第 52 轮，决定性突破）
+
+### 结论（先给可核对的硬事实）
+
+用户口径：「不要再靠我插卡穷举试错，把启动链模拟出来，跑通为止。」**已做到**：
+
+```
+[0.304526] Trying to unpack rootfs image as initramfs...
+[0.834224] Run /sbin/init as init process
+Starting logging: OK
+Starting network: OK
+Starting icube:
+open driver.so sucess              ← icube dlopen 闭源 driver.so 成功
+video_driver_setting 0 1 1
+open drm! → cannot find/open a drm device
+rkgame v1.42                       ← ★ 真机同款 rkgame 真的在跑（21 次循环）
+directory:/mnt/sdcard/cubegm/  appname:rkgame
+[shim] ★ 真崩溃 @0x00000000 pc -> driver.so + 0x3ca8  符号=gr_init
+[shim]   栈回溯: video_drivers_init
+[shim]   故障指令 0xe5933000 = ldr r3,[r3,#0]  (r3=0)
+```
+
+**反馈周期：从"一轮设备测试 ≈ 插卡+开机+回收"压到"一次全链路 ≈ 1 秒"**（内核 0.83s 走到 init）。
+
+### 关键判据：U-Boot 层**跳过**而不是绕过
+
+| 层 | 真机 | qemu 模拟 | 保真度 |
+|---|---|---|---|
+| U-Boot | 搬 kernel/rootfs/DTB 到内存 + 按 cmdline 交接 | `-kernel/-initrd/-append/-dtb` | **职责等价替换**（U-Boot 直接操作 RK3036 寄存器，在 qemu 上必挂；而它的唯一职责就是搬运） |
+| kernel 以下 | 全部真 | **全部真**（真 kernel、真 init、真 rcS、真 S80icube、真 icube、真 driver.so、真 rkgame） | 1:1 |
+| SoC 外设 | 真硬件 | shim（fake_mem / libdrm 桩 / libasound 桩） | 由 shim 决定 |
+
+### 材料来源：**全部可从 org.bin 确定性重建**（不需要额外索取）
+
+```
+org.bin GPT： IDBlock / uboot(0.5M) / boot(4.25M) / rootfs(2.62M) / data
+  boot   分区 = Android boot image（ANDROID! v0, page=2048）
+              ⇒ kernel zImage 4,308,440 B（[0x24]=0x016f2818 ✓）+ second.bin(RSCE resource)
+  rootfs 分区 = squashfs（hsqs）2,752,512 B = 归档里的 rootfs.sqsh
+  rk3036_原厂设备树.dtb = 24,078 B
+  原厂SD卡/{icube 12,128 / rkgame 3,921,108 / driver.so 39,844}
+```
+⇒ 已写成 `tools/extract_bootchain_assets.py`（一条命令重建 assets，附 sha256 对账）。
+
+### 固化产物
+
+| 文件 | 作用 |
+|---|---|
+| `tools/bootchain.sh` | **一条命令跑通启动链**（含下面全部坑的处置），带 9 条里程碑判定 |
+| `tools/extract_bootchain_assets.py` | 从 F: 归档确定性重建 `bootchain/assets/` |
+| `bootchain/assets/`（11 MB） | kernel.zImage / rootfs.sqsh / rk3036.dtb / sdcard/{icube,rkgame,driver.so} |
+
+### 踩过的 5 个坑（全部已固化进 bootchain.sh 注释）
+
+| # | 症状 | 根因 | 处置 |
+|---|---|---|---|
+| 1 | 内核完全无输出，像"没启动" | 用了 `-nodefaults` ⇒ ARM virt 的 pl011 串口不被实例化 | **不要用 `-nodefaults`** |
+| 2 | `failed to find romfile "efi-virtio.rom"` | qemu 的 virtio-net option ROM 缺失（Ubuntu 的 `qemu-system-data` **不含**它） | **`-net none`** |
+| 3 | `rootfs image is not initramfs (broken padding)` ⇒ fallback 旧式 initrd ⇒ `RAMDISK: incomplete write (5397 != 18559)` ⇒ `VFS: Unable to mount root` | **我自己写的 cpio 打包器 padding 错**：newc header 是 **110 字节（110%4=2）**，name 的 padding 必须**相对整个流**对齐，我按"相对字段"对齐 ⇒ 差 2 字节 | **必须用系统 `cpio`**（`find . -print0 \| cpio --null -o -H newc`） |
+| 4 | 原厂 zImage 在 qemu 上无任何输出 | 原厂内核是 RK3036 专用（无 `dummy-virt`/`pl011`/`arch_timer` 串） | 用通用 ARMv7 内核：Alpine armv7 netboot **`vmlinuz-lts`**（★不是 `vmlinuz-virt`，后者 404） |
+| 5 | CNB 云开发环境"跑着跑着就 Permission denied" | **环境会被自动回收（闲置约 3–5 分钟）** | 脚本设计成**一次 ssh 跑完**；不要 `setsid` 后台 + 反复 ssh 轮询 |
+
+### 注入方式（★红线遵守：不动任何原厂文件）
+
+```
+fake_mem(guest_shim.so) → /etc/ld.so.preload     ← rcS 各脚本是子进程，export 传不过去；
+                                                   /etc/ld.so.preload 是 glibc 系统级，对 icube/rkgame 全部生效
+libdrm.so.2 / libasound.so.2 桩 → /sdcard/cubegm/lib   ← 原厂 S80icube 已把该目录排在
+                                                          LD_LIBRARY_PATH 最前 ⇒ 零改动生效
+```
+
+### 当前卡点（下一跳，已定位到指令级）
+
+`gr_init`（driver.so + 0x3ca8）处 `ldr r3,[r3,#0]` 且 `r3=0` —— 与 `build_libdrm_stub.sh` 头注释预言完全一致。
+⇒ **下一步：确认 `libdrm.so.2` 桩是否真被 `gr_init` 采用**（用 `LD_DEBUG=libs` 或给桩加"加载自证"打印），
+   必要时把桩也写进 `/etc/ld.so.preload` 强制预加载。

@@ -786,3 +786,39 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
   **内核 exec + `ld.so` 动态链接 + 我们自己的代码在真机上都 OK**；
   A 线 t1 的 stdout 与原厂**逐行相同**（直到 `snd_pcm_start failed: -32` 之后才分岔）。
   原厂 stdout 里的 `Unknown format 875713089` = `0x34325258` = `DRM_FORMAT_XRGB8888`。
+
+### 第 51 轮（2026-09-23）平台分工定案（**只增不删**）
+
+- ★ **三件套（用户口径，定案）**：**cnb.cool 托管 + cnb.cool 云开发 + GitHub 构建**。
+  项目仓库 = **`cnb.cool/lieguch/cubeGM`**；AC Git 降级为归档（无 Runner，非主路径）。
+- **CNB 云开发 = 本机缺 qemu 的解法**：`cnb workspace start-workspace --repo lieguch/cubeGM --branch main`
+  启动后**可直接 SSH**（出站，不开本机端口）：`ssh cnb-uq8-1k36cqrdk-001.…@cnb.space`；
+  容器 8 核 / 16 G / root / apt。进入项目根 `/workspace/rkgame-1to1/1to1` 跑
+  **`RUN_DIFF=1 sh tools/cnb_env.sh`** ⇒ qemu-arm-static 10.0.13 + sysroot + /sdcard + 差分全通。
+  ★ 云端用 **GCC**（重建产物 17 MB），本地用 **zig**（5.6 MB）⇒ **产物不可跨环境混用**。
+- **同步工具**：`tools/sync_mirror.py --remote cnb|acgit`（复用 `push_1to1.py --list-only` 同一清单，
+  dry-run 区分"纯新增 / 非纯新增"）。首次落地：`cubeGM` main `c666bc5..2dc38af`，1288 文件**纯新增**，
+  B 线原有内容（`.cnb.yml` / `rkgame-rebuild/` / `rkgame-debug-28800`）**全部保留**；
+  **安全核对 `.pat` / `push_1to1.py` 均不在库**。
+- **三条 git 坑（务必别再踩）**：
+  ① `credential.helper` 自定义命令**必须 `!` 前缀**（否则 git 调 `git credential-<name>`）；
+  ② `git push HEAD:main` / `git fetch <refspec>` **单参数会被当成仓库名** ⇒ `ssh: Could not resolve
+  hostname head`；必须显式给远端名；
+  ③ 同步脚本里的 `reset --soft origin/main` 会**吞掉未推送的提交**（dry-run 之后要重新 commit）。
+- **CNB 凭据**：`cnb login` 的 token 在 `~/.cnb/token`（`access_token` 前缀 `cnb_at_`），
+  git 侧走助手 `credential.https://cnb.cool.helper = '!cnb git-credential'`。
+
+
+---
+
+## ★ 启动链模拟已跑通（2026-09-23，第 52 轮）—— 平台与方法的定案
+
+**一句话**：**qemu 里能跑通原厂完整启动链**（kernel → busybox init → rcS → S80icube → icube → driver.so → **rkgame v1.42**），
+全链路 ≈ **1 秒**，**可无限重跑、不占真机、不碰 SD 卡**。用户口径「不要再靠插卡穷举」由此成立。
+
+- **入口**：`sh tools/bootchain.sh [秒数]`（在 CNB 云开发环境的仓库 1to1/ 目录下）
+- **材料**：`bootchain/assets/`（11 MB，已入库）或 `tools/extract_bootchain_assets.py` 从 F: 归档重建
+- **U-Boot 层**：正式定案为**跳过**（`-kernel/-initrd/-append` 是其职责的等价替换，且它在 qemu 上必挂）
+- **不可再犯**：`-nodefaults`（无串口输出）／手写 cpio padding（差 2 字节）／`vmlinuz-virt`（404，正确名是 `vmlinuz-lts`）／
+  `setsid` 后台 + ssh 轮询（CNB 环境闲置 3–5 分钟即回收）
+- **下一跳**：`gr_init` @ driver.so+0x3ca8 的 `ldr r3,[r3]`，r3=0 ⇒ 查 libdrm 桩是否被采用

@@ -783,6 +783,36 @@ static void regs_store(mcontext_t *m, const unsigned long *R)
     m->arm_lr = R[14];  m->arm_pc = R[15];
 }
 
+/* ============================================================
+ * ★ 运行期 MMIO 访存 trace（门禁用；PLAN-DECISIVE.md §2.1 支柱 A）
+ *
+ * 为什么能"看到宽度"：设备页被设成 PROT_NONE ⇒ 每次寄存器访问都陷入
+ * sfc_fault ⇒ 处理器从 m->arm_pc 取故障指令并解码出 size / 方向 / 偏移。
+ * 本函数只负责把**已经解出来的量**落成一行文本。
+ *
+ * 用途：与工厂在同环境各跑一次，逐项对拍 ⇒
+ *   · 宽度窄化（我们的 w=2 vs 工厂 w=4）—— 本轮真机 SIGBUS 的根因类型
+ *   · 顺序颠倒（先读后写 vs 先写后读）
+ *   · 偏移越界（访问了工厂从不访问的偏移）
+ * 全部**一次列全**，不必"崩一个看一个"。
+ *
+ * 门控：CGM_MMIO_TRACE=1（默认关，避免污染既有场景的事件流）
+ * ============================================================ */
+static int g_mmio_tr_on = -1;
+static unsigned long g_mmio_seq;
+
+static void mmio_trace(unsigned int off, unsigned int size, int is_read, unsigned long pc)
+{
+    if (g_mmio_tr_on < 0) {
+        const char *e = getenv("CGM_MMIO_TRACE");
+        g_mmio_tr_on = (e && e[0]) ? 1 : 0;
+    }
+    if (!g_mmio_tr_on) return;
+    g_mmio_seq++;
+    note("MMIO seq=%lu off=0x%x w=%u dir=%s pc=0x%08lx\n",
+         g_mmio_seq, off, size, is_read ? "R" : "W", pc);
+}
+
 static void sfc_fault(int sig, siginfo_t *si, void *vctx)
 {
     ucontext_t *uc = (ucontext_t *)vctx;
@@ -900,6 +930,11 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
     /* --- 块传送 LDM/STM（bits 27..25 == 100）：设备侧用不到，读到就给 0 --- */
     if ((ins & 0x0E000000u) == 0x08000000u) {
         unsigned int rl = ins & 0xffffu, i;
+        {   /* ★ trace：块传送（宽度 = 4 × 寄存器个数） */
+            unsigned int nc = 0;
+            for (i = 0; i < 16; i++) if ((rl >> i) & 1u) nc++;
+            mmio_trace(off, nc * 4u, (ins >> 20) & 1u, (unsigned long)m->arm_pc);
+        }
         if (ins & (1u << 20)) {
             for (i = 0; i < 16; i++) {
                 if ((rl >> i) & 1u) {
@@ -919,6 +954,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
         P = (ins >> 24) & 1u; U = (ins >> 23) & 1u; W = (ins >> 21) & 1u;
         size = ((ins >> 5) & 1u) ? 2u : 1u;          /* H=1 → 半字；H=0（S=1）→ 有符号字节 */
         wb = (P == 0) || W;
+        mmio_trace(off, size, L, (unsigned long)m->arm_pc);      /* ★ trace：半字/字节组 */
         if (L) {
             v = sfc_dev_read(off, size);
             if ((ins >> 6) & 1u) {                   /* S=1：LDRSB / LDRSH → 符号扩展 */
@@ -958,6 +994,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
     W = (ins >> 21) & 1u; L = (ins >> 20) & 1u;
     Rn = (ins >> 16) & 0xFu; Rd = (ins >> 12) & 0xFu;
     wb = (P == 0) || W;
+    mmio_trace(off, size, L, (unsigned long)m->arm_pc);          /* ★ trace：单寄存器组 */
 
     if (L) {
         v = sfc_dev_read(off, size);
@@ -1496,7 +1533,7 @@ int munmap(void *addr, size_t len)
     /* 设备页被解除映射后必须"撤防"，否则处理器会把普通缺址当成设备访问 */
     if (g_sfc_base && (unsigned long)addr >= (unsigned long)g_sfc_base
         && (unsigned long)addr < (unsigned long)g_sfc_base + g_sfc_pagelen) {
-        note("[shim] SFC 设备撤防（munmap %p）：faults=%lu cmds=%lu unhandled=%lu\n",
+        note("[shim] SFC 设备撤防（munmap %p）：faults=%lu cmds=%lu unhandled=%lu mmio_trace_seq=%lu\n",
              addr, g_faults, g_cmds, g_unhandled);
         sfc_disarm();
     }
