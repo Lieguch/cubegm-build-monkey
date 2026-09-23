@@ -4163,3 +4163,88 @@ clang 21.1.0 `-Os` 实测（`ldrh` = 窄化，`ldr` = 正确）：
 - **同类未证实例**（登记、不臆断为缺陷）：`sunxi_gpio_init.c` 里 CRU/GRF/GPIO0-2 五个 mmap 基址
   **全部没有 `volatile`**（`g_sfc_reg` 已修）。它今天**没有**窄访问（类级检测器判 PASS），
   所以**不是已证缺陷**，是"编译器自由度未被移除"的卫生问题 —— 按纪律"只修已证实的，对未证实的建检测器"。
+
+### 16.86 ★★★★★ `volatile` 限定符**扩散**：把限定符加在全局上 ⇒ 2 处严格口径类型错（我引入的 CI 红）
+
+**现象**：`8d6fbe1e`（加 MMIO 宽度门禁那次）起 `1to1-verify` 一直是 failure，失败 step 是
+「重建编译门禁（双轨）」，报"假绿 2"：
+```
+FUN_002c39f0_sfc_request.c:155:23   param_3 = puVar5 + 1;      ← volatile gh_uint* → gh_uint*
+FUN_002c43cc_sfc_uninit.c:14:10     munmap(g_sfc_reg, 0x400);  ← volatile gh_u4*  → void*
+```
+根因是我上一轮的改法不对：**把 `volatile` 加在全局 `g_sfc_reg` 上**，逼着所有使用点改类型；
+并且在 `sfc_request` 里把一个**根本不是设备指针**的量也标了 volatile。
+
+**正确模型（三条，已固化）**：
+1. 设备寄存器**基址全局**保持 `volatile`（语义正确，别退回去）；
+2. 函数内的**设备块指针**必须是 `volatile`（`sfc_init.c` 的 `volatile gh_u4 *regs` 是范例）；
+3. 函数内的 **RAM 数据游标**不是设备访问 ⇒ **不许加 volatile**；
+4. 传给 `munmap` 这类**不做设备访问**的 API，在该调用点显式 `(void *)` 转型并注释。
+
+**★ Ghidra 复用变量是隐藏陷阱**：`puVar5` 被复用于**两种角色** ——
+设备状态寄存器（`g_sfc_reg+8`，行 69/70/82/112）与调用者 RAM 缓冲游标（行 133-139/156-161）。
+只加限定符会撞类型，只加 cast 会丢掉设备语义 ⇒ 必须**拆成两个变量**
+（新增 `volatile gh_uint *puDev` 承担设备角色；`puVar5` 回归 RAM 游标）。
+
+修复后本地严格口径：**宽松 213/213、严格 213/213、假绿 0**；CI `1to1-verify` 转 success。
+
+### 16.87 ★★★★★ 同一坑**第二次**：门禁依赖"CI 里不存在的文件"（数据只有 `.gz`）
+
+`mmio_width_audit.py` 只找 `golden/factory.funcs.json`：
+- 本地**同时**有 `.json`（22,212,390 B，不入库）与 `.json.gz`（3,671,329 B，入库）
+- 仓库里**只有 `.gz`** ⇒ CI 报 `读不到 golden/factory.funcs.json` ⇒ `1to1-qemu-behav` exit 15
+
+★ `prop_equiv.py` 的注释里**早已写过这条教训**（"首跑 CI 就因为只找 `.json` 而直接失败"）——
+  我仍复发。⇒ 治理不再是"再修一个文件"，而是**建共享加载器**：
+  `tools/factory_data.py` → `load_factory_funcs()`（`.json` → `.json.gz` 回退；都缺则**硬失败**）。
+  `mmio_width_audit.py` / `fidelity_audit.py` 已改走它。
+**CI 近似态自证**（新纪律）：把本地 `.json` 临时藏起来（只剩 `.gz`）再跑 ——
+  `mmio_width` / `mmio_access` / `lint_const` / `mmio_semantics` / `fidelity_audit` **全部 exit 0**。
+
+### 16.88 ★★★★★ 判决实验：**"换 GCC 会更像工厂"被证伪**（一次 CI run 消掉一个方向）
+
+`tools/gcc_fidelity.sh` + `tools/fidelity_compare.py`（GitHub Actions，2 分钟，`gcc-vs-clang-fidelity`）：
+
+| 编译器 | ±15% 命中 | 中位体积比 | 直方图 L1 中位 |
+|---|---|---|---|
+| **clang 21.1.0**（zig 0.16.0，现用） | **163/210 = 77.6%** | **0.965** | **0.443** |
+| GCC 13.3.0（Ubuntu 22.04 的 `gcc-arm-linux-gnueabihf`） | 4/210 = **1.9%** | 0.553 | 2.000 |
+
+两侧同一份源码、同一 CFLAGS、只编译不链接（绕开 GCC 对象 + zig 链接的 glibc 冲突），
+对拍用**同一个反汇编器 + 同一份工厂数据**；比较器自证：工厂自比 中位比 = 1.000、L1 = 0.000。
+
+⇒ **结论**：把 CC 换成 GCC 13.3 **不是**提升保真度的方向（远离而非靠近）。
+  **口径声明**：工厂是 GCC **6.2.0**（比 Ubuntu 的 13.3 早 7 年），本实验**不能**证明
+  "GCC 家族都不行"，只能证明"Ubuntu GCC 13.3 比 clang 21 差得多"——
+  要继续追工具链就得拿到**精确的 6.2.0**（成本高），当前**优先度被下调**。
+  ★ 这条实验的价值就是：**用 2 分钟消掉一个"看起来很合理"的方向**。
+
+### 16.89 ★★★★ AC Git（git.acwing.com）CI 可用性实测：**实例没有 Runner**
+
+| 项 | 结果 |
+|---|---|
+| 平台 | **GitLab 14.2.3-ee**（AcWing 自建「AC Git」） |
+| 密钥 | 有效 —— 身份 = 项目机器人 `project_45404_bot`（name=`hermes`），即 45404 号仓库的 Project Access Token |
+| 仓库 | `lieguch/cubegm-rkgame`，默认分支 `main`（受保护：push/merge 需 **Maintainer**，我的角色 **正好是 40=Maintainer**） |
+| 项目设置 | `shared_runners_enabled=true`、`jobs_enabled=true`、`builds_access_level=enabled`、`ci_config_path` 空 |
+| `GET /api/v4/runners` | `[]`（0 个） |
+| `GET /projects/45404/runners` | `[]`（0 个） |
+| **实测**（决定性） | untagged 作业 + **10 个不同 tag** 的作业（docker/shell/shared/acwing/gitlab-org/linux/build/amd64/ubuntu/arm64），**25 分钟无人领走**，`runner` 恒为 `None` |
+| `/help` | **API token 读不到（HTTP 401）** —— 该实例的 help 页只认浏览器会话 ⇒ 无法程序化学习 |
+
+⇒ **结论**：`.gitlab-ci.yml` 可以就位，但**不会被执行**；AC Git 目前只能作为**代码托管/镜像**，
+  "提交构建"必须先**注册一个 Runner**（项目级即可）。
+  ★ 用"多 tag 并行作业"一次试出 tag 是很省的探测法（一个作业只带一个候选 tag，谁被领走即命中）。
+
+### 16.90 ★★★ 迁移落地（1282 文件）与镜像同步工具
+
+- 清单**复用** `push_1to1.py --list-only`（新加的能力），绝不另写挑选规则 ⇒ 两侧不会漂移。
+- 实测结果：`1to1/`=1277 + `.github/`=3 + `README.md` + `.gitlab-ci.yml` = **1282 文件 / 42 目录**；
+  `1to1/golden/factory.rkgame.bin` = **100755**；**安全核对：`.pat`、`push_1to1.py` 均 404（不在库）**；
+  `GAP.md` 278,724 B、`factory.rkgame.bin` 3,921,108 B、`factory.funcs.json.gz` 3,671,329 B 与本地逐字节同尺寸。
+- 两个 Windows 特有坑（已修）：
+  ① **`git fetch <url> <ref>` 必须带凭据**（只给 push 带过 ⇒ fetch 静默失败 ⇒ `origin/main` 陈旧 ⇒
+     push 被 `non-fast-forward` 拒）；② **Windows 没有真实 exec 位**（`core.filemode=false`）⇒
+     `chmod` 不生效，必须 `git update-index --chmod=+x` 才能在树里写成 100755。
+- 工具：`tools/sync_acgit.py`（`ACGIT_TOKEN=... python tools/sync_acgit.py [--dry-run]`）——
+  一行命令完成"取清单 → 落地 → 差异 → 提交 → 推送"，dry-run 实测精准识别出"差异仅 1 个新文件"。

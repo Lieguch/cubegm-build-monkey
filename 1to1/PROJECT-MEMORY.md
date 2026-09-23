@@ -729,3 +729,38 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
 **剩余缺口（如实登记）**：① "访问**顺序**"目前只有法条级断言，未做全函数顺序对拍；
 ② 沙箱仍不能复现 SIGBUS（方向：QEMU memory region `.valid.accepts` 拒绝窄访问 ⇒ machine check）；
 ③ 换 GCC 的对照实验未做。
+
+---
+
+## ★ 工具链与协作平台（2026-09-23 实测结论）
+
+### 工厂编译器指纹（`.comment` + `.note.gnu.gold-version`）
+- 工厂 = **GCC 6.2.0**（+ 启动文件 Linaro 4.9.4）+ **GNU gold 1.12**
+- 我们 = **zig 0.16.0 → clang 21.1.0** + **lld**
+- ⇒ 差异是**跨编译器家族**，不是版本号差异。
+
+### ★ 判决实验：**换 GCC 不是方向**（已证伪，别再花时间）
+| 编译器 | ±15% 命中 | 中位体积比 | 直方图 L1 中位 |
+|---|---|---|---|
+| clang 21.1.0（现用） | **77.6%** | **0.965** | **0.443** |
+| GCC 13.3（Ubuntu） | 1.9% | 0.553 | 2.000 |
+复现：GitHub Actions workflow `gcc-vs-clang-fidelity`（`tools/gcc_fidelity.sh` + `tools/fidelity_compare.py`）。
+⇒ **保真度杠杆在源码层语义，不在编译器**（与 ROUTE-DECISION §五①② 一致，现在有实证）。
+口径：工厂是 GCC 6.2.0，实验用的是 13.3 ⇒ 只证明"13.3 更差"，不证明"GCC 家族都不行"。
+
+### AC Git 镜像（git.acwing.com/lieguch/cubegm-rkgame，GitLab 14.2.3-ee）
+- **CI 不可用**：实例**无任何 Runner**（`/runners`=[]；untagged + 10 种 tag 的作业 25 分钟无人领走）。
+  要跑构建必须**先注册 Runner**（项目级即可）。`/help` 对 API token 返回 401，程序读不到。
+- 密钥身份 = 项目机器人 `project_45404_bot`（仓库 45404 的 Project Access Token），角色 **Maintainer(40)** ⇒ 可直推受保护的 `main`。
+- **镜像已落地 1282 文件**（含 `golden/` 金标准、`1to1/` 全量、`.gitlab-ci.yml`）；安全核对：`.pat`/`push_1to1.py` 不在库。
+- 同步命令：`ACGIT_TOKEN=... python tools/sync_acgit.py [--dry-run]`（清单复用 `push_1to1.py --list-only`）。
+
+### ★ 两条 Windows 特有的 git 坑（都踩过）
+1. `git fetch <url> <ref>` **必须带凭据** —— 只给 push 带凭据 ⇒ fetch 静默失败 ⇒ `origin/main` 陈旧 ⇒ push 被 `non-fast-forward` 拒。
+2. Windows **没有真实 exec 位**（`core.filemode=false`）⇒ `chmod` 不生效；要写进树必须是 `git update-index --chmod=+x`。
+
+### CI 红色事件的复盘（8d6fbe1e → b293276c）
+- `1to1-verify` 红：我把 `volatile` 加在**全局**上 ⇒ 严格口径 2 处"丢弃限定符"类型错。
+  修法见 GAP 16.86（设备块指针 volatile / RAM 游标不加 / 非访问点显式转型 / **拆分被 Ghidra 复用的变量**）。
+- `1to1-qemu-behav` 红：`mmio_width_audit.py` 只找 `golden/factory.funcs.json`，而**仓库里只有 `.gz`**。
+  治理：建 `tools/factory_data.py` 作**唯一**加载入口；并立纪律"**CI 近似态自证**（藏掉本地独有文件后再跑一遍）"。
