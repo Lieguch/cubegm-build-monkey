@@ -157,6 +157,7 @@ static void cgm_dump_env(void);
 static void cgm_dump_maps(const char *dst);
 static void cgm_install_signals(void);
 static void cgm_write_banner(const char *how);
+static void cgm_varchk(void);
 static void cgm_watch_start(void);
 static void cgm_tick(void);
 
@@ -176,6 +177,7 @@ void cgm_diag_boot(const char *how)
     g_framefd = sys_open(CGM_DIAG_ROOT "/frames.bin",      0x0001 | 0x0040 | 0x0200, 0644);
 
     cgm_write_banner(how);
+    cgm_varchk();                        /* ★ 仪器自证：变参可信度（判据写在函数注释里） */
     if (g_lvl >= CGM_LVL_CORE) {
         cgm_dump_env();
         cgm_dump_maps(CGM_DIAG_ROOT "/maps.start.txt");
@@ -218,42 +220,92 @@ void cgm_putline(const char *tag, const char *fmt, ...)
     g_logbytes += (unsigned)n;
 }
 
-/* ---------------- 级别 / 配置 ---------------- */
+/* ---------------- 级别 / 配置 ----------------
+ * ★★★ 2026-09-23（设备实测 trace.log）：**cfg.ini 解析必须跳过注释行**。
+ *   实测 trace.log 里 `level=2`，而 cfg.ini 里明确写着 `level = 3` ——
+ *   因为上一版解析器在**全文**里找第一个 "level"，而**注释行里就有一个**
+ *   （`# 本文件读不到就用默认 level=2`）⇒ 永远读到 2，`level = 3` 形同不存在。
+ *   这是"键扫描不认行结构"的经典坑：**注释里出现同一个键名 ⇒ 值被注释劫持**。
+ *   连带：缓冲区 256 → 1024（cfg.ini 会被注释撑长，256 B 可能读不全真值行）。
+ *   判据（本轮设备自证）：trace.log 横幅必须出现 `level=3`。 */
 static void cgm_lvl_load(void)
 {
     int fd = sys_open(CGM_DIAG_ROOT "/cfg.ini", 0x0000 /*O_RDONLY*/, 0);
     if (fd < 0) return;
-    char b[256]; long n = sc3(SYS_read, fd, (long)b, (long)sizeof(b) - 1);
+    char b[1024];
+    long n = sc3(SYS_read, fd, (long)b, (long)sizeof(b) - 1);
     sys_close(fd);
     if (n <= 0) return;
     b[n] = 0;
-    for (int i = 0; i + 6 < n; i++) {
-        if ((b[i] == 'l' || b[i] == 'L') && b[i + 1] == 'e' && b[i + 2] == 'v' && b[i + 3] == 'e'
-            && b[i + 4] == 'l') {
-            int j = i + 5; while (j < n && (b[j] == ' ' || b[j] == '=' || b[j] == 9 || b[j] == ':')) j++;
-            int v = 0; while (j < n && b[j] >= '0' && b[j] <= '9') { v = v * 10 + (b[j] - '0'); j++; }
-            if (v >= 0 && v <= 3) g_lvl = v;
-            break;
+    {
+        long i = 0;
+        while (i < n) {
+            long ls = i, le, k;
+            while (i < n && b[i] != '\n') i++;
+            le = i;
+            if (i < n) i++;
+            while (ls < le && (b[ls] == ' ' || b[ls] == '\t')) ls++;
+            if (ls >= le || b[ls] == '#') continue;       /* ★ 跳过空行 / 注释行 */
+            for (k = ls; k + 5 <= le; k++) {
+                if ((b[k] == 'l' || b[k] == 'L') && b[k + 1] == 'e' && b[k + 2] == 'v'
+                    && b[k + 3] == 'e' && b[k + 4] == 'l') {
+                    long j = k + 5;
+                    int v = 0, got = 0;
+                    while (j < le && (b[j] == ' ' || b[j] == '=' || b[j] == 9 || b[j] == ':')) j++;
+                    while (j < le && b[j] >= '0' && b[j] <= '9') {
+                        v = v * 10 + (b[j] - '0'); j++; got = 1;
+                    }
+                    if (got && v >= 0 && v <= 3) g_lvl = v;
+                    return;
+                }
+            }
         }
     }
 }
 int cgm_lvl(void) { return g_lvl; }
 int cgm_want(int need) { return g_lvl >= need; }
 
-/* ---------------- 启动横幅 ---------------- */
+/* ---------------- 启动横幅 ----------------
+ * ★★★ 2026-09-23（设备实测 trace.log）：上一版三条横幅**被挤成同一行**，
+ *   根因是 `vfmt_ap` 的既定行为 —— 它**丢弃格式串里的 \n**（为的是"每条日志恒单行"，
+ *   cgm_putline 自己会补一个 \n）。但横幅是**直接调 vfmt**的，于是三行变一行。
+ *   修法：横幅自己负责行分隔（每段之后显式 wstr("\n")），不改 vfmt_ap 的既定语义。
+ *   同时中文字面量改 ASCII —— 实测编译后中文字节落盘会变成乱码
+ *   （UTF-8 被按本地代码页解释后再编码），横幅是判据的一部分，**不能有歧义**。 */
 static void cgm_write_banner(const char *how)
 {
     char buf[420]; int n = 0;
     n += vfmt(buf + n, (int)sizeof(buf) - n,
-              "### CGM-DIAG BEGIN  pid=%ld  jiffies=%u  level=%d  how=%s\n",
+              "### CGM-DIAG BEGIN  pid=%ld  jiffies=%u  level=%d  how=%s",
               (long)sc3(SYS_getpid, 0, 0, 0), g_ms, g_lvl, how);
+    buf[n++] = '\n';
     n += vfmt(buf + n, (int)sizeof(buf) - n,
-              "### build=%s %s  ring=%u frames  snap=%ums\n",
+              "### build=%s %s  ring=%u frames  snap=%ums",
               __DATE__, __TIME__, (unsigned)CGM_RING_FRAMES, (unsigned)CGM_SNAP_MS);
+    buf[n++] = '\n';
     n += vfmt(buf + n, (int)sizeof(buf) - n,
-              "### 阳性对照（本轮 trace.log 必出现）: BOOT / MAIN / EXIT 或 CRASH\n");
+              "### positive-control (must appear in trace.log): BOOT / MAIN / EXIT or CRASH");
+    buf[n++] = '\n';
     wraw(g_logfd, buf, (unsigned)n);
     g_logbytes += (unsigned)n;
+}
+
+/* ---------------- 仪器自证（变参可信度） ----------------
+ * ★★★ 2026-09-23：设备实测 `BOOT enter argc=-1098883456 argv0="(null)"`，
+ *   且同一份 trace.log 里**所有** %d/%s/%p 都像栈地址 ⇒ 两种可能：
+ *     ① 参数本身错位（ABI 不符） ② cgm_putline 的变参读取错位。
+ *   而**横幅**（走 vfmt 直传实参）打印的 pid/level/how **完全正确**
+ *   ⇒ 至少 vfmt 没问题，嫌疑集中在"经 ... 转发"这条路上。
+ *   判据（本轮设备自证）：下面这行**期望值与实测值并列**在一条日志里：
+ *     expect int=12345 hex=abcdef str=HELLO ptr=12345678
+ *     · 两者一致 ⇒ 变参可信，trace.log 里其它字段的异常就是**真值异常**（我们的代码真的传了垃圾）
+ *     · 不一致   ⇒ 变参不可信，本文件所有的 %d/%s/%p **一律作废**，先修仪器再谈结论
+ *   ★ 纪律：**先证明仪器可信，再读仪器给的数**。 */
+static void cgm_varchk(void)
+{
+    cgm_putline("VARCHK",
+                "expect int=12345 hex=abcdef str=HELLO ptr=12345678 -> got int=%d hex=%x str=%s ptr=%p",
+                12345, 0xabcdef, "HELLO", (void *)0x12345678);
 }
 
 /* ---------------- 环境快照 ---------------- */

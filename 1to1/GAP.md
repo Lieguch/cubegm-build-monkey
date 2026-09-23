@@ -4248,3 +4248,144 @@ FUN_002c43cc_sfc_uninit.c:14:10     munmap(g_sfc_reg, 0x400);  ← volatile gh_u
      `chmod` 不生效，必须 `git update-index --chmod=+x` 才能在树里写成 100755。
 - 工具：`tools/sync_acgit.py`（`ACGIT_TOKEN=... python tools/sync_acgit.py [--dry-run]`）——
   一行命令完成"取清单 → 落地 → 差异 → 提交 → 推送"，dry-run 实测精准识别出"差异仅 1 个新文件"。
+
+## 第 50 轮（2026-09-23）：设备实测闭环 —— SIGBUS 根因机器码级确认 + 探针/垫片自身缺陷治理
+
+> 输入：设备 `_diag/`（PROBE3.txt 87 KB / p3_*_out.txt / trace.log / env.txt / maps.start.txt /
+> ldd_* / T4-OK.txt / cfg.ini）。**结论先行：上一轮测的是「修复前」的包**，
+> 所以 SIGBUS 是"已知缺陷态的现场确认"，不是修复失败的证据。
+
+### 16.91 ★★★★★ SIGBUS 根因闭环：`sfc_init+0x6c` 就是那条 16 位窄化读（机器码级）
+
+设备证据（`PROBE3.txt`，候选 3 = `rkgame.t1` = A 线 rebuilt）：
+
+| 项 | 值 |
+|---|---|
+| 信号 | **SIGBUS(7)** |
+| `si_addr` | `0xb6f5802c` |
+| `r0` | `0xb6f58000`（**= 页对齐的 mmap 基址**） |
+| `PC` | `0x00501b84` |
+| `LR` | `0xb6f634d0`（高位库/映射区） |
+| `SP` | `0xbef6e838` |
+
+离线三步对齐（**判据：设备文件与本地文件必须逐字节同尺寸**）：
+
+1. 设备 `rkgame.t1` = **5,663,896 B** ⇒ 本地 `build/_prewidth.rebuilt.elf` = 5,663,896 B（同尺寸）
+2. `tools/elfsym.py build/_prewidth.rebuilt.elf 0x501b84` ⇒ `0x00501b84 = sfc_init + 0x6c`
+3. dump 该处机器码，与修复版逐字对齐：
+
+| 偏移 | 修复前（`_prewidth`） | 修复后（`rkgame.rebuilt.elf`） |
+|---|---|---|
+| `sfc_init+0x68` | `e3e02003` = `mvn r2,#3` | `e30f2ffc` = `movw r2,#0xfffc` |
+| **`sfc_init+0x6c`** | **`e1d012bc` = `ldrh r1,[r0,#0x2c]`** ★16 位读 | `e5804000` = `str r4,[r0]`（32 位写，**先写**） |
+| `sfc_init+0x70` | `e5804000` = `str r4,[r0]` | **`e590102c` = `ldr r1,[r0,#0x2c]`** ★32 位读 |
+
+⇒ **设备报的崩溃 PC 正是那条 `ldrh`**；`r0` = mmap 基址、`si_addr` = mmap 基址 + `0x2C`
+三者完全吻合 ⇒ **在 mmap 出来的 `/dev/mem`（SFC 寄存器，物理 `0x10208000`）上做 16 位访问
+触发总线外部中止 ⇒ SIGBUS**。原厂在同一位置做 32 位读，故不崩。
+修复版还把顺序恢复成工厂的「**先写 `[base]=0`，再读 `[base+0x2C]`**」。
+
+★ 这条把 GAP 16.76 从"源码层断言"升级为**机器码级实证**；也解释了此前"改了却还崩"的困惑。
+
+### 16.92 ★★★★ 交付物与设备字节必须对账 —— 上一轮整轮设备成本白花的根因
+
+| 设备文件 | 尺寸 | 本地对应 | 构建时间 | 备注 |
+|---|---|---|---|---|
+| `cubegm/rkgame.t1` | 5,663,896 | `build/_prewidth.rebuilt.elf` | 09-22 23:17 | **修复前** |
+| `cubegm/rkgame.t2` | 5,709,244 | `build/_prewidth.diag` | 09-22 23:17 | **修复前** |
+| — | 5,663,928 | `build/rkgame.rebuilt.elf` | 09-23 | 修复后（+32 B） |
+| `cubegm/rkgame.t4` | 2,628 | `build/rkgame.t4` | 09-22 13:40 | ✓ |
+| `cubegm/rkgame.t5` | 1,031,860 | `build/rkgame.brebuild` | 09-10 | ✓ |
+| `cubegm/rkgame.bak` | 3,921,108 | `golden/factory.rkgame.bin` | — | ✓ 阳性对照 |
+
+⇒ **纪律（新增）**：**投放前必须做「设备文件尺寸/sha256 ↔ 本地产物 sha256」逐项对账**，
+并把清单写进投放包的 `DEPLOY-MANIFEST.txt`（`tools/stage_sd_probe4.py` 已机械产出）。
+以后每个候选都带 sha256，回收后先对账再读结论。
+
+### 16.93 ★★★ 符号级 ELF 差分 —— "改了哪个函数"的正确刻度
+
+方法（`tools/elfdiff.py`）：对齐两版符号表 → 统计地址位移分布 → 找"长度变化"的函数。
+
+```
+符号数：old=2727  new=2727
+位移分布：  +0 = 1349 个   +28 (0x1c) = 301 个   +32 (0x20) = 1077 个
+地址不变的最大函数： 0x00501324  sfc_request
+=== 长度变化的函数 ===
+ * sfc_request   old size=676   new size=704   delta=+28
+```
+
+⇒ **唯一被改动的是 `sfc_request`（+28 B）**；`sfc_init` **逐字节相同**，只是被平移 `+0x1C`。
+
+★★ **教训**：只 diff 目标函数（`sfc_init`）会得到"一模一样"，从而误判"修复没生效"。
+**必须做整体符号级差分**——位移是"下游整体平移"，改动在位移边界那条函数的尾部。
+
+复现性自证：`link_full.sh` 重建 `rkgame.rebuilt.elf` 得到**完全相同的 sha256**
+（`b5a25a13758b1cbbc19a`）⇒ 构建确定，字节级结论可复现。
+反证态自证：同文件自比 ⇒ 输出「无长度变化」。
+
+### 16.94 ★★ 探针 v3 的两个自身缺陷（仪器缺陷优先于结论）
+
+| # | 缺陷 | 后果 | v4 修法 |
+|---|---|---|---|
+| ① | `dump_maps(pid, 3800)` 上限太小 | t1 崩溃时映射含 `/dev/mem` + `libnss` + **4×6 MB `/dev/dri`** + 7.5 MB 匿名段 ⇒ 3800 B 只印到 `libc`，**`ld.so`/`stack`/`vdso` 全被截断**，而 `si_addr` 恰落在被截断处 ⇒ **无法判定归属** | exec 后 64 KB；**崩溃时无上限**（`maxbytes<=0`） |
+| ② | 只有 PC/LR/SP + 寄存器，**没有栈** | 知道崩在哪，不知道**谁调进来的** | 新增 `PTRACE_PEEKDATA`：读 **PC 处 48 B 指令 + SP 起 512 B 栈**，并单列「栈上落在可执行区的候选返回地址」⇒ 离线可回溯 |
+
+★ 探针 v4 的新判据纪律：**探针只搬现场，判定一律离线做**（探针不解析 maps，避免在仪器里塞判断逻辑）。
+
+### 16.95 ★★★ 诊断垫片的三处缺陷（`trace.log` 的读数此前不可信）
+
+| # | 缺陷 | 设备证据 | 修法 |
+|---|---|---|---|
+| ① | `cfg.ini` 解析**不认行结构**：全文找第一个 `level` | 横幅恒 `level=2`，而 `cfg.ini` 写的是 `level = 3` —— **注释行里就有一个 `level`**（`# 本文件读不到就用默认 level=2`）⇒ 真值被注释劫持 | 逐行解析、**跳过空行与注释行**；缓冲 256 → 1024 |
+| ② | 横幅三行被挤成一行 | `### CGM-DIAG BEGIN ...` 与 `BOOT enter ...` 落在同一行 | `vfmt_ap` 的既定行为是**丢弃格式串里的 `\n`**（保证日志恒单行，`cgm_putline` 自己补 `\n`），但横幅**直接调 `vfmt`` ⇒ 由横幅自己补 `\n` |
+| ③ | 中文字面量编译后落盘变乱码 | `阳性对照` → `闃虫€у鐓э`（两次编码往返） | 横幅与判据串改 **ASCII**（仪器输出不能有编码歧义） |
+
+**③ 之外的第四条（最要紧）：变参可信度未证**
+设备实测 `BOOT enter argc=-1098883456 argv0="(null)"`，**6 次运行完全一致**（非竞争），
+且同一份 `trace.log` 里**所有** `%d/%s/%p` 都像栈地址。
+**但**走 `vfmt`（直传实参）的横幅打印的 `pid/level/how` **完全正确**
+⇒ 至少 `vfmt` 没问题，嫌疑集中在"经 `...` 转发"这条路上。
+
+处置（**先证明仪器可信，再读仪器给的数**）：
+- 加**仪器自证行** `VARCHK`：期望值与实测值**并列在同一条日志**里
+  `expect int=12345 hex=abcdef str=HELLO ptr=12345678 -> got ...`
+- `BOOT` 行打印**全部 7 个参数**，每个值都有**必然归属**（`main`→主程序映像、
+  `argc`→小整数、`argv`/`stack_end`→`[stack]`、`rtld_fini`→`ld.so`）⇒ 看归属即可判错位。
+
+### 16.96 ★★★ T4 与 B 线：我们自己的二进制在真机上跑起来了
+
+| 候选 | 结果 | 含义 |
+|---|---|---|
+| 原厂 `rkgame.bak` | **存活至超时**（已 KILL） | ✅ 阳性对照通过 ⇒ 探针可信 |
+| `rkgame.t4`（最小动态 ELF，2,628 B） | **正常退出 `exit_code=0`** | ✅ 内核 exec + `ld.so` 动态链接链路完全可用（`T4-OK.txt` 即此） |
+| `rkgame.t5`（B 线 v15，1,031,860 B） | **存活至超时** | ✅ **我们自己的代码在真机上真的执行了** |
+
+`p3_4_out.txt`（B 线）的 stdout：
+```
+=== rkgame rebuild starting ===
+=== rkgame rebuild starting ===
+failed to apply hwparams: -22
+```
+`p3_0_out.txt`（原厂）与 `p3_2_out.txt`（A 线 t1）**逐行相同**：
+```
+rkgame v1.42 / directory:/mnt/sdcard/cubegm/ / appname:rkgame.t1
+MemTotal: 249820 kB ...
+open driver.so sucess / video_driver_setting 0 1 1 / open drm!
+Unknown format 875713089   ← 0x34325258 = DRM_FORMAT_XRGB8888('XR24')
+rotate degree: 0 - none, ... / current rotate degree is : 0
+snd_pcm_start failed: -32  ← -EPIPE
+```
+⇒ **A 线 t1 走到了与原厂完全相同的阶段**，差异只在 `snd_pcm_start` 失败之后的路径
+（原厂继续存活，我们在 `sfc_init` 那条窄化读上 SIGBUS）。
+
+### 附：本轮新增/修改的文件
+
+| 文件 | 作用 |
+|---|---|
+| `tools/elfsym.py` | ELF32 符号化器：地址 → 节/段/文件偏移/最近符号（含自证） |
+| `tools/elfdiff.py` | 符号级 ELF 差分：定位"真被改的函数"（含反证态自证） |
+| `src/probe/probe4.c` | 探针 v4：修 maps 截断 + 新增栈/指令 dump + 候选 A/B 成对 |
+| `tools/build_probe4.sh` | 探针 v4 构建（含几何门禁 + 系统调用号自证，新增 ptrace=26） |
+| `tools/stage_sd_probe4.py` | 投放包 v4：7 候选 + `DEPLOY-MANIFEST`（含 sha256 对账）+ 无歧义 `cfg.ini` |
+| `src/diag/cgm_diag.c` | 修 `cfg` 行解析 / 横幅换行 / 中文改 ASCII / 新增 `VARCHK` 自证 |
+| `src/diag/cgm_wrap.c` | `BOOT` 行打印全部 7 个参数（判错位） |

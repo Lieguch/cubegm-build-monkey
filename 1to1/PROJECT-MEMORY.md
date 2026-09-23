@@ -764,3 +764,25 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
   修法见 GAP 16.86（设备块指针 volatile / RAM 游标不加 / 非访问点显式转型 / **拆分被 Ghidra 复用的变量**）。
 - `1to1-qemu-behav` 红：`mmio_width_audit.py` 只找 `golden/factory.funcs.json`，而**仓库里只有 `.gz`**。
   治理：建 `tools/factory_data.py` 作**唯一**加载入口；并立纪律"**CI 近似态自证**（藏掉本地独有文件后再跑一遍）"。
+
+### 第 50 轮（2026-09-23）关键结论（**只增不删**）
+
+- **SIGBUS 根因闭环（机器码级）**：`sfc_init+0x6c` = `e1d012bc` = `ldrh r1,[r0,#0x2c]`
+  —— 在 mmap 的 `/dev/mem`（SFC 寄存器，物理 `0x10208000`）上做 **16 位访问** ⇒ 总线外部中止 ⇒ SIGBUS。
+  修复版同点为 `str r4,[r0]`（先写）+ `ldr r1,[r0,#0x2c]`（32 位读）。**MMIO 必须 `volatile` + 32 位宽度 + 顺序对齐工厂。**
+- **唯一改动函数是 `sfc_request`**（676→704 B）；`sfc_init` 逐字节相同、仅平移 +0x1C。
+  ⇒ 查"改了没生效"**必须用整体符号级差分**（`tools/elfdiff.py`），不能只 diff 目标函数。
+- **构建确定性**：`link_full.sh` 重建 `rkgame.rebuilt.elf` → 同一 sha256 `b5a25a13758b1cbbc19a`。
+  ★ 但 **`link_full.sh` 不能用于诊断版输出**（会把 diag 覆盖成非 diag）；diag 必须用 `build_diag.sh`。
+- **投放纪律（新增硬规则）**：投放前必须做「设备文件 ↔ 本地产物」**尺寸/sha256 逐项对账**，
+  并写进 `DEPLOY-MANIFEST.txt`（`tools/stage_sd_probe4.py` 已机械产出）。
+  上一轮整轮设备成本白花，就因为投放的是修复前的产物。
+- **仪器纪律（强化）**：① 探针 maps 上限必须容得下崩溃时的全部映射（`/dev/mem`+`libnss`+4×6MB `/dev/dri`+7.5MB 匿名 ≈ >7 KB）；
+  ② 崩溃现场必须带**栈**，否则拿不到调用链；③ **先证明仪器可信，再读仪器给的数**
+  （`VARCHK` 自证行：期望值与实测值并列）。
+- **垫片坑**：`cfg.ini` 解析**必须跳过注释行**（注释里的同名键会劫持真值）；
+  `vfmt_ap` **会丢弃格式串里的 `\n`**（横幅之类的多行输出要自己补）；中文字面量**编译后在设备上会乱码** ⇒ 仪器输出一律 ASCII。
+- **真机事实**：`t4`(2,628 B) exit=0、`t5`(B 线 1,031,860 B) 存活至超时 ⇒
+  **内核 exec + `ld.so` 动态链接 + 我们自己的代码在真机上都 OK**；
+  A 线 t1 的 stdout 与原厂**逐行相同**（直到 `snd_pcm_start failed: -32` 之后才分岔）。
+  原厂 stdout 里的 `Unknown format 875713089` = `0x34325258` = `DRM_FORMAT_XRGB8888`。

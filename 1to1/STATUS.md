@@ -2854,3 +2854,28 @@ CGM_IO_TRACE=1 CGM_COV_TAG=F CGM_INPUT_HEX=<64 字符> sh tools/ci_qemu_behav.sh
 | 闸门候选 | `DAT_003af394`（配置键 `GameList_count`；缺字段默认 11，sscanf 失败则保持 0）|
 | 已排除输入 | `fileinfo.txt` 内容（I≡J）、`NNN/` 游戏目录（K≡J）|
 | 唯一有效输入 | `root.dat` 的**存在**（I：59→76）|
+
+## 第五十轮（2026-09-23）：设备实测闭环 + 仪器自身治理
+
+| 项 | 结论 |
+|---|---|
+| 本轮设备测的是哪一版 | **修复前**（设备 `rkgame.t1` = `build/_prewidth.rebuilt.elf`，5,663,896 B） |
+| SIGBUS 根因 | **机器码级确认**：`sfc_init+0x6c` = `e1d012bc` = `ldrh r1,[r0,#0x2c]`（16 位读 /dev/mem 的 SFC 寄存器） |
+| 修复版同点 | `str r4,[r0]`（先写）+ `ldr r1,[r0,#0x2c]`（**32 位读**）⇒ 顺序也恢复为工厂的"先写后读" |
+| 唯一改动的函数 | `sfc_request`（676 → 704 B，+28）；`sfc_init` 逐字节相同、仅平移 `+0x1C`（`tools/elfdiff.py`） |
+| 构建确定性 | `link_full.sh` 重建得**同一 sha256**（`b5a25a13758b1cbbc19a`） |
+| 阳性对照 | 原厂 **存活至超时** ✅；`t4` **exit=0** ✅；`t5`(B 线) **存活至超时** ✅（我们的代码真在跑） |
+| 探针自身缺陷 | 2 处（maps 上限截断 / 无栈）⇒ 已修，探针 v4 |
+| 垫片自身缺陷 | 3 处（cfg 注释劫持 / 横幅换行 / 中文乱码）+ 1 处待证（变参可信度）⇒ 已修 + 加 `VARCHK` 自证 |
+| 全门禁 | **全绿**（`check_obj_fresh` / `lint_const_args` / `link_full`×2 / mmio×3 / elf_load×2 / relro / abi / dyn / 探针几何） |
+| 新产物 | `rkgame.probe4` 10,928 B · `rkgame.rebuilt.elf` 5,663,928 B · `rkgame.diag` 5,709,564 B |
+| 投放包 | `_sdcard_drop6/`（7 候选 + cfg + MANIFEST，含 sha256 对账表） |
+| 下一入口 | **设备重测 t1(修复前) vs t3(修复后)** —— 判据：t3 的 PC 是否还落在 `0x501bXX` |
+
+### 判据（先写死，避免事后凑结论）
+
+- 阳性对照（原厂）必须仍然"存活至超时"；`t4` 必须 `exit=0`；`t5` 必须"存活至超时"。
+- **`t3` 的 PC**：不再落在 `0x501bXX` ⇒ 宽度修复生效，进入下一故障点；
+  仍是 `sfc_init+0x6c` ⇒ 修复未生效（先核对设备文件 sha256）。
+- `t6`/`t2` 的 `trace.log` 找 `VARCHK` 行：与期望一致 ⇒ `trace.log` 的 `%d/%s/%p` 可信；
+  不一致 ⇒ 只用 `p4_*_out.txt`。

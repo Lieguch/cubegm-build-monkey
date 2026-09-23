@@ -62,7 +62,20 @@ int __wrap___libc_start_main(main_fn_t main_fn, int argc, char **ubp_av,
                              void (*rtld_fini)(void), void *stack_end)
 {
     cgm_diag_boot("libc_start_main");
-    LOG("BOOT", "enter argc=%d argv0=\"%s\"", argc, (argc > 0 && ubp_av) ? ubp_av[0] : "?");
+    /* ★★★ 2026-09-23（设备实测）：上一版只打 `argc` + `argv0`，得到
+     *   `argc=-1098883456 argv0="(null)"` —— 且 6 次运行**完全一致**（非竞争），
+     *   而同一份 trace.log 里所有 %d/%s/%p 都像栈地址 ⇒ 必须一次分清是
+     *   「参数本身错位」还是「cgm_putline 的变参错位」。
+     *   判据（每个值的**必然归属**，看归属即可判错位）：
+     *     main       → 必须落在主程序映像（本设备 ~0x004xxxxx）
+     *     argc       → 必须是 1 或 2（小整数）
+     *     ubp_av     → 必须落在 [stack]（~0xBExxxxxx）
+     *     rtld_fini  → 必须落在 ld-2.29.so（~0xB6xxxxxx）
+     *     stack_end  → 必须落在 [stack]（~0xBExxxxxx）
+     *   ⇒ 若这些值各自**归属正确**，说明参数没错位，那 `argc` 异常就是真的。 */
+    LOG("BOOT", "enter argc=%d argv0=\"%s\" argv=%p main=%p init=%p fini=%p rtld_fini=%p stack_end=%p",
+        argc, (argc > 0 && ubp_av) ? ubp_av[0] : "?", (void *)ubp_av, (void *)main_fn,
+        (void *)init, (void *)fini, (void *)rtld_fini, stack_end);
     TICK();
     int r = __real___libc_start_main(main_fn, argc, ubp_av, init, fini, rtld_fini, stack_end);
     LOG("MAIN", "returned rc=%d", r);
