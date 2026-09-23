@@ -867,3 +867,35 @@ B 线（`rkgame-rebuild/`）**已在真机跑过**、产物 1,031,860 B、qemu e
 
 **关键判据（已实测）**：`-global virtio-mmio.force-legacy=false` 是**必须的**（qemu 默认 legacy ⇒ 不加 `VIRTIO_F_VERSION_1`
 ⇒ 内核 `virtgpu_kms.c:110` 拒绝加载 ⇒ `/dev/dri` 永不出现）。加后 `virtio0.status` 由 `0x83` → **`0x0f`**。
+
+
+---
+
+## ★ qemu-sim 套件已交付（2026-09-23）—— 跨项目复用
+
+**用户要求**：把整套 qemu 模拟仿真系统（流程/所需文件/环境参数）复制到
+`cnb.cool/lieguch/CubeGM_RetroArch`，写好使用文档，供另一 Agent 推进对应项目。
+
+**已交付**（CNB `lieguch/CubeGM_RetroArch` main，提交 `20785ce` + `365732e`）：
+
+```
+qemu-sim/
+├── README.md / ENVIRONMENT.md / ASSETS.md / PITFALLS.md / HANDOFF.md   5 份文档
+├── .gitattributes         ★ 固化 LF（本仓库 core.autocrlf=true，否则 .sh 检出变 CRLF 不可执行）
+├── run.sh                 一键：装依赖 → 取内核/模块 → 解 rootfs → 组装 → 启动 → 9 条里程碑判定
+├── scripts/               fetch_kernel.sh / fetch_kmods.sh / mk_initramfs.sh / extract_assets.py
+├── templates/S00cgmmod    新增式加载脚本（不动任何原厂文件）
+└── assets/                11 MB 材料 + sha256（kernel.zImage / rootfs.sqsh / rk3036.dtb / sdcard/）
+```
+
+**文档中主动指出的冲突**（证据驱动，非断言）：本套件从**原厂 org.bin** 实测设备 glibc = **2.29**
+（`lib/libc-2.29.so` + 版本串 `GNU C Library (Buildroot) stable release version 2.29.`），
+而该项目既有文档写「glibc ≤ 2.17」⇒ 已在 README §0 列出证据链，请接手方复核其 `verify_target_abi.sh`。
+（用户已确认：**同一设备、不同系统方向，设备信息以原厂 1:1 这条线的资料为准**。）
+
+**交付质量动作（可复用清单）**：
+1. 每个 `.sh`/`.py` 过 `sh -n` / `ast.parse`
+2. 材料带 sha256，可逐字节对账
+3. **检查 `core.autocrlf`**：本仓库为 `true` ⇒ 必须在本子树加 `.gitattributes` 固化 LF
+4. 文档每条参数都写"为什么"，并单列"**明确的限制**"（哪些行为不具参考性）
+5. 单列"**未完成项**"与判据（不要让下一个 Agent 重新发现）

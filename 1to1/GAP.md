@@ -4616,3 +4616,55 @@ double free or corruption (fasttop)          ← 失败路径上的堆损坏
 **下一步**：写一个 ARM32 取 errno 的最小探针（`open("/dev/dri/card0")` + `CREATE_DUMB` + `perror`），
 把 `ret=-1` 变成具体 errno；再对照 `virtio_gpu_mode_dumb_create` 的入参要求定位是「参数不被接受」
 还是「virtio-gpu 能力不足（如不支持该 bpp/format）」。后者意味着需要 qemu 侧的 RK VOP 模型。
+
+
+---
+
+## 16.94 ★★★★★ DRM 探针的决定性诊断：`CREATE_DUMB` 失败是**格式能力差**，不是设备坏
+
+### 探针（ARM32，本地 zig 编译，导入 initramfs 由新增的 S00cgmmod 调用）
+
+```
+=== CGM DRM PROBE ===
+/dev/dri: 存在
+open(/dev/dri/card0, O_RDWR) = 3 errno=0(Success)
+DRM_IOCTL_VERSION r=-1 errno=14(Bad address)      ← 探针自身结构体定义有误（不影响主结论）
+  CAP DUMB_BUFFER            r=0 value=1
+  CAP PRIME                  r=0 value=1
+  CAP ADDFB2_MODIFIERS       r=0 value=64
+  CAP ATOMIC                 r=0 value=1
+  CAP ASYNC_PAGE_FLIP        r=0 value=1
+--- CREATE_DUMB 参数扫描 ---
+  CREATE_DUMB 640x480  bpp=32   r=0  handle=1 pitch=2560 size=1228800
+      MAP_DUMB r=0 offset=272531456 ; mmap OK      ★ 全链路成功
+  CREATE_DUMB 640x480  bpp=24   r=-1 errno=22(Invalid argument)
+  CREATE_DUMB 640x480  bpp=16   r=-1 errno=22(Invalid argument)
+  CREATE_DUMB 1280x720 bpp=32   r=0  handle=1 pitch=5120 size=3686400
+  CREATE_DUMB 1280x720 bpp=16   r=-1 errno=22
+  CREATE_DUMB 1920x1080 bpp=32  r=0  pitch=7680 size=8294400
+  CREATE_DUMB 320x240  bpp=32   r=0  pitch=1280 size=307200
+=== PROBE END ===
+```
+
+### 结论
+
+| 项 | 实测 |
+|---|---|
+| virtio-gpu 的 dumb buffer | **仅接受 bpp=32**；bpp=24/16 一律 `EINVAL` |
+| driver.so 报 `CREATE_DUMB failed ret=-1` | ⇒ 它传的 bpp **不是 32**（极可能是**真机 VOP 的 RGB565 = 16bpp**） |
+| 旁证 | driver.so 随后打印 `Unknown format 875713089` = `0x34325258` = `"XR24"`(XRGB8888) —— 它在**自己的格式表**里找不到匹配，该表来自真机 VOP |
+| 旁证 | CubeGM 侧文档记录屏幕为 **1280×720 RGB565** |
+
+⇒ **这是"虚拟设备 ≠ 真机 SoC"的能力差，不是复刻缺陷。**
+⇒ **同时它给出了"要不要写 RK VOP 模型"的硬判据**：**只要目标程序用非 32bpp 格式，就必须有 VOP 模型**。
+
+### 方法学（可复用）
+
+跨层失败时**不要只看上层打印的 `ret=-1`** —— 目标程序常常不打印 errno。
+必须**自己到 API 层取回真实 errno**（本例：几十行 ARM32 探针 + 参数扫描），
+否则会把"能力不匹配"误判成"设备不可用"，方向就错了。
+
+### 交付同步
+
+`qemu-sim`（CNB `lieguch/CubeGM_RetroArch`）已把这条写入 `README.md §5.1` 与 `PITFALLS.md #10`
+—— 因为**接手方跑 RetroArch 同样会撞上 16bpp 问题**。
