@@ -15,7 +15,15 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
   gh_uint uVar2;
   volatile gh_uint *puVar3;   /* ★ SFC 寄存器块指针：必须 volatile */
   gh_uint uVar4;
-  volatile gh_uint *puVar5;   /* ★ FIFO/寄存器游标：必须 volatile */
+  /* ★ 更正（2026-09-23）：puVar5 是**调用者 RAM 缓冲区**的游标（`puVar3[0x42] = *puVar5`
+   *   才是设备写），**不是设备访问** ⇒ 不加 volatile。device 块指针 puVar3 才需要 volatile。
+   *   上一版把它标 volatile 会在严格口径下产生"丢弃限定符"类型错（CI 假绿门禁抓到）。 */
+  gh_uint *puVar5;
+  /* ★ 拆分（2026-09-23）：Ghidra 把**同一个变量**复用于两种角色 ——
+   *   设备状态寄存器（g_sfc_reg+8，偏移 0x20 的 FSR）与调用者 RAM 缓冲区游标。
+   *   前者必须是 volatile（设备寄存器），后者**不是设备访问**（不应 volatile，
+   *   否则在严格口径下赋值回 `param_3`(gh_uint*) 会报"丢弃限定符"类型错）。 */
+  volatile gh_uint *puDev;    /* ★ 设备寄存器指针（= g_sfc_reg + 8 / puVar3 + 8） */
   gh_uint *puVar6;
   int iVar7;
   gh_uint *puVar8;
@@ -63,8 +71,8 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
     uVar4 = param_4 >> 2;
     uVar1 = 0;
     if (uVar4 != 0) {
-      puVar5 = puVar3 + 8;
-      uVar1 = *puVar5;
+      puDev = puVar3 + 8;
+      uVar1 = *puDev;
       iVar7 = 0;
       do {
         uVar1 = (uVar1 & 0x1fffff) >> 0x10;
@@ -76,7 +84,7 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
             uVar1 = 0xfffffffc;
             break;
           }
-          puVar5 = g_sfc_reg + 8;
+          puDev = g_sfc_reg + 8;
         }
         else {
           if (uVar4 <= uVar1) {
@@ -106,7 +114,7 @@ gh_uint sfc_request(gh_uint *param_1,gh_uint param_2,gh_uint *param_3,gh_uint pa
           if (uVar4 == 0) break;
           iVar9 = 0;
         }
-        uVar1 = *puVar5;
+        uVar1 = *puDev;
         iVar7 = iVar9;
       } while( true );
     }
