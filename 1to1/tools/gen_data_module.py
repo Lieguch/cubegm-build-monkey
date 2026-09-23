@@ -276,7 +276,7 @@ def main():
         A('\t.set %s, __f%s_base + 0x%x' % (alt, sec.replace('.', '_'), off))
         total += 1
     A('')
-    open(os.path.join(datadir, 'factory_image.S'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+    open(os.path.join(datadir, 'factory_image.S'), 'w', encoding='utf-8', newline='\n').write('\n'.join(lines) + '\n')
 
     # ---- 链接脚本 ----
     L = []
@@ -319,13 +319,47 @@ def main():
     B('  .rel.plt : { *(.rel.plt) }')
     B('  .plt : { *(.plt) *(.plt.*) }')
     B('')
-    B('  /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）---- */')
+    # ★★★ 2026-09-23：本段必须与 2026-09-22 的 GAP 16.69 / 16.71 **手工修复版逐字节一致**。
+    #   此前生成器仍输出「.data 0x01000000 / .bss 0x02000000 / .text 0x05000000」，
+    #   而修复版改成了「不再钉死 + 把 RELRO 族拆出来排在 .data 之前 + 页对齐」。
+    #   两者并存 ⇒ **每跑一次 regen 就静默回退 16.69/16.71**（实测复现）。
+    #   门禁：tools/check_regen_contract.py（断言产物里没有 0x01000000 这类钉死地址）。
+    B('  /* ---- ③ 运行时区（我们自己 + libc；地址自由，只要不与①②重叠）----')
+    B('   * ★★★ 2026-09-22（GAP 16.69）：**这里曾把 `.data`/`.bss`/`.text` 钉在')
+    B('   *   0x01000000 / 0x02000000 / 0x05000000**，结果 lld 把「WA 属性的 `.fini_array`（在')
+    B('   *   `.rodata` 末尾 ~0x4e00e0）」和「钉在 0x01000000 的 `.data`」归入**同一个 RW 段**，')
+    B('   *   该段的 p_filesz 于是跨过两者之间的 **11.1 MB VMA 空洞** ⇒ 产出一份畸形 ELF：')
+    B('   *     · PT_LOAD 段数 2 → **9**；文件 3.9 MB → **17.3 MB**（11 MB 是填充）')
+    B('   *     · 最高 vaddr 4 MB → **268 MB**（内核据此把 brk 也推到 268 MB）')
+    B('   *     · 该 11 MB 段与承载**全部代码**的 `.text` 段**在地址上重叠**')
+    B('   *   ⇒ 在 qemu/PC 上被容忍（所以 CI 一路全绿），**在真机上直接 exec 失败、一条日志都不产生**')
+    B('   *     （2026-09-21 真机实测：换成本产物后无法开机，`_diag/` 内零文件；换回原厂即正常）。')
+    B('   *   修法 = **不再钉死这几个地址**，让自有节紧接 `.rodata` 连续排布（与工厂的 2 段形态一致）。')
+    B('   *   ★ 自有节的地址本来就无契约（工厂的 .data/.bss 在 0x3AF000/0x3B2178，由 `.fimg_*` 复刻），')
+    B('   *     钉死它们纯属历史遗留 ⇒ 移动不影响任何「烧死的绝对地址」。 */')
     B('  .rodata 0x00410000 : { *(.rodata) *(.rodata.*) *(.ARM.extab*) *(.gcc_except_table*) }')
     B('  .init_array ALIGN(4) : { PROVIDE_HIDDEN(__init_array_start = .); KEEP(*(.init_array)) KEEP(*(.init_array.*)) }')
     B('  .fini_array ALIGN(4) : { KEEP(*(.fini_array)) KEEP(*(.fini_array.*)) }')
-    B('  .data 0x01000000 : { *(.data) *(.data.*) *(.data.rel.ro) *(.data.rel.ro.*) *(.got) *(.got.*) }')
-    B('  .bss 0x02000000 : { *(.bss) *(.bss.*) *(COMMON) }')
-    B('  .text 0x05000000 : { *(.init) *(.text) *(.text.*) *(.fini) }')
+    B('  /* ---- ③a RELRO 族（必须与 `.data` 分开，否则运行期会把我们的全局变量改成只读）----')
+    B('   * ★★★ 2026-09-22（GAP 16.71）：**ld.lld 的 `PT_GNU_RELRO` = 「本 RW 段内第一个 relro 节')
+    B('   *   的起点 → 最后一个 relro 节的终点」**。此前 `.data` 的输出段里混进了')
+    B('   *   `*(.data.rel.ro) *(.got)`，而 lld 又把 `.dynamic` 自动排到 `.data` **之后** ⇒')
+    B('   *   RELRO 起点 = `.fini_array`（0x4e00e0）、终点 = `.dynamic` 末尾（0x4e2b9c）')
+    B('   *   ⇒ **`.data`（0x4e1000）整段落在 RELRO 里**，内核把该页取整区间')
+    B('   *   （0x4e0000-0x4e3000）设成只读 ⇒ **进程写自己的全局变量即 SIGSEGV**。')
+    B('   *   真机实证（探针 v3，t2=diag）：`SIGSEGV  si_addr=0x4e1010`（正是 diag 的 `g_lvl`），')
+    B('   *   PC 在 `cgm_diag_boot` —— 连 `-finstrument-functions` 的插桩都还没跑起来就崩。')
+    B('   *   对照：原厂 `PT_GNU_RELRO` = 0x3ae5c4 + 2620，**终点 0x3aefe0 恰好停在 `.data`')
+    B('   *   （0x3af000，页对齐）之前** ⇒ 原厂 `.data` 完全可写。')
+    B('   *   修法 = ① 把 `.data.rel.ro`/`.got`/`.dynamic` 放进**独立的、排在 `.data` 之前**的输出段；')
+    B('   *          ② `.data` **页对齐**，保证 RELRO 的页取整区间不侵入 `.data`。')
+    B('   *   门禁 = `tools/relro_audit.py`（已钉进 link_full.sh）。 */')
+    B('  .data.rel.ro ALIGN(4) : { *(.data.rel.ro) *(.data.rel.ro.*) }')
+    B('  .got ALIGN(4) : { *(.got) *(.got.*) }')
+    B('  .dynamic ALIGN(4) : { *(.dynamic) }')
+    B('  .data ALIGN(0x1000) : { *(.data) *(.data.*) }')
+    B('  .bss  ALIGN(0x1000) : { *(.bss) *(.bss.*) *(COMMON) }')
+    B('  .text ALIGN(0x1000) : { *(.init) *(.text) *(.text.*) *(.fini) }')
     B('  .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }')
     B('  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }')
     B('}')
@@ -360,7 +394,7 @@ def main():
     B('/* CRT 符号：指向真实段首（构造子由 crtbegin 填入，语义正确） */')
     for sym, sec in sorted(LINKER_DEFINED.items()):
         B('PROVIDE(%s = ADDR(%s));' % (sym, sec))
-    open(os.path.join(linkdir, 'factory.ld'), 'w', encoding='utf-8').write('\n'.join(L) + '\n')
+    open(os.path.join(linkdir, 'factory.ld'), 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
 
     print('数据镜像符号总数 : %d' % total)
     print('CRT 符号(链接器定义): %s' % ', '.join(sorted(skipped_crt)))

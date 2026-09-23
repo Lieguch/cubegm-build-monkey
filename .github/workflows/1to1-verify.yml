@@ -341,6 +341,43 @@ jobs:
           #   工厂侧特征：`push {r0,r1,r2,r3}`（全 .text 仅 4 处）；重建侧 LLVM 用 `stm rX,{r1,r2,r3}`。
           FACTORY_ELF=golden/factory.rkgame.bin python3 tools/scan_varargs_fns.py
 
+      - name: 刻度 A（源码级工厂依赖）普查 ★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-23）：`fidelity_audit.py` 的**二进制口径**（扫 .text 里落在
+          #   `.fimg_*` 区间的 4 字节值）已被证明不可用：它报 10007，而真值是**源码里
+          #   对工厂符号的引用数**。改用本工具：符号清单以**链接产物 ELF 的 .fimg_* 段符号**
+          #   为准（权威，自带段归属），引用点从 src/ 源码统计，并显式排除
+          #   globals.h（声明表）与 factory_image.S（定义）。
+          # 本步骤同时跑正反双向自证（注释/字符串/假名/排除规则四个反例态）。
+          python3 tools/fidelity_source_deps.py --self-test
+
+      - name: DCE 引用差门禁（工厂数据引用被 -Os 消除）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-23，GAP 16.99）：Ghidra 会把工厂栈上**一个连续缓冲**按类型拆成
+          #   若干独立局部量，原指令却用 `p = &local_150; p = p + 1` **跨对象步进** ——
+          #   这在 C 里是**未定义行为**，GCC/clang 据此把后续槽的写入**整体删除**。
+          #   实测 `core/FUN_002b6c14_FBA_Load.c`：-O0 有 11 个工厂数据引用、-Os 只剩 2 个
+          #   ⇒ 原厂「10 条候选 core 路径」的链退化成 1 条。产物照样能链接、能启动，
+          #   **任何静态门禁都不报**（符号只是"少了一个"，不是"未定义"）。
+          # 判据：对同一 .c 只改优化级别编译两次，Δ = UNDEF(-O0) 减去 UNDEF(-Os) 的 DAT_/UNK_。
+          #   台账棘轮：存量登记在工具内 ALLOW（必须缩小），**表外新增即失败**。
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          CC="$ZIG cc" python3 tools/dce_ref_diff.py --out report/dce_ref_diff.txt
+
+      - name: 数据模块「重生成契约」门禁 ★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-23）：`tools/regen_data.sh` 会**重写**已提交的 linker/factory.ld
+          #   与 src/data/factory_image.S，而这两份文件含**多次手工修复**；生成器一旦没跟上，
+          #   每跑一次 regen 就**静默回退一次**（实测：regen 后 .ld 少了 GAP 16.69/16.71 的修复，
+          #   把 .data/.bss/.text 又钉回 0x01000000/0x02000000/0x05000000 ⇒ 真机 exec 零日志）。
+          # 本步骤断言不变量：① 无钉死运行时地址；② RELRO 族独立且排在 .data 之前、.data 页对齐；
+          #   ③ 别名数棘轮（防「用 MISSING 而不是全量 UNDEF 重生成」导致 934→17 塌缩）；
+          #   ④ 文本产物纯 LF；⑤ 关键小段存在。
+          python3 tools/check_regen_contract.py --self-test
+
       - name: 门禁汇总（写入 Job Summary）
         if: always()
         run: |

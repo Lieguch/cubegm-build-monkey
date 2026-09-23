@@ -1530,7 +1530,7 @@ __f_bss_pad_base:
 
 /* .data.rel.ro.local：0 个符号 */
 
-/* .data：163 个符号 */
+/* .data：172 个符号 */
 	.globl DAT_003af008
 	.set DAT_003af008, __f_data_base + 0x8
 	.globl running
@@ -1831,6 +1831,24 @@ __f_bss_pad_base:
 	.set turbo_delay, __f_data_base + 0x1128
 	.globl DAT_003b012c
 	.set DAT_003b012c, __f_data_base + 0x112c
+	.globl DAT_003b0130
+	.set DAT_003b0130, __f_data_base + 0x1130
+	.globl DAT_003b0134
+	.set DAT_003b0134, __f_data_base + 0x1134
+	.globl DAT_003b0138
+	.set DAT_003b0138, __f_data_base + 0x1138
+	.globl DAT_003b013c
+	.set DAT_003b013c, __f_data_base + 0x113c
+	.globl DAT_003b0140
+	.set DAT_003b0140, __f_data_base + 0x1140
+	.globl DAT_003b0144
+	.set DAT_003b0144, __f_data_base + 0x1144
+	.globl DAT_003b0148
+	.set DAT_003b0148, __f_data_base + 0x1148
+	.globl DAT_003b014c
+	.set DAT_003b014c, __f_data_base + 0x114c
+	.globl DAT_003b0150
+	.set DAT_003b0150, __f_data_base + 0x1150
 	.globl user_joy_key_mask
 	.set user_joy_key_mask, __f_data_base + 0x1154
 	.globl default_core_list
