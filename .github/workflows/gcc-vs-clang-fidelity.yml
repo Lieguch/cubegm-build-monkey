@@ -1,0 +1,66 @@
+# 判决实验：同一份源码，换编译器（GCC vs clang），谁更接近工厂？
+#
+# 背景：工厂指纹 = `GCC: (GNU) 6.2.0`（.comment）+ `GNU gold 1.12`（.note.gnu.gold-version）；
+#   我们 = zig 0.16.0（zig cc → clang 21.1.0）+ lld ⇒ **跨编译器家族**的差异。
+#   本实验回答一个可判定的问题：「换成与原厂同族的 ARM GCC，机器码会不会更接近工厂？」
+#
+# 设计（单变量）：两组**完全相同**的 CFLAGS，唯一差别是编译器；**只编译不链接**
+#   （绕开"GCC 对象 + zig 链接"的 glibc 符号冲突）。对拍用同一个反汇编器 + 同一份工厂数据。
+#
+# 触发：手动 workflow_dispatch，或改动实验脚本本身（避免每轮 CI 都白烧预算）。
+name: gcc-vs-clang-fidelity
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '1to1/tools/gcc_fidelity.sh'
+      - '1to1/tools/fidelity_compare.py'
+      - '.github/workflows/gcc-vs-clang-fidelity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fidelity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+
+      - name: 装 ARM GCC（与原厂同族）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          arm-linux-gnueabihf-gcc --version | head -1
+          echo "--- 记录本机 GCC 版本（≠ 原厂 6.2.0，这一点必须写进报告口径）---"
+
+      - name: 装 zig（clang 侧同口径）
+        run: |
+          python3 -m pip install -q --break-system-packages 'ziglang==0.16.0' || python3 -m pip install -q 'ziglang==0.16.0'
+          python3 -c "import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),'zig'))"
+
+      - name: 工厂指纹复核（口径自证）
+        run: |
+          cd 1to1
+          readelf -p .comment golden/factory.rkgame.bin || true
+          readelf -S golden/factory.rkgame.bin | grep -a -E 'comment|gold-version' || true
+
+      - name: 跑对照实验
+        run: |
+          cd 1to1
+          mkdir -p report
+          sh tools/gcc_fidelity.sh 2>&1 | tee report/gcc_fidelity.txt
+          exit ${PIPESTATUS[0]}
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcc-vs-clang-fidelity
+          path: |
+            1to1/report/gcc_fidelity.txt
+            1to1/report/_gcc_first_err.txt
+            1to1/report/_clang_first_err.txt
+          if-no-files-found: warn
