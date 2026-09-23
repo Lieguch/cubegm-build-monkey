@@ -28,6 +28,9 @@ import json
 import os
 import struct
 import sys
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from factory_data import load_factory_funcs  # noqa: E402  共享加载器：.json / .json.gz
 
 ROOT = os.environ.get('CGM_ROOT') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location('ad', os.path.join(ROOT, 'tools/arm_dis.py'))
@@ -56,10 +59,9 @@ def _classify_op(op):
 
 
 def fac_hist(key):
-    p = os.path.join(ROOT, 'golden/factory.funcs.json')
-    if not os.path.exists(p):
-        raise IOError('读不到 golden/factory.funcs.json')
-    F = json.load(io.open(p, encoding='utf-8'))['functions']
+    # ★ 2026-09-23：改走共享加载器 —— 本地有 .json、**CI 只有 .json.gz**，
+    #   只找 .json 会"本地绿、CI 红"（1to1-qemu-behav exit 15 就是这个原因）。
+    F = load_factory_funcs()
     if key not in F:
         return None
     c = collections.Counter()

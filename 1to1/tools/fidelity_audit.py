@@ -25,6 +25,9 @@ import json
 import os
 import struct
 import sys
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from factory_data import load_factory_funcs  # noqa: E402  共享加载器：.json / .json.gz
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf')
@@ -161,9 +164,11 @@ print('     原厂   %s' % [prot(x) for _, x in F['loads']])
 # ---------------- 工厂函数落位 ----------------
 print()
 print('## 刻度 C —— 工厂函数落位')
-pf = os.path.join(ROOT, 'golden', 'factory.funcs.json')
-if os.path.exists(pf):
-    Fj = json.load(io.open(pf, encoding='utf-8'))['functions']
+try:
+    Fj = load_factory_funcs()          # ★ 走共享加载器（CI 只有 .json.gz）
+except IOError:
+    Fj = None
+if Fj is not None:
     R = {}
     for v, sz, typ, n2 in T['syms']:
         if typ == 2 and sz:
