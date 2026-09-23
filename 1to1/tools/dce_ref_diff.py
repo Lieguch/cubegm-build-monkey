@@ -29,6 +29,10 @@ GCC/clang 允许假定「越界指针不被解引用」，于是把**后续槽�
   (b) 存储确实是死的（合法优化，例如值从未被使用、或被常量折叠掉）。
 ★ 因此 Δ 是**待核清单**，不是缺陷证明：默认按 (a) 处理（硬失败），
   确认属于 (b) 的必须在 ALLOW 里登记，并在 GAP.md 写明「为什么语义不变」。
+★ 2026-09-23 交叉对照（两个独立仪器）：13 个存量 Δ 文件**全部**在 `tools/prop_equiv.py`
+  里判为 **OK**（size 比 0.895–1.448，健康带 p95=1.33），且用 `tools/factory_fn_stack.py`
+  对工厂函数反汇编可见「该槽写了但从未按常量位移读回」⇒ 判定为**低风险（不阻塞替代）**，
+  但**保守保留在债务表**并逐条标注证据 —— 待有更强判据（帧指针别名数据流）时再清。
 ★ 工具会给每个 Δ 文件附一个 `[UB?]` 提示（源码里出现「取标量地址 + 步进」形态），
   仅用于分诊排序，不作为判据。
 
@@ -75,33 +79,32 @@ INC = os.path.join(ROOT, 'src', 'compat')
 #   ② 重建源码里「被跨对象步进读」⇒ UB-DCE，是真缺陷（见已修的 core/FUN_002b6c14_FBA_Load.c）。
 ALLOW = {
     'src/proprietary/input/FUN_0000b014_TestUSBJoy.c':
-        (('DAT_003af00c', 'DAT_003af010', 'DAT_003af014'), '待核 GAP 17.00'),
+        (('DAT_003af00c', 'DAT_003af010', 'DAT_003af014'), '低风险（GAP 17.00）：prop_equiv size 比 TestUSBJoy 708/688=0.972 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/misc/FUN_0002187c_DisplayPage_list.c':
-        (('DAT_003af2a0',), '待核 GAP 17.00'),
+        (('DAT_003af2a0',), '低风险（GAP 17.00）：prop_equiv size 比 DisplayPage_list 248/272=1.097 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0001bf80_mui_DisplayGameSum.c':
-        (('DAT_0020202d',), '待核 GAP 17.00'),
+        (('DAT_0020202d',), '低风险（GAP 17.00）：prop_equiv size 比 mui_DisplayGameSum 232/336=1.448 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_00023204_mui_menu.c':
-        (('DAT_003b2320',), '已判定合法 DCE：local_32c 只赋值从不读（GAP 17.00 #4）'),
+        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_menu 2840/3488=1.228 OK；且 local_32c 只赋值从不读；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_00023e10_mui_type.c':
-        (('DAT_003b2320',), '待核 GAP 17.00'),
+        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_type 4380/5332=1.217 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_00025094_mui_search.c':
-        (('DAT_003b2320',), '待核 GAP 17.00'),
+        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_search 5356/7188=1.342 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_000277bc_mui_recent.c':
-        (('DAT_003b2320',), '待核 GAP 17.00'),
+        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_recent 4492/4932=1.098 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_00028a74_mui_shoucang.c':
-        (('DAT_003b2320',), '待核 GAP 17.00'),
+        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_shoucang 3600/4176=1.160 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0002d0d4_mui_joystick_setting.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '待核 GAP 17.00'),
+        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 mui_joystick_setting 3684/3604=0.978 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0002e040_mui_video_setting.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '待核 GAP 17.00'),
+        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 mui_video_setting 2552/2756=1.080 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0002eac8_mui_load_state.c':
-        (('DAT_003af820', 'DAT_003af824'), '待核 GAP 17.00'),
+        (('DAT_003af820', 'DAT_003af824'), '低风险（GAP 17.00）：prop_equiv size 比 mui_load_state 2020/1852=0.917 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0002f320_mui_save_state.c':
-        (('DAT_003af820', 'DAT_003af824'), '待核 GAP 17.00'),
+        (('DAT_003af820', 'DAT_003af824'), '低风险（GAP 17.00）：prop_equiv size 比 mui_save_state 2704/2420=0.895 OK；工厂侧该槽属「写了不读」'),
     'src/proprietary/mui/FUN_0002ff8c_PauseMenu.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af82c'), '待核 GAP 17.00'),
+        (('DAT_003af820', 'DAT_003af824', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 PauseMenu 1564/1400=0.895 OK；工厂侧该槽属「写了不读」'),
 }
-
 FACTORY_PREFIX = ('DAT_', 'UNK_')
 
 # 仅用于分诊排序的"UB 形态"提示：
