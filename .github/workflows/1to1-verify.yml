@@ -29,6 +29,9 @@ jobs:
       - name: 安装 zig（与本地同一工具链 ⇒ GLIBC 下限可控、避免 GCC/lld 差异）
         run: |
           python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
+          # ★ 差分执行器（tools/diff_exec.py）的依赖：Unicorn（CPU 模拟）/ capstone（反汇编）
+          #   / pyelftools（ELF 解析）。版本与本地一致，避免"本地能跑 CI 跑不了"。
+          python3 -m pip install --quiet --disable-pip-version-check unicorn==2.1.4 capstone==5.0.7 pyelftools
           ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
           chmod +x "$ZIG"
           echo "ZIG=$ZIG" >> "$GITHUB_ENV"
@@ -416,6 +419,10 @@ jobs:
           # ★ 仪器自证先行（含「语料解析三态」）：先把工具本身验一遍，再让它给结论。
           #   三态 = ① 正常态采用语料 ② CI 近似态（只有仓内 tar.gz）能解包并用
           #          ③ 缺陷态（三者皆无 / tar 半包）必须 fail-closed，**绝不静默跳过**。
+          # ★ 先打印**语料来源**（证据）：三个候选都缺时本步 exit 2 ⇒ 后面那道门禁根本不会被"空跑通过"。
+          #   CI 里没有 GHIDRA_PERFUNC、没有 dev 路径 ⇒ 必然走 `golden/ghidra-perfn.tar.gz` 分支，
+          #   所以这一行同时是"tar 分支在 CI 真的被走到"的在线证据。
+          python tools/ghidra_corpus.py
           python tools/src_transcript_parity.py --self-test
           python tools/src_transcript_parity.py
 
@@ -429,6 +436,29 @@ jobs:
           # 并按**归一化组求和**对拍体量（与 prop_equiv 的"单代表"口径互补）：
           #   实测 `run_process` / `GetZipItemA` 在组求和后**转 OK** ⇒ 那两条原先确是口径伪影。
           python tools/equiv_group_sum.py --self-test
+
+      - name: 差分执行器自证（Unicorn 逐函数对拍；**不依赖本项目数据**）★ 硬门禁
+        run: |
+          cd 1to1
+          # 为什么必须自证：这个仪器是"判定等价性"的**尺子**，尺子错了所有结论都错。
+          # 自证用 zig 现场编两个 ARM32 静态 ELF（独立于本项目）：同一份源码编两次 → 必须 PASS；
+          # 把循环里的乘数 3 改成 5 → 必须 DIVERGE 且差异定位到 ret。
+          # 若这里红，说明**尺子坏了**，后面的对拍结论一律不可信。
+          python tools/diff_exec.py --self-test
+
+      - name: 差分执行对拍（工厂 vs 重建产物，棘轮台账）★ 硬门禁
+        run: |
+          cd 1to1
+          # 判据（比什么）：停止类别 / 返回值 / 外部调用序列 / 数据区访存指纹(地址,宽度,读写)
+          #   / 数据区终值 —— 都是"布局无关"的可观测量。
+          # 不比（为什么）：机器码字节、指令数、栈帧布局、内部调用序列 —— 工厂 GCC 6.2 与我们
+          #   clang 必然在这些量上发散，**它们不是判据**（GAP 16.43 同一条纪律）。
+          # 棘轮：台账 tools/diff_exec_pending.txt 记录已知发散函数集，**只允许减少**；
+          #   新增发散 ⇒ 本步红。这样"修一个坏一个"不会悄悄溜过去。
+          #   ★ 台账是"待核债务"不是"已证明缺陷"：每条都需逐条定性（详见 GAP 17.07）。
+          python tools/diff_exec.py --batch --steps 3000 \
+            --out report/diff_exec.txt \
+            --ledger tools/diff_exec_pending.txt
 
       - name: 门禁汇总（写入 Job Summary）
         if: always()

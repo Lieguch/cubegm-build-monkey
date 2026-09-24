@@ -424,9 +424,6 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
             else:
                 diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
         cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
-        if cf != co:
-            raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
-            diffs.append('calls_ext F=%s O=%s%s' % (cf[:12], co[:12], raw))
         wf, wo = sorted(rf['writes']), sorted(ro['writes'])
         if wf != wo:
             diffs.append('data-writes 仅F=%s 仅O=%s'
@@ -439,10 +436,21 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
         fd = [k for k in sorted(common) if rf['final'][k] != ro['final'][k]]
         if fd:
             diffs.append('data-final 不同 %d 项 %s' % (len(fd), fd[:6]))
+        # ★ 外部调用判据放在最后：区分「内联等价」与「真的少调/多调/顺序变」
+        note = ''
+        if cf != co:
+            only_missing = [x for x in cf if x not in co]
+            only_extra = [x for x in co if x not in cf]
+            if (not diffs) and only_missing and (not only_extra):
+                # 其余观测量**全部一致** + 只是少调了工厂的某些调用 ⇒ 内联/等价实现
+                note = '内联等价: 仅工厂侧调用 %s' % (only_missing[:6],)
+            else:
+                raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
+                diffs.append('calls_ext F=%s O=%s%s' % (cf[:10], co[:10], raw))
         if diffs:
             verdict = 'DIVERGE'
-        rows.append((cname, 'DIVERGE' if diffs else 'ok', rf['ret'], ro['ret'],
-                     rf['insns'], ro['insns'], sf, so, diffs))
+        rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
+                     rf['ret'], ro['ret'], rf['insns'], ro['insns'], sf, so, diffs, note))
     return verdict, rows
 
 
@@ -558,6 +566,8 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--steps', type=int, default=20000)
     ap.add_argument('--out')
+    ap.add_argument('--ledger', help='发散棘轮台账：只允许减少，不允许新增')
+    ap.add_argument('--update-ledger', action='store_true', help='用当前发散集重写台账')
     ap.add_argument('--self-test', action='store_true')
     a = ap.parse_args()
 
@@ -594,17 +604,28 @@ def main():
                 print('     [%s] SKIP %s/%s' % (r[0], r[2], r[3]))
             else:
                 extra = ('  ' + '; '.join(map(str, r[8]))) if len(r) > 8 and r[8] else ''
+                if len(r) > 9 and r[9]:
+                    extra += '   [%s]' % r[9]
                 print('     [%-7s] F:ret=0x%-8x ins=%-6d stop=%-22s' % (r[0], r[2], r[4], r[6]))
                 print('     %-8s  O:ret=0x%-8x ins=%-6d stop=%-22s%s' % ('', r[3], r[5], r[7], extra))
         return 1 if v == 'DIVERGE' else 0
 
     if a.batch:
         names = common[:a.limit] if a.limit else common
-        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0}
+        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0}
+        info_names = []
         det = []
+        div_names_all = []
         for i, n in enumerate(names):
             v, rows = compare(BF, BO, n, a.steps)
             stats[v] += 1
+            if v == 'DIVERGE':
+                div_names_all.append(n)
+            if any(len(r) > 9 and r[9] for r in rows if r[1] in ('ok', 'info')):
+                stats['INFO'] += 1
+                if len(info_names) < 60:
+                    info_names.append('  %-44s %s' % (n,
+                                      '; '.join(r[9] for r in rows if len(r) > 9 and r[9])[:110]))
             if v == 'DIVERGE':
                 for r in rows:
                     if r[1] == 'DIVERGE' and len(r) > 8 and r[8]:
@@ -613,15 +634,50 @@ def main():
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
                  '  共有函数 %d；本轮 %d 个；每函数 3 组输入' % (len(common), len(names)),
-                 '  汇总：PASS %d | DIVERGE %d | SKIP %d' % (stats['PASS'], stats['DIVERGE'], stats['SKIP']),
+                 '  汇总：PASS %d | DIVERGE %d | INFO(内联等价) %d | SKIP %d'
+                 % (stats['PASS'], stats['DIVERGE'], stats['INFO'], stats['SKIP']),
                  '', '  --- DIVERGE 明细（前 80）---']
         lines.extend(det[:80])
+        lines.append('')
+        lines.append('  --- INFO：外部调用被内联/等价实现，其余观测量全一致（前 60）---')
+        lines.extend(info_names)
+        # ★ 棘轮台账：只允许"发散函数减少"，不允许新增（防"修一个坏一个"）
+        div_names = sorted(set(div_names_all))
+        rc = 1 if stats['DIVERGE'] else 0
+        if a.ledger:
+            old = []
+            if os.path.exists(a.ledger):
+                old = [x.strip() for x in open(a.ledger, encoding='utf-8') if x.strip()
+                       and not x.startswith('#')]
+            if a.update_ledger:
+                os.makedirs(os.path.dirname(a.ledger) or '.', exist_ok=True)
+                with open(a.ledger, 'w', encoding='utf-8', newline='\n') as fh:
+                    fh.write('# diff_exec 发散棘轮台账（只允许减少）\n')
+                    fh.write('# 生成：%s\n' % 'python tools/diff_exec.py --batch --ledger <本文件> --update-ledger')
+                    for n in div_names:
+                        fh.write(n + '\n')
+                lines.append('')
+                lines.append('  台账已重写：%d 项 -> %s' % (len(div_names), a.ledger))
+                rc = 0
+            else:
+                new = [n for n in div_names if n not in old]
+                fixed = [n for n in old if n not in div_names]
+                lines.append('')
+                lines.append('  台账棘轮：既有 %d 项 | 本轮发散 %d 项 | ★新增 %d | 已收敛 %d'
+                             % (len(old), len(div_names), len(new), len(fixed)))
+                if new:
+                    lines.append('  ★★ 新增发散（必须修或显式登记）：%s' % new[:20])
+                    rc = 2
+                else:
+                    rc = 0
+                if fixed:
+                    lines.append('  ✓ 本轮收敛：%s' % fixed[:20])
         txt = '\n'.join(lines)
         print(txt)
         if a.out:
             with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
                 fh.write(txt + '\n')
-        return 1 if stats['DIVERGE'] else 0
+        return rc
 
     ap.print_help()
     return 0

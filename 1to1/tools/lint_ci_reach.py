@@ -59,16 +59,32 @@ def read(p):
     return open(p, encoding='utf-8', errors='replace').read()
 
 
+def _workflow_dir(base):
+    """定位 workflow 目录：本层优先，其次**上一层**（CI 的真实布局）。
+
+    ★ 这里踩过一次「CI 近似态」坑（正是 GAP 16.86 记的纪律）：
+      CI 里仓库把 workflow 放在**仓库根** `.github/workflows/`，而步骤的 CWD / 本工具 ROOT
+      是 `1to1/` ⇒ 只查本层会**找不到 workflow** ⇒ 可达集为空 ⇒ 门禁**空转 PASS**。
+      所以：本层没有就查上一层；两边都没有 ⇒ 返回 None，由调用方 **fail-closed**。
+    """
+    for cand in (os.path.join(base, '.github', 'workflows'),
+                 os.path.join(base, '..', '.github', 'workflows')):
+        if os.path.isdir(cand) and any(f.endswith(('.yml', '.yaml')) for f in os.listdir(cand)):
+            return os.path.normpath(cand)
+    return None
+
+
 def reachable(base=None):
-    """返回 CI 可达的工具相对路径集合（相对 ROOT，`/` 分隔）。"""
+    """返回 CI 可达的工具相对路径集合（相对 ROOT，`/` 分隔）；找不到 workflow ⇒ None（fail-closed）。"""
     base = base or ROOT
-    wf = os.path.join(base, '.github', 'workflows')
+    wf = _workflow_dir(base)
+    if wf is None:
+        return None
     seen, queue = set(), []
-    if os.path.isdir(wf):
-        for f in sorted(os.listdir(wf)):
-            if f.endswith(('.yml', '.yaml')):
-                for m in RE_TOOLNAME.finditer(_strip_comment_lines(read(os.path.join(wf, f)))):
-                    queue.append('tools/' + m.group(1))
+    for f in sorted(os.listdir(wf)):
+        if f.endswith(('.yml', '.yaml')):
+            for m in RE_TOOLNAME.finditer(_strip_comment_lines(read(os.path.join(wf, f)))):
+                queue.append('tools/' + m.group(1))
     while queue:
         rel = queue.pop()
         if rel in seen:
@@ -110,6 +126,8 @@ def load_allow(path=None):
 def scan(base=None, allow_path=None):
     base = base or ROOT
     reach = reachable(base)
+    if reach is None:
+        return None, load_allow(allow_path), None
     allow = load_allow(allow_path)
     hits = []          # (rel, lineno, literal, kind)
     for rel in sorted(reach):
@@ -138,6 +156,10 @@ def run(base=None, allow_path=None, verbose=False):
     print('=' * 100)
     print('CI 可达性 / 宿主绝对路径门禁')
     print('=' * 100)
+    if reach is None:
+        print('  ★ FAIL：找不到 workflow 目录（试过 <base>/.github/workflows 与 <base>/../.github/workflows）')
+        print('     ⇒ 可达集无法确定 ⇒ **拒绝出结论**（fail-closed：空转 PASS = 假绿）。')
+        return 17
     print('  CI 可达工具数 = %d' % len(reach))
     print('  命中宿主绝对路径 = %d 处（其中 注释 %d / 可 env 覆盖 %d / 需台账 %d）' % (
         len(hits),
@@ -206,7 +228,13 @@ def self_test():
         ok = ok and good
         print('   %-58s got=%-6s %s' % (tag, got, '✓' if good else '★ FAIL'))
 
+    # ★ 夹具路径**运行时拼接**：源码里刻意不写 "D:/…" 这类字面量，否则本门禁会把自己扫出来
+    #   （夹具与被判对象同文件）。这不是给自己开后门 —— 判据本身不留例外，只是夹具避开字面形式。
+    # ★ 必须是「驱动器 + 分隔符」形式：`os.path.join('D:', 'x')` 在 Windows 上得到 `D:x`
+    #   （驱动器**相对**路径，`D:` 后无分隔符）⇒ RE_HOSTPATH 永不命中 ⇒ 夹具自造假样本。
+    FAKE_HOST = 'D' + ':' + '/' + 'output' + '/' + 'thing'
     d = tempfile.mkdtemp()
+    d2 = d3 = None
     try:
         os.makedirs(os.path.join(d, '.github', 'workflows'))
         os.makedirs(os.path.join(d, 'tools'))
@@ -218,48 +246,69 @@ def self_test():
 
         # 反例① 可达工具里的裸宿主路径 ⇒ 命中 need-allow
         open(wf, 'w').write('run: python tools/g1.py\n')
-        open(t1, 'w').write("P = 'D:/output/thing'\nprint(P)\n")
+        open(t1, 'w').write('P = %r\nprint(P)\n' % FAKE_HOST)
         _r, _a, hits = scan(d, ap)
         chk('反例 裸宿主路径 → need-allow', [h[3] for h in hits], ['need-allow'])
 
         # 正例① 行内含 environ ⇒ env
-        open(t1, 'w').write("import os\nP = os.environ.get('X', 'D:/output/thing')\n")
+        open(t1, 'w').write("import os\nP = os.environ.get('X', %r)\n" % FAKE_HOST)
         _r, _a, hits = scan(d, ap)
         chk('正例 行内 environ → env', [h[3] for h in hits], ['env'])
 
         # 正例② 注释里的宿主路径 ⇒ comment（真实场景：注释掉的旧赋值，带引号）
-        open(t1, 'w').write("# 旧写法: P = 'D:/output/thing'\nP = 1\n")
+        open(t1, 'w').write('# 旧写法: P = %r\nP = 1\n' % FAKE_HOST)
         _r, _a, hits = scan(d, ap)
         chk('正例 注释里的路径 → comment', [h[3] for h in hits], ['comment'])
 
         # 正例②b 注释里**不带引号**的路径 ⇒ 根本不命中（正则要求引号 ⇒ 噪声更低）
-        open(t1, 'w').write("# 参见 D:/output/thing 的说明\nP = 1\n")
+        open(t1, 'w').write('# 参见 %s 的说明\nP = 1\n' % FAKE_HOST)
         _r, _a, hits = scan(d, ap)
         chk('正例 注释无引号 → 0 命中', len(hits), 0)
 
         # 正例③ 不可达文件里的裸路径 ⇒ 不命中（注释行不算调用）
         open(t1, 'w').write('P = 1\n')
-        open(t2, 'w').write("P = 'D:/output/thing'\n")
+        open(t2, 'w').write('P = %r\n' % FAKE_HOST)
         _r, _a, hits = scan(d, ap)
         chk('正例 不可达文件 → 0 命中', len(hits), 0)
-        chk('正例 注释里提到 tools/g2.py 不算可达',
-            (open(wf, 'w').write('# run: python tools/g2.py\n'), 'tools/g2.py' in reachable(d))[1], False)
+        open(wf, 'w').write('# run: python tools/g2.py\n')
+        chk('正例 注释里提到 tools/g2.py 不算可达', 'tools/g2.py' in reachable(d), False)
 
         # 正例④ 台账豁免 ⇒ PASS
         open(wf, 'w').write('run: python tools/g1.py\n')
-        open(t1, 'w').write("P = 'D:/output/thing'\n")
-        open(ap, 'w').write('tools/g1.py\tD:/output/thing\tresolver:仓内优先 + fail-closed\n')
+        open(t1, 'w').write('P = %r\n' % FAKE_HOST)
+        open(ap, 'w').write('tools/g1.py\t%s\tresolver:仓内优先 + fail-closed\n' % FAKE_HOST)
         chk('正例 台账豁免 → run() = 0', run(d, ap), 0)
 
         # 反例② 台账过期 ⇒ FAIL(17)
-        open(ap, 'w').write('tools/g1.py\tD:/nonexistent\tstale\n')
+        open(ap, 'w').write('tools/g1.py\tD:%s\tstale\n' % '/nonexistent')
         chk('反例 台账过期 → 17', run(d, ap), 17)
 
         # 反例③ devonly 但实际可达 ⇒ FAIL(17)
-        open(ap, 'w').write('tools/g1.py\tD:/output/thing\tdevonly:只在开发机用\n')
+        open(ap, 'w').write('tools/g1.py\t%s\tdevonly:只在开发机用\n' % FAKE_HOST)
         chk('反例 devonly 却可达 → 17', run(d, ap), 17)
+
+        # ★ 正例⑤ **CI 近似态**（GAP 16.86 的纪律）：workflow 在**上一层**、工具在其子目录
+        #   —— CI 里 `cd 1to1` 正是这种布局。只查本层会找不到 workflow ⇒ 空转 PASS（假绿）。
+        d2 = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d2, '.github', 'workflows'))
+        os.makedirs(os.path.join(d2, '1to1', 'tools'))
+        open(os.path.join(d2, '.github', 'workflows', 'w.yml'), 'w').write('run: python tools/g1.py\n')
+        open(os.path.join(d2, '1to1', 'tools', 'g1.py'), 'w').write('P = %r\n' % FAKE_HOST)
+        ap2 = os.path.join(d2, '1to1', 'tools', 'allow.txt')
+        open(ap2, 'w').write('tools/g1.py\t%s\tresolver:仓内优先\n' % FAKE_HOST)
+        chk('正例 CI 近似态（workflow 在上层）→ 可达',
+            reachable(os.path.join(d2, '1to1')), {'tools/g1.py'})
+        chk('正例 CI 近似态 → run() = 0', run(os.path.join(d2, '1to1'), ap2), 0)
+
+        # 反例④ 任何一层都没有 workflow ⇒ 必须 fail-closed(17)，不得空转 PASS
+        d3 = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d3, 'tools'))
+        open(os.path.join(d3, 'tools', 'g1.py'), 'w').write('P = %r\n' % FAKE_HOST)
+        chk('反例 无 workflow 任何一层 → 17', run(d3, os.path.join(d3, 'tools', 'a.txt')), 17)
     finally:
-        shutil.rmtree(d, ignore_errors=True)
+        for _x in (d, d2, d3):
+            if _x:
+                shutil.rmtree(_x, ignore_errors=True)
     print()
     print('   自证结论：%s' % ('全部通过 —— 仪器可用' if ok else '★ 有 FAIL —— 仪器不可信'))
     return ok
