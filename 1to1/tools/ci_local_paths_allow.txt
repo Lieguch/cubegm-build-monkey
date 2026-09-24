@@ -1,0 +1,28 @@
+# CI 可达工具里「宿主绝对路径」的豁免台账（输入给 tools/lint_ci_reach.py）
+#
+# 为什么要有这张表：同一个根因已经烧掉三轮 CI（GAP 16.86 / 16.87 / 2026-09-24 的
+# src_transcript_parity 红）。三次都不是逻辑错，而是「判据的输入在 CI 里不存在」。
+# 本表把"哪些宿主路径是可以接受的、为什么"写死，新出现的一律 FAIL。
+#
+# 格式：  <工具相对路径> TAB <字面量> TAB <理由前缀>:<说明>
+# 理由前缀约定：
+#   resolver:  该路径是三级解析的**最后一档兜底**（仓内优先 + 可 env 覆盖 + 拿不到就 fail-closed）
+#   search:    该路径只是"候选表"的一项，程序用 which/exists 逐个尝试，找不到就回退 PATH
+#   argv:      可由命令行参数覆盖
+#   env:       行内可被环境变量覆盖（此类已自动放行，通常无需登记）
+#   devonly:   开发机专用 —— ★ 该前缀会被**反向自证**：若该文件其实可达 CI，门禁直接 FAIL
+#
+# 棘轮：本表**必须缩小**。任何已不再命中的条目都会被门禁报 FAIL（防止它变成"免死金牌"）。
+#
+# ★ 2026-09-24 本表建立时的判定依据（逐条读过上下文，不是整表豁免）：
+#   · ghidra_corpus.py  = 语料唯一入口，resolve_corpus() 三级解析 + fail-closed；
+#   · 其余 7 条全是"候选搜索表"或"CC 环境变量优先的本地默认"，缺了它们程序会回退 PATH/仓内文件，
+#     **不会**导致判据静默跳过。
+tools/ghidra_corpus.py	D:/output/rkgame/decompiled/02-ghidra-c/03-per-function	resolver: 仓内 golden/ghidra-perfn.tar.gz 优先；本机路径仅兜底；三者皆无则 fail-closed exit 2
+tools/check_obj_fresh.py	C:/Users/Administrator/.workbuddy/binaries/python/envs/default/	search: zig 定位候选之一（CC 环境变量优先，exists 命中才用）
+tools/scan_livein_args.py	C:/objdump	search: objdump 定位候选（which 之后逐个 exists，最后回退 PATH）
+tools/scan_livein_args.py	C:/Program Files/Git/usr/bin/objdump.exe	search: objdump 定位候选（同上）
+tools/scan_symbol_delta.py	C:\objdump	search: objdump 定位候选（同上）
+tools/scan_symbol_delta.py	C:/objdump	search: objdump 定位候选（同上）
+tools/scan_rodata_int_as_ptr.py	D:/output/rkgame/rkgame	search: 工厂二进制定位候选 —— 先试仓内 golden/factory.rkgame.bin，本机路径仅兜底
+tools/scan_upstream_fingerprint.py	D:/output/rkgame/rkgame	search: 工厂二进制定位候选（同上）

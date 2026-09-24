@@ -206,7 +206,8 @@ def index(dirpath, pattern):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default='.')
-    ap.add_argument('--ghidra', default=r'D:/output/rkgame/decompiled/02-ghidra-c/03-per-function')
+    ap.add_argument('--ghidra', default=None,
+                    help='工厂反编译目录；缺省走 tools/ghidra_corpus.py 的唯一解析入口')
     ap.add_argument('--top', type=int, default=40)
     ap.add_argument('--ledger', default=None,
                     help='已知项台账（每行 "CALLER CALLEE"）：台账内不判失败；新增一律失败')
@@ -215,13 +216,27 @@ def main():
     a = ap.parse_args()
 
     root = a.root
-    # ★★ CI 上**没有**本地 Ghidra 反编译目录（它是本机产物，不进仓库）⇒ 必须像
-    #   `tools/scan_call_args.py` 一样**优雅跳过**，而不是 FATAL 退出把 CI 打红。
-    #   实测踩坑：本门禁首跑在 CI 上红（本地是绿的），原因就是缺这个守卫。
-    if not os.path.isdir(a.ghidra):
-        print('  [SKIP] 找不到工厂反编译目录 %s' % a.ghidra)
-        print('         （该目录是本机逆向产物、不进仓库；CI 上本步骤自动跳过）')
-        return 0
+    # ★★ 2026-09-24 更正（**这条注释此前写反了**）：
+    #   旧注释说"CI 上必须像 scan_call_args.py 一样**优雅跳过**" —— 那是把假绿当成了范式，
+    #   并且照着它推广到了本门禁。实测（CI run 35954789674 无该门禁输出）：
+    #   本步骤在 workflow 里名为「逐函数『调用点个数』对拍 … ★ 硬门禁」，**在 CI 里从未跑过**，
+    #   却一直显示 PASS。这与 scan_call_args.py / check_types.py / lint_workflow_continuation.py
+    #   是**同一个根因**（判据的输入在 CI 里不存在）。
+    #   正确做法：语料已仓内化（golden/ghidra-perfn.tar.gz）+ 抽出唯一入口 ghidra_corpus.py；
+    #   拿不到语料一律 **fail-closed**（跳过 ≠ 通过）。
+    if a.ghidra is None:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from ghidra_corpus import resolve_corpus, REPAIR_HINT
+        a.ghidra, _src = resolve_corpus()
+        if a.ghidra:
+            print('  语料来源: %s -> %s' % (_src, a.ghidra))
+        else:
+            sys.stderr.write(REPAIR_HINT)
+            print('  [FATAL] 语料不可用 ⇒ fail-closed（跳过 ≠ 通过）')
+            return 2
+    elif not os.path.isdir(a.ghidra):
+        print('  [FATAL] --ghidra 指定的目录不存在：%s ⇒ fail-closed' % a.ghidra)
+        return 2
     fa = index(a.ghidra, '*.c')
     ours = index(os.path.join(root, 'src', 'proprietary'), '**/*.c')
     if not fa or not ours:

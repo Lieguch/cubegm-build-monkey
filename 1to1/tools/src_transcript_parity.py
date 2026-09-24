@@ -53,95 +53,23 @@ OURS = os.path.join(ROOT, 'src', 'proprietary')
 #   （它是从 `golden/factory.rkgame.bin` 派生的只读分析产物，属"材料"不属"构建产物"）。
 #   解析顺序：环境变量 → 仓内 tar.gz 解包到 build/ → 本机开发路径
 #   全都没有 ⇒ **打印可执行的修复指引并 exit 2**（fail-closed：宁可红，不可假绿）。
-CORPUS_TGZ = os.path.join(ROOT, 'golden', 'ghidra-perfn.tar.gz')
-CORPUS_CACHE = os.path.join(ROOT, 'build', '_ghidra_perfn')
-CORPUS_DEV = r'D:/output/rkgame/decompiled/02-ghidra-c/03-per-function'
-# ★ 最小语料量：实测真语料 812 个 `.c`（工厂 835 函数去重后 812 文件）。
-#   阈值取 700 是"截断/半包上传"的兜底 —— 半包会让"只在 Ghidra 有"的计数暴涨，
-#   却**不会报错**（那是假绿）。宁可 fail-closed。
-MIN_CORPUS_C = 700
-
-
-def _corpus_count(d):
-    if not d or not isinstance(d, (str, bytes, os.PathLike)):
-        return 0
-    try:
-        return sum(1 for n in os.listdir(d) if n.endswith('.c')) if os.path.isdir(d) else 0
-    except OSError:
-        return 0
-
-
-def _is_corpus(d, min_c=1):
-    return _corpus_count(d) >= min_c
-
-
-def resolve_corpus():
-    env = os.environ.get('GHIDRA_PERFUNC')
-    # ★ env 也必须过「最小语料量」：否则一个指向半包/空目录的 env 会被采纳 ⇒ 假绿。
-    #   （这条正是本门禁自证跑出来的 —— 首版 env 只判 min_c=1，自证第 3 项 FAIL。）
-    if _is_corpus(env, MIN_CORPUS_C):
-        return env, 'env:GHIDRA_PERFUNC(%d .c)' % _corpus_count(env)
-    if _is_corpus(CORPUS_CACHE, MIN_CORPUS_C):
-        return CORPUS_CACHE, 'repo:golden/ghidra-perfn.tar.gz(已解包, %d .c)' % _corpus_count(CORPUS_CACHE)
-    if os.path.exists(CORPUS_TGZ):
-        try:
-            _extract_corpus(CORPUS_TGZ, CORPUS_CACHE)
-        except Exception as e:                       # tar 损坏 / 半包 ⇒ 不是"跳过"，是"证据不可用"
-            sys.stderr.write('★ golden/ghidra-perfn.tar.gz 解包失败：%r\n' % (e,))
-            return None, 'MISSING(tar 损坏)'
-        # tar 里带一层 `03-per-function/`，下钻一层
-        for cand in (os.path.join(CORPUS_CACHE, '03-per-function'), CORPUS_CACHE):
-            if _is_corpus(cand, MIN_CORPUS_C):
-                return cand, 'repo:golden/ghidra-perfn.tar.gz(本次解包, %d .c)' % _corpus_count(cand)
-        return None, 'MISSING(tar 解开后不足 %d 个 .c)' % MIN_CORPUS_C
-    if _is_corpus(CORPUS_DEV):
-        return CORPUS_DEV, 'dev:本机路径(%d .c)' % _corpus_count(CORPUS_DEV)
-    return None, 'MISSING'
-
-
-def _extract_corpus(tgz, dest):
-    """解包语料 tar.gz 到 `dest`。
-
-    两个真实坑（都已踩过）：
-      ① `tf.extractall(filter='data')` 在 **Windows** 上报 `OSError(22, ERROR_INVALID_FUNCTION)`
-         ⇒ 必须留一条无 filter 的回退路径（本 tar 是我们自己生成的纯文件/目录，无链接）；
-      ② 直接解到 `dest` 时，若中途失败会**留下半包**，而半包可能恰好 ≥ 阈值 ⇒ 假绿。
-         故**先解到 `<dest>.tmp`，成功才落位**。
-    """
-    import shutil
-    import tarfile
-    import warnings
-    tmp = dest + '.tmp'
-    last = None
-    for kwargs in ({'filter': 'data'}, {}):
-        try:
-            shutil.rmtree(tmp, ignore_errors=True)
-            os.makedirs(tmp, exist_ok=True)
-            with tarfile.open(tgz, 'r:gz') as tf, warnings.catch_warnings():
-                # 无 filter 分支在 3.12–3.13 会告 DeprecationWarning；此处是**有意的**兼容回退
-                # （filter='data' 在 Windows 上必失败，见本函数 docstring）⇒ 局部静音，别污染 CI 日志。
-                warnings.simplefilter('ignore', DeprecationWarning)
-                tf.extractall(tmp, **kwargs)
-        except Exception as e:
-            last = e
-            continue
-        shutil.rmtree(dest, ignore_errors=True)
-        os.replace(tmp, dest)
-        return
-    shutil.rmtree(tmp, ignore_errors=True)
-    raise last
-
+# --------------------------------------------------------------------------- #
+# 语料解析：**唯一入口 = tools/ghidra_corpus.py**（仓内优先 + fail-closed）
+# --------------------------------------------------------------------------- #
+# 背景（2026-09-24，CI 实测红灯）：首版把工厂反编译目录**硬编码**为本机绝对路径，
+#   在 GitHub Actions 上 `os.listdir` 直接 FileNotFoundError ⇒ 门禁红。
+#   这与 GAP 16.86 的 `.json` vs `.json.gz`、以及 `scan_call_args.py` 在 CI 里
+#   `[SKIP]` 后 `return 0`（**门禁没跑却显示 PASS**）是**同一类病**：
+#   "判据的输入在 CI 里不存在"。
+#   处置不是打补丁，而是**把语料仓内化**（`golden/ghidra-perfn.tar.gz`，253 KB）**并抽出唯一加载入口**，
+#   任何需要这份语料的工具都走它 ⇒ 从架构上消灭"各拼各的路径"。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ghidra_corpus import resolve_corpus, REPAIR_HINT, self_test as corpus_self_test  # noqa: E402
 
 GHIDRA, GHIDRA_SRC = resolve_corpus()
 if GHIDRA is None:
-    sys.stderr.write(
-        '\n★ 前置缺失败：找不到 Ghidra 逐函数语料。\n'
-        '  本门禁**不做静默跳过**（静默跳过 = 假绿）。\n'
-        '  修复任选其一：\n'
-        '    ① 确认仓库里存在 `golden/ghidra-perfn.tar.gz`（应随仓交付，253 KB）；\n'
-        '    ② 或设环境变量 GHIDRA_PERFUNC=<目录> 指向 `03-per-function/`；\n'
-        '    ③ 或把本机 `D:/output/rkgame/decompiled/02-ghidra-c/03-per-function` 放回原处。\n\n')
-    sys.exit(2)
+    sys.stderr.write(REPAIR_HINT)
+    sys.exit(2)              # ★ fail-closed：跳过 ≠ 通过
 
 RE_FN = re.compile(r'^(FUN_[0-9a-f]{8}_.+?)\.c$')
 RE_CALL = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(')
@@ -298,84 +226,9 @@ def run(verbose=False):
 
 
 def self_test_corpus():
-    """语料解析的**三态自证**（GAP 16.86 / 16.87 那一类的机械防线）。
-
-    CI 红灯的真实成因是「门禁依赖了本地专有输入」⇒ 所以"语料解析"这段代码
-    本身必须有正反自证，否则修完还会再犯：
-      ① 正常态：env 指向真语料 ⇒ 采用 env；
-      ② CI 近似态：只有仓内 tar.gz（本机另两个来源全部藏掉）⇒ 必须能解包并用它；
-      ③ 缺陷态：三者皆无 ⇒ 必须返回 None（调用方 fail-closed `exit 2`，**绝不静默跳过**）；
-      ④ 缺陷态：tar.gz 存在但**内容不足**（模拟半包上传）⇒ 同样必须 None。
-    全部用临时目录里的**人造语料**跑，不触碰真数据 ⇒ 结果可复现、与机器无关。
-    """
-    global CORPUS_TGZ, CORPUS_CACHE, CORPUS_DEV
-    import tarfile
-    import tempfile
-    saved = (CORPUS_TGZ, CORPUS_CACHE, CORPUS_DEV)
-    saved_env = os.environ.pop('GHIDRA_PERFUNC', None)
-    ok = True
-
-    def chk(tag, got, want):
-        nonlocal ok
-        good = (got == want)
-        ok = ok and good
-        print('   %-58s got=%-14s %s' % (tag, got, '✓' if good else '★ FAIL'))
-
-    d = tempfile.mkdtemp()
-    try:
-        # 造一份"够格"的语料（MIN_CORPUS_C 个 .c）
-        good = os.path.join(d, 'good')
-        os.makedirs(good)
-        for i in range(MIN_CORPUS_C):
-            open(os.path.join(good, 'FUN_%08x_x.c' % i), 'w').write(
-                'int f(void){ a(); return 0; }\n')
-        # 造一份"不足"的语料（半包）
-        thin = os.path.join(d, 'thin')
-        os.makedirs(thin)
-        for i in range(3):
-            open(os.path.join(thin, 'FUN_%08x_x.c' % i), 'w').write('int f(void){return 0;}\n')
-        # 由 thin 造 tar.gz（内含一层 03-per-function/）
-        tgz = os.path.join(d, 'perfn.tar.gz')
-        with tarfile.open(tgz, 'w:gz') as tf:
-            tf.add(thin, arcname='03-per-function')
-        good_tgz = os.path.join(d, 'good.tar.gz')
-        with tarfile.open(good_tgz, 'w:gz') as tf:
-            tf.add(good, arcname='03-per-function')
-        # 兜底常量：全部指向不存在的位置
-        CORPUS_TGZ = os.path.join(d, 'nope.tar.gz')
-        CORPUS_CACHE = os.path.join(d, 'nope_cache')
-        CORPUS_DEV = os.path.join(d, 'nope_dev')
-
-        # ③ 三者皆无 ⇒ None（fail-closed）
-        got, _src = resolve_corpus()
-        chk('反例 三者皆无 → None（fail-closed）', got, None)
-
-        # ① env 指向真语料 ⇒ 采用 env
-        os.environ['GHIDRA_PERFUNC'] = good
-        got, src = resolve_corpus()
-        chk('正例 GHIDRA_PERFUNC 指向语料 → 采用', got, good)
-        #    env 指向**不足**的语料 ⇒ 不得采用（否则假绿）
-        os.environ['GHIDRA_PERFUNC'] = thin
-        got, _src = resolve_corpus()
-        chk('反例 GHIDRA_PERFUNC 指向不足语料 → 不采用', got, None)
-        os.environ.pop('GHIDRA_PERFUNC', None)
-
-        # ② CI 近似态：只有 tar.gz ⇒ 解包并用它
-        CORPUS_TGZ = good_tgz
-        got, src = resolve_corpus()
-        chk('正例 只有仓内 tar.gz → 解包并采用', got, os.path.join(CORPUS_CACHE, '03-per-function'))
-        chk('      来源标注含 tar.gz', 'tar.gz' in src, True)
-
-        # ④ tar.gz 存在但内容不足（半包）⇒ None
-        CORPUS_TGZ = tgz
-        CORPUS_CACHE = os.path.join(d, 'thin_cache')
-        got, _src = resolve_corpus()
-        chk('反例 tar.gz 半包（不足 %d）→ None' % MIN_CORPUS_C, got, None)
-    finally:
-        if saved_env is not None:
-            os.environ['GHIDRA_PERFUNC'] = saved_env
-        CORPUS_TGZ, CORPUS_CACHE, CORPUS_DEV = saved
-    return ok
+    """语料解析三态自证 —— 已抽到 `tools/ghidra_corpus.py`（唯一入口），此处只做委托，
+    保证 `--self-test` 仍然覆盖它（防"抽走之后没人验"）。"""
+    return corpus_self_test()
 
 
 def self_test():

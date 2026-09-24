@@ -145,8 +145,22 @@ def main():
     import glob as _g
     files = sorted(_g.glob(os.path.join(a.root, a.glob)))
     if not files:
-        print('  [SKIP] 未找到工作流文件（%s）' % a.glob)
-        return 0
+        # ★ 2026-09-24：原先 `[SKIP] + return 0` ⇒ **假绿**。实测 CI run 35954789674：
+        #   该步骤在 workflow 里是 ★ 硬门禁，但日志打印
+        #       [SKIP] 未找到工作流文件（.github/workflows/*.yml）
+        #   因为仓库把 workflow 放在**仓库根** `.github/workflows/`，而该步骤的 CWD 是 `1to1/`。
+        #   ⇒ 门禁在 CI 里从未跑过却显示 PASS。
+        #   修法：① 向上找一层（`<root>/../.github/workflows`）⇒ 两种 CWD 都对；
+        #         ② 仍找不到 ⇒ **fail-closed**（跳过 ≠ 通过）。
+        up = os.path.join(a.root, '..', a.glob)
+        files = sorted(_g.glob(up))
+        if files:
+            print('  提示：<root>/%s 不存在，改用上层的 %s（共 %d 个）'
+                  % (a.glob, os.path.normpath(up), len(files)))
+    if not files:
+        sys.stderr.write('★ 找不到工作流文件（试过 %s 与 %s）\n'
+                         '  本门禁**不做静默跳过**（跳过 = 假绿）。\n' % (a.glob, up))
+        return 2
     total = 0
     for f in files:
         bad = lint_workflow(f)

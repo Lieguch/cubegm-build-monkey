@@ -36,7 +36,7 @@ import os
 import re
 import sys
 
-GHIDRA_DIR = 'D:/output/rkgame/decompiled/02-ghidra-c/03-per-function'
+GHIDRA_DIR = None          # ★ 不再硬编码本机路径；由 tools/ghidra_corpus.py 解析（仓内优先）
 SRC_DIR = 'src/proprietary'
 
 # 允许清单：**工厂在我们这个调用者函数里本来就少传**，或该调用点已人工核对无碍。
@@ -122,15 +122,32 @@ def index_calls(root, fnames):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default='.')
-    ap.add_argument('--ghidra', default=GHIDRA_DIR)
+    ap.add_argument('--ghidra', default=None,
+                    help='工厂反编译目录；缺省走 tools/ghidra_corpus.py 的唯一解析入口')
     ap.add_argument('--pending', default=None)
     ap.add_argument('--write-pending', action='store_true')
     a = ap.parse_args()
     root = os.path.abspath(a.root)
 
-    if not os.path.isdir(a.ghidra):
-        print('  [SKIP] 找不到工厂反编译目录 %s' % a.ghidra)
-        return 0
+    # ★★ 2026-09-24：这里原先是「找不到就 print [SKIP] + return 0」——**这是假绿**。
+    #   CI 实测（run 35954789674 日志）两次出现：
+    #       [SKIP] 找不到工厂反编译目录 D:/output/rkgame/decompiled/02-ghidra-c/03-per-function
+    #   而该步骤在 workflow 里名为「调用点实参对拍 … ★ 硬门禁」⇒ **门禁在 CI 里从未跑过**。
+    #   纪律（技能 §45/§46 同源）：门禁必须能区分「判据不成立」与「判据没跑起来」——
+    #   后者一律 **fail-closed**（宁可红，不可假绿）。语料已仓内化 + 抽出唯一入口。
+    if a.ghidra is None:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from ghidra_corpus import resolve_corpus, REPAIR_HINT
+        a.ghidra, _src = resolve_corpus()
+        if a.ghidra:
+            print('  语料来源: %s -> %s' % (_src, a.ghidra))
+        else:
+            sys.stderr.write(REPAIR_HINT)
+            print('  [FATAL] 语料不可用 ⇒ fail-closed（跳过 ≠ 通过）')
+            return 2
+    elif not os.path.isdir(a.ghidra):
+        print('  [FATAL] --ghidra 指定的目录不存在：%s ⇒ fail-closed' % a.ghidra)
+        return 2
     fa = index_calls(root, sorted(glob.glob(os.path.join(a.ghidra, '*.c'))))
     ours = index_calls(root, sorted(glob.glob(os.path.join(root, SRC_DIR, '**', '*.c'), recursive=True)))
 

@@ -61,7 +61,7 @@ OURS = os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf')
 
 try:
     from unicorn import (UC_ARCH_ARM, UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE,
-                         UC_MODE_ARM, Uc, UcError)
+                         UC_MODE_ARM, UC_MODE_THUMB, Uc, UcError)
     import unicorn.arm_const as ac
     from capstone import CS_ARCH_ARM, CS_MODE_ARM, Cs
     from elftools.elf.elffile import ELFFile
@@ -220,7 +220,16 @@ def _in_spans(sp, addr):
     return i >= 0 and sp[i][0] <= addr < sp[i][1]
 
 
-def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None):
+def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None,
+             mode=None, _retry=True):
+    """执行 fname(args)。mode=None 时自动判 ARM/Thumb（先 ARM，遇 INSN_INVALID 再试 Thumb）。
+
+    ★ ARM/Thumb 自动判定（第 59 轮实测）：我们的产物里有个别函数是 **Thumb**，
+      在 ARM 模式下执行会以 `UC_ERR_INSN_INVALID` 停下 ⇒ 与工厂的差异全是**假发散**。
+      判据：ARM 模式仅在**头几条指令内**就 INSN_INVALID 时，改用 Thumb 重试。
+    """
+    if mode is None:
+        mode = UC_MODE_ARM
     """在 b 里执行 fname(args)。region=(lo,hi) 限定"可比数据区"（两侧交集）。
 
     ★ 为什么按**地址**而不是按符号名记访存指纹（第 59 轮实测暴露）
@@ -232,7 +241,19 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     if fname not in b.funcs:
         return {'error': 'no-such-func'}
     addr, _size = b.funcs[fname]
-    mu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+    mu = Uc(UC_ARCH_ARM, mode)
+    # ★ 必须开 FPU（CPACR + FPEXC.EN **两个都要**）：我们的产物是
+    #   `-mfpu=neon -mfloat-abi=hard` 编的，含 VFP/NEON 指令；Unicorn 默认两者都没开
+    #   ⇒ 一执行到 `vpush {d8,d9}` 就 UC_ERR_INSN_INVALID。
+    #   最小复现（第 59 轮实测，同 4 条指令）：
+    #       不加设置         → 执行 3 条即 INSN_INVALID
+    #       CPACR=0xF00000   → 仍然 3 条即 INSN_INVALID（**只设 CPACR 不够**）
+    #       +FPEXC=0x40000000→ 正常执行
+    try:
+        mu.reg_write(ac.UC_ARM_REG_C1_C0_2, 0x00F00000)
+        mu.reg_write(ac.UC_ARM_REG_FPEXC, 0x40000000)
+    except UcError:
+        pass
     # ★ 不能"逐段 mem_map"：Unicorn 的 mem_map 只要与**已映射页**有重叠就整体失败
     #   （我们产物的 9 个 PT_LOAD 里，0x400fd0 / 0x4e00e0 / 0x5630c8 三段都跨进了
     #    前一段的页 ⇒ 整段未映射 ⇒ 后续 mem_write 报 WRITE_UNMAPPED）。
@@ -306,6 +327,24 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     except UcError as e:
         stopped = 'uc-error: %s @0x%x' % (e, mu.reg_read(ac.UC_ARM_REG_PC))
     r0 = mu.reg_read(ac.UC_ARM_REG_R0)
+    # ★ Thumb 重试：ARM 模式在头几条指令就 INSN_INVALID ⇒ 改用 Thumb
+    if (_retry and mode == UC_MODE_ARM and stopped != 'return'
+            and 'INSN_INVALID' in stopped and ctx['insns'] <= 8):
+        r = run_func(b, fname, args, steps, stub_ret, spans, syms_for_final,
+                     mode=UC_MODE_THUMB, _retry=False)
+        r['mode'] = 'thumb'
+        return r
+    # ★ 地址类返回值：把 ret 指向的内容一并带上（两侧各自的映像里比内容，而不是比地址）
+    ret_content = ''
+    if r0:
+        try:
+            if b.seg_of(r0 & 0xFFFFFFFF):
+                blob = mu.mem_read(r0 & 0xFFFFFFFF, 64)
+                # ★ 指向 C 字符串时只比到 NUL（否则会把相邻字符串的差异算进来 ⇒ 假发散）
+                z = blob.find(b'\x00')
+                ret_content = (blob[:z + 1] if 0 <= z < 64 else blob[:32]).hex()
+        except UcError:
+            ret_content = ''
     final = {}
     if d is not None:
         blob = mu.mem_read(d[0], d[1] - d[0])
@@ -314,6 +353,7 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
             if d[0] <= sa < d[1] and 0 < sz <= 64:
                 final[nm] = blob[sa - d[0]:sa - d[0] + sz].hex()
     return {'error': None, 'stopped': stopped, 'insns': ctx['insns'], 'ret': r0 & 0xFFFFFFFF,
+            'ret_content': ret_content, 'mode': 'arm',
             'calls_ext': ctx['calls'], 'writes': ctx['w'], 'reads': ctx['r'], 'final': final}
 
 
@@ -376,7 +416,13 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
         # ★ ret 只在**两侧都正常返回**时才是判据（任一侧因缺文件系统等异常停下时，
         #   r0 是故障瞬间的残留值，拿它比会产生假发散）
         if sf == 'return' and so == 'return' and rf['ret'] != ro['ret']:
-            diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
+            # ★ 地址类返回值（指向各自映像里的字符串/表）：比**内容**而不是比地址。
+            #   实测：`_Z11zlibVersionv` 返回各自的版本串地址（0x2dc7dc vs 0x4da2a3），
+            #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
+            if rf['ret_content'] and rf['ret_content'] == ro['ret_content']:
+                pass
+            else:
+                diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
         cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
         if cf != co:
             raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'

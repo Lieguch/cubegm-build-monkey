@@ -92,6 +92,26 @@ jobs:
           # 本门禁把这类"实验条件被静默篡改"变成硬失败。构造性自证：1 坏样本 + 4 好样本。
           python tools/lint_workflow_continuation.py --root .
 
+      - name: CI 可达性 / 宿主绝对路径门禁（防"判据的输入在 CI 里不存在"）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（**同一根因第三次复发**，每次都烧掉一整轮 CI）：
+          #   ① prop_equiv 只找 golden/factory.funcs.json，CI 里只有 .gz；
+          #   ② mmio_width_audit 又犯一次（1to1-qemu-behav 红）；
+          #   ③ 2026-09-24 src_transcript_parity 硬编本机 D:/… 路径 ⇒ CI FileNotFoundError ⇒
+          #      整个 job 红，且**紧随其后的那道门禁被 skipped**。
+          #   更要命的一类是同源但更隐蔽的：scan_call_args.py / scan_call_counts.py /
+          #   check_types.py / lint_workflow_continuation.py 都是「**拿不到输入就 [SKIP] 并返回 0**」
+          #   ⇒ 号称 ★ 硬门禁，**在 CI 里从未跑过却一直显示 PASS**（假绿）。
+          # 本门禁把这条纪律机械化：
+          #   · 先从 workflow 解出 CI 可达工具集（含 .sh/.py 传递闭包；裸 import 也算边）；
+          #   · 每个可达工具里的**驱动盘绝对路径**必须可被 env 覆盖 / 在注释里 / 有台账理由
+          #     （台账 tools/ci_local_paths_allow.txt，含棘轮：过期条目也 FAIL）；
+          #   · 台账里写 `devonly:` 的条目会被**反向自证** —— 若该文件其实可达 CI 就 FAIL。
+          # 它自身只读仓内文件 ⇒ 没有"CI 里不存在的输入"（这正是要推广的性质）。
+          python tools/lint_ci_reach.py --self-test
+          python tools/lint_ci_reach.py
+
       - name: 调用点缺原型扫描（编译器真值）★ 硬门禁
         run: |
           cd 1to1

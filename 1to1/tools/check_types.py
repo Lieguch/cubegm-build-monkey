@@ -12,8 +12,19 @@ check_types.py — 生成物「类型可解析性」本地自检。
 """
 import os, re, sys
 
-ROOT = r'D:/output/rkgame-1to1/src/compat'
+# ★ 2026-09-24：原先是硬编码本机路径 `D:/output/rkgame-1to1/src/compat`，而下面两个循环
+#   都是 `if not os.path.exists(p): continue` ⇒ 在 **CI 上三个文件全不在** ⇒ 校验集合为空
+#   ⇒ 输出 0 问题 ⇒ 该步骤在 CI 里**看起来 PASS、其实什么都没查**（实测：CI run 35954789674
+#   的“类型可解析性自检”步骤 success，而它扫了 0 个文件）。
+#   同类病见 GAP 16.86/16.87 与 `scan_call_args.py` 的 `[SKIP] … return 0`。
+#   修法：① 路径从 `__file__` 推（仓内自洽，本地/CI 同解）；② **先做存在性硬失败**。
+ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src', 'compat')
 FILES = ['ghidra_compat.h', 'globals.h', 'proto.h']
+_missing = [f for f in FILES if not os.path.exists(os.path.join(ROOT, f))]
+if _missing:
+    sys.stderr.write('★ 校验对象缺失 %s：%s\n  本自检**不做静默跳过**（跳过 = 假绿 ⇒ 看起来 PASS 其实没查）。\n'
+                     % (ROOT, _missing))
+    sys.exit(2)
 
 STD = {
     'void', 'int', 'char', 'short', 'long', 'float', 'double', 'unsigned', 'signed',
