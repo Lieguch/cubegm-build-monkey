@@ -393,6 +393,10 @@ jobs:
           #   （OpenZipU G5/O5、GetZipItemA G2/O2…—— **总数完全相同**，只是 C++ 成员函数
           #   / `new`/`delete` 的写法改名）⇒ 收紧为「**总数变少**才 FAIL」，名不同归 INFO。
           #   语句数（`;` 计数）偏少只进"待核"清单（宏/多语句行/声明合并会干扰）。
+          # ★ 仪器自证先行（含「语料解析三态」）：先把工具本身验一遍，再让它给结论。
+          #   三态 = ① 正常态采用语料 ② CI 近似态（只有仓内 tar.gz）能解包并用
+          #          ③ 缺陷态（三者皆无 / tar 半包）必须 fail-closed，**绝不静默跳过**。
+          python tools/src_transcript_parity.py --self-test
           python tools/src_transcript_parity.py
 
       - name: 函数组归一化口径自证（修 prop_equiv 的克隆后缀配对）★ 硬门禁

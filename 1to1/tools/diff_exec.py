@@ -47,6 +47,7 @@
 退出码：0 = 无发散 / 1 = 有发散 / 2 = 自证失败 / 11 = 前置不可用
 """
 import argparse
+import bisect
 import hashlib
 import os
 import struct
@@ -179,7 +180,55 @@ class Bin(object):
 
 
 # --------------------------------------------------------------------------- #
-def run_func(b, fname, args, steps=20000, stub_ret=None):
+def _build_spans(bf):
+    """可比访问区 = **工厂具名数据对象**的地址区间并集。
+
+    ★ 为什么不是"数据段整体"（第 59 轮实测暴露）
+      工厂的可写段里**包含 `.got`**（0x3b1cfc..），而我们的 `.got` 在 0x4e13c8
+      ⇒ 若按"整段"比较，工厂的 GOT 槽读取会被计入、我们的同名读取落在区域外被过滤
+      ⇒ 产生"仅F有 (0x3B1D04,4,R)"这类**假发散**（实测 4 个函数全中同一模式）。
+      收紧到"具名数据对象"后：GOT/link-time 元数据天然被排除，只剩**真数据访问**可比。
+    """
+    bad = []
+    for sname in ('.got', '.got.plt', '.dynamic', '.dynsym', '.dynstr', '.hash', '.plt', '.rel.plt'):
+        sec = bf.elf.get_section_by_name(sname)
+        if sec is not None and sec['sh_size']:
+            bad.append((sec['sh_addr'], sec['sh_addr'] + sec['sh_size']))
+    spans = []
+    for nm, (a, sz) in bf.data_syms.items():
+        if not sz or sz > 1 << 20:
+            continue
+        lo, hi = a, a + sz
+        if any(not (hi <= b0 or lo >= b1) for b0, b1 in bad):
+            continue
+        spans.append((lo, hi))
+    spans.sort()
+    merged = []
+    for lo, hi in spans:
+        if merged and lo <= merged[-1][1]:
+            p_lo, p_hi = merged[-1]
+            merged[-1] = (p_lo, max(p_hi, hi))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def _in_spans(sp, addr):
+    if not sp:
+        return False
+    i = bisect.bisect_right(sp, (addr, 1 << 32)) - 1
+    return i >= 0 and sp[i][0] <= addr < sp[i][1]
+
+
+def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None):
+    """在 b 里执行 fname(args)。region=(lo,hi) 限定"可比数据区"（两侧交集）。
+
+    ★ 为什么按**地址**而不是按符号名记访存指纹（第 59 轮实测暴露）
+      同一个 vaddr 在两个二进制里可能挂着**不同的符号名**：工厂侧叫 `m_ui`，
+      我们的产物因为额外嵌入了 `factory_image.S` 的 `DAT_*` 别名，同一地址上会解析成
+      `DAT_003af2b4`。首版按名字比较 ⇒ 大量"仅F有 / 仅O有"的**假发散**（实测几十条）。
+      地址两侧一致（0x3ae5c4 起）⇒ **按地址比才是正确刻度**，名字只用于人读标注。
+    """
     if fname not in b.funcs:
         return {'error': 'no-such-func'}
     addr, _size = b.funcs[fname]
@@ -188,9 +237,11 @@ def run_func(b, fname, args, steps=20000, stub_ret=None):
     #   （我们产物的 9 个 PT_LOAD 里，0x400fd0 / 0x4e00e0 / 0x5630c8 三段都跨进了
     #    前一段的页 ⇒ 整段未映射 ⇒ 后续 mem_write 报 WRITE_UNMAPPED）。
     #   正确做法：先把所有段的页区间**合并成不相交并集**一次映射，再逐段写文件内容。
-    spans = sorted((va & ~0xFFF, (va + msz + 0xFFF) & ~0xFFF) for va, fsz, msz, fl, off in b.segs)
+    # ★ 注意：这里的局部变量**必须叫 pages**，不能叫 spans —— 否则会覆盖上面传入的
+    #   `spans`（可比访问区过滤器），让过滤静默失效（第 59 轮踩过：表现为"过滤没生效"）。
+    pages = sorted((va & ~0xFFF, (va + msz + 0xFFF) & ~0xFFF) for va, fsz, msz, fl, off in b.segs)
     merged = []
-    for lo, hi in spans:
+    for lo, hi in pages:
         if merged and lo <= merged[-1][1]:
             merged[-1][1] = max(merged[-1][1], hi)
         else:
@@ -210,6 +261,7 @@ def run_func(b, fname, args, steps=20000, stub_ret=None):
     mu.mem_write(SCRATCH + 0x100, b'A\x00')
     mu.mem_write(SCRATCH + 0x200, b'core\x00')
 
+    sp = spans
     d = b.dregion
     ctx = {'insns': 0, 'calls': [], 'w': [], 'r': []}
 
@@ -226,15 +278,18 @@ def run_func(b, fname, args, steps=20000, stub_ret=None):
             m.emu_stop()
 
     def mem_hook(m, access, address, size_, value, user):
-        if d is None or not (d[0] <= address < d[1]):
+        # ★ 按 (地址, 宽度, 读/写) 记录，**不带符号名** —— 名字两侧可能不同（见 run_func 头注释）
+        # ★ 范围用「工厂具名数据对象的区间并集」（spans）⇒ GOT/link 元数据天然排除
+        if sp is not None and not _in_spans(sp, address):
             return
-        rec = (b.name_of(address) or ('@%x' % address), size_)
+        if sp is None and (d is None or not (d[0] <= address < d[1])):
+            return
         if access == 17:
             if len(ctx['w']) < MAX_TRACE:
-                ctx['w'].append(rec + ('W',))
+                ctx['w'].append((address, size_, 'W'))
         elif access == 16:
             if len(ctx['r']) < MAX_TRACE:
-                ctx['r'].append(rec + ('R',))
+                ctx['r'].append((address, size_, 'R'))
 
     mu.hook_add(UC_HOOK_CODE, code_hook)
     mu.hook_add(UC_HOOK_MEM_WRITE, mem_hook)
@@ -254,7 +309,8 @@ def run_func(b, fname, args, steps=20000, stub_ret=None):
     final = {}
     if d is not None:
         blob = mu.mem_read(d[0], d[1] - d[0])
-        for nm, (sa, sz) in b.data_syms.items():
+        # ★ 最终内容也**只用一套符号名**（工厂的），两侧同名同址 ⇒ 可直接逐项比
+        for nm, (sa, sz) in (syms_for_final or b.data_syms).items():
             if d[0] <= sa < d[1] and 0 < sz <= 64:
                 final[nm] = blob[sa - d[0]:sa - d[0] + sz].hex()
     return {'error': None, 'stopped': stopped, 'insns': ctx['insns'], 'ret': r0 & 0xFFFFFFFF,
@@ -287,11 +343,29 @@ def norm_stop(s):
     return s
 
 
+# ★ 外部调用的「等价别名」：只放**已确认同一语义**的项，且必须在报告里同时给出原始名。
+#   `_Znwj` = C++ `operator new(unsigned int)` —— 工厂侧走 libstdc++ 的 new，我们侧直接
+#   `malloc`。二者在本项目观察到的语义等价（同一分配器、同一失败语义）。归为**等价别名**，
+#   而不是当作"多调/少调"。任何新增别名都必须在这里写明依据。
+CALL_ALIAS = {
+    '_Znwj': 'malloc', '_Znaj': 'malloc', '_Znam': 'malloc', '_Znwm': 'malloc',
+    '_ZdlPv': 'free', '_ZdaPv': 'free',
+}
+
+
+def norm_calls(seq):
+    return [CALL_ALIAS.get(x, x) for x in seq]
+
+
 def compare(bf, bo, fname, steps=20000, corpus=None):
     rows, verdict = [], 'PASS'
+    # ★ 可比访问区 = 工厂**具名数据对象**的区间并集（排除 .got/.dynamic 等 link 元数据）
+    spans = _build_spans(bf)
+    # ★ 最终内容两侧共用**工厂的符号名**（同址同名才可比）
+    kw = dict(steps=steps, spans=spans, syms_for_final=bf.data_syms)
     for cname, args in (corpus or CORPUS):
-        rf = run_func(bf, fname, args, steps)
-        ro = run_func(bo, fname, args, steps)
+        rf = run_func(bf, fname, args, **kw)
+        ro = run_func(bo, fname, args, **kw)
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
             continue
@@ -299,10 +373,14 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
         sf, so = norm_stop(rf['stopped']), norm_stop(ro['stopped'])
         if sf != so:
             diffs.append('stop F=%s O=%s' % (sf, so))
-        if rf['ret'] != ro['ret']:
+        # ★ ret 只在**两侧都正常返回**时才是判据（任一侧因缺文件系统等异常停下时，
+        #   r0 是故障瞬间的残留值，拿它比会产生假发散）
+        if sf == 'return' and so == 'return' and rf['ret'] != ro['ret']:
             diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
-        if rf['calls_ext'] != ro['calls_ext']:
-            diffs.append('calls_ext F=%s O=%s' % (rf['calls_ext'][:12], ro['calls_ext'][:12]))
+        cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
+        if cf != co:
+            raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
+            diffs.append('calls_ext F=%s O=%s%s' % (cf[:12], co[:12], raw))
         wf, wo = sorted(rf['writes']), sorted(ro['writes'])
         if wf != wo:
             diffs.append('data-writes 仅F=%s 仅O=%s'
