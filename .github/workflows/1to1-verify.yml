@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 安装 ARM 交叉工具链（armv7 hard-float）
+        continue-on-error: true
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
@@ -27,6 +28,7 @@ jobs:
           arm-linux-gnueabihf-objdump --version | head -1
 
       - name: 安装 zig（与本地同一工具链 ⇒ GLIBC 下限可控、避免 GCC/lld 差异）
+        continue-on-error: true
         run: |
           python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
           # ★ 差分执行器（tools/diff_exec.py）的依赖：Unicorn（CPU 模拟）/ capstone（反汇编）
@@ -45,6 +47,7 @@ jobs:
           "$ZIG" version
 
       - name: shim 日志格式化器自检（零-stdio 硬门禁）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-17 实测）：shim 的 `note()` 曾用 `vsnprintf`，在被拦截的 `fopen`
@@ -59,6 +62,7 @@ jobs:
           python tools/shim_fmt_selftest.py --zig "$ZIG"
 
       - name: 调用点实参对拍（逐调用点，权威=工厂反编译 C）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-17 实测）：`src/compat/proto.h` 里的 K&R 空参声明让调用点**漏参编译通过**，
@@ -70,6 +74,7 @@ jobs:
           python tools/scan_call_args.py --root .
 
       - name: 窄指针转型 + 解引用扫描 ★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-17 实测，真实缺陷已定案）：`mui_setting` 里曾写成
@@ -85,6 +90,7 @@ jobs:
             --ledger tools/narrow_deref_pending.txt
 
       - name: 工作流续行链 lint（注释不得插进 `\` 续行链）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（第 44 轮实测事故，代价一整轮 CI）：场景 E 步骤曾在 `\` 续行链中间插了一行
@@ -96,6 +102,7 @@ jobs:
           python tools/lint_workflow_continuation.py --root .
 
       - name: CI 可达性 / 宿主绝对路径门禁（防"判据的输入在 CI 里不存在"）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（**同一根因第三次复发**，每次都烧掉一整轮 CI）：
@@ -116,6 +123,7 @@ jobs:
           python tools/lint_ci_reach.py
 
       - name: 调用点缺原型扫描（编译器真值）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-18 第 47 轮，真实缺陷，机器码级已定案）：
@@ -135,6 +143,7 @@ jobs:
             --ledger tools/implicit_decl_pending.txt
 
       - name: proto.h 声明 vs 上游真签名对拍★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-18 第 47 轮，与「缺原型」同族）：`src/compat/proto.h` 是我们**手写**的声明表，
@@ -150,6 +159,7 @@ jobs:
             --ledger tools/proto_vs_upstream_pending.txt
 
       - name: shim 文案可 JSON 化检查 ★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-19 实测事故，代价：三个场景静默失效）：
@@ -164,6 +174,7 @@ jobs:
           python tools/check_shim_charset.py --root .
 
       - name: 校验金标准完整性
+        continue-on-error: true
         run: |
           python3 - <<'PY'
           import gzip, json
@@ -177,14 +188,17 @@ jobs:
           PY
 
       - name: 解压金标准
+        continue-on-error: true
         run: gunzip -k -f 1to1/golden/factory.funcs.json.gz
 
       - name: 结构语义指纹门禁自检（期望 100% S1）
+        continue-on-error: true
         run: |
           cd 1to1
           python3 tools/structsig.py golden/factory.funcs.json golden/factory.funcs.json
 
       - name: N3 ABI 门禁（验证可用工具链能产出工厂 ABI 的 ELF）
+        continue-on-error: true
         run: |
           cd 1to1
           printf 'int main(void){return 0;}\n' > /tmp/tu.c
@@ -196,6 +210,7 @@ jobs:
           python3 tools/abi_check.py /tmp/tu
 
       - name: P2-A stb_truetype 版本指纹锁定
+        continue-on-error: true
         run: |
           cd 1to1
           mkdir -p report
@@ -205,11 +220,13 @@ jobs:
           cat report/p2a_stb.txt
 
       - name: 类型可解析性自检（生成物健全性）
+        continue-on-error: true
         run: |
           cd 1to1
           python3 tools/check_types.py
 
       - name: 数组名转型扫描（Ghidra 把 `arr[0]` 误渲染成 `(窄类型)arr`）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # ★ 血泪：工厂 `spi_driver_init` 的判断原指令是 `ldrb r3,[r6]`（r6=&spi_id），
@@ -220,6 +237,7 @@ jobs:
           python3 tools/scan_array_casts.py
 
       - name: .rodata 字符串当整数门禁（Ghidra 类型陷阱 ⇒ 多解引用一次）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 血泪：工厂 0x002dcea4 处是字符串 "font.ttf"，Ghidra 渲染成 `undefined4`。
@@ -230,12 +248,14 @@ jobs:
           python3 tools/scan_rodata_int_as_ptr.py
 
       - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
+        continue-on-error: true
         run: |
           cd 1to1
           mkdir -p report
           sh tools/recon_build.sh report/recon_build.txt
 
       - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           mkdir -p report
@@ -245,7 +265,9 @@ jobs:
           echo '--- 审计要点 ---'
           grep -aE '重复定义|未解析引用|MISSING|upstream|结论' report/link_audit.txt | head -8
           # ★ 硬断言：重复定义 与 MISSING 必须为 0
-          #   （此前本步骤带 continue-on-error: true，失败被静默掩盖 = 假绿）
+          #   背景：本步骤曾带 continue-on-error: true ⇒ 失败被静默掩盖 = 假绿，故当时**故意取消**它。
+          #   现按 GAP 17.11 重新加上 —— 但语义已不同：末尾的「门禁总账」步骤读 `toJSON(steps)`
+          #   会把**所有** outcome=failure 的步骤一次列全并硬失败 ⇒ 既不再掩盖，又能一轮看全。
           python3 - <<'PY'
           import re, sys
           t = open('report/link_audit.txt', encoding='utf-8', errors='replace').read()
@@ -265,12 +287,14 @@ jobs:
           [ "$rc" = "0" ] || exit "$rc"
 
       - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
+        continue-on-error: true
         run: |
           cd 1to1
           mkdir -p build/upstream
           PY=python3 sh tools/build_upstream.sh build/upstream
 
       - name: P3 完整链接 + ABI/布局门禁 ★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 注：数据镜像/链接脚本的「重新生成」需工厂 ELF，只在本地执行（tools/regen_data.sh）；
@@ -287,6 +311,7 @@ jobs:
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
 
       - name: 上游符号指纹门禁（技能铁律 90：库名对 ≠ 版本对）
+        continue-on-error: true
         run: |
           cd 1to1
           # 血泪：项目长期记录「XUnzip = Wischik zip_utils」——**名字对、版本错**。
@@ -298,6 +323,7 @@ jobs:
           python3 tools/scan_upstream_fingerprint.py
 
       - name: C++ mangled 签名对拍（Itanium ABI）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（第 45 轮实测）：`TUnzip::Find` / `unzOpenCurrentFile` 这类 **C++ 包装层**
@@ -312,6 +338,7 @@ jobs:
           python tools/scan_cxx_abi.py             --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf             --ledger tools/cxx_abi_pending.txt
 
       - name: 上游库公有 API 集合对拍（版本钉错检出）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-18 实测）：上游库**版本钉错**不会让任何编译/链接门禁报错，只会静默改行为。
@@ -325,6 +352,7 @@ jobs:
             --pending tools/upstream_api_pending.txt
 
       - name: 调用点实参寄存器对拍（工厂=对照组）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-17 实测）：ARM 上"调用点少设一个实参寄存器"= 传寄存器垃圾。
@@ -341,6 +369,7 @@ jobs:
             --ledger tools/livein_args_pending.txt
 
       - name: 逐函数「调用点个数」对拍（源码级，与 codegen 无关）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-17 实测）：场景 E 的执行集合差集里发现
@@ -357,6 +386,7 @@ jobs:
             --ledger tools/call_counts_pending.txt
 
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
+        continue-on-error: true
         run: |
           cd 1to1
           # 血泪：RARCH_LOG 丢了 `...` ⇒ RARCH_LOG_V 的 va_list 取到调用者的 r1 残留
@@ -365,6 +395,7 @@ jobs:
           FACTORY_ELF=golden/factory.rkgame.bin python3 tools/scan_varargs_fns.py
 
       - name: 刻度 A（源码级工厂依赖）普查 ★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-23）：`fidelity_audit.py` 的**二进制口径**（扫 .text 里落在
@@ -376,6 +407,7 @@ jobs:
           python3 tools/fidelity_source_deps.py --self-test
 
       - name: DCE 引用差门禁（工厂数据引用被 -Os 消除）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-23，GAP 16.99）：Ghidra 会把工厂栈上**一个连续缓冲**按类型拆成
@@ -390,6 +422,7 @@ jobs:
           CC="$ZIG cc" python3 tools/dce_ref_diff.py --out report/dce_ref_diff.txt
 
       - name: 数据模块「重生成契约」门禁 ★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-23）：`tools/regen_data.sh` 会**重写**已提交的 linker/factory.ld
@@ -402,6 +435,7 @@ jobs:
           python3 tools/check_regen_contract.py --self-test
 
       - name: 转写完整性门禁（我们的源码 vs Ghidra 逐函数原始 C）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-24，第 58 轮）：`prop_equiv` 用**体量比**判等价，但它分不清两件事：
@@ -427,6 +461,7 @@ jobs:
           python tools/src_transcript_parity.py
 
       - name: 函数组归一化口径自证（修 prop_equiv 的克隆后缀配对）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 背景（2026-09-24）：我们的 C **标识符不能带点** ⇒ 转录工厂的
@@ -438,6 +473,7 @@ jobs:
           python tools/equiv_group_sum.py --self-test
 
       - name: 差分执行器自证（Unicorn 逐函数对拍；**不依赖本项目数据**）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 为什么必须自证：这个仪器是"判定等价性"的**尺子**，尺子错了所有结论都错。
@@ -447,6 +483,7 @@ jobs:
           python tools/diff_exec.py --self-test
 
       - name: 差分执行对拍（工厂 vs 重建产物，棘轮台账）★ 硬门禁
+        continue-on-error: true
         run: |
           cd 1to1
           # 判据（比什么）：停止类别 / 返回值 / 外部调用序列 / 数据区访存指纹(地址,宽度,读写)
@@ -485,3 +522,20 @@ jobs:
           name: 1to1-p2a-report
           path: 1to1/report/
           if-no-files-found: warn
+
+      - name: 门禁总账（★ 逐步骤收齐：任何一步失败都在这里一次性报全并硬失败）
+        if: always()
+        run: |
+          cd 1to1
+          # 背景（GAP 17.11）：本 job 是单 job 顺序执行 30+ 步；Actions 的语义是
+          #   **第一步失败 ⇒ 后面所有步骤一次都不跑** ⇒ 一轮 CI 只暴露一个缺陷，
+          #   判定能力被建在稀缺资源（Actions 分钟）上 ⇒ 无法收敛。
+          #   （实测：`check_types` 一红，`diff_exec` 两步 + `dce_ref_diff` + `regen_contract`
+          #   + `src_transcript_parity` 等 20+ 步在 CI 里**从未执行过**，而本地全绿。）
+          # 做法：各门禁步骤带 `continue-on-error: true`（单独看会掩盖失败），
+          #   由本步骤读 `toJSON(steps)` 把**所有**非 success 步骤一次列全并硬失败。
+          #   ⇒ 净效果：失败不被掩盖，且**一轮看完所有失败**。
+          python3 tools/ci_gate_summary.py
+        env:
+          # `outcome` = 忽略 continue-on-error 后的真实结果（这正是我们要的）
+          STEPS_JSON: ${{ toJSON(steps) }}
