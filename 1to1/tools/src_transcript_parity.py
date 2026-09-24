@@ -40,9 +40,60 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GHIDRA = os.environ.get('GHIDRA_PERFUNC',
-                        r'D:/output/rkgame/decompiled/02-ghidra-c/03-per-function')
 OURS = os.path.join(ROOT, 'src', 'proprietary')
+
+# --------------------------------------------------------------------------- #
+# 语料来源解析：**仓内为准，缺则硬失败**（绝不静默跳过）
+# --------------------------------------------------------------------------- #
+# 背景（2026-09-24，CI 实测红灯）：首版把这个路径**硬编码**为本机绝对路径，
+#   在 GitHub Actions 上 `os.listdir` 直接 FileNotFoundError ⇒ 门禁红。
+#   这与 GAP 16.86 的 `.json` vs `.json.gz` 是**同一类病**：门禁依赖了"本地专有输入"。
+# 处置（不是打补丁，而是按项目纪律仓内化）：
+#   语料只有 3.3 MB / 812 文件 ⇒ 打包 253 KB，随仓库交付 `golden/ghidra-perfn.tar.gz`
+#   （它是从 `golden/factory.rkgame.bin` 派生的只读分析产物，属"材料"不属"构建产物"）。
+#   解析顺序：环境变量 → 仓内 tar.gz 解包到 build/ → 本机开发路径
+#   全都没有 ⇒ **打印可执行的修复指引并 exit 2**（fail-closed：宁可红，不可假绿）。
+CORPUS_TGZ = os.path.join(ROOT, 'golden', 'ghidra-perfn.tar.gz')
+CORPUS_CACHE = os.path.join(ROOT, 'build', '_ghidra_perfn')
+CORPUS_DEV = r'D:/output/rkgame/decompiled/02-ghidra-c/03-per-function'
+
+
+def _is_corpus(d):
+    try:
+        return os.path.isdir(d) and any(n.endswith('.c') for n in os.listdir(d))
+    except OSError:
+        return False
+
+
+def resolve_corpus():
+    env = os.environ.get('GHIDRA_PERFUNC')
+    if env and _is_corpus(env):
+        return env, 'env:GHIDRA_PERFUNC'
+    if _is_corpus(CORPUS_CACHE):
+        return CORPUS_CACHE, 'repo:golden/ghidra-perfn.tar.gz(已解包)'
+    if os.path.exists(CORPUS_TGZ):
+        import tarfile
+        os.makedirs(os.path.dirname(CORPUS_CACHE), exist_ok=True)
+        with tarfile.open(CORPUS_TGZ, 'r:gz') as tf:
+            tf.extractall(CORPUS_CACHE)
+        # tar 里带一层 `03-per-function/`，下钻一层
+        inner = os.path.join(CORPUS_CACHE, '03-per-function')
+        return (inner if _is_corpus(inner) else CORPUS_CACHE), 'repo:golden/ghidra-perfn.tar.gz(本次解包)'
+    if _is_corpus(CORPUS_DEV):
+        return CORPUS_DEV, 'dev:本机路径'
+    return None, 'MISSING'
+
+
+GHIDRA, GHIDRA_SRC = resolve_corpus()
+if GHIDRA is None:
+    sys.stderr.write(
+        '\n★ 前置缺失败：找不到 Ghidra 逐函数语料。\n'
+        '  本门禁**不做静默跳过**（静默跳过 = 假绿）。\n'
+        '  修复任选其一：\n'
+        '    ① 确认仓库里存在 `golden/ghidra-perfn.tar.gz`（应随仓交付，253 KB）；\n'
+        '    ② 或设环境变量 GHIDRA_PERFUNC=<目录> 指向 `03-per-function/`；\n'
+        '    ③ 或把本机 `D:/output/rkgame/decompiled/02-ghidra-c/03-per-function` 放回原处。\n\n')
+    sys.exit(2)
 
 RE_FN = re.compile(r'^(FUN_[0-9a-f]{8}_.+?)\.c$')
 RE_CALL = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(')
@@ -143,6 +194,7 @@ def run(verbose=False):
     print('转写完整性对拍（权威 = Ghidra 逐函数原始 C）')
     print('=' * 104)
     print('  Ghidra 文件 %d / 我们文件 %d / 可配对 %d' % (len(gi), len(oi), len(common)))
+    print('  语料来源: %s -> %s' % (GHIDRA_SRC, GHIDRA))
     print('  只在 Ghidra 有（我们没转写）: %d  %s' % (len(only_g), only_g[:5]))
     print('  只在我们有（我们自造）    : %d  %s' % (len(only_o), only_o[:5]))
     print()
