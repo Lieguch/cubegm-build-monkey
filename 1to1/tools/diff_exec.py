@@ -93,6 +93,12 @@ class Bin(object):
                 self.segs.append((s['p_vaddr'], s['p_filesz'], s['p_memsz'], s['p_flags'], s['p_offset']))
         self.segs.sort()
         self.funcs, self.data_syms, self.sym_list = {}, {}, []
+        # ★ 同名数据符号（LOCAL + GLOBAL 同名是**合法 ELF**）：实测工厂里
+        #   `ArchivePath` 有一个 LOCAL 0x3AE610(size=64, .data) **和** 一个 GLOBAL 0x3E18D4(size=28)，
+        #   而工厂的代码引用的是 **LOCAL** 那个（intra-object 引用优先绑定本地符号）。
+        #   以名字为键的字典会**静默折叠**成后者 ⇒ 归因错误 ⇒ 可能产出**假 PASS**。
+        #   本轮只登记+报警（不改偏好，避免引入未经验证的语义变更）：见 GAP 17.12。
+        self.dup_objs = {}
         st = self.elf.get_section_by_name('.symtab')
         if st is not None:
             for s in st.iter_symbols():
@@ -106,6 +112,7 @@ class Bin(object):
                     if n not in self.funcs or sz > self.funcs[n][1]:
                         self.funcs[n] = (a, sz)
                 elif ty == 'STT_OBJECT':
+                    self.dup_objs.setdefault(n, []).append((a, sz, s['st_shndx']))
                     self.data_syms[n] = (a, sz)
         self.sym_list.sort()
         self._dregion = self._pick_dregion()
@@ -419,7 +426,47 @@ LEDGER_ESC_RE = re.compile(r'^#\s*escalate\s*=\s*(\d+)\s*$')
 # 为什么必须有它：被判据忽略的东西会因为"跑不完"落进 TRUNC 桶；若台账在低预算下重写，
 # 这些函数就会被**静默删出台账**（GAP 17.10 实证：`libiconvlist` / `xmp3_PolyphaseStereo`
 # 在 3000 步是 TRUNC、在 20000 步是 **DIVERGE**）。代价只在"确实截断"的函数上付。
-ESCALATE_FACTOR = 10
+ESCALATE_FACTOR = 20
+# 为什么是 20 而不是 10：实测 `AudioProcess` 工厂侧需要 **30,202 条指令**才跑完，而我们只要
+# 28,719 条（同一语义，跨编译器的每轮迭代指令数不同）⇒ 10× (=30,000) **刚好卡在边界外**，
+# 会把"跑得慢"误判成"不可判"。判据的预算必须留出**合法的编译器抖动余量**。
+
+
+def void_fns_from_corpus():
+    """→ (set(返回类型为 void 的函数名), 说明文本)
+
+    为什么需要（GAP 17.12）：**`void` 函数的 r0 不是输出，只是残留值**。实测 `AudioProcess`
+    （两侧 3 组输入、除 ret 外**全部观测量一致**）：
+      工厂 r0 = `0xf4240`（= 它最后一次 `__aeabi_idiv(0xf4240, …)` 的被除数）
+      我们 r0 = `0x0`
+    ⇒ 把残留值当判据会产出**假发散**（本项目第 4 次踩"把非语义量当判据"）。
+    语料 `golden/ghidra-perfn.tar.gz`（仓内，253 KB）每个函数文件第 6 行是签名 ⇒ 覆盖全部函数；
+    语料缺失时不报错、但**回落到"比 ret"**（更严的一侧，绝不静默放行）。
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import ghidra_corpus
+        d, src = ghidra_corpus.resolve_corpus()
+    except Exception as e:                                    # pragma: no cover
+        return None, '语料不可用（%s）⇒ 回落为「比 ret」' % type(e).__name__
+    if not d or not os.path.isdir(d):
+        return None, '语料不可用（%s）⇒ 回落为「比 ret」' % (src,)
+    out = set()
+    for fn in os.listdir(d):
+        if not fn.endswith('.c'):
+            continue
+        try:
+            with open(os.path.join(d, fn), encoding='utf-8', errors='replace') as fh:
+                head = [next(fh) for _ in range(14)]
+        except Exception:
+            continue
+        for ln in head:
+            m = re.match(r'^void\s+([A-Za-z_]\w*)\s*\(', ln)
+            if m:
+                out.add(m.group(1))
+                break
+    return out, '语料 %s：void 函数 %d 个' % (os.path.basename(d), len(out))
+
 
 
 def read_ledger_text(txt):
@@ -467,12 +514,13 @@ def ledger_update(old, diverging, undecidable):
     return sorted(keep), removed, kept_undec
 
 
-def compare(bf, bo, fname, steps=20000, corpus=None):
+def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     rows, verdict = [], 'PASS'
     # ★ 可比访问区 = 工厂**具名数据对象**的区间并集（排除 .got/.dynamic 等 link 元数据）
     spans = _build_spans(bf)
     # ★ 最终内容两侧共用**工厂的符号名**（同址同名才可比）
     kw = dict(steps=steps, spans=spans, syms_for_final=bf.data_syms)
+    ret_unjudged = False
     for cname, args in (corpus or CORPUS):
         rf = run_func(bf, fname, args, **kw)
         ro = run_func(bo, fname, args, **kw)
@@ -482,11 +530,16 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
         cap_f, cap_o = rf['capped'], ro['capped']
         cap_both = cap_f and cap_o
         cap_asym = cap_f != cap_o
-        if cap_both:
-            # 两侧都触到步数上限 ⇒ 所有观测量都被截断，**本组输入不可判**（单列，不进棘轮）
+        if cap_both or cap_asym:
+            # ★ 只要**任一侧**触到步数上限，本组就**不可判**：
+            #   拿"跑完的一侧"与"被截断的一侧"比，差异只反映截断位置，**不是语义差异**。
+            #   （实测 `AudioProcess`：工厂 30,202 条才跑完、我们 28,719 条 ⇒ 在 3000 步预算下
+            #    会凭空多出 `calls_ext`/`data-reads` 差异 ⇒ **假发散**。）
+            why = ('两侧均触步数上限(%d)' % steps) if cap_both else \
+                  ('仅一侧触步数上限(%d)（F=%s O=%s）' % (steps, cap_f, cap_o))
             rows.append((cname, 'trunc', rf['ret'], ro['ret'], rf['insns'], ro['insns'],
                          'return', 'return', [],
-                         '两侧均触步数上限(%d) ⇒ 本组不可判（需能终止的输入或提高 --steps）' % steps))
+                         '%s ⇒ 本组不可判（截断的一侧无观测力；需能终止的输入或提高 --steps）' % why))
             continue
         diffs = []
         sf, so = norm_stop(rf['stopped']), norm_stop(ro['stopped'])
@@ -499,6 +552,10 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
             #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
             if rf['ret_content'] and rf['ret_content'] == ro['ret_content']:
                 pass
+            elif void_fns is not None and fname in void_fns:
+                # ★ void 函数的 r0 **不是输出**（实测 AudioProcess：工厂残留 0xf4240、
+                #   我们残留 0x0，其余观测量全一致）⇒ 不作判据（GAP 17.12）
+                ret_unjudged = True
             else:
                 diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
         cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
@@ -532,6 +589,8 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
     # 若**没有任何一组**能给出判定（全是 trunc）⇒ 该函数整体不可判
     if rows and all(r[1] == 'trunc' for r in rows):
         verdict = 'TRUNC'
+    if out is not None:
+        out['ret_unjudged'] = 1 if ret_unjudged else 0
     return verdict, rows
 
 
@@ -660,6 +719,25 @@ def self_test():
             c('前提  两侧数据区**起始 vaddr 相同**（内存可直接对拍）',
               BF.dregion is not None and BO.dregion is not None
               and BF.dregion[0] == BO.dregion[0], True)
+            # ★ 同名数据符号（LOCAL/GLOBAL 同名）必须被**识别出来**，不能静默折叠
+            c('前提  工厂存在同名数据符号（ArchivePath 一例，实测）',
+              len(BF.dup_objs.get('ArchivePath', [])) >= 2, True)
+            c('前提  我方 ArchivePath 为单一定义（生成器只映射了一个）',
+              len(BO.dup_objs.get('ArchivePath', [])) <= 1, True)
+            # ---- 回归锚点：把"非语义量"当判据的两类假发散（GAP 17.12）-------------
+            vf, vmsg = void_fns_from_corpus()
+            if vf:
+                c('正例  void 集合从语料解析出来（AudioProcess 在其中）',
+                  'AudioProcess' in vf, True)
+                c('正例  void 集合非平凡（>50 个）', len(vf) > 50, True)
+                # ★ 只在一侧触上限时**不得**判 DIVERGE（否则把"跑得慢"当成"语义不同"）
+                v_a, _ = compare(BF, BO, 'AudioProcess', 3000, void_fns=vf)
+                c('反例  一侧触上限（3000 步）⇒ 必须 TRUNC，不得 DIVERGE', v_a, 'TRUNC')
+                # ★ void 函数在足够预算下只差 r0 ⇒ 必须 PASS（r0 是残留值，不是输出）
+                o2 = {}
+                v_b, _ = compare(BF, BO, 'AudioProcess', 60000, void_fns=vf, out=o2)
+                c('反例  预算足够时 void 函数只差 r0 ⇒ PASS（r0 不作判据）', v_b, 'PASS')
+                c('正例  上述判定确实发生了"r0 未作判据"', o2.get('ret_unjudged'), 1)
     return chk
 
 
@@ -703,8 +781,12 @@ def main():
         return 0
 
     if a.fn:
-        v, rows = compare(BF, BO, a.fn, a.steps)
+        vf, _vmsg = void_fns_from_corpus()
+        o = {}
+        v, rows = compare(BF, BO, a.fn, a.steps, void_fns=vf, out=o)
         print('  %s ⇒ %s' % (a.fn, v))
+        if o.get('ret_unjudged'):
+            print('     [ret] 该函数返回类型为 void ⇒ r0 是残留值，**未作判据**（GAP 17.12）')
         for r in rows:
             if r[1] == 'SKIP':
                 print('     [%s] SKIP %s/%s' % (r[0], r[2], r[3]))
@@ -719,21 +801,30 @@ def main():
     if a.batch:
         names = common[:a.limit] if a.limit else common
         esc_steps = a.steps * ESCALATE_FACTOR
+        void_fns, vmsg = void_fns_from_corpus()
         stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0}
         n_esc = 0                      # 靠放大预算才判出来的函数数
+        n_voidret = 0                  # r0 因"返回类型 void"而未作判据的函数数
+        voidret_names = []
         info_names = []
         det = []
         div_names_all = []
         trunc_names = []
         skip_names = []
         for i, n in enumerate(names):
-            v, rows = compare(BF, BO, n, a.steps)
+            o = {}
+            v, rows = compare(BF, BO, n, a.steps, void_fns=void_fns, out=o)
             if v == 'TRUNC':
                 # ★ 放大重试：只对"确实截断"的函数付费，避免把分歧藏进"不可判"
-                v2, rows2 = compare(BF, BO, n, esc_steps)
+                o2 = {}
+                v2, rows2 = compare(BF, BO, n, esc_steps, void_fns=void_fns, out=o2)
                 if v2 != 'TRUNC':
-                    v, rows = v2, rows2
+                    v, rows, o = v2, rows2, o2
                     n_esc += 1
+            if o.get('ret_unjudged'):
+                n_voidret += 1
+                if len(voidret_names) < 40:
+                    voidret_names.append(n)
             stats[v] += 1
             if (i + 1) % 25 == 0:
                 gc.collect()          # ★ 见 run_func 末尾注释：不周期回收会 MemoryError
@@ -758,6 +849,8 @@ def main():
                  '  共有函数 %d；本轮 %d 个；每函数 3 组输入' % (len(common), len(names)),
                  '  判据强度：--steps %d；触上限者按 %d× 放大重试一次（本轮 %d 个靠放大才判出）'
                  % (a.steps, ESCALATE_FACTOR, n_esc),
+                 '  返回类型：%s；r0 未作判据（void）的函数 %d 个'
+                 % (vmsg, n_voidret),
                  '  汇总：PASS %d | DIVERGE %d | INFO(内联等价) %d | TRUNC(不可判) %d | SKIP %d'
                  % (stats['PASS'], stats['DIVERGE'], stats['INFO'], stats['TRUNC'], stats['SKIP']),
                  '', '  --- DIVERGE 明细（前 80）---']
@@ -767,11 +860,27 @@ def main():
         lines.extend(info_names)
         # ★ 不可判 / 跳过必须**列名**：否则"没判"会被读成"没问题"（GAP 17.10）
         lines.append('')
+        lines.append('  --- r0 未作判据：返回类型 void ⇒ r0 是残留值（不是"通过"，是"该项不适用"）---')
+        lines.extend('  %s' % n for n in (voidret_names[:40] or ['（无）']))
+        lines.append('')
         lines.append('  --- TRUNC：两侧均触步数上限，判据对其无观测力（不可判 ≠ 已收敛）---')
         lines.extend('  %s' % n for n in (trunc_names[:40] or ['（无）']))
         lines.append('')
         lines.append('  --- SKIP：一侧执行环境报错，本组无判据 ---')
         lines.extend('  %s' % n for n in (skip_names[:40] or ['（无）']))
+        # ★ 同名数据符号冲突必须**列名**：以名字为键会静默折叠 ⇒ 归因错误 ⇒ 可能假 PASS
+        dup_f = {k: v for k, v in BF.dup_objs.items() if len(v) > 1}
+        dup_o = {k: v for k, v in BO.dup_objs.items() if len(v) > 1}
+        both = sorted(set(dup_f) & set(dup_o))
+        lines.append('')
+        lines.append('  --- 同名数据符号（LOCAL/GLOBAL 同名，合法 ELF）：工厂 %d 个 / 我方 %d 个 '
+                     '/ 两侧都有 %d 个 ---' % (len(dup_f), len(dup_o), len(both)))
+        for n in both[:20]:
+            lines.append('  %-28s 工厂 %s | 我方 %s' % (
+                n, ['0x%x(sz=%d)' % (a, s) for a, s, _ in dup_f[n]],
+                ['0x%x(sz=%d)' % (a, s) for a, s, _ in dup_o[n]]))
+        if not both:
+            lines.append('  （无）')
         # ★ 棘轮台账：只允许"发散函数减少"，不允许新增（防"修一个坏一个"）
         div_names = sorted(set(div_names_all))
         undecidable = set(trunc_names) | set(skip_names)

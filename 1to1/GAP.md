@@ -5164,3 +5164,112 @@ CI `1to1-verify@0b270901` 红在 `check_types.py`（旧版解析缺陷，已修�
 处置见 §17.11（本轮先落 §17.10 的台账修复并复绿，**再单独一轮**做"逐步骤收齐"改造 ——
 两件事分开推，出问题才能定位；合在一起推会重演"一次只有一个比特"的老毛病）。
 
+
+
+---
+
+## 17.11 ★★★★★ CI「单步失败 ⇒ 后面 20+ 步全不跑」⇒ 一轮只暴露一个缺陷（隐蔽型"每轮一个比特"）
+
+**病灶（实测）**：`1to1-verify` 是**单 job 顺序执行 38 步**，Actions 语义是"第一步失败即整 job 停"。
+`check_types.py` 一红之后，`diff_exec --self-test`、`diff_exec --batch --ledger`、`dce_ref_diff`、
+`regen_contract`、`src_transcript_parity` 等 **20+ 步在 CI 里从未执行过**（而它们在本地全绿）。
+⇒ 与"靠真机穷举"同构：**判定能力建在稀缺资源上 ⇒ 每轮只有一个比特的信息量**；
+⇒ 且 **"CI 绿了"的信息量 = 最弱那一步的信息量**（"3.8 分钟就绿"的假象 = 它只跑到第 18 步）。
+
+**修法（两步必须一起上）**：
+1. `1to1-verify.yml` 里 **34 个门禁步骤加 `continue-on-error: true`**；
+2. job **末尾**新增 `if: always()` 的**「门禁总账」**步骤，读 `toJSON(steps)`，
+   把**所有** `outcome ∈ {failure, cancelled, timed_out, action_required}` 的步骤**一次列全**并 `exit 1`
+   （`tools/ci_gate_summary.py`，自证 8 条）。
+
+**★ 三个必须记住的细节**：
+* 判据读 **`outcome`**（忽略 `continue-on-error` 后的真实结果），**不是 `conclusion`**
+  （带 `continue-on-error` 时它恒为 `success` ⇒ 又变成假绿）；
+* 总账**把自己排除在检查集合外**（否则自我引用）；读不到 `toJSON` ⇒ **fail-closed（exit 2）**；
+* **只加 `continue-on-error` 而不加总账 = 用一个更大的假绿换掉一个小假绿**，绝不允许。
+
+**实测（`362bdf75`）**：`1to1-verify` **success**，日志里总账打印
+`## 门禁总账（逐步骤收齐） / * **失败 0 步** / ✓ 全部步骤 success` ⇒ 35 个门禁**一次跑全并全过**。
+
+**治理副产品**：`P3 链接就绪审计` 那一步原本**故意**去掉了 `continue-on-error`
+（注释写着"失败被静默掩盖 = 假绿"）—— 本轮把它加回来，但语义已不同（由总账兜底硬失败），
+并把那句注释改写成新语义，避免下一个人再把它当作"退步"撤掉。
+
+---
+
+## 17.12 ★★★★★ 差分执行器的**第一批真发现**（第 61 轮）：把两个"非语义量"当判据 + 一个**符号绑定**类缺陷
+
+### A. 修掉的两处"假发散"（都是把非语义量当判据）
+
+| # | 缺陷 | 实证 | 修法 |
+|---|---|---|---|
+| **A1** | **一侧触步数上限也当"分歧"** —— 拿"跑完的一侧"比"被截断的一侧"，差异只反映**截断位置** | `AudioProcess`：工厂 **30,202** 条指令才跑完，我们 **28,719** 条（同语义、跨编译器每轮指令数不同）⇒ 在 `--steps 3000` 下凭空多出 `calls_ext`/`data-reads` 差异 | `cap_both **or** cap_asym` ⇒ 本组**不可判**（单列 `trunc`）；`ESCALATE_FACTOR` 10 → **20**（判据预算必须留出**合法的编译器抖动余量**） |
+| **A2** | **把 `void` 函数的 `r0` 当返回值** —— 它不是输出，只是残留值 | `AudioProcess`：除 ret 外**全部观测量一致**，而工厂 `r0 = 0xf4240`（= 它最后一次 `__aeabi_idiv(0xf4240, …)` 的**被除数**）、我们 `r0 = 0x0` | 从**语料签名**取"返回类型为 void"的集合（`golden/ghidra-perfn.tar.gz` 仓内，176 个 void 函数，覆盖全部函数）；命中则 **ret 不作判据**并**列名落盘**。语料缺失 ⇒ 回落为"比 ret"（更严的一侧，**不静默放行**） |
+
+**效果**：`PASS 600 → 619`，`DIVERGE 142 → 122`，`TRUNC 4 → 5`（`_start`）。
+台账 140 → **142 → 123**。**19 个条目"收敛移除"**，全部是上述两类假发散的受害者
+（`AudioProcess`/`PlaySound`/`SoundClose`/`UpdateROM`/`dispFlip`/`mui_DispBlock`/`blockcopy`/
+`video_driver_set_rotation`/`xmp3_PolyphaseMono` …）。
+
+★★ **为什么这次"收敛"不算削弱台账**：它们不是被判成"不可判"，而是被判成 **PASS/INFO**
+（可判定的肯定结论）⇒ 按 §17.10 的语义**应当**移出台账。台账里只留下
+`_start`（真不可判，按"不可判债务"保留）+ 122 个真发散。
+
+### B. ★★★★★ 差分器捞出的**第一个类级真缺陷**：符号绑定到 **GLOBAL** 而非 **LOCAL**
+
+**症状（工具输出的一致签名，≥ 9 个函数）**：
+```
+InitKeyMapping0fEmuType / Load_Proc1 / PCSX_Load / Pico_Load / SaveKeyMappingConfigFile / …
+  data-reads 仅F=[(3860048=0x3AE650, 4, 'R')] 仅O=[(4069652=0x3E1914, 4, 'R')]
+```
+
+**根因（符号表级证据，逐条可复现）**：工厂的 `.symtab` 里存在 **同名的 LOCAL + GLOBAL 一对**
+（**合法 ELF**；intra-object 引用绑定 **LOCAL** 那个）：
+
+| 名字 | 工厂 LOCAL | 工厂 GLOBAL | 我方 |
+|---|---|---|---|
+| `ArchivePath` | **0x003AE610 size=64**（`.data`，sh=19） | 0x003E18D4 size=28（sh=27） | **只有** 0x003E18D4（size=194907，且 `ArchivePath_global` 同址） |
+| `SoundBuffer` | 0x3CEAF0 size=2944 | 0x3E1944 size=16 | — |
+| `diff_prev` | 0x3BC414 size=4 | 0x3E1A38 size=4 | — |
+| `handle` | 0x3B21C8 size=4 | 0x3CF988 size=4 | — |
+
+* 工厂**代码**引用的是 **LOCAL**：`InitKeyMapping0fEmuType` 里 `*(uint*)(ArchivePath + iVar2*4)`，
+  工厂实测读 **0x3AE650 = 0x3AE610 + 0x40**（iVar2=16）——正是 LOCAL `ArchivePath` 的域内；
+* 我方把该名字绑到 **GLOBAL 0x3E18D4** ⇒ 同一表达式读 **0x3E1914 = 0x3E18D4 + 0x40** ⇒ **读错内存**；
+* 我方 ELF 里 `ArchivePath` 的 `st_size=194907`、`number` 的 `st_size=2324`
+  （工厂分别为 28 / 40）⇒ **生成器给出的尺寸也是错的**（生成源头 `factory_image.S`
+  `.set ArchivePath, __f_bss_base + 0x2f75c` 绑到了 GLOBAL 那个）。
+* ★ 受影响函数全是 **`*_Load`（游戏加载）+ 存档路径生成** ⇒ **直击产品核心功能**，不是边角。
+
+### C. 顺带发现的第二个类级缺陷：我方 ELF 有 **638 个同名重复 STT_OBJECT**，其中一份是**伪符号**
+
+| 名字 | 我方 LOCAL（真） | 我方 GLOBAL（伪） |
+|---|---|---|
+| `NRTab` | 0x004D75C4 size=72 `.rodata` | **0x002E1440 size=856920** `.fimg_rodata` |
+| `SFLenTab` | 0x004DBD78 size=32 | 0x002E1420 size=856920 |
+| `_ZL6border` …（共 638 个） | 各自真实尺寸 | **一律 size = 856920 = 整个 `.fimg_rodata` 的大小** |
+
+* 伪符号来自 `src/data/factory_image.S` 的 `.globl X` + `.set X, __f_rodata_base + off`
+  ⇒ 该 `.set` 生成的符号**尺寸被算成了整个 `.fimg_rodata` 段**；
+* 我方 **638 个**；工厂只有 **4 个**（上面那张表）且**两侧交集 = 0** ⇒
+  这 638 个是我方**生成器**引入的，不是工厂事实；
+* 后果：任何**以名字为键**的查表都会被伪符号覆盖 ⇒ **归因错误 ⇒ 可能产出假 PASS**。
+  本轮已让工具**识别并列出**这类冲突（新增报告小节 + 2 条自证），但**尚未改绑/改尺寸**
+  （改绑是需要逐条验证的语义变更，留给下一轮，见 §0.3 待办）。
+
+### D. 仪器自证扩到 **33 条**
+
+新增（全部**不依赖本项目数据**或使用仓内语料/产物做**固定锚点**）：
+* 台账解析 / 强度一致性 / 保留语义 —— 13 条纯函数自证（§17.10）；
+* `--steps 3000` 下 `AudioProcess` **必须 TRUNC、不得 DIVERGE**（A1 的回归锚点）；
+* `--steps 60000` + void 集合下 `AudioProcess` **必须 PASS**，且确实发生"r0 未作判据"（A2 的回归锚点）；
+* `void` 集合能从语料解析且非平凡（>50）；工厂存在同名数据符号（`ArchivePath`，B 的锚点）。
+
+### E. 本轮纪律（新增，与 §17.10 三条同族）
+
+> **4. 判据预算必须留出"合法的实现抖动余量"。** 跨编译器/跨优化级别下，同一语义的
+> 指令数天然不同（实测同函数 28,719 vs 30,202 ≈ **5%**）。预算卡在边界上会把"跑得慢"
+> 判成"不可判"甚至"分歧" ⇒ 预算要 N 倍于基准，而不是略大于基准。
+> **5. 符号表里的"同名 LOCAL + GLOBAL"是正常 ELF，但会静默折叠。**
+> 凡以名字为键的符号表，必须**检测多定义并报出**；归因/比较用的地址应绑定
+> **代码实际引用的那一个**（intra-object ⇒ LOCAL），而不是"看起来更权威"的 GLOBAL。

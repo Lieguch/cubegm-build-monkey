@@ -1,9 +1,8 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
-# escalate=30000
+# escalate=60000
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10
-AudioProcess
 ConvertCode
 DequantBlock
 DisplayPage_list
@@ -15,19 +14,14 @@ GetFilenameExt
 InitKeyMapping0fEmuType
 LoadMenuLog
 Load_Proc1
-MP3GetLastFrameInfo
 PCSX_Load
 Pico_Load
-PlaySound
 SaveKeyMappingConfigFile
 SeletEmuCore
 Snes_Load
-SoundClose
 TGB_Load
 TestUSBJoy
-TurboKeyProcess
 UnDrawSelectBar
-UpdateROM
 UpdateROMProc
 _Z14timet2filetimel
 _Z17FormatZipMessageUjPcj
@@ -35,7 +29,6 @@ _Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm
 _Z25unzlocal_DosDateToTmuDatemP8tm_unz_s
 _Z6zErrori
 _Z8luferrorP6LUFILE
-__libc_csu_init
 _mxml_entity_cb
 _mxml_fini
 _mxml_global
@@ -43,8 +36,6 @@ _mxml_strdupf
 _mxml_vstrdupf
 _start
 big5_wctomb
-blockadaptive
-blockcopy
 cns11643_15_mbtowc
 cns11643_1_mbtowc
 cns11643_4_mbtowc
@@ -54,7 +45,6 @@ cns11643_7_mbtowc
 cns11643_inv_wctomb
 cp1255_wctomb
 cp1258_wctomb
-dispFlip
 gb2312_wctomb
 gbk_wctomb
 get_from_line
@@ -71,15 +61,11 @@ ksc5601_wctomb
 libiconvlist
 locale_charset
 main_Menu
-mb_to_uc_write_replacement
-mui_DispBlock
 mui_DisplayInputBuffer
 mui_DisplayLine_t
 mui_InitFont
 mui_LoadConfig
 mui_SoundplayThread
-mui_UnDispBlock
-mui_blockcopy
 mui_do_file_list
 mui_load_state
 mui_menu
@@ -90,7 +76,6 @@ mui_setting
 mui_type
 mui_type_file_list
 mui_video_setting
-mxmlElementDeleteAttr
 mxmlEntityAddCallback
 mxmlEntityGetValue
 mxmlEntityRemoveCallback
@@ -132,16 +117,12 @@ prosystem_Load
 run_game
 spi_printf
 stbtt_PackFontRangesPackRects
-stbtt__csctx_rmove_to
 stbtt__get_subrs
 stbtt__tesselate_curve
 stella_Load
 strupr
 tcvn_mbtowc
 tcvn_wctomb
-uc_to_mb_write_replacement
 unicode_loop_reset
-video_driver_set_rotation
 viscii_mbtowc
 xmp3_FDCT32
-xmp3_PolyphaseMono
