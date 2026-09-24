@@ -4796,3 +4796,81 @@ src/proprietary/core/FUN_002b6c14_FBA_Load.c
 （1111 个，权威、自带段归属），引用点从 `src/` 统计，**显式排除** `globals.h`（声明表，2897 个名字）
 与 `factory_image.S`（定义）。自证 9 条（含 4 个反例态：块注释 / 行注释 / 字符串 / 假名 / 排除规则）。
 另带一个**"被引用但不在符号清单"诊断通道** —— 本次正是它把 13 个 `DAT_003b01xx` 挑了出来。
+
+
+---
+
+## 17.03 ★★★★★ P1 判决：`prop_equiv` 的 8 个 WARN + 2 个 MISSING —— **没有一条是"少实现"**
+
+第 58 轮按暂停点 §0.3 的 P1 逐条查完。结论分三类，**每类都有独立证据**：
+
+### ① 口径伪影（2 条，已消除）：`run_process` / `GetZipItemA`
+`prop_equiv` 的配对是「**单代表**」：工厂侧只取**指令数最多**的那个克隆，我们侧先按**原名**取。
+两处都不是"组内求和"。实测 `run_process` 组、`GetZipItemA` 组在**归一化组求和**后
+skew 落回 OK ⇒ 原先的 WARN 是口径伪影。
+（`GetZipItemA` 的 WARN 另有一半来自**逐指令比** 0.607 ⇒ 是"少一条池取址指令"的噪声，
+ 与 GAP 里已登记的"字面量池被当代码"同源。）
+**新仪器**：`tools/equiv_group_sum.py`（组内求和后再比，自证 13 条）。
+
+### ② 仪器缺陷（2 条，已修）：`code_convert` / `mui_outputxy_length` 被误报 MISSING
+我们的 C **标识符不能带点** ⇒ 转录工厂的 `code_convert.constprop.22` 时函数名写成
+`code_convert_constprop_22`（点→下划线）。而 `prop_equiv.norm_name` 只剥**点号**形式
+（`.constprop.` / `.isra.` / …）⇒ 两侧永远配不上 ⇒ 误报 MISSING。
+**实测真实体量**：`code_convert_constprop_22` **164 B** vs 工厂 144 B ⇒ **1.139（OK）**；
+`mui_outputxy_length_isra_19` **412 B** vs 372 B ⇒ **1.108（OK）**。
+**修法**：`norm_name` 增补**下划线**形式的剥离，且**锚定名字结尾**、要求数字后缀或名字结束
+（避免误伤 `foo_part_bar` 这类正常名）。
+**效果**：`prop_equiv` 汇总从 `MISSING 2 / WARN 8` → **`MISSING 0 / WARN 7 / OK 188`**。
+
+### ③ **codegen 差异**（7 条，非缺陷）—— 两条独立证据
+| 组 | Σ工厂 | Σ我们 | ratio | 克隆数 |
+|---|---|---|---|---|
+| `ReadUSBJoy` | 1092 | 520 | 0.476 | 各 1 |
+| `popwindows` | 536 | 296 | 0.552 | 各 1 |
+| `popoffwindows` | 484 | 300 | 0.620 | 各 1 |
+| `sunxi_gpio_output` / `sunxi_gpio_set_cfgpin` | 232 | 140 | 0.603 | 各 1 |
+| `ClearBuffer` | 32 | 20 | 0.625 | 各 1 |
+
+**证据 A｜源码是逐行转写**（恒定 +5 行 = 注入的 3 个 include + 头注释 + 空行）：
+```
+ReadUSBJoy 141→146 · popwindows 85→90 · popoffwindows 81→86 · sunxi_gpio_output 35→40
+sunxi_gpio_set_cfgpin 35→40 · ClearBuffer 23→28 · code_convert 33→38 · mui_outputxy_length 51→56
+```
+**证据 B｜调用总数不减少**（新门禁 `tools/src_transcript_parity.py`，权威 = Ghidra 逐函数原始 C）：
+全量 213 个可配对函数，**没有一个函数的调用总数少于 Ghidra** ⇒ 没有丢调用。
+
+⇒ 结论：**"偏小"来自 codegen**（我们的 C 是 Ghidra **抽象后**的渲染，clang/zig -Os 编出来
+本就比工厂 GCC 6.2 -Os 编原 C 更短），与 GAP 16.43「体积比不是进度刻度」同一条纪律。
+**这 7 条不阻塞替代**，保留为 WARN 供人工抽查。
+
+### ★ 附带发现：11 个函数"语句数偏少"（`;` 计数），已定性为**声明合并**
+抽查 `spi_read`：Ghidra 有 `undefined4 local_10;` + `undefined4 local_c;` 两条声明，
+我们合并成 `gh_u4 cmd[2];` —— 与 `FBA_Load`（10 个独立局部量 → 1 个数组，我们自己的修复）
+**同一成因**。⇒ 入"待核"清单，不作 FAIL（`;` 计数受宏 / 多语句行 / 注释干扰）。
+
+---
+
+## 17.04 ★★★★ `src_transcript_parity.py` —— 补上「体量比」分不清的那一半 + 一次判据收紧
+
+`prop_equiv` 的体量比**原理上**分不清两件事，所以必须配一道源码级门禁：
+* (a) **codegen 差异**（工具链不同 ⇒ 正常）；
+* (b) **转写缺失**（抄 Ghidra 输出时漏了语句 ⇒ 真缺陷）。
+
+**权威对照**：`D:/output/rkgame/decompiled/02-ghidra-c/03-per-function/`（Ghidra 逐函数原始 C）。
+重建契约 = 「我们的文件 = Ghidra 的文件 + 注入的 include/头注释」。
+**判据**：调用**总数**不得少于 Ghidra。
+
+**★ 判据收紧（首跑后自己改自己，这是本轮方法论上最重要的一步）**：
+首版把「调用**名集合**不同」当 FAIL，全量跑出 **5 个"缺调用"**：
+```
+OpenZipU    G5/O5   仅名字不同: Open, operator_delete, operator_new, operator_new
+GetZipItemA G2/O2   仅名字不同: Get
+FindZipItemA G2/O2  仅名字不同: Find
+UnzipItem   G2/O2   仅名字不同: Unzip
+CloseZipU   G4/O4   仅名字不同: Close, operator_delete, operator_delete
+```
+—— **调用总数两侧完全相同**，只是 C++ 成员函数 / `new` / `delete` 的**写法改名**。
+⇒ 收紧为：**FAIL 只在"调用总数真的变少"**；名集合不同但总数不减 ⇒ INFO；
+   语句数偏少 ⇒ 待核清单。**判据必须先自证、且要能被反向证伪**（SOUL「green 不等于 correct」）。
+*** 教训：本轮的 3 个"发现"里有 2 个最初是我的仪器错（组代表口径、norm_name 漏下划线），
+   第 3 个（转写门禁）首版判据又过严 —— **每上一个新判据，先假设它错**。***

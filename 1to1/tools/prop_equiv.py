@@ -223,6 +223,16 @@ def proprietary_names():
 #   `run_process.part.0`；我们（clang/zig）产出的名字没有后缀。
 #   不归一化会把这批函数误报成 MISSING（首跑实测：3 个）。
 _CLONE_SUFFIX = (".constprop.", ".isra.", ".part.", ".cold", ".clone.", ".lto_priv.")
+# ★★ 2026-09-24（第 58 轮实测）：我们的 C **标识符不能带点**，所以转录
+#   工厂的 code_convert.constprop.22 时，函数名写成 code_convert_constprop_22（点换成下划线）。
+#   而旧 norm_name 只剥**点号**形式 ⇒ 两侧永远配不上 ⇒ 被误报成 **MISSING**。
+#   实测被误报 2 个：code_convert、mui_outputxy_length；
+#   它们的真实体量比是 164/144 = 1.139 与 412/372 = 1.108 —— **都是 OK**。
+#   修法：下划线形式同样剥离，并且**锚定在名字结尾**、**要求数字后缀或名字结束**，
+#   避免误伤正常名字（例如 foo_part_bar 不应被剥成 foo）。
+#   ★ 自证：tools/equiv_group_sum.py --self-test（含 8 条 norm_name 正反例）。
+import re as _re
+_RE_UNDER_CLONE = _re.compile(r"_(?:constprop|isra|part|clone|lto_priv|llvm)(?:_\d+)?$")
 
 
 def norm_name(n):
@@ -230,6 +240,9 @@ def norm_name(n):
         i = n.find(s)
         if i > 0:
             return n[:i]
+    m = _RE_UNDER_CLONE.search(n)
+    if m and m.start() > 0:
+        return n[:m.start()]
     return n
 
 

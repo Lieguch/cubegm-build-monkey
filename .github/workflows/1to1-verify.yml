@@ -378,6 +378,34 @@ jobs:
           #   ④ 文本产物纯 LF；⑤ 关键小段存在。
           python3 tools/check_regen_contract.py --self-test
 
+      - name: 转写完整性门禁（我们的源码 vs Ghidra 逐函数原始 C）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-24，第 58 轮）：`prop_equiv` 用**体量比**判等价，但它分不清两件事：
+          #   (a) **codegen 差异**（同一份 C，clang/zig -Os 与工厂 GCC 6.2 -Os 本就不同；
+          #       而且我们的 C 是 Ghidra **抽象后**的渲染，常更"干净" ⇒ 编出来更短）；
+          #   (b) **转写缺失**（把 Ghidra 的 C 抄进 src/proprietary 时漏了语句）。
+          #   ⇒ 体量偏小时两者都会触发，不能只凭它下结论。
+          # 本门禁用**权威对照**（02-ghidra-c/03-per-function）在**源码级**判：
+          #   重建契约 = 「我们的文件 = Ghidra 的文件 + 注入的 include/头注释」，
+          #   所以**调用总数不得少于 Ghidra**（少了 = 调用消失 = 真漏语句 ⇒ FAIL）。
+          # ★ 判据收紧过一次：首版拿"调用**名集合**不同"当 FAIL，全量跑出 5 个假阳性
+          #   （OpenZipU G5/O5、GetZipItemA G2/O2…—— **总数完全相同**，只是 C++ 成员函数
+          #   / `new`/`delete` 的写法改名）⇒ 收紧为「**总数变少**才 FAIL」，名不同归 INFO。
+          #   语句数（`;` 计数）偏少只进"待核"清单（宏/多语句行/声明合并会干扰）。
+          python tools/src_transcript_parity.py
+
+      - name: 函数组归一化口径自证（修 prop_equiv 的克隆后缀配对）★ 硬门禁
+        run: |
+          cd 1to1
+          # 背景（2026-09-24）：我们的 C **标识符不能带点** ⇒ 转录工厂的
+          #   `code_convert.constprop.22` 时函数名写成 `code_convert_constprop_22`（点→下划线）。
+          #   旧 `norm_name` 只剥**点号**形式 ⇒ 两侧永远配不上 ⇒ 被**误报 MISSING**（实测 2 个）。
+          # 本步骤自证归一化规则（8 条正反例，含"不该误伤 `foo_part_bar`"），
+          # 并按**归一化组求和**对拍体量（与 prop_equiv 的"单代表"口径互补）：
+          #   实测 `run_process` / `GetZipItemA` 在组求和后**转 OK** ⇒ 那两条原先确是口径伪影。
+          python tools/equiv_group_sum.py --self-test
+
       - name: 门禁汇总（写入 Job Summary）
         if: always()
         run: |
