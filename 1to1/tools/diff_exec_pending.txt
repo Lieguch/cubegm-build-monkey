@@ -1,9 +1,10 @@
 # diff_exec 发散棘轮台账（只允许减少）
-# 生成：python tools/diff_exec.py --batch --ledger <本文件> --update-ledger
+# steps=3000
+# escalate=30000
+# 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
+# ★ 评测时必须用**相同的 steps/escalate**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10
 AudioProcess
-ClearBuffer
 ConvertCode
-Convert_Stereo
 DequantBlock
 DisplayPage_list
 DrawFrame
@@ -14,25 +15,20 @@ GetFilenameExt
 InitKeyMapping0fEmuType
 LoadMenuLog
 Load_Proc1
-MP3FindSyncWord
 MP3GetLastFrameInfo
-MP3InitDecoder
 PCSX_Load
 Pico_Load
 PlaySound
-ReadPS2JS
 SaveKeyMappingConfigFile
 SeletEmuCore
 Snes_Load
 SoundClose
 TGB_Load
-TestRun
 TestUSBJoy
 TurboKeyProcess
 UnDrawSelectBar
 UpdateROM
 UpdateROMProc
-WaitNMI
 _Z14timet2filetimel
 _Z17FormatZipMessageUjPcj
 _Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm
@@ -136,22 +132,16 @@ prosystem_Load
 run_game
 spi_printf
 stbtt_PackFontRangesPackRects
-stbtt_Rasterize
 stbtt__csctx_rmove_to
 stbtt__get_subrs
 stbtt__tesselate_curve
-stbtt__v_prefilter
 stella_Load
 strupr
 tcvn_mbtowc
 tcvn_wctomb
 uc_to_mb_write_replacement
-ucrc32
 unicode_loop_reset
 video_driver_set_rotation
 viscii_mbtowc
-xmp3_AllocateBuffers
 xmp3_FDCT32
-xmp3_MidSideProc
 xmp3_PolyphaseMono
-xmp3_PolyphaseStereo

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+r"""
 check_types.py — 生成物「类型可解析性」自检（**语句级**解析，非行级）。
 
 目的：终止「改一处 -> 推一次 -> CI 报下一个错」的往返试错。
@@ -81,13 +81,23 @@ def _fold_parens(x):
     return x
 
 
-def core_tokens(stmt):
-    """语句 → 去掉 `extern/typedef` 前缀、参数表、数组维度、指针星号后的 token 列表。"""
+def core_tokens(stmt, keep_comma=False):
+    """语句 → 去掉 `extern/typedef` 前缀、参数表、数组维度、指针星号后的 token 列表。
+
+    keep_comma=True 时**保留 `,`** —— 分析器需要它来切「多声明符」组
+    （`extern int a, b;` 里 `a`/`b` 都是声明符，不是类型）。
+    """
     x = re.sub(r'^\s*(?:extern|typedef)\b', ' ', stmt)
     x = _fold_parens(x)
     x = re.sub(r'\[[^\]]*\]', ' ', x)
     x = x.replace('*', ' ')
-    x = re.sub(r'[,;{}()]', ' ', x)
+    x = re.sub(r'[;{}()]', ' ', x)
+    if not keep_comma:
+        x = x.replace(',', ' ')
+    else:
+        # ★ 必须给逗号补空格：`x.split()` 会把 `a,` 当成**一个** token
+        #   （实测：`extern int a, b;` → ['int','a,','b'] ⇒ `a,` 被当成未定义类型 ⇒ 假阳性）
+        x = x.replace(',', ' , ')
     return x.split()
 
 
@@ -105,6 +115,60 @@ def decl_name(stmt):
     return toks[-1] if toks else None
 
 
+def strip_pp(t):
+    """剥离预处理指令行（`#ifndef/#define/#include/#endif` …，含 `\\` 续行）。
+
+    ★ 为什么必须（2026-09-24 第四次"口径不成立"实测）：
+      文件开头的 `#ifndef X` / `#define X` / 一串 `#include` **没有 `;`** ⇒ 它们会和
+      **紧随其后的第一个 typedef** 拼成同一条"语句" ⇒ 该语句不以 `typedef` 开头
+      ⇒ 被 `startswith(('extern','typedef'))` 过滤掉 ⇒ **该 typedef 永远注册不上**。
+      实测后果：`ghidra_compat.h` 的 `gh_undef` 与 `globals.h` 的 `gh_blob_t`
+      （各自文件的第一个 typedef）从未进入 defined ⇒ 26 处 `extern gh_blob_t DAT_…`
+      与 1 处 `extern gh_undef *` 被误报为"未定义类型"。
+      ⇒ 修法：**预处理指令不是 C 声明，先剥离**（保留行数以利于定位），不是往白名单塞类型。
+    """
+    out, lines, i = [], t.split('\n'), 0
+    while i < len(lines):
+        ln = lines[i]
+        if re.match(r'^\s*#', ln):
+            while ln.rstrip().endswith('\\') and i + 1 < len(lines):
+                i += 1
+                ln = lines[i]
+            out.append('')
+        else:
+            out.append(ln)
+        i += 1
+    return '\n'.join(out)
+
+
+def split_statements(t):
+    """按 `;` 切语句，**但只在花括号深度 0 处切**。
+
+    ★ 为什么必须（2026-09-24 第三次"口径不成立"实测）：
+      `typedef union { gh_u4 u; struct { gh_u1 a, b; } f; } gh_blob_t;`
+      这种**复合 typedef 体内的 `;`** 若也当作语句边界，就会把 typedef 切碎
+      ⇒ 闭合段的 `} gh_blob_t` 变成独立"语句" ⇒ **`gh_blob_t` 永远认不出来**
+      ⇒ globals.h 里 26 处 `extern gh_blob_t DAT_…` 全被误报为"未定义类型"
+      （实测 CI run 0b270901 的"类型可解析性自检"步骤就是因此 red）。
+      同理 `gh_u32_bytes_t`（ghidra_compat.h:47 的同行 union）。
+    ⇒ 修法：**括号感知切分**（只认深度 0 的 `;`），不是往 KNOWN 白名单里塞类型。
+    """
+    out, depth, cur = [], 0, []
+    for ch in t:
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth = max(0, depth - 1)
+        if ch == ';' and depth == 0:
+            out.append(''.join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        out.append(''.join(cur))
+    return out
+
+
 def analyse(texts):
     """texts: [文件正文]。返回 (defined, tags, unresolved)。
 
@@ -114,7 +178,7 @@ def analyse(texts):
     """
     stmts = []
     for t in texts:
-        for s in strip_comments(t).split(';'):
+        for s in split_statements(strip_comments(strip_pp(t))):
             s = re.sub(r'\s+', ' ', s).strip()
             if s.startswith(('extern', 'typedef')):
                 stmts.append(s)
@@ -135,14 +199,33 @@ def analyse(texts):
     for s in stmts:
         if '{' in s or '}' in s:
             continue                     # struct/union 体片段由编译器负责，本启发式不碰
-        toks = core_tokens(s)
+        toks = core_tokens(s, keep_comma=True)
         if not toks:
             continue
-        end = len(toks)
-        for i, tok in enumerate(toks):
-            if tok not in known and not tok.isdigit() and any(t in known for t in toks[:i]):
-                end = i                  # 第一个"跟在类型后面"的未知 token = 声明符
+        # ★ 声明符 = **每一组（以 `,` 分隔）里的最后一个标识符**。
+        #   这条规则由两条实测反例共同定出（2026-09-24）：
+        #     ① `extern volatile tUndefType * g_x;`
+        #        旧规则「第一个"跟在已知类型后面"的未知 token 即声明符」会把 `tUndefType`
+        #        当成声明符名 ⇒ 类型段只剩 `volatile` ⇒ **真·未定义类型检不出来**；
+        #     ② `extern int a, b;`
+        #        若取"全语句最后一个标识符" ⇒ 声明符被认成 `b` ⇒ `a` 被误判为类型（假阳性）。
+        #   ⇒ 先按 `,` 切组（故 keep_comma=True），再取**第一组**的最后一个标识符作声明符，
+        #      其前全部 token 都是类型段。
+        groups, cur = [], []
+        for _t in toks:
+            if _t == ',':
+                groups.append(cur)
+                cur = []
+            else:
+                cur.append(_t)
+        groups.append(cur)
+        g0 = groups[0] if groups else []
+        end = len(g0)
+        for _i in range(len(g0) - 1, -1, -1):
+            if re.match(r'^[A-Za-z_]\w*$', g0[_i]):
+                end = _i
                 break
+        toks = g0
         for tok in toks[:end]:
             if tok in known or tok.isdigit():
                 continue

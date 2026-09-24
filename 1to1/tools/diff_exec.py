@@ -48,8 +48,10 @@
 """
 import argparse
 import bisect
+import gc
 import hashlib
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -312,9 +314,9 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
             if len(ctx['r']) < MAX_TRACE:
                 ctx['r'].append((address, size_, 'R'))
 
-    mu.hook_add(UC_HOOK_CODE, code_hook)
-    mu.hook_add(UC_HOOK_MEM_WRITE, mem_hook)
-    mu.hook_add(UC_HOOK_MEM_READ, mem_hook)
+    h1 = mu.hook_add(UC_HOOK_CODE, code_hook)
+    h2 = mu.hook_add(UC_HOOK_MEM_WRITE, mem_hook)
+    h3 = mu.hook_add(UC_HOOK_MEM_READ, mem_hook)
 
     mu.reg_write(ac.UC_ARM_REG_SP, STACK_BASE + STACK_SIZE - 0x100)
     mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
@@ -352,8 +354,18 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
         for nm, (sa, sz) in (syms_for_final or b.data_syms).items():
             if d[0] <= sa < d[1] and 0 < sz <= 64:
                 final[nm] = blob[sa - d[0]:sa - d[0] + sz].hex()
+    # ★ 显式释放：746 函数 × 2 二进制 ≈ 1500 个 Unicorn 实例（每个映射数 MB）。
+    #   实测**大循环下会 MemoryError**（Unicorn C 侧内存未及时回收）。
+    #   ⇒ 摘钩子 + 置空 + 交给 gc（批量循环里另有周期 gc.collect()）。
+    for _h in (h1, h2, h3):
+        try:
+            mu.hook_del(_h)
+        except Exception:
+            pass
+    del mu, code_hook, mem_hook
     return {'error': None, 'stopped': stopped, 'insns': ctx['insns'], 'ret': r0 & 0xFFFFFFFF,
             'ret_content': ret_content, 'mode': 'arm',
+            'capped': ctx['insns'] >= steps,
             'calls_ext': ctx['calls'], 'writes': ctx['w'], 'reads': ctx['r'], 'final': final}
 
 
@@ -397,6 +409,64 @@ def norm_calls(seq):
     return [CALL_ALIAS.get(x, x) for x in seq]
 
 
+# --------------------------------------------------------------------------- #
+# 棘轮台账：格式 + 语义（**纯函数**，可离线自证；见 GAP 17.10）
+# --------------------------------------------------------------------------- #
+LEDGER_STEPS_RE = re.compile(r'^#\s*steps\s*=\s*(\d+)\s*$')
+LEDGER_ESC_RE = re.compile(r'^#\s*escalate\s*=\s*(\d+)\s*$')
+
+# 触到步数上限 ⇒ 以 ESCALATE_FACTOR× 预算**重试一次**。
+# 为什么必须有它：被判据忽略的东西会因为"跑不完"落进 TRUNC 桶；若台账在低预算下重写，
+# 这些函数就会被**静默删出台账**（GAP 17.10 实证：`libiconvlist` / `xmp3_PolyphaseStereo`
+# 在 3000 步是 TRUNC、在 20000 步是 **DIVERGE**）。代价只在"确实截断"的函数上付。
+ESCALATE_FACTOR = 10
+
+
+def read_ledger_text(txt):
+    """台账文本 → (declared_steps|None, declared_escalate|None, [名字])。"""
+    steps = esc = None
+    names = []
+    for ln in txt.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith('#'):
+            m = LEDGER_STEPS_RE.match(s)
+            if m:
+                steps = int(m.group(1))
+            m = LEDGER_ESC_RE.match(s)
+            if m:
+                esc = int(m.group(1))
+            continue
+        names.append(s)
+    return steps, esc, names
+
+
+def ledger_steps_ok(declared_steps, declared_esc, actual_steps, actual_esc):
+    """★ 台账必须在**同一判据强度**下评测：步数预算或放大预算不一致 ⇒ fail-closed。
+
+    为什么必须硬失败而不是告警：`--update-ledger` 在低预算下会把"其实有分歧、只是跑不完"
+    的函数判成 TRUNC 并**从台账里删掉** ⇒ 台账静默变弱、CI 照样全绿。
+    """
+    return (declared_steps is not None and int(declared_steps) == int(actual_steps)
+            and declared_esc is not None and int(declared_esc) == int(actual_esc))
+
+
+def ledger_update(old, diverging, undecidable):
+    """棘轮更新语义（纯函数）：
+
+      保留 = 本轮发散 ∪ (旧台账 ∩ 本轮**不可判**)
+      移除 = 旧台账里本轮被**明确判为 PASS/INFO** 的项
+
+    ★ 核心不变式：**TRUNC/SKIP ≠ 已收敛**。不可判的项必须留在台账里当债务，
+      否则"未知"会被静默改写成"没问题"——这正是台账最容易烂掉的方式。
+    """
+    keep = set(diverging) | (set(old) & set(undecidable))
+    removed = sorted(set(old) - keep)
+    kept_undec = sorted((set(old) & set(undecidable)) - set(diverging))
+    return sorted(keep), removed, kept_undec
+
+
 def compare(bf, bo, fname, steps=20000, corpus=None):
     rows, verdict = [], 'PASS'
     # ★ 可比访问区 = 工厂**具名数据对象**的区间并集（排除 .got/.dynamic 等 link 元数据）
@@ -409,13 +479,21 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
             continue
+        cap_f, cap_o = rf['capped'], ro['capped']
+        cap_both = cap_f and cap_o
+        cap_asym = cap_f != cap_o
+        if cap_both:
+            # 两侧都触到步数上限 ⇒ 所有观测量都被截断，**本组输入不可判**（单列，不进棘轮）
+            rows.append((cname, 'trunc', rf['ret'], ro['ret'], rf['insns'], ro['insns'],
+                         'return', 'return', [],
+                         '两侧均触步数上限(%d) ⇒ 本组不可判（需能终止的输入或提高 --steps）' % steps))
+            continue
         diffs = []
         sf, so = norm_stop(rf['stopped']), norm_stop(ro['stopped'])
         if sf != so:
-            diffs.append('stop F=%s O=%s' % (sf, so))
-        # ★ ret 只在**两侧都正常返回**时才是判据（任一侧因缺文件系统等异常停下时，
-        #   r0 是故障瞬间的残留值，拿它比会产生假发散）
-        if sf == 'return' and so == 'return' and rf['ret'] != ro['ret']:
+            diffs.append('stop F=%s O=%s%s' % (sf, so, ' (cap-asym)' if cap_asym else ''))
+        # ★ ret 只在**两侧都正常返回**且**都没被截断**时才是判据
+        if sf == 'return' and so == 'return' and (not cap_f) and (not cap_o) and rf['ret'] != ro['ret']:
             # ★ 地址类返回值（指向各自映像里的字符串/表）：比**内容**而不是比地址。
             #   实测：`_Z11zlibVersionv` 返回各自的版本串地址（0x2dc7dc vs 0x4da2a3），
             #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
@@ -451,6 +529,9 @@ def compare(bf, bo, fname, steps=20000, corpus=None):
             verdict = 'DIVERGE'
         rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
                      rf['ret'], ro['ret'], rf['insns'], ro['insns'], sf, so, diffs, note))
+    # 若**没有任何一组**能给出判定（全是 trunc）⇒ 该函数整体不可判
+    if rows and all(r[1] == 'trunc' for r in rows):
+        verdict = 'TRUNC'
     return verdict, rows
 
 
@@ -536,6 +617,31 @@ def self_test():
     got_ret = [r for r in rows_bad if r[1] == 'DIVERGE' and any('ret' in str(x) for x in (r[8] or []))]
     c('反例  差异定位到 ret（不是"说不清的 divergence"）', bool(got_ret), True)
 
+    # ---- 棘轮台账语义自证（纯函数；不依赖本项目数据）--------------------------
+    # 为什么单独证这一段：台账是"只许减少"的棘轮，它自己烂掉会让 CI 全绿而掩盖真分歧。
+    # GAP 17.10 的实证：低预算重写台账会**删掉**在高预算下确实发散的函数。
+    st, se, nm = read_ledger_text(
+        '# c1\n# steps=3000\n# escalate=30000\nfoo\nbar\n\n# tail\nbaz\n')
+    c('台账解析  steps 声明读出', st, 3000)
+    c('台账解析  escalate 声明读出', se, 30000)
+    c('台账解析  名字逐行读出且跳过注释', nm, ['foo', 'bar', 'baz'])
+    st2, se2, nm2 = read_ledger_text('foo\nbar\n')
+    c('台账解析  缺 steps 声明 ⇒ 读出 None（供 fail-closed 用）', (st2, se2), (None, None))
+    c('强度一致性  完全一致 ⇒ ok', ledger_steps_ok(3000, 30000, 3000, 30000), True)
+    c('强度一致性  steps 不一致 ⇒ 拒绝', ledger_steps_ok(20000, 30000, 3000, 30000), False)
+    c('强度一致性  escalate 不一致 ⇒ 拒绝', ledger_steps_ok(3000, 30000, 3000, 100), False)
+    c('强度一致性  台账无声明 ⇒ 拒绝（fail-closed，不放行）',
+      ledger_steps_ok(None, None, 3000, 30000), False)
+    # ★ 核心不变式：TRUNC/SKIP 不是"已收敛"
+    keep, removed, ku = ledger_update(['a', 'b', 'c'], ['a'], {'b'})
+    c('台账语义  发散项保留', 'a' in keep, True)
+    c('台账语义  **不可判项也必须保留**（不得当已收敛删掉）', 'b' in keep, True)
+    c('台账语义  明确判为 PASS/INFO 的项才移除', removed, ['c'])
+    c('台账语义  报出"仍不可判"清单（供审计）', ku, ['b'])
+    keep2, removed2, _ = ledger_update(['x'], [], set())
+    c('台账语义  旧项本轮判 PASS ⇒ 移除', (keep2, removed2), ([], ['x']))
+    c('台账语义  新增发散自动进入台账', ledger_update([], ['z'], set())[0], ['z'])
+
     # 本项目真实函数：可执行性前提（不判等价，只证"两侧都能跑到停止"）
     if os.path.exists(FACTORY) and os.path.exists(OURS):
         BF, BO = Bin(FACTORY), Bin(OURS)
@@ -612,15 +718,31 @@ def main():
 
     if a.batch:
         names = common[:a.limit] if a.limit else common
-        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0}
+        esc_steps = a.steps * ESCALATE_FACTOR
+        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0}
+        n_esc = 0                      # 靠放大预算才判出来的函数数
         info_names = []
         det = []
         div_names_all = []
+        trunc_names = []
+        skip_names = []
         for i, n in enumerate(names):
             v, rows = compare(BF, BO, n, a.steps)
+            if v == 'TRUNC':
+                # ★ 放大重试：只对"确实截断"的函数付费，避免把分歧藏进"不可判"
+                v2, rows2 = compare(BF, BO, n, esc_steps)
+                if v2 != 'TRUNC':
+                    v, rows = v2, rows2
+                    n_esc += 1
             stats[v] += 1
+            if (i + 1) % 25 == 0:
+                gc.collect()          # ★ 见 run_func 末尾注释：不周期回收会 MemoryError
             if v == 'DIVERGE':
                 div_names_all.append(n)
+            elif v == 'TRUNC':
+                trunc_names.append(n)
+            elif v == 'SKIP':
+                skip_names.append(n)
             if any(len(r) > 9 and r[9] for r in rows if r[1] in ('ok', 'info')):
                 stats['INFO'] += 1
                 if len(info_names) < 60:
@@ -634,44 +756,87 @@ def main():
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
                  '  共有函数 %d；本轮 %d 个；每函数 3 组输入' % (len(common), len(names)),
-                 '  汇总：PASS %d | DIVERGE %d | INFO(内联等价) %d | SKIP %d'
-                 % (stats['PASS'], stats['DIVERGE'], stats['INFO'], stats['SKIP']),
+                 '  判据强度：--steps %d；触上限者按 %d× 放大重试一次（本轮 %d 个靠放大才判出）'
+                 % (a.steps, ESCALATE_FACTOR, n_esc),
+                 '  汇总：PASS %d | DIVERGE %d | INFO(内联等价) %d | TRUNC(不可判) %d | SKIP %d'
+                 % (stats['PASS'], stats['DIVERGE'], stats['INFO'], stats['TRUNC'], stats['SKIP']),
                  '', '  --- DIVERGE 明细（前 80）---']
         lines.extend(det[:80])
         lines.append('')
         lines.append('  --- INFO：外部调用被内联/等价实现，其余观测量全一致（前 60）---')
         lines.extend(info_names)
+        # ★ 不可判 / 跳过必须**列名**：否则"没判"会被读成"没问题"（GAP 17.10）
+        lines.append('')
+        lines.append('  --- TRUNC：两侧均触步数上限，判据对其无观测力（不可判 ≠ 已收敛）---')
+        lines.extend('  %s' % n for n in (trunc_names[:40] or ['（无）']))
+        lines.append('')
+        lines.append('  --- SKIP：一侧执行环境报错，本组无判据 ---')
+        lines.extend('  %s' % n for n in (skip_names[:40] or ['（无）']))
         # ★ 棘轮台账：只允许"发散函数减少"，不允许新增（防"修一个坏一个"）
         div_names = sorted(set(div_names_all))
+        undecidable = set(trunc_names) | set(skip_names)
         rc = 1 if stats['DIVERGE'] else 0
         if a.ledger:
+            old_steps = old_esc = None
             old = []
             if os.path.exists(a.ledger):
-                old = [x.strip() for x in open(a.ledger, encoding='utf-8') if x.strip()
-                       and not x.startswith('#')]
+                txt = open(a.ledger, encoding='utf-8', errors='replace').read()
+                old_steps, old_esc, old = read_ledger_text(txt)
             if a.update_ledger:
+                keep, removed, kept_und = ledger_update(old, div_names, undecidable)
                 os.makedirs(os.path.dirname(a.ledger) or '.', exist_ok=True)
                 with open(a.ledger, 'w', encoding='utf-8', newline='\n') as fh:
                     fh.write('# diff_exec 发散棘轮台账（只允许减少）\n')
-                    fh.write('# 生成：%s\n' % 'python tools/diff_exec.py --batch --ledger <本文件> --update-ledger')
-                    for n in div_names:
+                    fh.write('# steps=%d\n' % a.steps)
+                    fh.write('# escalate=%d\n' % esc_steps)
+                    fh.write('# 生成：python tools/diff_exec.py --batch --steps %d '
+                             '--ledger <本文件> --update-ledger\n' % a.steps)
+                    fh.write('# ★ 评测时必须用**相同的 steps/escalate**，否则本工具 fail-closed '
+                             '(exit 3) —— 见 GAP 17.10\n')
+                    for n in keep:
                         fh.write(n + '\n')
                 lines.append('')
-                lines.append('  台账已重写：%d 项 -> %s' % (len(div_names), a.ledger))
+                lines.append('  台账已重写：%d 项（发散 %d + 旧台账中本轮不可判 %d）-> %s'
+                             % (len(keep), len(div_names), len(kept_und), a.ledger))
+                lines.append('  收敛移除 %d 项：%s' % (len(removed), removed[:30]))
+                if kept_und:
+                    lines.append('  ★ 保留的"不可判"债务（TRUNC/SKIP ≠ 已收敛）：%s' % kept_und[:30])
                 rc = 0
             else:
+                if not ledger_steps_ok(old_steps, old_esc, a.steps, esc_steps):
+                    lines.append('')
+                    lines.append('  ★★ 判据强度不一致 ⇒ fail-closed（exit 3）')
+                    lines.append('     台账声明 ： steps=%s escalate=%s'
+                                 % (old_steps, old_esc))
+                    lines.append('     本次评测 ： steps=%s escalate=%s' % (a.steps, esc_steps))
+                    lines.append('     修法     ： 用同一强度重写台账 ——')
+                    lines.append('                python tools/diff_exec.py --batch '
+                                 '--steps %d --ledger %s --update-ledger' % (a.steps, a.ledger))
+                    lines.append('     为什么   ： 低强度下"其实有分歧只是跑不完"的函数会变成 '
+                                 'TRUNC 并被静默删出台账（GAP 17.10 实证 2 例）')
+                    txt = '\n'.join(lines)
+                    print(txt)
+                    if a.out:
+                        with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
+                            fh.write(txt + '\n')
+                    return 3
                 new = [n for n in div_names if n not in old]
-                fixed = [n for n in old if n not in div_names]
+                fixed = [n for n in old if n not in div_names and n not in undecidable]
+                still_und = [n for n in old if n in undecidable]
                 lines.append('')
-                lines.append('  台账棘轮：既有 %d 项 | 本轮发散 %d 项 | ★新增 %d | 已收敛 %d'
-                             % (len(old), len(div_names), len(new), len(fixed)))
+                lines.append('  台账棘轮：既有 %d 项 | 本轮发散 %d 项 | ★新增 %d | 已收敛 %d '
+                             '| 仍不可判（保留）%d'
+                             % (len(old), len(div_names), len(new), len(fixed), len(still_und)))
                 if new:
                     lines.append('  ★★ 新增发散（必须修或显式登记）：%s' % new[:20])
                     rc = 2
                 else:
                     rc = 0
                 if fixed:
-                    lines.append('  ✓ 本轮收敛：%s' % fixed[:20])
+                    lines.append('  ✓ 本轮收敛（明确判为 PASS/INFO）：%s' % fixed[:20])
+                if still_und:
+                    lines.append('  ⏸ 台账内但仍不可判（**不得当作已收敛**）：%s' % still_und[:20])
+
         txt = '\n'.join(lines)
         print(txt)
         if a.out:
