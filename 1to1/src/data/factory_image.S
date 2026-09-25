@@ -1528,9 +1528,27 @@ __f_bss_pad_base:
 	.globl asso_values.9691
 	.set asso_values.9691, __f_rodata_base + 0xd124c
 
-/* .data.rel.ro.local：0 个符号 */
+/* .data.rel.ro.local：8 个符号 */
+	.globl _ZL8z_errmsg
+	.set _ZL8z_errmsg, __f_data_rel_ro_local_base + 0x0
+	.globl mui_typename
+	.set mui_typename, __f_data_rel_ro_local_base + 0x28
+	.globl ArchivePath
+	.set ArchivePath, __f_data_rel_ro_local_base + 0x4c
+	.globl number
+	.set number, __f_data_rel_ro_local_base + 0x8c
+	.globl KayName
+	.set KayName, __f_data_rel_ro_local_base + 0xb4
+	.globl p_name
+	.set p_name, __f_data_rel_ro_local_base + 0xe4
+	.globl entities.6989
+	.set entities.6989, __f_data_rel_ro_local_base + 0xf4
+	.globl types.7806
+	.set types.7806, __f_data_rel_ro_local_base + 0x8fc
 
-/* .data：172 个符号 */
+/* .data：173 个符号 */
+	.globl __dso_handle
+	.set __dso_handle, __f_data_base + 0x4
 	.globl DAT_003af008
 	.set DAT_003af008, __f_data_base + 0x8
 	.globl running
@@ -1876,7 +1894,7 @@ __f_bss_pad_base:
 	.globl _libiconv_version
 	.set _libiconv_version, __f_data_base + 0x2cf8
 
-/* .bss：194 个符号 */
+/* .bss：193 个符号 */
 	.globl completed.10349
 	.set completed.10349, __f_bss_base + 0x0
 	.globl log_file_initialized
@@ -2095,8 +2113,6 @@ __f_bss_pad_base:
 	.set mui_Effect1, __f_bss_base + 0x2f714
 	.globl mui_MenuMusic
 	.set mui_MenuMusic, __f_bss_base + 0x2f738
-	.globl ArchivePath
-	.set ArchivePath, __f_bss_base + 0x2f75c
 	.globl GamePath
 	.set GamePath, __f_bss_base + 0x2f778
 	.globl key2

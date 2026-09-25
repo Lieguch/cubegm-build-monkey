@@ -717,8 +717,17 @@ aliases	003ab114	00001cd0	.rodata	l	O
 all_canonical	003acdfc	000000e2	.rodata	l	O	
 conversion_lists.7622	003acee0	00000010	.rodata	l	O	
 asso_values.9691	003acef0	00000100	.rodata	l	O	
+_ZL8z_errmsg	003ae5c4	00000028	.data.rel.ro.local	l	O	
+mui_typename	003ae5ec	00000024	.data.rel.ro.local	l	O	
+ArchivePath	003ae610	00000040	.data.rel.ro.local	l	O	
+number	003ae650	00000028	.data.rel.ro.local	l	O	
+KayName	003ae678	00000030	.data.rel.ro.local	l	O	
+p_name	003ae6a8	00000010	.data.rel.ro.local	l	O	
+entities.6989	003ae6b8	00000808	.data.rel.ro.local	l	O	
+types.7806	003aeec0	00000018	.data.rel.ro.local	l	O	
 __frame_dummy_init_array_entry	003aeed8	00000000	.init_array	l	O	
 __do_global_dtors_aux_fini_array_entry	003aeedc	00000000	.fini_array	l	O	
+__dso_handle	003af004	00000000	.data	l	O	
 running	003af018	00000004	.data	g	O	
 Rowspacing	003af01c	00000004	.data	g	O	
 joystick_fd	003af020	00000010	.data	l	O	

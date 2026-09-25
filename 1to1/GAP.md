@@ -5273,3 +5273,84 @@ InitKeyMapping0fEmuType / Load_Proc1 / PCSX_Load / Pico_Load / SaveKeyMappingCon
 > **5. 符号表里的"同名 LOCAL + GLOBAL"是正常 ELF，但会静默折叠。**
 > 凡以名字为键的符号表，必须**检测多定义并报出**；归因/比较用的地址应绑定
 > **代码实际引用的那一个**（intra-object ⇒ LOCAL），而不是"看起来更权威"的 GLOBAL。
+
+
+---
+
+## 17.13 ★★★★★ 差分执行器的**闭环**：从 9 个函数的读地址签名 → 定位到**一行白名单**（根因）
+
+### A. 症状（§17.12.B 发现的类 B 的完整闭环）
+
+`diff_exec` 报出 **9 个函数的一致签名**：
+
+```
+InitKeyMapping0fEmuType / Load_Proc1 / PCSX_Load / Pico_Load / SaveKeyMappingConfigFile /
+Snes_Load / TGB_Load / stella_Load / prosystem_Load
+  data-reads 仅F=[(0x3AE650, 4, 'R')] 仅O=[(0x3E1914, 4, 'R')]
+```
+全是 **`*_Load`（游戏加载）+ 存档路径生成** ⇒ 直击产品核心功能。
+
+### B. 算术证据（不用反汇编就能定案）
+
+源码同一表达式：`*(gh_u4 *)(ArchivePath + gameType() * 4)`（`iVar2 = gameType()` 是**运行期值**，
+差分器两侧喂同一个桩值 ⇒ 索引相同）。于是基址差 = 读地址差：
+
+**0x3E1914 − 0x3AE650 = 0x32C4 = 0x3E18D4 − 0x3AE610**  ← 两个差值**恰好相等**
+⇒ 索引一样、只有**基址符号不同** ⇒ **绑定错，不是算法错**。（`ArchivePath` 的 `gameType()` 用法与
+`InitKeyMapping` 无关，其余 8 个函数同签名 ⇒ 同一个根因。）
+
+### C. 根因：**两个洞叠加**，而且每个洞单独看都"无害"
+
+| # | 洞 | 证据 |
+|---|---|---|
+| **C1** | `gen_factory_globals.py` 的 `SEC_KEEP` 写的是 `.data.rel.ro`，而工厂的节名是 **`.data.rel.ro.local`（差一个 `.local` 后缀）** ⇒ 该节 **8 个 LOCAL 对象整节漏进不了账本** | 账本 940 行里 `.data.rel.ro*` **0 行**；该节实际有 8 个对象（共 2324 B）：`_ZL8z_errmsg` / `mui_typename` / **`ArchivePath`** / `number` / `KayName` / `p_name` / `entities.6989` / `types.7806` |
+| **C2** | 工厂里 `ArchivePath` **同名两份**：LOCAL `0x3AE610`(size 64, `.data.rel.ro.local`) 与 GLOBAL `0x3E18D4`(size 28, `.bss`)。账本只剩 GLOBAL ⇒ `gen_data_module.py` 的 `syms.setdefault`（**首次命中**）只能绑 GLOBAL ⇒ **工厂代码引用 LOCAL、我们绑 GLOBAL** | 我方 ELF：`ArchivePath` 0x3E18D4 **且 0x3AE610 处无任何符号**；`ArchivePath_global` 也在 0x3E18D4（拆分只做了"加别名"，没做"主名改绑"） |
+| **C3③** | 副产品：`verify_layout.py` 的 `ALIAS` 表**早就写了** `('ArchivePath', 0x3ae610) -> 'ArchivePath'`，但该检查**由账本行驱动** ⇒ 账本没这行 ⇒ **检查静默不执行**（= 技能第 51 条"判据的输入不存在"的变体：缺的不是文件而是**账本行**） | `verify_layout` 全程 PASS，而绑定是错的 |
+| **C4** | 顺带发现：`gen_factory_globals.py` 的 `RE_OBJ` 名字段是 `(\S+)\s*$`，**遇到 nm 的可见性前缀（`.hidden`/`.protected`/`.internal`）整行不匹配、静默丢弃** | 该形态共 **16 行**；落在被镜像节区的数据对象恰好 **1 个**：`__dso_handle`（`.data` @0x3AF004）。由新门禁第一次实跑报出 |
+
+### D. 修法（三处，全是"一行级"改动）
+
+| 文件 | 改动 | 验证 |
+|---|---|---|
+| `tools/gen_factory_globals.py` | `SEC_KEEP` 增加 `'.data.rel.ro.local'`（+ 注释说明是**后缀**之差） | 账本 diff = **恰好 8 行新增**，其余 0 变动 |
+| 同上 | `RE_OBJ` 允许可选可见性前缀 `(?:\.(?:hidden\|protected\|internal)\s+)?` | 账本 diff = **恰好 1 行新增**（`__dso_handle`） |
+| `tools/dup_sym_gate.py`（**新**） | 检查 1：**账本必须覆盖被镜像节区里的每个工厂数据对象**（"被镜像节区"从 `gen_data_module.SEC_DEF` **解析** ⇒ 唯一真源）；检查 2：重名符号的**主名必须绑到工厂代码实际引用的低地址那份**、另一份必须由拆分别名覆盖 | 自证 **9 条**，含**缺陷态**反例（删掉 RELRO 区间的行 ⇒ 恰好报 8 条；喂"修复前的绑定"⇒ 必须报错）；已接进 `1to1-verify` |
+
+**再生成产物 diff（最小化验证）**：`factory_image.S` 的 `.data.rel.ro.local` 段 **0 → 8 个符号**、
+`.bss` **194 → 193**、`.data` **172 → 173**；`factory_local.S` 由 5 个别名缩到 1 个
+（4 个 RELRO 名归 `factory_image.S`，地址不变）；**`linker/factory.ld` 逐字节不变**。
+
+### E. ★★★ 闭环证据（这是本项目第一次做到"发现 → 定位 → 修复 → 全部转 PASS"）
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| `PASS` | 619 | **628** |
+| `DIVERGE` | 122 | **113** |
+| 台账 | 123 | **114**（113 发散 + `_start` 不可判） |
+| **本轮收敛** | — | **9 个，且与预测的名单逐个吻合**（`InitKeyMapping0fEmuType` / `Load_Proc1` / `PCSX_Load` / `Pico_Load` / `SaveKeyMappingConfigFile` / `Snes_Load` / `TGB_Load` / `stella_Load` / `prosystem_Load`） |
+
+★ **"预测的 9 个 = 实际转 PASS 的 9 个"**，没有一个多、没有一个少 ⇒ 根因判断正确，
+不是"改了之后碰巧变绿"。产物 5,664,348 → **5,664,464 B**（+116 B，多出的别名与 `__dso_handle` 的调试符号）。
+
+`verify_layout` / `dup_sym_gate` / `link_audit` / `dyn_audit` / `abi_check` / `check_regen_contract`
+（另含 `--self-test`）/ `src_transcript_parity` / `dce_ref_diff` / `check_types` 本地全绿。
+
+### F. 纪律（新增第 6、7 条，与 §17.10/§17.12 同族）
+
+> **6. 白名单/正则的"漏"是静默的。** 节区白名单差一个后缀（`.data.rel.ro` vs `.data.rel.ro.local`）、
+> 正则差一个可选前缀（`.hidden`），结果是**整类对象无声消失**。
+> ⇒ 凡"白名单 + 过滤"的生成器，都必须配一道**反向覆盖门禁**：**输入侧枚举的每一个对象，
+> 输出侧必须能找到对应项**（枚举源 = 生成器自己的 `SEC_DEF`/`FIMG` 常量，避免两处硬编漂移）。
+> **7. 检查"存在"还不够，要检查"检查真的跑了"。** `verify_layout` 里 `ALIAS` 表写对了映射，
+> 却因为**账本缺行**而从没执行过 ⇒ 绿得毫无意义。凡"表驱动"的门禁，必须断言
+> **表里每一条都至少被消费一次**（消费数 vs 表大小），否则就是装饰。
+
+### G. 遗留（下一轮，优先级低于 A 线主目标）
+
+1. **我方 638 个"容器尺寸"伪符号**（§17.12.C）：`.set NAME, <段基址> + off` 生成的符号
+   `st_size` 一律 = 整个段的大小（`.fimg_bss` 194907 / `.fimg_rodata` 856920）。
+   运行期无影响（它是符号表属性，不是内存布局），但会让**以名字为键**的查表归因错。
+   处置：`gen_data_module.py` 为每个别名补 `.size NAME, <真实尺寸>`；配一条自证
+   （我方 `st_size` 不得等于段大小，除容器符号本身）。
+2. `diff_exec.data_syms` 以名字为键会**静默折叠**同名两份（本轮已加"识别并列出"的报告小节，
+   尚未改偏好）。

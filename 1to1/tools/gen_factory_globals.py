@@ -22,10 +22,23 @@ import os
 import re
 import sys
 
-# nm -S 行：地址(8) SP 绑定(1) SP 类型(1) SP 段名 TAB 尺寸(8) 空格... 名字
+# nm -S 行：地址(8) SP 绑定(1) SP 类型(1) SP 段名 TAB 尺寸(8) [可见性] 空格... 名字
+# ★ 2026-09-25（GAP 17.13）：旧正则的名字段是 `(\S+)\s*$`，**遇到可见性前缀就整行不匹配**
+#   ⇒ `003af004 l O .data 00000000 .hidden __dso_handle` 这类行被**静默丢弃**。
+#   实测该形态共 16 行，其中落在**被镜像节区**的数据对象恰好 1 个（`__dso_handle`，`.data`）
+#   —— 正是 `dup_sym_gate.py` 第一次实跑就报出来的那 1 条缺口。
 RE_OBJ = re.compile(
-    r'^([0-9a-f]{8})\s+([a-zA-Z ])\s*([a-zA-Z?])\s+(\S+)\s*\t([0-9a-f]{8})\s+(\S+)\s*$')
-SEC_KEEP = ('.data', '.bss', '.rodata', '.data.rel.ro', '.init_array', '.fini_array')
+    r'^([0-9a-f]{8})\s+([a-zA-Z ])\s*([a-zA-Z?])\s+(\S+)\s*\t([0-9a-f]{8})\s+'
+    r'(?:\.(?:hidden|protected|internal)\s+)?(\S+)\s*$')
+SEC_KEEP = ('.data', '.bss', '.rodata', '.data.rel.ro', '.data.rel.ro.local',
+            '.init_array', '.fini_array')
+# ★ 2026-09-25（GAP 17.13）：`.data.rel.ro.local` 曾经**不在白名单**里 ⇒ 该节 8 个 LOCAL
+#   对象全部漏进不了账本。其中 `ArchivePath@0x3AE610` 与一个 GLOBAL 同名 ⇒ 生成器
+#   （`gen_data_module.py` 的 `syms.setdefault` 首次命中）只能绑到 GLOBAL 0x3E18D4，
+#   而工厂**代码引用的是 LOCAL 那个** ⇒ 真机读错内存（差分执行器实测：工厂读 0x3AE650、
+#   我们读 0x3E1914，差值 0x32C4 = 0x3E18D4 − 0x3AE610 恰好相等）。
+#   注意工厂的节名是 `.data.rel.ro.local`（带 `.local` 后缀）——旧白名单只写了
+#   `.data.rel.ro`，**差一个后缀**，这正是漏掉整节的原因。
 
 
 def parse(path):
@@ -72,7 +85,11 @@ def main():
     rows.sort(key=lambda r: r['addr'])
 
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, 'w', encoding='utf-8') as f:
+    # ★ 2026-09-25：`newline='\n'` —— 旧代码在 Windows 上以文本模式写，账本成了 **CRLF**，
+    #   而仓内其余生成物（factory_image.S / factory.ld / factory_local.S）都是 LF。
+    #   后果：任何按行比较的工具（含 `_prediff`）会把整份文件报成"全行不同"，
+    #   掩盖真实差异。此处统一为 LF（内容逐行等价，仅换行符变化）。
+    with open(out, 'w', encoding='utf-8', newline='\n') as f:
         f.write('name\taddr\tsize\tsection\tbind\ttype\tparent\n')
         for r in rows:
             f.write('%s\t%08x\t%08x\t%s\t%s\t%s\t%s\n' % (

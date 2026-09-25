@@ -304,6 +304,15 @@ jobs:
           wc -c report/link_full_err.txt
           echo '--- 布局门禁 ---'
           python3 tools/verify_layout.py build/rkgame.rebuilt.elf ledger/factory_globals.tsv
+          echo '--- 数据符号覆盖 / 重名绑定门禁（GAP 17.13）---'
+          # ★ 血泪：`ArchivePath` 在工厂里同名两份（LOCAL 0x3AE610 / GLOBAL 0x3E18D4），
+          #   账本只收录了 GLOBAL ⇒ 生成器绑到 GLOBAL 而**工厂代码引用 LOCAL** ⇒
+          #   真机读错内存（差分实测：工厂读 0x3AE650、我们读 0x3E1914）。
+          #   而 verify_layout 的 ALIAS 表**早就写了**正确映射，却因**账本缺行**而静默不执行。
+          #   本步骤把「账本必须覆盖被镜像节区的每个工厂对象」变成机械判据（覆盖来源 =
+          #   gen_data_module.SEC_DEF，唯一真源），并校验重名的主/从绑定。
+          python3 tools/dup_sym_gate.py --self-test
+          python3 tools/dup_sym_gate.py
           echo '--- 动态段 / 初始化链自洽门禁 ---'
           # ★ 静态即可拦住「DT_INIT=0 → glibc call_init 调到地址 0 → SIGILL」这类致命 bug
           python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
