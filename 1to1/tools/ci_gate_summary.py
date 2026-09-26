@@ -34,8 +34,13 @@ IGNORE_PREFIX = ('门禁总账', '门禁汇总', '上传报告', 'Post ', 'Set u
 
 BAD = ('failure', 'cancelled', 'timed_out', 'action_required')
 
+# ★ 「检视到多少个步骤」的下界。低于它一律 fail-closed —— 因为"解析出 0 个"与
+#   "全部都过"在输出上一模一样，没有这条下界就分不清（本项目实测被此坑了一轮）。
+#   加步骤时**必须同步上调**本常量，否则是"覆盖率退化"而不是"通过"。
+MIN_STEPS = 30
 
-def verdict(steps_json):
+
+def verdict(steps_json, min_steps=MIN_STEPS):
     """→ (bad_list, skipped_list, parsed_ok)
 
     steps_json：GitHub Actions 的 `toJSON(steps)` 文本。
@@ -46,18 +51,26 @@ def verdict(steps_json):
         return [], [], False
     if not isinstance(steps, dict):
         return [], [], False
-    bad, skipped = [], []
+    bad, skipped, seen = [], [], 0
     for name, info in steps.items():
         if not isinstance(info, dict):
             continue
         if name.startswith(IGNORE_PREFIX):
             continue
+        seen += 1
         oc = info.get('outcome')
         if oc in BAD:
             bad.append((name, oc, info.get('conclusion')))
         elif oc in ('skipped', None):
             skipped.append(name)
-    return sorted(bad), sorted(skipped), True
+    # ★★★ 第 64 轮实测到的**假绿**（本条被修的原因）：
+    #   `toJSON(steps)` 的键是**步骤 id**；工作流里**没有一个步骤带 `id:`** ⇒
+    #   它返回空对象 ⇒ 本函数"解析成功、总数 0、失败 0、✓ 全部步骤 success"。
+    #   也就是**它一个步骤都没检视，却报全绿** —— 正是 §17.11 要消灭的那种假绿，
+    #   而且它让一次真实失败（`audit_vs_factory.py --self-test` 参数写错）静默通过。
+    #   ⇒ 两道 fail-closed：① 总数 0 ⇒ 判定不存在；② 少于 MIN_STEPS ⇒ 解析不完整。
+    #   （配合：`1to1-verify.yml` 每个步骤都已补 `id: sNN`。）
+    return sorted(bad), sorted(skipped), (seen >= min_steps)
 
 
 def self_test():
@@ -69,27 +82,41 @@ def self_test():
     j_ok = json.dumps({'编译': {'outcome': 'success', 'conclusion': 'success'},
                        '门禁总账': {'outcome': 'failure', 'conclusion': 'failure'},
                        '上传报告': {'outcome': 'success'}})
-    b, s, ok = verdict(j_ok)
+    b, s, ok = verdict(j_ok, min_steps=0)
     c('正例 全绿（总账自身失败不算）⇒ 无失败项', (b, ok), ([], True))
     c('正例 自身的 failure 被排除', any('门禁总账' in x[0] for x in b), False)
 
     j_bad = json.dumps({'A门禁': {'outcome': 'failure', 'conclusion': 'failure'},
                         'B门禁': {'outcome': 'success', 'conclusion': 'success'},
                         'C门禁': {'outcome': 'failure', 'conclusion': 'failure'}})
-    b, s, ok = verdict(j_bad)
+    b, s, ok = verdict(j_bad, min_steps=0)
     c('反例 两个失败都被收齐（不是只报第一个）', [x[0] for x in b], ['A门禁', 'C门禁'])
     c('反例 cancelled 也算失败', verdict(json.dumps(
-        {'X': {'outcome': 'cancelled'}}))[0][0][1], 'cancelled')
+        {'X': {'outcome': 'cancelled'}}), min_steps=0)[0][0][1], 'cancelled')
 
     b, s, ok = verdict('{ not json')
     c('缺陷态 解析不了 ⇒ parsed_ok=False（调用方必须 fail-closed）', ok, False)
     b, s, ok = verdict('[]')
     c('缺陷态 形态不对 ⇒ parsed_ok=False', ok, False)
     b, s, ok = verdict('{}')
-    c('边界 空 dict ⇒ 解析成功且无失败项', (b, ok), ([], True))
+    # ★ 本锚点**原来的期望是 `([], True)`（"空 dict 解析成功、无失败项"）—— 已更正**：
+    #   那正是本轮实测到的假绿（`toJSON(steps)` 返回空 ⇒ 报"✓ 全部步骤 success"）。
+    #   正确语义：空 ⇒ **判定不存在** ⇒ parsed_ok=False ⇒ 调用方必须 fail-closed。
+    c('★ 边界 空 dict ⇒ parsed_ok=False（不是"无失败项"，而是"没检视到任何步骤"）',
+      (b, ok), ([], False))
 
-    b, s, ok = verdict(json.dumps({'D门禁': {'outcome': 'skipped'}}))
+    b, s, ok = verdict(json.dumps({'D门禁': {'outcome': 'skipped'}}), min_steps=0)
     c('skipped 单列（不当作失败，但要报出来）', s, ['D门禁'])
+    # ★ 第 64 轮假绿的回归锚点：**检视到 0 个步骤 ⇒ 判定不存在**（不得报全绿）
+    import json as _j
+    c('缺陷态 空 steps ⇒ parsed_ok=False（"0 个"与"全过"必须可区分）',
+      verdict(_j.dumps({}), min_steps=1)[2], False)
+    c('缺陷态 少于下界 ⇒ parsed_ok=False',
+      verdict(_j.dumps({'s%02d' % i: {'outcome': 'success'} for i in range(3)}),
+              min_steps=30)[2], False)
+    c('正例 达到下界且全过 ⇒ parsed_ok=True 且无失败项',
+      verdict(_j.dumps({'s%02d' % i: {'outcome': 'success'} for i in range(30)}),
+              min_steps=30), ([], [], True))
     return chk
 
 

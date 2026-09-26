@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        id: s01
 
       - name: 安装 ARM 交叉工具链（armv7 hard-float）
+        id: s02
         continue-on-error: true
         run: |
           sudo apt-get update -qq
@@ -28,6 +30,7 @@ jobs:
           arm-linux-gnueabihf-objdump --version | head -1
 
       - name: 安装 zig（与本地同一工具链 ⇒ GLIBC 下限可控、避免 GCC/lld 差异）
+        id: s03
         continue-on-error: true
         run: |
           python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
@@ -47,6 +50,7 @@ jobs:
           "$ZIG" version
 
       - name: shim 日志格式化器自检（零-stdio 硬门禁）★ 硬门禁
+        id: s04
         continue-on-error: true
         run: |
           cd 1to1
@@ -62,6 +66,7 @@ jobs:
           python tools/shim_fmt_selftest.py --zig "$ZIG"
 
       - name: 调用点实参对拍（逐调用点，权威=工厂反编译 C）★ 硬门禁
+        id: s05
         continue-on-error: true
         run: |
           cd 1to1
@@ -74,6 +79,7 @@ jobs:
           python tools/scan_call_args.py --root .
 
       - name: 窄指针转型 + 解引用扫描 ★ 硬门禁
+        id: s06
         continue-on-error: true
         run: |
           cd 1to1
@@ -90,6 +96,7 @@ jobs:
             --ledger tools/narrow_deref_pending.txt
 
       - name: 工作流续行链 lint（注释不得插进 `\` 续行链）★ 硬门禁
+        id: s07
         continue-on-error: true
         run: |
           cd 1to1
@@ -102,6 +109,7 @@ jobs:
           python tools/lint_workflow_continuation.py --root .
 
       - name: CI 可达性 / 宿主绝对路径门禁（防"判据的输入在 CI 里不存在"）★ 硬门禁
+        id: s08
         continue-on-error: true
         run: |
           cd 1to1
@@ -123,6 +131,7 @@ jobs:
           python tools/lint_ci_reach.py
 
       - name: 调用点缺原型扫描（编译器真值）★ 硬门禁
+        id: s09
         continue-on-error: true
         run: |
           cd 1to1
@@ -143,6 +152,7 @@ jobs:
             --ledger tools/implicit_decl_pending.txt
 
       - name: proto.h 声明 vs 上游真签名对拍★ 硬门禁
+        id: s10
         continue-on-error: true
         run: |
           cd 1to1
@@ -159,6 +169,7 @@ jobs:
             --ledger tools/proto_vs_upstream_pending.txt
 
       - name: shim 文案可 JSON 化检查 ★ 硬门禁
+        id: s11
         continue-on-error: true
         run: |
           cd 1to1
@@ -174,6 +185,7 @@ jobs:
           python tools/check_shim_charset.py --root .
 
       - name: 校验金标准完整性
+        id: s12
         continue-on-error: true
         run: |
           python3 - <<'PY'
@@ -188,16 +200,19 @@ jobs:
           PY
 
       - name: 解压金标准
+        id: s13
         continue-on-error: true
         run: gunzip -k -f 1to1/golden/factory.funcs.json.gz
 
       - name: 结构语义指纹门禁自检（期望 100% S1）
+        id: s14
         continue-on-error: true
         run: |
           cd 1to1
           python3 tools/structsig.py golden/factory.funcs.json golden/factory.funcs.json
 
       - name: N3 ABI 门禁（验证可用工具链能产出工厂 ABI 的 ELF）
+        id: s15
         continue-on-error: true
         run: |
           cd 1to1
@@ -210,6 +225,7 @@ jobs:
           python3 tools/abi_check.py /tmp/tu
 
       - name: P2-A stb_truetype 版本指纹锁定
+        id: s16
         continue-on-error: true
         run: |
           cd 1to1
@@ -220,12 +236,14 @@ jobs:
           cat report/p2a_stb.txt
 
       - name: 类型可解析性自检（生成物健全性）
+        id: s17
         continue-on-error: true
         run: |
           cd 1to1
           python3 tools/check_types.py
 
       - name: 数组名转型扫描（Ghidra 把 `arr[0]` 误渲染成 `(窄类型)arr`）★ 硬门禁
+        id: s18
         continue-on-error: true
         run: |
           cd 1to1
@@ -237,6 +255,7 @@ jobs:
           python3 tools/scan_array_casts.py
 
       - name: .rodata 字符串当整数门禁（Ghidra 类型陷阱 ⇒ 多解引用一次）★ 硬门禁
+        id: s19
         continue-on-error: true
         run: |
           cd 1to1
@@ -248,6 +267,7 @@ jobs:
           python3 tools/scan_rodata_int_as_ptr.py
 
       - name: 重建编译门禁（双轨：宽松语法 + 严格类型，硬门禁假绿=0）
+        id: s20
         continue-on-error: true
         run: |
           cd 1to1
@@ -255,6 +275,7 @@ jobs:
           sh tools/recon_build.sh report/recon_build.txt
 
       - name: P3 链接就绪审计（符号层：重复定义 / 未解析引用分类）★ 硬门禁
+        id: s21
         continue-on-error: true
         run: |
           cd 1to1
@@ -287,6 +308,7 @@ jobs:
           [ "$rc" = "0" ] || exit "$rc"
 
       - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
+        id: s22
         continue-on-error: true
         run: |
           cd 1to1
@@ -294,6 +316,7 @@ jobs:
           PY=python3 sh tools/build_upstream.sh build/upstream
 
       - name: P3 完整链接 + ABI/布局门禁 ★ 硬门禁
+        id: s23
         continue-on-error: true
         run: |
           cd 1to1
@@ -320,6 +343,7 @@ jobs:
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
 
       - name: 上游符号指纹门禁（技能铁律 90：库名对 ≠ 版本对）
+        id: s24
         continue-on-error: true
         run: |
           cd 1to1
@@ -332,6 +356,7 @@ jobs:
           python3 tools/scan_upstream_fingerprint.py
 
       - name: C++ mangled 签名对拍（Itanium ABI）★ 硬门禁
+        id: s25
         continue-on-error: true
         run: |
           cd 1to1
@@ -347,6 +372,7 @@ jobs:
           python tools/scan_cxx_abi.py             --factory golden/factory.rkgame.bin --ours build/rkgame.rebuilt.elf             --ledger tools/cxx_abi_pending.txt
 
       - name: 上游库公有 API 集合对拍（版本钉错检出）★ 硬门禁
+        id: s26
         continue-on-error: true
         run: |
           cd 1to1
@@ -361,6 +387,7 @@ jobs:
             --pending tools/upstream_api_pending.txt
 
       - name: 调用点实参寄存器对拍（工厂=对照组）★ 硬门禁
+        id: s27
         continue-on-error: true
         run: |
           cd 1to1
@@ -378,6 +405,7 @@ jobs:
             --ledger tools/livein_args_pending.txt
 
       - name: 逐函数「调用点个数」对拍（源码级，与 codegen 无关）★ 硬门禁
+        id: s28
         continue-on-error: true
         run: |
           cd 1to1
@@ -395,6 +423,7 @@ jobs:
             --ledger tools/call_counts_pending.txt
 
       - name: 变参函数保真度门禁（Ghidra 会把 `f(char*, ...)` 渲染成单参数）
+        id: s29
         continue-on-error: true
         run: |
           cd 1to1
@@ -404,6 +433,7 @@ jobs:
           FACTORY_ELF=golden/factory.rkgame.bin python3 tools/scan_varargs_fns.py
 
       - name: 刻度 A（源码级工厂依赖）普查 ★ 硬门禁
+        id: s30
         continue-on-error: true
         run: |
           cd 1to1
@@ -416,6 +446,7 @@ jobs:
           python3 tools/fidelity_source_deps.py --self-test
 
       - name: DCE 引用差门禁（工厂数据引用被 -Os 消除）★ 硬门禁
+        id: s31
         continue-on-error: true
         run: |
           cd 1to1
@@ -431,6 +462,7 @@ jobs:
           CC="$ZIG cc" python3 tools/dce_ref_diff.py --out report/dce_ref_diff.txt
 
       - name: 数据模块「重生成契约」门禁 ★ 硬门禁
+        id: s32
         continue-on-error: true
         run: |
           cd 1to1
@@ -444,6 +476,7 @@ jobs:
           python3 tools/check_regen_contract.py --self-test
 
       - name: 转写完整性门禁（我们的源码 vs Ghidra 逐函数原始 C）★ 硬门禁
+        id: s33
         continue-on-error: true
         run: |
           cd 1to1
@@ -470,6 +503,7 @@ jobs:
           python tools/src_transcript_parity.py
 
       - name: 函数组归一化口径自证（修 prop_equiv 的克隆后缀配对）★ 硬门禁
+        id: s34
         continue-on-error: true
         run: |
           cd 1to1
@@ -482,6 +516,7 @@ jobs:
           python tools/equiv_group_sum.py --self-test
 
       - name: 差分执行器自证（Unicorn 逐函数对拍；**不依赖本项目数据**）★ 硬门禁
+        id: s35
         continue-on-error: true
         run: |
           cd 1to1
@@ -492,6 +527,7 @@ jobs:
           python tools/diff_exec.py --self-test
 
       - name: 差分执行对拍（工厂 vs 重建产物，棘轮台账）★ 硬门禁
+        id: s36
         continue-on-error: true
         run: |
           cd 1to1
@@ -507,6 +543,7 @@ jobs:
             --ledger tools/diff_exec_pending.txt
 
       - name: 发散**类别**归约（把 N 条发散聚成若干根因类别）
+        id: s37
         continue-on-error: true
         run: |
           cd 1to1
@@ -521,6 +558,7 @@ jobs:
           head -40 report/diverge_cluster.txt
 
       - name: ★ 外部调用语义模型自证（libc_model；差分器的"眼睛"）
+        id: s38
         run: |
           cd 1to1
           # 为什么必须硬门禁（GAP 17.16）：差分器原先对**所有**外部调用一律返回 0。
@@ -532,6 +570,7 @@ jobs:
           python3 tools/libc_model.py
 
       - name: 审计：我们 vs 原厂（四段 + 发散→根因类别；报告型）
+        id: s39
         continue-on-error: true
         run: |
           cd 1to1
@@ -539,7 +578,7 @@ jobs:
           #   **不回答"发散落在谁的代码里"**。而"落在第三方库"与"落在我们自写的专有代码"
           #   性质完全不同 —— 混在一起就会把"追第三方库版本差异"当成进度。
           #   ★ 复用 `--cache`（key 含**尺子自身**的 sha256）⇒ 单轮只付一次差分的钱。
-          python3 tools/audit_vs_factory.py --self-test
+          python3 tools/audit_vs_factory.py --selftest
           python3 tools/audit_vs_factory.py --steps 3000 \
             --cache build/_audit_verdicts.json --out report/audit_vs_factory.txt
           echo '--- 覆盖（按来源分桶）---'
@@ -550,6 +589,7 @@ jobs:
           sed -n '/类别            个数/,/^$/p' report/audit_vs_factory.txt
 
       - name: 门禁汇总（写入 Job Summary）
+        id: s40
         if: always()
         run: |
           cd 1to1
@@ -568,6 +608,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: 上传报告
+        id: s41
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -576,6 +617,7 @@ jobs:
           if-no-files-found: warn
 
       - name: 门禁总账（★ 逐步骤收齐：任何一步失败都在这里一次性报全并硬失败）
+        id: s42
         if: always()
         run: |
           cd 1to1

@@ -268,7 +268,8 @@ def main():
     ap.add_argument('--out', default=os.path.join(ROOT, 'report', 'audit_vs_factory.txt'))
     ap.add_argument('--cache', default=os.path.join(ROOT, 'build', '_audit_verdicts.json'),
                     help='判定缓存（重跑秒级；输入指纹变化自动失效）')
-    ap.add_argument('--selftest', dest='self_test', action='store_true')
+    ap.add_argument('--selftest', '--self-test', dest='self_test', action='store_true',
+                    help='自证（两种写法都接受 —— CI 里写错一次导致整步静默失败过）')
     a = ap.parse_args()
 
     if a.self_test:
