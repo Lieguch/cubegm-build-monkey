@@ -109,7 +109,18 @@ typedef struct dirent     dirent;
  *  __timezone_ptr_t = struct timezone*（gettimeofday 第 2 参，见 tsv 真实签名）
  *  __selector/__cmp = scandir 的选择/比较函数类型；__selector* 即函数指针，
  *                     与调用点 (__selector*)0x0 / alphasort 实参完全匹配 glibc。 */
+/* ★ 第 65 轮实测：glibc >= 2.24 的 `sys/time.h` **自己声明** 了 `__timezone_ptr_t`
+ *   （且类型是 `void *`），我们若再 `typedef struct timezone *` 就会撞成
+ *   `error: conflicting type qualifiers for '__timezone_ptr_t'` ——
+ *   这正好把"工厂用 glibc 2.24 编译"这件事**从编译器侧坐实**了
+ *   （我们原来的 zig/clang 头不会冲突，是因为它那套头不声明这个名字）。
+ *   ⇒ 与系统头**保持一致**：有 glibc >= 2.24 就用 `void *`，否则自己补。
+ *   语义上安全：C 里 `T *` 隐式转 `void *` 无需 cast。 */
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ) && __GLIBC_PREREQ(2, 24)
+typedef void *__timezone_ptr_t;
+#else
 typedef struct timezone *__timezone_ptr_t;
+#endif
 typedef int __selector (const struct dirent *);
 typedef int __cmp    (const struct dirent *, const struct dirent *);
 

@@ -55,6 +55,13 @@ OPT="${OPT:--O2}"
 ARCHF="-march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8"
 EXTRA="-std=gnu11 -fgnu89-inline -fmerge-all-constants -fno-stack-protector -fomit-frame-pointer -ftls-model=initial-exec -frounding-math -mtls-dialect=gnu"
 COMMON="-c $OPT -w -I$ROOT/src/compat $ARCHF $EXTRA"
+# ★ clang 不接受 GCC 专属开关（实测 `unknown CPU` 一族）⇒ 给 clang 一个**兼容子集**。
+#   这构成一处**必须在报告里披露的口径差异**：GCC 组之间是严格单变量（flags 逐字相同），
+#   而 clang↔GCC 之间除编译器外还差这 4 个开关。所以：
+#     · **判决结论以 GCC 两组之间的比较为准**（bootlin63 vs bootlin54，flags 完全相同，
+#       唯一差别 = GCC 大版本 ⇒ 干净地给出"GCC 版本的贡献"）；
+#     · clang 只作**基线参照**，且它的 flags 差异在此显式登记。
+COMMON_CLANG="-c $OPT -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 -std=gnu11"
 
 BB="https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs"
 BOOTLIN63_URL="$BB/armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1.tar.bz2"
@@ -106,7 +113,8 @@ find_cc() {
 }
 
 compile_all() {
-    out="$1"; shift
+    # $1=出目录  $2=flags  $3..=编译器
+    out="$1"; FL="$2"; shift 2
     rm -rf "$out"; mkdir -p "$out"
     ok=0; bad=0
     : > "report/_fid_err_$(basename "$out").txt"
@@ -114,7 +122,7 @@ compile_all() {
         [ -f "$f" ] || continue
         stem=$(basename "$f" .c)
         # shellcheck disable=SC2086
-        if $@ $COMMON "$f" -o "$out/$stem.o" 2>>"report/_fid_err_$(basename "$out").txt"; then
+        if $@ $FL "$f" -o "$out/$stem.o" 2>>"report/_fid_err_$(basename "$out").txt"; then
             ok=$((ok+1))
         else
             bad=$((bad+1)); rm -f "$out/$stem.o"
@@ -135,7 +143,7 @@ command -v python3 >/dev/null 2>&1 && \
 export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-/tmp/zigcache_fid}"
 mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 if [ -n "$ZIGBIN" ] && [ -x "$ZIGBIN" ]; then
-    r=$(compile_all build/fid/clang "$ZIGBIN cc -target arm-linux-gnueabihf")
+    r=$(compile_all build/fid/clang "$COMMON_CLANG" "$ZIGBIN cc -target arm-linux-gnueabihf")
     echo "  clang     : ok=${r% *} bad=${r#* }  [$("$ZIGBIN" cc --version 2>&1 | head -1)]"
     [ "${r% *}" = "0" ] && { echo '    --- clang 前 5 条错误 ---'; grep -aE 'error|Error|not found' report/_fid_err_clang.txt | head -5; }
     echo "clang ok=${r% *} bad=${r#* }  $("$ZIGBIN" cc --version 2>&1 | head -1)" >> "$RESULTS"
@@ -156,7 +164,7 @@ for spec in "bootlin63|$BOOTLIN63_URL|GCC6.3/glibc2.24/binutils2.27（与工厂�
     cc=$(find_cc "$dir") || {
         echo "  $name : UNAVAILABLE（解压目录内无 *-gcc）  <- $note"
         echo "$name UNAVAILABLE(no-gcc)  [$note]" >> "$RESULTS"; continue; }
-    r=$(compile_all "build/fid/$name" "$cc")
+    r=$(compile_all "build/fid/$name" "$COMMON" "$cc")
     echo "  $name : ok=${r% *} bad=${r#* }  [$("$cc" --version | head -1)]  <- $note"
     [ "${r% *}" = "0" ] && { echo '    --- 前 5 条错误 ---'; grep -aE 'error|Error|not found' "report/_fid_err_$name.txt" | head -5; }
     echo "$name ok=${r% *} bad=${r#* }  $("$cc" --version | head -1)  [$note]" >> "$RESULTS"
