@@ -520,6 +520,35 @@ jobs:
           echo '--- 类别归约（前 40 行）---'
           head -40 report/diverge_cluster.txt
 
+      - name: ★ 外部调用语义模型自证（libc_model；差分器的"眼睛"）
+        run: |
+          cd 1to1
+          # 为什么必须硬门禁（GAP 17.16）：差分器原先对**所有**外部调用一律返回 0。
+          #   对**指针返回型**函数这等于"返回 NULL" ⇒ 被测代码一解引用就 READ_UNMAPPED
+          #   ⇒ 那 4 个函数被判发散是**尺子的缺陷**，并把 18 个函数挡在"不可观测"之外。
+          #   本步骤断言模型的表/语义自洽（ctype 位定义与谓词交叉验证、别名指向真实实现、
+          #   指针返回型必须建模、堆不清零）。**模型坏了 ⇒ 后面所有差分结论都不可信**，
+          #   所以它必须是硬门禁而不是观测项。
+          python3 tools/libc_model.py
+
+      - name: 审计：我们 vs 原厂（四段 + 发散→根因类别；报告型）
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # 为什么（GAP 17.15）：`diff_exec` 的汇总行只给 PASS/DIVERGE 四个数，
+          #   **不回答"发散落在谁的代码里"**。而"落在第三方库"与"落在我们自写的专有代码"
+          #   性质完全不同 —— 混在一起就会把"追第三方库版本差异"当成进度。
+          #   ★ 复用 `--cache`（key 含**尺子自身**的 sha256）⇒ 单轮只付一次差分的钱。
+          python3 tools/audit_vs_factory.py --self-test
+          python3 tools/audit_vs_factory.py --steps 3000 \
+            --cache build/_audit_verdicts.json --out report/audit_vs_factory.txt
+          echo '--- 覆盖（按来源分桶）---'
+          sed -n '/---- 大类 ----/,/^$/p' report/audit_vs_factory.txt
+          echo '--- 行为（按来源分桶）---'
+          sed -n '/每个桶的判定矩阵/,/一致性自检/p' report/audit_vs_factory.txt
+          echo '--- 发散 → 根因类别 ---'
+          sed -n '/类别            个数/,/^$/p' report/audit_vs_factory.txt
+
       - name: 门禁汇总（写入 Job Summary）
         if: always()
         run: |

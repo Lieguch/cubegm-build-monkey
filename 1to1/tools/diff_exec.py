@@ -62,6 +62,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FACTORY = os.path.join(ROOT, 'golden', 'factory.rkgame.bin')
 OURS = os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf')
 
+# ★ 外部调用语义模型（GAP 17.16）。与本文件同目录 ⇒ 显式加 sys.path，
+#   保证被 `--self-test` / `import diff_exec` 以任意 cwd 调用时都能找到。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import libc_model                                                    # noqa: E402
+
 try:
     from unicorn import (UC_ARCH_ARM, UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE,
                          UC_MODE_ARM, UC_MODE_THUMB, Uc, UcError)
@@ -365,7 +370,18 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
 
     sp = spans
     d = b.dregion
-    ctx = {'insns': 0, 'calls': [], 'w': [], 'r': []}
+    ctx = {'insns': 0, 'calls': [], 'w': [], 'r': [],
+           'unmodelled': [], 'modelled': []}
+    # ★★ 外部调用**语义模型**（GAP 17.16）：原先所有外部调用一律 `r0 = 0`，
+    #   对**指针返回型**函数等于"返回 NULL" ⇒ 调用方一解引用就 UC_ERR_READ_UNMAPPED
+    #   ⇒ 4 个函数（strupr/get_from_line/myStrrstr/GetFilenameExt）被**仪器**判成发散。
+    #   现在两侧共用同一份模型与同一组地址 ⇒ 差异只可能来自被测代码。
+    _model = libc_model.Model()
+    _model.map_regions(mu)
+    # ★ A/B 开关：`CGM_NO_LIBC_MODEL=1` 时退回"所有外部调用返回 0"的旧行为。
+    #   存在意义是**可证伪**：任何"模型只是让尺子变准、没有掩盖差异"的论断，
+    #   都必须能靠这个开关做**单变量**对照（同一工具、同一产物、只差这一个开关）。
+    _use_model = os.environ.get('CGM_NO_LIBC_MODEL') != '1'
 
     def code_hook(m, address, size_, user):
         ctx['insns'] += 1
@@ -373,7 +389,17 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
         if nm is not None:
             if len(ctx['calls']) < MAX_TRACE:
                 ctx['calls'].append(nm)
-            m.reg_write(ac.UC_ARM_REG_R0, (stub_ret or {}).get(nm, 0))
+            if stub_ret and nm in stub_ret:
+                m.reg_write(ac.UC_ARM_REG_R0, stub_ret[nm] & 0xFFFFFFFF)
+            elif _use_model and _model.call(m, ac, nm):
+                if len(ctx['modelled']) < MAX_TRACE:
+                    ctx['modelled'].append(nm)
+            else:
+                # ★ 兜底返回 0，但**必须登记**：未建模的调用在报告里单列，
+                #   绝不静默当成"两侧一致"（纪律 3："没跑"与"跑了但过了"必须可区分）。
+                if len(ctx['unmodelled']) < MAX_TRACE:
+                    ctx['unmodelled'].append(nm)
+                m.reg_write(ac.UC_ARM_REG_R0, 0)
             m.reg_write(ac.UC_ARM_REG_PC, m.reg_read(ac.UC_ARM_REG_LR))
             return
         if ctx['insns'] > steps:
@@ -445,7 +471,10 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     return {'error': None, 'stopped': stopped, 'insns': ctx['insns'], 'ret': r0 & 0xFFFFFFFF,
             'ret_content': ret_content, 'mode': 'arm',
             'capped': ctx['insns'] >= steps,
-            'calls_ext': ctx['calls'], 'writes': ctx['w'], 'reads': ctx['r'], 'final': final}
+            'calls_ext': ctx['calls'], 'writes': ctx['w'], 'reads': ctx['r'], 'final': final,
+            # ★ 未建模/已建模的外部调用（报告里单列；未建模**不得**被静默当成一致）
+            'unmodelled': sorted(set(ctx['unmodelled'])),
+            'modelled': sorted(set(ctx['modelled']))}
 
 
 CORPUS = [
@@ -478,14 +507,69 @@ def norm_stop(s):
 #   `_Znwj` = C++ `operator new(unsigned int)` —— 工厂侧走 libstdc++ 的 new，我们侧直接
 #   `malloc`。二者在本项目观察到的语义等价（同一分配器、同一失败语义）。归为**等价别名**，
 #   而不是当作"多调/少调"。任何新增别名都必须在这里写明依据。
-CALL_ALIAS = {
-    '_Znwj': 'malloc', '_Znaj': 'malloc', '_Znam': 'malloc', '_Znwm': 'malloc',
-    '_ZdlPv': 'free', '_ZdaPv': 'free',
-}
+CALL_ALIAS = dict(libc_model.ALIASES)
+# ★ 唯一真源 = `libc_model.ALIASES`。本条曾**真的踩过坑**：`__strdup` 加进了报告侧的
+#   `CALL_ALIAS` 却漏加进模型的别名表，于是工厂侧"未建模 ⇒ 返回 NULL"、我们侧真执行
+#   ⇒ 凭空造出 mxml 家族假发散；`_Znwj` 漏掉则一次造出 18 个假发散。
+#   ⇒ 纪律 6/7 的重演：**两份硬编清单必然漂移**。现在报告侧直接派生自模型侧，
+#     并由 `--self-test` 断言两者相等（`CALL_ALIAS == libc_model.ALIASES`）。
+
+
+def coalesce_writes(seq):
+    """写访问归一到**字节覆盖区间**（GAP 17.17）。
+
+    ★ 为什么只对**写**做、不对读做（这个不对称是刻意的）：
+      · 写：`两个相邻 4 字节写` 与 `一个 8 字节写` **写入的字节完全相同** ⇒ 语义等价。
+        实测 `main`：工厂 `0x3e1298:4:W ×1` + `0x3e129c:4:W ×1`，我们 `0x3e1298:8:W ×1`
+        —— 同一区间、同一内容，只是 clang 把两次相邻 32 位存合并成一次 64 位存。
+        把"存储粒度"当判据 ⇒ 假发散（这是本项目第 N 次踩"把非语义量当判据"）。
+      · 读：`读 1 字节` 与 `读 4 字节` **得到的值不同**（高位字节不一样）⇒ 粒度**是**语义。
+        实测 `mui_search` 等：工厂读 `DisplayThumbnailflag+0:4`、我们读 `+0:1`
+        —— 那是**真实的声明宽度缺陷**，必须继续报出来。
+    ⇒ 归一化必须**方向敏感**：写合并、读不合并。
+    """
+    if not seq:
+        return seq
+    out = []
+    for a, w, rw in sorted(seq):
+        if out and out[-1][2] == rw == 'W' and out[-1][0] + out[-1][1] >= a:
+            pa, pw, prw = out[-1]
+            out[-1] = (pa, max(pa + pw, a + w) - pa, prw)
+        else:
+            out.append((a, w, rw))
+    return out
 
 
 def norm_calls(seq):
     return [CALL_ALIAS.get(x, x) for x in seq]
+
+
+# ★ 外部调用的「**机制等价**族」（GAP 17.16）：**同一个操作的两种实现路径**。
+#   实测背景：`strupr` 工厂侧调 `islower`（函数），我方调 `__ctype_b_loc`（表宏）——
+#   两者都是"测试该字符是否小写"，只是 glibc 头版本/编译器把宏展开成了不同形态。
+#
+#   ★ 与 `CALL_ALIAS` 的区别（很重要，别混用）：
+#     `CALL_ALIAS` 是"**名字不同、同一个函数**"（`_Znwj` 就是 `operator new`）；
+#     `CALL_MECH`  是"**实现路径不同、同一个操作**"，因此它**只在其余观测量全部一致时**
+#                   才把该差异降级为 INFO，并且**报告里同时打印两侧原始调用名**。
+#   依据：`libc_model` 的 ctype 表与谓词函数**按位一致**（自证 29 条），
+#         否则"函数式"与"表式"两条路径会给出不同答案 ⇒ 归一化就不成立。
+CALL_MECH = {
+    'islower': 'ctype:predicate', 'isupper': 'ctype:predicate',
+    'isalpha': 'ctype:predicate', 'isdigit': 'ctype:predicate',
+    'isspace': 'ctype:predicate', 'isalnum': 'ctype:predicate',
+    'ispunct': 'ctype:predicate', 'isxdigit': 'ctype:predicate',
+    'isprint': 'ctype:predicate', 'isgraph': 'ctype:predicate',
+    'isblank': 'ctype:predicate', 'iscntrl': 'ctype:predicate',
+    '__ctype_b_loc': 'ctype:predicate',
+    'toupper': 'ctype:map', 'tolower': 'ctype:map',
+    '__ctype_toupper_loc': 'ctype:map', '__ctype_tolower_loc': 'ctype:map',
+}
+
+
+def norm_mech(seq):
+    """→ 机制归一后的调用序列（**仅供"是否同一操作"的判定**；报告仍打印原始名）。"""
+    return [CALL_MECH.get(x, x) for x in seq]
 
 
 # Ghidra 合成名（把地址编进了名字）——归因时**优先跳过**，因为工厂里没有这些名字 ⇒ 无法跨侧配对
@@ -536,6 +620,43 @@ def _fp_diff(kf, shf, ko, sho):
     ex_o = ['%s ×%d' % (do[k], n - Cf.get(k, 0)) for k, n in sorted(Co.items())
             if n > Cf.get(k, 0)]
     return '仅F=%s 仅O=%s' % (ex_f[:6], ex_o[:6])
+
+
+def read_width_only(kf, ko):
+    """→ (是否"仅访存宽度不同", 粒度差异描述列表)。
+
+    ★ 精确定义：两侧读的**对象与地址完全一致**，唯一差别是**每次读的宽度**。
+
+    为什么这类要单独摘出来（GAP 17.18，**证据驱动的自我更正**）：
+      我最初把"同址不同宽"直接写成"读到的值不同 ⇒ 真实声明缺陷"。**那是错的。**
+      实证 `DisplayThumbnailflag`：源码声明是 `unsigned int`（`globals.h` 4 字节），
+      而所有用法只触及低字节（`& 8` / `& 0xfe` / `| 2` / `| 0xc`）⇒ clang 做
+      **load-narrowing**（只用到低字节 ⇒ 合法地把 4B 载入窄化成 1B）。
+      GCC 6.2 没做 ⇒ 工厂读 4B、我们读 1B。**同址、低位值相同 ⇒ 语义等价**，
+      与"写被合并成 8B"（`coalesce_writes`）是同一类**访问粒度**差异。
+      ⇒ 它对"值"无影响，因此只在**其余观测量全部一致**时才降级为 INFO 并留痕。
+
+    反向约束（防这次放宽被滥用）：若地址集合不同（一侧少读/多读某对象），
+    仍然照旧报 `data-reads` 发散 —— 那条路径（R-SET）才可能对应真缺失。
+    """
+    if not kf or not ko:
+        return False, []
+    # 键形如 ('A', addr, w, rw) 或 ('LN', name, off, w, rw)：取"对象标识（去掉宽度）"
+    def ident(k):
+        return k[:2] + k[4:] if k[0] == 'LN' else (k[0], k[1], k[3])
+
+    mf, mo = {}, {}
+    for k in kf:
+        mf.setdefault(ident(k), []).append(k[2])
+    for k in ko:
+        mo.setdefault(ident(k), []).append(k[2])
+    if set(mf) != set(mo):
+        return False, []
+    diff = []
+    for i in mf:
+        if sorted(mf[i]) != sorted(mo[i]):
+            diff.append('%s 宽 F=%s O=%s' % (i, sorted(set(mf[i])), sorted(set(mo[i]))))
+    return bool(diff), diff[:6]
 
 
 def norm_fp(b, tuples, spec_private, fspans):
@@ -642,15 +763,24 @@ def ledger_steps_ok(declared_steps, declared_esc, actual_steps, actual_esc):
 def ledger_update(old, diverging, undecidable):
     """棘轮更新语义（纯函数）：
 
-      保留 = 本轮发散 ∪ (旧台账 ∩ 本轮**不可判**)
+      保留 = 本轮**发散** ∪ 本轮**不可判**
       移除 = 旧台账里本轮被**明确判为 PASS/INFO** 的项
 
-    ★ 核心不变式：**TRUNC/SKIP ≠ 已收敛**。不可判的项必须留在台账里当债务，
-      否则"未知"会被静默改写成"没问题"——这正是台账最容易烂掉的方式。
+    ★ 核心不变式：**"没有被证明等价" 就留在台账里**。
+      发散（DIVERGE）与不可判（TRUNC/SKIP）**都**属于"未证明等价"，必须**同等**保留 ——
+      否则"未知"会被静默改写成"没问题"，这正是台账最容易烂掉的方式（GAP 17.10）。
+
+    ★★ 第 64 轮实测到的**真实缺陷（本条被修的原因）**：
+      旧实现写的是 `keep = diverging ∪ (old ∩ undecidable)` —— 那个 `∩ old` 让
+      **本轮新出现的不可判项永远进不了台账**（它们只可能出现在 `undecidable` 里，
+      还没机会成为 `old`）。实测：`MP3InitDecoder` / `TestRun` / `WaitNMI` /
+      `xmp3_AllocateBuffers` 连续多轮 TRUNC，而台账里**一个都没有** ⇒
+      台账表面上"只剩 77 项在收敛"，其实**把 4 项不可判债务藏在了台账之外**。
+      ⇒ 修法：直接取 `diverging ∪ undecidable`，不再与旧台账求交。
     """
-    keep = set(diverging) | (set(old) & set(undecidable))
+    keep = set(diverging) | set(undecidable)
     removed = sorted(set(old) - keep)
-    kept_undec = sorted((set(old) & set(undecidable)) - set(diverging))
+    kept_undec = sorted(set(undecidable) - set(diverging))
     return sorted(keep), removed, kept_undec
 
 
@@ -702,29 +832,47 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
             else:
                 diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
         cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
-        wk_f, wsh_f = norm_fp(bf, rf['writes'], spec_private, fspans)
-        wk_o, wsh_o = norm_fp(bo, ro['writes'], spec_private, fspans)
+        wk_f, wsh_f = norm_fp(bf, coalesce_writes(rf['writes']), spec_private, fspans)
+        wk_o, wsh_o = norm_fp(bo, coalesce_writes(ro['writes']), spec_private, fspans)
         if wk_f != wk_o:
             diffs.append('data-writes %s' % _fp_diff(wk_f, wsh_f, wk_o, wsh_o))
         rk_f, rsh_f = norm_fp(bf, rf['reads'], spec_private, fspans)
         rk_o, rsh_o = norm_fp(bo, ro['reads'], spec_private, fspans)
+        rw_only, rw_why = (False, [])
         if rk_f != rk_o:
-            diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
+            rw_only, rw_why = read_width_only(rk_f, rk_o)
+            if not rw_only:
+                diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
         common = set(rf['final']) & set(ro['final'])
         fd = [k for k in sorted(common) if rf['final'][k] != ro['final'][k]]
         if fd:
             diffs.append('data-final 不同 %d 项 %s' % (len(fd), fd[:6]))
-        # ★ 外部调用判据放在最后：区分「内联等价」与「真的少调/多调/顺序变」
+        # ★ 外部调用判据放在最后：区分「内联等价」「机制等价」与「真的少调/多调/顺序变」
         note = ''
+        if rw_only and not diffs:
+            # 仅"访存粒度"不同（同址、同对象、仅宽度）⇒ 降级为 INFO 并**列名留痕**
+            note = '粒度等价（仅访存宽度不同、同址同对象）: %s' % '; '.join(rw_why)
         if cf != co:
             only_missing = [x for x in cf if x not in co]
             only_extra = [x for x in co if x not in cf]
-            if (not diffs) and only_missing and (not only_extra):
+            plain = [d for d in diffs if not d.startswith('calls_ext')]
+            if (not plain) and norm_mech(cf) == norm_mech(co):
+                # ★ 同一操作的两种实现路径（CALL_MECH）：**必须**其余观测量全一致才降级，
+                #   且 note 里同时打印两侧原始名 ⇒ 读者可自行复核，不是"抹掉差异"。
+                note = ('机制等价（同一操作、不同实现路径）: F=%s O=%s'
+                        % (sorted(set(cf))[:6], sorted(set(co))[:6]))
+            elif (not plain) and only_missing and (not only_extra):
                 # 其余观测量**全部一致** + 只是少调了工厂的某些调用 ⇒ 内联/等价实现
                 note = '内联等价: 仅工厂侧调用 %s' % (only_missing[:6],)
             else:
                 raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
                 diffs.append('calls_ext F=%s O=%s%s' % (cf[:10], co[:10], raw))
+        # ★ 仪器可见性（GAP 17.16）：未建模的外部调用在两侧**不同**时，说明有一条路径
+        #   我们其实"没真跑" ⇒ 必须留痕（不作为发散，但也不许静默）。它只影响 note。
+        um_f, um_o = set(rf.get('unmodelled') or ()), set(ro.get('unmodelled') or ())
+        if um_f != um_o:
+            note = (note + ' ;; ' if note else '') + \
+                '仪器：未建模外部调用不同 F=%s O=%s' % (sorted(um_f)[:5], sorted(um_o)[:5])
         if diffs:
             verdict = 'DIVERGE'
         rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
@@ -843,6 +991,16 @@ def self_test():
     keep2, removed2, _ = ledger_update(['x'], [], set())
     c('台账语义  旧项本轮判 PASS ⇒ 移除', (keep2, removed2), ([], ['x']))
     c('台账语义  新增发散自动进入台账', ledger_update([], ['z'], set())[0], ['z'])
+    # ★★ 第 64 轮实测缺陷的回归锚点：**本轮新出现的不可判项必须进台账**
+    #   旧实现 `diverging ∪ (old ∩ undecidable)` 里的 `∩ old` 会把"首次变成 TRUNC"
+    #   的函数永远挡在台账外 —— 实测 `MP3InitDecoder`/`TestRun`/`WaitNMI`/
+    #   `xmp3_AllocateBuffers` 连续多轮 TRUNC 而台账里一个都没有。
+    c('台账语义  首次出现的不可判项也要进台账（不得藏在台账之外）',
+      ledger_update([], [], {'w'})[0], ['w'])
+    c('台账语义  新不可判项不得被算作"移除"',
+      ledger_update(['w'], [], {'w'})[1], [])
+    c('台账语义  发散 ∪ 不可判 都保留且去重',
+      ledger_update(['a'], ['a'], {'a'})[0], ['a'])
 
     # 本项目真实函数：可执行性前提（不判等价，只证"两侧都能跑到停止"）
     if os.path.exists(FACTORY) and os.path.exists(OURS):
@@ -914,6 +1072,64 @@ def self_test():
                 v_b, _ = compare(BF, BO, 'AudioProcess', 60000, void_fns=vf, out=o2)
                 c('反例  预算足够时 void 函数只差 r0 ⇒ PASS（r0 不作判据）', v_b, 'PASS')
                 c('正例  上述判定确实发生了"r0 未作判据"', o2.get('ret_unjudged'), 1)
+
+        # ---- libc 模型接线（GAP 17.16）：外部调用不再一律返回 0 ----------------
+        if 1:
+            # ① 跨模块一致性：CALL_MECH 里的 ctype 名必须是 libc_model 真正实现的
+            pred_names = {n for n, w in libc_model.CTYPE_PREDICATES.items() if w}
+            tbl_names = {'__ctype_b_loc', '__ctype_toupper_loc', '__ctype_tolower_loc'}
+            map_names = {'toupper', 'tolower'}
+            mech_ctype = {n for n, tag in CALL_MECH.items() if tag.startswith('ctype:')}
+            c('正例  CALL_MECH 的 ctype 项全部在 libc_model 有实现（无悬空归一）',
+              mech_ctype <= (pred_names | tbl_names | map_names), True)
+            c('正例  ctype 族非平凡（>=12 个谓词）', len(pred_names) >= 12, True)
+            c('正例  指针返回型集合非平凡（>=15 个）', len(libc_model.PTR_RETURNING) >= 15, True)
+            # ② 端到端机制锚点：`strupr` 曾因"指针返回型被兜底成 0"而 READ_UNMAPPED
+            #    ★ 锚点必须挑**有效输入**那一组：`zero`/`misc` 组参数是 NULL，
+            #      两侧**同样**读崩 —— 那是真实行为一致，不是缺陷（自证要能区分这两件事）。
+            o3 = {}
+            v_s, rows_s = compare(BF, BO, 'strupr', 3000, void_fns=vf, out=o3)
+            rs = [r for r in rows_s if r[0] == 'strs']
+            c('前提  `strs` 组存在（有效字符串输入）', len(rs), 1)
+            c('反例  有效字符串下我方侧不得再 READ_UNMAPPED（libc 模型缺位造成的假发散）',
+              'UC_ERR_READ_UNMAPPED' in (rs[0][6], rs[0][7]), False)
+            c('正例  `strupr` 的调用名差异被识别为**机制等价**并留痕（不是静默放行）',
+              rs[0][1], 'info')
+            c('正例  留痕文本里**同时打印了两侧原始调用名**（可复核，不是抹掉）',
+              ('islower' in (rs[0][9] or '')) and ('__ctype_b_loc' in (rs[0][9] or '')), True)
+            c('反例  NULL 输入时两侧**同样**读崩 ⇒ 不得被判成发散',
+              v_s, 'PASS')
+
+        # ---- 别名唯一真源 + 写粒度归一（GAP 17.17）------------------------------
+        if 1:
+            c('正例  CALL_ALIAS 与 libc_model.ALIASES 是同一份（两份硬编清单必然漂移）',
+              CALL_ALIAS == libc_model.ALIASES, True)
+            c('正例  `_Znwj`（C++ operator new）在别名表里（漏掉它会造 18 个假发散）',
+              CALL_ALIAS.get('_Znwj'), 'malloc')
+            # 写合并：两个相邻 4B 写 == 一个 8B 写
+            c('正例  相邻 4B 写被合并为 8B 覆盖',
+              coalesce_writes([(0x1000, 4, 'W'), (0x1004, 4, 'W')]), [(0x1000, 8, 'W')])
+            c('反例  不相邻的写**不得**被合并',
+              coalesce_writes([(0x1000, 4, 'W'), (0x2000, 4, 'W')]),
+              [(0x1000, 4, 'W'), (0x2000, 4, 'W')])
+            c('反例  读不得被**写合并**规则吸收（读的粒度差异由 read_width_only 单独判定）',
+              coalesce_writes([(0x1000, 1, 'R'), (0x1001, 1, 'R')]),
+              [(0x1000, 1, 'R'), (0x1001, 1, 'R')])
+            c('反例  读写混合不得跨方向合并',
+              coalesce_writes([(0x1000, 4, 'R'), (0x1004, 4, 'W')]),
+              [(0x1000, 4, 'R'), (0x1004, 4, 'W')])
+            # 访存粒度（GAP 17.18）：同址同对象、仅宽度不同 ⇒ 粒度差异；地址集合不同 ⇒ 真差异
+            A4 = [('A', 0x3BC40C, 4, 'R')]
+            A1 = [('A', 0x3BC40C, 1, 'R')]
+            c('正例  同址同对象、仅宽度不同 ⇒ 判为"粒度差异"',
+              read_width_only(A4, A1)[0], True)
+            c('反例  地址集合不同（少读一个对象）⇒ 不得判为粒度差异',
+              read_width_only([('A', 0x10, 4, 'R'), ('A', 0x20, 4, 'R')],
+                              [('A', 0x10, 4, 'R')])[0], False)
+            c('反例  次数不同 ⇒ 不得判为粒度差异',
+              read_width_only([('A', 0x10, 4, 'R'), ('A', 0x10, 4, 'R')], A4)[0], False)
+            c('反例  读写方向不同 ⇒ 不得判为粒度差异',
+              read_width_only([('A', 0x10, 4, 'R')], [('A', 0x10, 4, 'W')])[0], False)
     return chk
 
 
