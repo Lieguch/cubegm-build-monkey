@@ -46,9 +46,21 @@
 # ============================================================================
 set -u
 
+# ★ 解释器可覆盖：本机 `python3` 是**基座**解释器（无 pyelftools/capstone），venv 才有。
+#   硬编 python3 会把本机路径封死 ⇒ 只能上 CI 跑 ⇒ 绕圈。
+#   用法：PY=<venv>/python sh tools/fidelity_matrix.sh
+PY="${PY:-python3}"
+
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 11
 mkdir -p report build/fid cache_tc
+
+# ---- 解析 zig（**必须放最前**：探针与编译都要用；旧版放编译段 ⇒ set -u 下探针先崩）----
+ZIGBIN="${ZIGBIN:-}"
+if [ -z "$ZIGBIN" ]; then
+    ZIGBIN=$("$PY" -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)
+fi
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$ROOT/build/_zigcache_fid}"
 
 # ---- flags：逐字取自 DWARF --------------------------------------------------
 OPT="${OPT:--O2}"
@@ -63,7 +75,14 @@ COMMON="-c $OPT -w -I$ROOT/src/compat $ARCHF $EXTRA"
 #     · clang 只作**基线参照**，且它的 flags 差异在此显式登记。
 #   ★ 实测 zig 对 `-mtune=cortex-a8` 报 `error: unknown CPU: 'cortex'`（它的 ARM CPU 表
 #     不含该值，且报错只吐了 dash 前那段）⇒ clang 基线**去掉 -mtune**，其余保持一致。
-COMMON_CLANG="-c $OPT -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -std=gnu11"
+# ★★ 第 66 轮实测（逐个 flag 用 zig 打靶）：
+#     zig 接受工厂的全部 flags **除了** `-mtls-dialect=gnu`（`unsupported option ... for armv7`）。
+#     而 `-mtune=cortex-a8` 必须写成 `-mtune=cortex_a8`（zig 的 ARM CPU 表用下划线；
+#     写 cortex-a8 会报 `unknown CPU: 'cortex'`——它把 "-a8" 当成了另一个开关）。
+#     ⇒ clang 组现在与 GCC 组**逐字相同**，只差 `-mtls-dialect=gnu` 一个（ARM EABI 默认值）。
+COMMON_CLANG="-c $OPT -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon \
+ -mtune=cortex_a8 -std=gnu11 -fgnu89-inline -fmerge-all-constants -fno-stack-protector \
+ -fomit-frame-pointer -ftls-model=initial-exec -frounding-math"
 
 BB="https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs"
 BOOTLIN63_URL="$BB/armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1.tar.bz2"
@@ -71,7 +90,7 @@ BOOTLIN54_URL="$BB/armv7-eabihf--glibc--stable-2017.05-toolchains-1-1.tar.bz2"
 LINARO49_URL="https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/arm-linux-gnueabihf/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz"
 
 echo "======================= 口径自证（须与工厂指纹一致）======================="
-python3 tools/dwarf_recon.py --out report/dwarf_recon.txt >/dev/null 2>&1 || true
+"$PY" tools/dwarf_recon.py --out report/dwarf_recon.txt >/dev/null 2>&1 || true
 grep -aE 'comp_dir|GNU C11|GNU AS|glibc-' report/dwarf_recon.txt 2>/dev/null | head -4
 echo "  flags（取自 DWARF）: $OPT $ARCHF"
 echo "                       $EXTRA"
@@ -93,7 +112,9 @@ untar() {
 fetch_tc() {
     # $1=目录名 $2=url → stdout 输出解压目录；失败 1
     d="cache_tc/$1"
-    [ -x "$d/.ok" ] && { echo "$d"; return 0; }
+    # ★★ 第 66 轮：原写 `-x`，而 `.ok` 是 `touch` 建的（0644，**不可执行**）
+    #   ⇒ 缓存**永远不命中** ⇒ CI 每次重下 3 个工具链（~190 MB）⇒ 静默烧分钟数。
+    [ -f "$d/.ok" ] && { echo "$d"; return 0; }
     rm -rf "$d"; mkdir -p "$d"
     f="cache_tc/$1.$(echo "$2" | sed 's/.*\.\(tar\.[a-z0-9]*\)$/\1/')"
     echo "  下载 $1 ..." >&2
@@ -106,9 +127,15 @@ fetch_tc() {
 
 find_cc() {
     # → 该工具链里的 C 编译器（**自动判前缀**，不写死 triplet）
-    for c in "$1"/bin/*-gcc; do
+    # ★★ 第 66 轮更正：必须用 **`*-gcc.br_real`**（真编译器），不能用 `-gcc`。
+    #   理由（读 Buildroot 产物实测）：`-gcc` 是指向 `toolchain-wrapper` 的**软链**，
+    #   该 wrapper 会按 `buildroot.config` 注入 `-mcpu=cortex-a9 -mfpu=vfpv3-d16`，
+    #   而工厂用的是 `-march=armv7-a -mfpu=neon` ⇒ **FPU/CPU 被静默改掉**，
+    #   单变量前提当场失效，且错误不可见（旧版还把 `.br_real` 显式跳过，正好反了）。
+    for c in "$1"/bin/*-gcc.br_real "$1"/bin/*-gcc; do
+        [ -f "$c" ] || continue
+        case "$c" in *-gcc-[0-9]*) continue ;; esac
         [ -x "$c" ] || continue
-        case "$c" in *.br_real|*-gcc-[0-9]*) continue ;; esac
         echo "$c"; return 0
     done
     return 1
@@ -118,57 +145,29 @@ compile_all() {
     # $1=出目录  $2=flags  $3..=编译器
     out="$1"; FL="$2"; shift 2
     rm -rf "$out"; mkdir -p "$out"
-    ok=0; bad=0
-    : > "report/_fid_err_$(basename "$out").txt"
-    for f in "$ROOT"/src/proprietary/*/*.c; do
-        [ -f "$f" ] || continue
+    errf="report/_fid_err_$(basename "$out").txt"
+    : > "$errf"
+    ls -1 "$ROOT"/src/proprietary/*/*.c 2>/dev/null > "$out/.list"
+    total=$(wc -l < "$out/.list")
+    jobs="${FID_JOBS:-8}"
+    # ★ 并行：223 个 .c × 4 候选，串行一轮太久 —— 慢会把人逼回 CI，那正是绕圈的成因之一。
+    # shellcheck disable=SC2086
+    xargs -P "$jobs" -I{} sh -c '
+        f="$1"; out="$2"; errf="$3"; fl="$4"; shift 4
         stem=$(basename "$f" .c)
-        # shellcheck disable=SC2086
-        if $@ $FL "$f" -o "$out/$stem.o" 2>>"report/_fid_err_$(basename "$out").txt"; then
-            ok=$((ok+1))
-        else
-            bad=$((bad+1)); rm -f "$out/$stem.o"
-        fi
-    done
-    echo "$ok $bad"
+        if "$@" $fl "$f" -o "$out/$stem.o" 2>>"$errf"; then :; else rm -f "$out/$stem.o"; fi
+    ' _ {} "$out" "$errf" "$FL" "$@" < "$out/.list"
+    ok=$(ls -1 "$out"/*.o 2>/dev/null | wc -l)
+    echo "$ok $((total - ok))"
 }
 
 RESULTS="report/_fid_matrix_results.txt"
 : > "$RESULTS"
-# ---------------------------------------------------------------------------
-# ★ 探针：把**系统头里 `__timezone_ptr_t` 的真实声明原文**打印出来。
-#   为什么必须打印而不是猜：上一轮我们的 compat 头被 GCC 报
-#     `error: conflicting type qualifiers for '__timezone_ptr_t'`
-#   —— 说明 glibc 确实声明了这个名字，且与我们的 `struct timezone *` 在**限定符**上不同。
-#     "它到底是 const/volatile 还是别的"**猜不出来**，必须问编译器。
-#   本节把答案写进报告 ⇒ 下一轮改 compat 头时是**照抄**，不是再猜一次。
-# ---------------------------------------------------------------------------
-echo "======================= 探针：系统头的 __timezone_ptr_t 真实声明 ======================="
-for spec in "clang|$ZIGBIN cc -target arm-linux-gnueabihf" \
-            "bootlin63|" "bootlin54|"; do
-    nm=$(echo "$spec" | cut -d'|' -f1); cmd=$(echo "$spec" | cut -d'|' -f2)
-    case $nm in
-      bootlin63) cc=$(find_cc cache_tc/bootlin63 2>/dev/null) ;;
-      bootlin54) cc=$(find_cc cache_tc/bootlin54 2>/dev/null) ;;
-      clang)     cc="$cmd" ;;
-    esac
-    [ -n "${cc:-}" ] || continue
-    echo "  --- $nm ---"
-    # shellcheck disable=SC2086
-    printf '#include <sys/time.h>\n' | $cc -E -dD -xc - 2>/dev/null \
-        | grep -a '__timezone_ptr_t' | head -3 \
-        || echo "     （系统头里没有该名字 ⇒ 由我们的 compat 头提供）"
-done
-echo
 
 echo "======================= 编译（唯一变量 = 编译器）======================="
 echo "  源文件数 = $(ls -1 "$ROOT"/src/proprietary/*/*.c 2>/dev/null | wc -l)"
 
 # 1) clang 基线
-ZIGBIN=""
-command -v python3 >/dev/null 2>&1 && \
-    ZIGBIN=$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)
-export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-/tmp/zigcache_fid}"
 mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 if [ -n "$ZIGBIN" ] && [ -x "$ZIGBIN" ]; then
     r=$(compile_all build/fid/clang "$COMMON_CLANG" "$ZIGBIN cc -target arm-linux-gnueabihf")
@@ -192,11 +191,43 @@ for spec in "bootlin63|$BOOTLIN63_URL|GCC6.3/glibc2.24/binutils2.27（与工厂�
     cc=$(find_cc "$dir") || {
         echo "  $name : UNAVAILABLE（解压目录内无 *-gcc）  <- $note"
         echo "$name UNAVAILABLE(no-gcc)  [$note]" >> "$RESULTS"; continue; }
+    printf '%s\n' "$cc" > "cache_tc/$name.cc"
     r=$(compile_all "build/fid/$name" "$COMMON" "$cc")
     echo "  $name : ok=${r% *} bad=${r#* }  [$("$cc" --version | head -1)]  <- $note"
     [ "${r% *}" = "0" ] && { echo '    --- 前 5 条错误 ---'; grep -aE 'error|Error|not found' "report/_fid_err_$name.txt" | head -5; }
     echo "$name ok=${r% *} bad=${r#* }  $("$cc" --version | head -1)  [$note]" >> "$RESULTS"
 done
+
+# ---------------------------------------------------------------------------
+# ★ 探针（**必须在取到工具链之后**）：把各编译器的**真实**系统头里
+#   `__timezone_ptr_t` 的原文打印出来，与我们 compat 头里的声明**对拍**。
+#   为什么打印而不是猜：第 65 轮我们的声明让真实 glibc 2.24 报
+#     `error: conflicting type qualifiers for '__timezone_ptr_t'`
+#   —— 那是"**限定符**不同"，即我们缺了 `__restrict`（glibc 2.24 原文：
+#     `typedef struct timezone *__restrict __timezone_ptr_t;`）。
+#   本节把两侧原文都写进报告 ⇒ 下次有人改这行，报告会当场显示不一致。
+# ---------------------------------------------------------------------------
+echo "======================= 探针：四侧系统头的 __timezone_ptr_t 真实声明 ======================="
+probe_one() {
+    nm=$1; cc=$2
+    [ -n "$cc" ] || return 0
+    printf '  --- %-10s ' "$nm"
+    # shellcheck disable=SC2086
+    v=$($cc --version 2>/dev/null | head -1)
+    echo "[$v]"
+    # shellcheck disable=SC2086
+    h=$(printf '#include <sys/time.h>\n' | $cc -E -dD -xc - 2>/dev/null \
+        | grep -a '__timezone_ptr_t' | head -2)
+    if [ -n "$h" ]; then echo "$h" | sed 's/^/      系统头: /'
+    else echo "      系统头: （不声明该名字）"; fi
+}
+probe_one clang    "$( [ -n "${ZIGBIN:-}" ] && echo "$ZIGBIN cc -target arm-linux-gnueabihf.${GLIBC_VER_MATRIX:-2.24}" )"
+for cand in bootlin63 bootlin54; do
+    probe_one "$cand" "$(cat "cache_tc/$cand.cc" 2>/dev/null)"
+done
+echo "      我们的声明:"
+grep -n '__timezone_ptr_t' src/compat/ghidra_compat.h | grep -v '^\s*\*' | sed 's/^/        /'
+echo
 
 # ---- 收敛到"所有活跃候选都编出的"同子集（防幸存者偏差）----------------------
 ACTIVE=""
@@ -226,7 +257,7 @@ if [ -z "$SETS" ]; then echo "★★ 无任何候选产出对象 —— 仪器�
 echo
 echo "======================= 对拍 ======================="
 # shellcheck disable=SC2086
-python3 tools/fidelity_compare.py $SETS | tee report/fidelity_matrix.txt
+"$PY" tools/fidelity_compare.py $SETS | tee report/fidelity_matrix.txt
 rc=$?
 
 {

@@ -106,20 +106,33 @@ typedef struct dirent     dirent;
  * 代码中 timezone 局部变量须写 struct timezone */
 
 /* glibc 内部类型名（Ghidra 按 bare name 引用）：
- *  __timezone_ptr_t = struct timezone*（gettimeofday 第 2 参，见 tsv 真实签名）
+ *  __timezone_ptr_t = gettimeofday 第 2 参（见 tsv 真实签名）
  *  __selector/__cmp = scandir 的选择/比较函数类型；__selector* 即函数指针，
  *                     与调用点 (__selector*)0x0 / alphasort 实参完全匹配 glibc。 */
-/* ★ 第 65 轮实测：glibc >= 2.24 的 `sys/time.h` **自己声明** 了 `__timezone_ptr_t`
- *   （且类型是 `void *`），我们若再 `typedef struct timezone *` 就会撞成
- *   `error: conflicting type qualifiers for '__timezone_ptr_t'` ——
- *   这正好把"工厂用 glibc 2.24 编译"这件事**从编译器侧坐实**了
- *   （我们原来的 zig/clang 头不会冲突，是因为它那套头不声明这个名字）。
- *   ⇒ 与系统头**保持一致**：有 glibc >= 2.24 就用 `void *`，否则自己补。
- *   语义上安全：C 里 `T *` 隐式转 `void *` 无需 cast。 */
-#if defined(__GLIBC__) && defined(__GLIBC_PREREQ) && __GLIBC_PREREQ(2, 24)
-typedef void *__timezone_ptr_t;
-#else
-typedef struct timezone *__timezone_ptr_t;
+/* ★★ 第 66 轮：本声明**逐字复刻** glibc 2.24 `time/sys/time.h` 原文——
+ *      #ifdef __USE_MISC
+ *      typedef struct timezone *__restrict __timezone_ptr_t;
+ *      #else
+ *      typedef void *__restrict __timezone_ptr_t;
+ *      #endif
+ *    （来源：sourceware glibc.git，`f=time/sys/time.h;hb=glibc-2.24`，逐字取得。）
+ *
+ *   为什么必须逐字：
+ *   ① 第 65 轮的错误 `error: conflicting type qualifiers for '__timezone_ptr_t'`
+ *      正是"**限定符不同**"——我们当时写的是 `struct timezone *`，**缺 `__restrict`**。
+ *      （当时的"修法"改成 `void *` 也一样缺 `__restrict`，所以那个修法是错的，本轮更正。）
+ *   ② C11 允许 typedef **重声明为同一类型**，所以逐字复刻在 glibc>=2.24（它会自己声明）
+ *      与我们自补两条路径上都成立，不需要版本分支去猜。
+ *   ③ glibc 的 `sys/time.h` 在 `__USE_MISC` 下才给出 `struct timezone` 那个分支；
+ *      我们把两个分支都镜像下来 ⇒ 与任何 feature-macro 配置都一致。
+ *   ⚠ 数据来源可复核：`tools/glibc_compat_probe.sh` 会对着**真实 glibc 2.24 的 sysroot**
+ *     把这段原文与我们的声明同时打印出来做对拍。 */
+#ifndef __timezone_ptr_t
+#  ifdef __USE_MISC
+typedef struct timezone *__restrict __timezone_ptr_t;
+#  else
+typedef void *__restrict __timezone_ptr_t;
+#  endif
 #endif
 typedef int __selector (const struct dirent *);
 typedef int __cmp    (const struct dirent *, const struct dirent *);

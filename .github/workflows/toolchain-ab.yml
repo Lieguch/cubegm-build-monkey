@@ -1,0 +1,87 @@
+name: toolchain-ab
+
+# ============================================================================
+# 工具链 A/B 判决 —— **用行为尺（diff_exec）判**，不用体积/直方图代理指标。
+#
+# 为什么新建：旧 gcc-vs-clang-fidelity 用代理指标（体积比 / 助记符直方图）判"谁更像工厂"，
+#   而 GAP 16.43 早已认定那不是功能进度尺；本项目手里本来就有行为尺。
+#   本工作流把两条腿（zig / Buildroot-GCC 6.3.0+glibc 2.24+binutils 2.27）各编一份，
+#   分别用 diff_exec 量 DIVERGE 数 ⇒ 直接回答"换工具链能否整类消掉分歧"。
+#
+# 触发：workflow_dispatch（手动）或相关路径变更。
+# ============================================================================
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '1to1/tools/toolchain_ab.sh'
+      - '1to1/tools/link_full.sh'
+      - '1to1/tools/diff_exec.py'
+      - '1to1/src/**'
+      - '.github/workflows/toolchain-ab.yml'
+
+jobs:
+  ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 装 python 依赖（差分器需要 unicorn/capstone/pyelftools）
+        id: t02
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            pyelftools capstone unicorn ziglang==0.16.0
+          python3 -c 'import unicorn,capstone,elftools,ziglang; print("deps ok")'
+
+      - name: 工具链 A/B（构建 + 行为尺度量）
+        id: t04
+        run: |
+          cd 1to1
+          mkdir -p report
+          PY=python3 sh tools/toolchain_ab.sh 2>&1 | tee report/toolchain_ab_stdout.txt
+          rc=${PIPESTATUS[0]}
+          echo "ab rc=$rc"
+          # 11 = 仪器不可用（拿不到工具链）⇒ 必须让 job 红，不能静默"绿"。
+          exit $rc
+
+      - name: 汇总（写进 job summary，肉眼可读）
+        if: always()
+        id: t06
+        run: |
+          cd 1to1
+          {
+            echo '## 工具链 A/B 判决（行为尺 = diff_exec）'
+            echo
+            if [ -f report/toolchain_ab.txt ]; then
+              sed -n '/判决表/,/原始记录/p' report/toolchain_ab.txt
+              echo
+              echo '### 原始度量'
+              echo '```'
+              cat report/_ab_results.txt 2>/dev/null || echo '（无）'
+              echo '```'
+            else
+              echo '★ 无报告文件 ⇒ 本步不可判（不得当作通过）'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传报告与产物
+        if: always()
+        id: t08
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-ab
+          path: |
+            1to1/report/toolchain_ab.txt
+            1to1/report/toolchain_ab_stdout.txt
+            1to1/report/_ab_results.txt
+            1to1/report/_ab_diff_*.txt
+            1to1/report/_ab_abi_*.txt
+            1to1/report/link_full_err.txt
+          if-no-files-found: warn

@@ -1145,6 +1145,10 @@ def main():
     ap.add_argument('--ledger', help='发散棘轮台账：只允许减少，不允许新增')
     ap.add_argument('--update-ledger', action='store_true', help='用当前发散集重写台账')
     ap.add_argument('--self-test', action='store_true')
+    ap.add_argument('--ours', help='被测产物（默认 build/rkgame.rebuilt.elf）；'
+                                   '用于单变量 A/B：同一把尺子量不同工具链/不同 flags 的产物')
+    ap.add_argument('--factory', help='对照产物（默认 golden/factory.rkgame.bin）')
+
     a = ap.parse_args()
 
     if a.self_test:
@@ -1157,11 +1161,17 @@ def main():
         print('   合计 %d 条，失败 %d 条' % (len(chk), bad))
         return 2 if bad else 0
 
-    for p in (FACTORY, OURS):
+    fac = a.factory or FACTORY
+    ours = a.ours or OURS
+    for p in (fac, ours):
         if not os.path.exists(p):
             sys.stderr.write('缺 %s\n' % p)
             return 11
-    BF, BO = Bin(FACTORY), Bin(OURS)
+    # ★ 报告必须能回溯到**具体产物**：把两侧 sha256 打在最前（GAP 17.23 纪律）。
+    _sha = {p: hashlib.sha256(open(p, 'rb').read()).hexdigest() for p in (fac, ours)}
+    sys.stderr.write('  对照 = %s\n    sha256=%s\n' % (fac, _sha[fac]))
+    sys.stderr.write('  被测 = %s\n    sha256=%s\n' % (ours, _sha[ours]))
+    BF, BO = Bin(fac), Bin(ours)
     common = sorted(set(BF.funcs) & set(BO.funcs))
 
     if a.list:
@@ -1191,6 +1201,8 @@ def main():
         return 1 if v == 'DIVERGE' else 0
 
     if a.batch:
+        ART = {'factory': {'path': os.path.relpath(fac, ROOT), 'sha256': _sha[fac]},
+               'ours': {'path': os.path.relpath(ours, ROOT), 'sha256': _sha[ours]}}
         names = common[:a.limit] if a.limit else common
         esc_steps = a.steps * ESCALATE_FACTOR
         void_fns, vmsg = void_fns_from_corpus()
@@ -1239,6 +1251,8 @@ def main():
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
                  '  共有函数 %d；本轮 %d 个；每函数 3 组输入' % (len(common), len(names)),
+                 '  被测产物：%s (sha256 %s)' % (ART['ours']['path'], ART['ours']['sha256'][:16]),
+                 '  对照产物：%s (sha256 %s)' % (ART['factory']['path'], ART['factory']['sha256'][:16]),
                  '  判据强度：--steps %d；触上限者按 %d× 放大重试一次（本轮 %d 个靠放大才判出）'
                  % (a.steps, ESCALATE_FACTOR, n_esc),
                  '  返回类型：%s；r0 未作判据（void）的函数 %d 个'

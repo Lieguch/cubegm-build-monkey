@@ -65,6 +65,20 @@ STD = {
 }
 
 
+# ★★ 第 66 轮：C **限定符/存储类**不是类型 token，分类前统一剔除。
+#   为什么成"类"而不是补一个名字：`restrict` 早在 KNOWN 里被当类型兼容处理，
+#   之后 glibc 原文写法 `*__restrict` 一进来就成"未解析类型"。
+#   逐个往 KNOWN 塞名字会让这道门禁慢慢失效（它自己的报告里就写了这条禁令）。
+QUALIFIER_TOKENS = {
+    'restrict', '__restrict', '__restrict__',
+    'const', '__const', '__const__',
+    'volatile', '__volatile', '__volatile__',
+    'inline', '__inline', '__inline__',
+    'register', '__extension__', '__thread', '_Thread_local',
+    '__attribute__', '__asm__', '__nonnull', '__THROW',
+}
+
+
 def strip_comments(t):
     """整文剥离注释（★ 必须整文：块注释可以跨行，单行 `re.sub` 会漏）。"""
     t = re.sub(r'/\*.*?\*/', ' ', t, flags=re.S)
@@ -98,7 +112,8 @@ def core_tokens(stmt, keep_comma=False):
         # ★ 必须给逗号补空格：`x.split()` 会把 `a,` 当成**一个** token
         #   （实测：`extern int a, b;` → ['int','a,','b'] ⇒ `a,` 被当成未定义类型 ⇒ 假阳性）
         x = x.replace(',', ' , ')
-    return x.split()
+    # ★ 限定符不参与类型解析（否则 `*__restrict` 会被当成"未解析类型"）
+    return [t for t in x.split() if t not in QUALIFIER_TOKENS]
 
 
 def decl_name(stmt):
@@ -238,6 +253,17 @@ def load(root):
 
 
 def self_test():
+
+    # ---- 第 66 轮的限定符剔除（双向：限定符不报；真未知类型必须仍报）--------
+    for q in ('__restrict', 'restrict', 'const', '__const', 'volatile', '__inline__'):
+        assert q not in core_tokens('typedef struct timezone *%s T;' % q), \
+            '限定符 %s 不应进入 token 列表' % q
+    assert '__restrict' not in core_tokens(
+        'typedef struct timezone *__restrict __timezone_ptr_t;'), '限定符剔除失效'
+    # ★ 反例：真正的未知类型必须仍然出现（防"放宽"变成"放水"）
+    assert 'gh_NOSUCHTYPE_t' in core_tokens(
+        'extern gh_NOSUCHTYPE_t foo;'), '未知类型必须仍被报出'
+
     print('=' * 100)
     print('自证：用已知答案的样本验仪器')
     print('=' * 100)

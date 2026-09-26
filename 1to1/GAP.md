@@ -5872,3 +5872,147 @@ flags **逐字取自 DWARF**（`-O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -
    拿到 `armv7a-libreelec-linux-gnueabi` 的**逐位同款**（含 LibreELEC 的 binutils/gold 1.12）。
 
 ★ 这三条**都不依赖**"某个域名恰好活着"，所以即使 Linaro 永久下线，根解依然成立。
+
+---
+
+## 17.23 ★★★★★ 第 66 轮：把「拿不到工具链」这个卡点在**根上**拆掉，并把判决从**代理指标**换成**行为尺**
+
+### A. 上轮的结论错在哪（先认账）
+
+上轮我把"两个 Linaro 工具链 UNAVAILABLE"当成"工具链不可得"，只盯了一个站点。
+逐条 curl 实测后的事实是：
+
+| 来源 | 实测 |
+|---|---|
+| `releases.linaro.org` | curl **exit 35**（TLS 建连失败），本机与 CI 皆不可达 |
+| `snapshots.linaro.org` | `HTTP=000` |
+| `developer.arm.com/-/media/...` | `404`（直链不能拼） |
+| **`toolchains.bootlin.com/.../armv7-eabihf/`** | **`200`** ✅ |
+| **`ftp.gnu.org/gnu/{gcc-6.2.0,binutils,glibc}`** | **`200`** ✅ |
+
+**一个站点不可达 ≠ 工具链不可得。** 已在 CI 与**本机**（`build/_dl_tc.sh`）双向下成功取得
+`armv7-eabihf--glibc--bleeding-edge-2017.05`。
+
+### B. 工具链身份：从**产物自带的清单**读，不从网页读
+
+`cache_tc/bootlin63/summary.csv`（Buildroot 生成的版本清单，随产物分发）：
+
+| 包 | 版本 | 工厂真值（DWARF + `.rodata`） |
+|---|---|---|
+| glibc | **2.24** | **2.24** ✅ 同 |
+| binutils | **2.27** | **2.27**（`GNU AS 2.27`）✅ 同 |
+| gcc-final | **6.3.0** | **6.2.0**（仅次版本差） |
+| linux-headers | 4.9.30 | — |
+
+⇒ 唯一差异 = **GCC 次版本**。另外两个 candidate 的 sysroot **逐字对上**了 glibc 2.24 的
+`sys/time.h`（见 C 节），这是"它真的是 2.24 头"的独立证据。
+
+### C. ★★★ 根因修复：compat 头的 `__timezone_ptr_t` —— 一个**限定符**之差
+
+第 65 轮真实 glibc 2.24 报 `error: conflicting type qualifiers for '__timezone_ptr_t'`。
+本轮从 **sourceware glibc.git `time/sys/time.h;hb=glibc-2.24`** 取到原文，并在
+**Bootlin sysroot 里逐字核对**（`usr/include/sys/time.h:61,63`）：
+
+```c
+#ifdef __USE_MISC
+typedef struct timezone *__restrict __timezone_ptr_t;
+#else
+typedef void *__restrict __timezone_ptr_t;
+#endif
+```
+
+* 我们当时写的是 `typedef struct timezone *__timezone_ptr_t;` ⇒ **缺 `__restrict`**；
+* 第 65 轮那次"修法"（改 `void *`）**同样缺 `__restrict`** ⇒ 那次并没修好（本轮更正）；
+* 修法：**逐字复刻**上面两个分支（`#ifdef __USE_MISC` 也要镜像），并把出处写进注释。
+  C11 允许 typedef 重声明**为同一类型**，所以这在"glibc 自己声明"与"我们自补"两条路径上都成立。
+
+**验证（本机、双向）**：新仪器 `tools/glibc_compat_probe.sh`（自证 **5** 条）——
+① 正例：我们的声明 vs **从真实 sysroot 抽取**的原文 ⇒ 兼容；
+② **缺陷态**：缺 `__restrict` ⇒ 必须冲突（**复现**第 65 轮故障）；
+③ **缺陷态**：`void *` ⇒ 必须冲突（证明第 65 轮那次修法是错的）；
+④ 仪器自检：抽取到的原文必须含 `__restrict` **×2**（防仪器拿一个"没有限定符的假原文"对拍）；
+⑤ **编译器活性控制**：宿主编译器不能编译 ⇒ 整份自证判 **不可判（exit 2）**。
+
+★ ⑤ 是被自己的自证抓出来的：本机 Windows `cc`/`gcc`/`clang` **全都不存在**，
+那时三个"必须失败"的缺陷态锚点会**全部假通过**，输出"失败 0 条"。
+这就是"前置条件不成立 ⇒ 判据全体失效且方向偏袒通过"的经典形态。
+
+### D. ★★ 推之前把**所有**同类冲突一次找完（新仪器 `tools/compat_vs_glibc.py`，自证 18 条）
+
+`__timezone_ptr_t` 之所以贵，是因为**一次 CI 只暴露一个**。所以做一道机械审计：
+
+> 我们的 compat 头声明的每个名字，真实 glibc 2.24 里是否也声明？若也声明，**逐字相同吗**？
+
+结果（对 `bootlin63` 真实 sysroot）：
+
+| 指标 | 值 |
+|---|---|
+| 我们的声明 | 62 个 |
+| 覆盖门禁 | 原始 `typedef/extern/#define` 行 **70** 条，**未解释 0** 条 |
+| glibc 名字 | 30023 个 |
+| **同名** | **1 个**（`__timezone_ptr_t`） |
+| **MISMATCH** | **0** |
+
+⇒ **那一处冲突就是全部**；单次 CI 已无已知撞车风险。
+
+**这道仪器自己也迭代了 4 次，每次都是它先抓到自己的缺陷**（都记在下面，因为每一条都是"看起来绿其实瞎"）：
+1. 按**行**解析 ⇒ 跨行匿名 typedef（`typedef struct { … } u64_pair_blob_t;`）整体落在观测之外
+   ⇒ 改为**按顶层语句**（花括号深度感知）解析，并把对账口径改成**从原始行出发**（未解释必须为 0）；
+2. 函数型 typedef（`typedef int __selector (…)`）取不到名字 ⇒ 补第三类取法；
+3. 函数原型用了为"函数指针 typedef"写的取名字逻辑 ⇒ 抽出**参数名**（glibc `scandir` 原型里的
+   `__selector`）⇒ 报出一条 **MISMATCH 假阳性**；
+4. 为了修 3 而去剥"尾部属性"的正则 `__\w+\s*\(` 会**把合法名字一起吃掉**
+   （`__selector` 本身就匹配 `__\w+`）⇒ 自证当场变红 ⇒ 改成"取第一个**非 `*` 前缀**的 `IDENT (`"。
+
+★ **假阳性比漏报更坏**：它会让人去"修"一个不存在的问题。
+
+### E. ★★★ 判决实验重做：代理指标 ⇒ **行为尺**
+
+旧 `fidelity_matrix.sh` 用**体积比 / 助记符直方图**判"谁更像工厂"——那是**代理指标**
+（GAP 16.43 已明确它不是功能进度尺）。本项目手里本来就有行为尺：
+`tools/diff_exec.py --batch`（qemu 差分执行，逐函数比 观测量/访存/调用/终止）。
+
+新 `tools/toolchain_ab.sh` + `.github/workflows/toolchain-ab.yml`：
+
+| 项 | 内容 |
+|---|---|
+| 腿 A | `zig cc`（现状，编译头 **glibc 2.7**） |
+| 腿 B | Bootlin **GCC 6.3.0 + glibc 2.24 + binutils 2.27**（`*-gcc.br_real` + 真实 sysroot） |
+| 单变量 | 同一份源码 / 同一份 `linker/factory.ld` / **同一组 flags**（逐字取自 DWARF）；唯一变量 = 编译器 |
+| **判决** | 两条腿各用 `diff_exec` 量 **DIVERGE**；ABI 门禁 rc≠0 的腿**一律不得采用** |
+| 预检 | **编译之前 fail-closed**：先跑 `glibc_compat_probe --selftest` 与 `compat_vs_glibc`，不过就**不编译**（不浪费一次 CI） |
+
+**本机已量到腿 A**（`AB_ONLY=zig`，仪器支持只跑能跑的那条腿）：
+`size=5666056 abi_rc=0 | PASS 665 | DIVERGE 75 | INFO 41 | TRUNC 6`
+——与现状**逐项相同** ⇒ 补上工厂的 `-mtune=cortex-a8` 对 zig 无判定影响，基线可用。
+
+**为什么腿 B 只能上 CI**（实测，不是推断）：Buildroot 工具链是 **Linux ELF**，
+本机无 WSL / 无 Docker；而 **zig 无法被强制使用外部 glibc sysroot** ——
+`--sysroot` / `-nostdinc` / `-nostdlibinc` / `-isystem` 全都压不住它的内建头
+（实测 `__GLIBC_MINOR__` 恒为 34，且 `generic-glibc` 仍被引用 19 次）。
+⇒ 结论：**GCC 组必须在 Linux 上跑；但判决只需一次，且预检已在本地做完**。
+
+### F. 顺带修掉的四个"静默"缺陷
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | 工具链缓存的 `.ok` 用 `touch` 创建（**0644，不可执行**），判定却写 `[ -x …/.ok ]` ⇒ **永不命中** | CI 每次重下 3 个工具链（~190 MB）⇒ 静默烧 Actions 分钟数 |
+| 2 | Buildroot 的 `-gcc` 是 **wrapper** 软链，会按 `buildroot.config` 注入 `-mcpu=cortex-a9 -mfpu=vfpv3-d16`（而工厂是 `-mfpu=neon`）⇒ **FPU 被静默改掉、单变量前提失效且不可见** | 改用 `*-gcc.br_real`（旧版还把 `.br_real` 显式跳过，正好反了） |
+| 3 | `gcc-vs-clang-fidelity.yml` 的探测步骤在 `set -u` 下引用未定义的 `ZIGBIN` ⇒ `parameter not set` ⇒ **exit 2**，而它后面的编译整段没跑 | 被 `continue-on-error` 吞掉 ⇒ 需要**逐行读日志**才发现 |
+| 4 | 探针位置在**取工具链之前** ⇒ 只看得见 clang 的 sysroot，而问题恰恰在 glibc 2.24 | 问错了对象 |
+
+### G. `diff_exec` 补 `--ours/--factory`（A/B 的基础设施）
+
+`OURS` 原先是**模块级硬编常量** ⇒ 任何 A/B 只能"覆盖权威产物再跑"，于是
+① 实验互相污染；② 报告里不写"测的是哪个二进制"⇒ 结论无法回溯到具体产物。
+补上后可对任意产物跑同一把尺，并把**两侧 sha256 打进报告头**（"进度必须可核对"）。
+
+### H. 新增纪律（第 16–19 条，与 §17.10 家族）
+
+> **16. 「拿不到」必须由**穷举过的来源**支撑。** 一个站点不可达 ≠ 资源不可得；
+> 记录"UNAVAILABLE"前必须列出**试过哪些来源、各自返回什么**。
+> **17. 判决要用**行为尺**，不要用代理指标。** 体积比/直方图只能解释"为什么"，不能判决"是否更接近"。
+> **18. 前置条件不成立时，判据会**整体失效且方向偏袒通过**。** 典型：编译器不存在 ⇒
+> 所有"必须编译失败"的锚点全部假通过。凡自证必须带**活性控制**，不成立就判**不可判**。
+> **19. 假阳性比漏报更坏。** 它会让人去修一个不存在的问题（`scandir` 参数名一例）。
+> 凡"提取/归因"型仪器，必须同时有**正例**与**缺陷态反例**锚点。

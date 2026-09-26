@@ -1489,3 +1489,81 @@ LLVM MC 的 `.set A, B + off` **继承 `B` 的 `st_size`**；`gen_data_module.py
 
 **补齐到 GCC 6.2.0 本体（本轮不硬等）**：Buildroot 2016.11 自建（源全可达）/
 ARM 官方 legacy 页面取真链 / 在 `libretro/Lakka-LibreELEC` 8.0-devel 附近 tag 复现逐位同款工具链。
+
+---
+
+## 0.11 ★★★★★ 第 66 轮（2026-09-26）：把「工具链不可得」在根上拆掉；compat 限定符根因修复；判决改用行为尺
+
+> 详细证据链：`GAP.md` **§17.23**。这里只放承重结论。
+
+### A. 上一轮的结论作废
+
+「两个 Linaro 工具链 UNAVAILABLE ⇒ 工具链不可得」是**错的**。逐条 curl 实测：
+Linaro 两个域名确实不可达（TLS/000），ARM 的 media 直链 404，但
+**`toolchains.bootlin.com`** 与 **`ftp.gnu.org`** 都是 **200**。
+⇒ 已在 **CI 与本机**双向下取得 `armv7-eabihf--glibc--bleeding-edge-2017.05`。
+
+### B. 工具链身份（从产物自带的 `summary.csv` 读，非网页）
+
+**glibc 2.24 / binutils 2.27 / gcc 6.3.0**；工厂真值（DWARF + `.rodata`）=
+glibc **2.24** / binutils **2.27** / gcc **6.2.0** ⇒ **唯一差异 = GCC 次版本**。
+
+### C. ★ 根因：compat 头 `__timezone_ptr_t` 缺一个限定符
+
+glibc 2.24 原文（sourceware + Bootlin sysroot `sys/time.h:61,63` 双向逐字核对）：
+
+```c
+#ifdef __USE_MISC
+typedef struct timezone *__restrict __timezone_ptr_t;
+#else
+typedef void *__restrict __timezone_ptr_t;
+#endif
+```
+
+我们缺 `__restrict` ⇒ `conflicting type qualifiers`。**第 65 轮那次"改成 void\*"同样缺
+`__restrict`，所以那次并没修好 —— 本轮更正。** 修法 = 逐字复刻两个分支（含 `__USE_MISC`）。
+已验证：本机双向自证 5/5（含两个缺陷态反例 + **编译器活性控制**）。
+
+### D. ★★ 推之前把同类冲突一次找完
+
+新仪器 `tools/compat_vs_glibc.py`（自证 18 条）：我们的声明 × 真实 glibc 2.24 sysroot。
+**覆盖门禁：原始 70 行 / 未解释 0**；**同名 1 个（`__timezone_ptr_t`）/ MISMATCH 0**
+⇒ 那一处就是全部，**单次 CI 无已知撞车风险**。
+
+### E. ★★★ 判决从**代理指标**换成**行为尺**
+
+| | 旧 | 新 |
+|---|---|---|
+| 判据 | 体积比 / 助记符直方图（代理） | **`diff_exec` 的 DIVERGE 数（行为）** |
+| 腿 | clang / Linaro×2（都下不到） | zig / **Bootlin GCC6.3+glibc2.24+binutils2.27** |
+| 预检 | 无 | **编译前 fail-closed**（compat 对拍不过就不编译） |
+
+产物：`tools/toolchain_ab.sh` + `.github/workflows/toolchain-ab.yml`。
+**腿 A 已在本机量到**：`PASS 665 | DIVERGE 75 | INFO 41 | TRUNC 6`（与现状逐项相同）。
+腿 B 必须在 Linux 上跑（Buildroot 工具链是 Linux ELF；本机无 WSL/Docker；
+**zig 无法被强制使用外部 glibc sysroot** —— `--sysroot/-nostdinc/-nostdlibinc/-isystem` 全无效，
+`__GLIBC_MINOR__` 恒为 34）。
+
+### F. 本轮的四个"静默"缺陷（全部与"看起来绿其实瞎"同类）
+
+1. `.ok` 是 `touch` 建的（0644），缓存判定却用 `[ -x ]` ⇒ **永不命中** ⇒ CI 每次重下 ~190 MB；
+2. Buildroot `-gcc` 是 **wrapper** 软链，会注入 `-mcpu=cortex-a9 -mfpu=vfpv3-d16`（工厂是 `neon`）
+   ⇒ **FPU 被静默改掉**；改用 `*-gcc.br_real`（旧版正好把它跳过）；
+3. fidelity 工作流的探针在 `set -u` 下引用未定义 `ZIGBIN` ⇒ exit 2，被 `continue-on-error` 吞掉；
+4. 探针位置在取工具链**之前** ⇒ 只看得见 clang 的头，而问题在 glibc 2.24。
+
+### G. 新纪律（16–19，与 §0.6/§0.7/§0.9 家族）
+
+> **16.** 「拿不到」必须由**穷举过的来源**支撑（列出试过什么、各返回什么）。
+> **17.** 判决用**行为尺**；代理指标只能解释"为什么"。
+> **18.** 前置条件不成立 ⇒ 判据**整体失效且偏袒通过**（编译器不存在时缺陷态锚点全假通过）
+> ⇒ 自证必须带**活性控制**，不成立判**不可判**。
+> **19.** **假阳性比漏报更坏**（`scandir` 参数名一例）⇒ 提取/归因型仪器必须
+> **正例 + 缺陷态反例**双向锚定。
+
+### H. 下一轮（顺序固定）
+
+1. 看 `toolchain-ab` 的判决数字：`gcc63` 的 DIVERGE 显著少于 zig ⇒ **主构建切 CC**（并复跑全部门禁）；
+2. 若两者接近 ⇒ 差异不来自编译器族/libc 头，回 **§17.19 上游库版本错配**（mxml ≤2.x / libiconv 1.15级）；
+3. 主构建的 `GLIBC_VER` 目前是 **2.7**（编译头 = glibc 2.7），与工厂 2.24 不同 ——
+   切换后要重新核对 **GLIBC 运行时下限仍 ≤ 工厂**（`abi_check` 是硬门禁）。

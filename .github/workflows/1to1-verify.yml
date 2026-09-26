@@ -336,6 +336,14 @@ jobs:
           #   gen_data_module.SEC_DEF，唯一真源），并校验重名的主/从绑定。
           python3 tools/dup_sym_gate.py --self-test
           python3 tools/dup_sym_gate.py
+          echo '--- compat 头 × glibc 的声明一致性（双向自证）★ 硬门禁 ---'
+          # ★ 为什么单列一步：`__timezone_ptr_t` 那次冲突在 CI 上**每轮只暴露一个**
+          #   （推一次、等 8 分钟）。本步把「我们的声明 vs glibc 2.24 原文」的对拍
+          #   变成本地可跑 + CI 每轮都跑：正例（逐字复刻⇒兼容）+ **两个缺陷态反例**
+          #   （缺 __restrict / 用 void* ⇒ 必须冲突），并带**编译器活性控制**
+          #   （编译器不存在时三个缺陷态锚点会**假通过** ⇒ 本步会判不可判而非绿）。
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)"
+          CC=cc ZIG="${ZIG:+$ZIG cc}" sh tools/glibc_compat_probe.sh --selftest
           echo '--- 动态段 / 初始化链自洽门禁 ---'
           # ★ 静态即可拦住「DT_INIT=0 → glibc call_init 调到地址 0 → SIGILL」这类致命 bug
           python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
