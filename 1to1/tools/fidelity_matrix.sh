@@ -61,7 +61,9 @@ COMMON="-c $OPT -w -I$ROOT/src/compat $ARCHF $EXTRA"
 #     · **判决结论以 GCC 两组之间的比较为准**（bootlin63 vs bootlin54，flags 完全相同，
 #       唯一差别 = GCC 大版本 ⇒ 干净地给出"GCC 版本的贡献"）；
 #     · clang 只作**基线参照**，且它的 flags 差异在此显式登记。
-COMMON_CLANG="-c $OPT -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 -std=gnu11"
+#   ★ 实测 zig 对 `-mtune=cortex-a8` 报 `error: unknown CPU: 'cortex'`（它的 ARM CPU 表
+#     不含该值，且报错只吐了 dash 前那段）⇒ clang 基线**去掉 -mtune**，其余保持一致。
+COMMON_CLANG="-c $OPT -w -I$ROOT/src/compat -march=armv7-a -mfloat-abi=hard -mfpu=neon -std=gnu11"
 
 BB="https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs"
 BOOTLIN63_URL="$BB/armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1.tar.bz2"
@@ -133,6 +135,32 @@ compile_all() {
 
 RESULTS="report/_fid_matrix_results.txt"
 : > "$RESULTS"
+# ---------------------------------------------------------------------------
+# ★ 探针：把**系统头里 `__timezone_ptr_t` 的真实声明原文**打印出来。
+#   为什么必须打印而不是猜：上一轮我们的 compat 头被 GCC 报
+#     `error: conflicting type qualifiers for '__timezone_ptr_t'`
+#   —— 说明 glibc 确实声明了这个名字，且与我们的 `struct timezone *` 在**限定符**上不同。
+#     "它到底是 const/volatile 还是别的"**猜不出来**，必须问编译器。
+#   本节把答案写进报告 ⇒ 下一轮改 compat 头时是**照抄**，不是再猜一次。
+# ---------------------------------------------------------------------------
+echo "======================= 探针：系统头的 __timezone_ptr_t 真实声明 ======================="
+for spec in "clang|$ZIGBIN cc -target arm-linux-gnueabihf" \
+            "bootlin63|" "bootlin54|"; do
+    nm=$(echo "$spec" | cut -d'|' -f1); cmd=$(echo "$spec" | cut -d'|' -f2)
+    case $nm in
+      bootlin63) cc=$(find_cc cache_tc/bootlin63 2>/dev/null) ;;
+      bootlin54) cc=$(find_cc cache_tc/bootlin54 2>/dev/null) ;;
+      clang)     cc="$cmd" ;;
+    esac
+    [ -n "${cc:-}" ] || continue
+    echo "  --- $nm ---"
+    # shellcheck disable=SC2086
+    printf '#include <sys/time.h>\n' | $cc -E -dD -xc - 2>/dev/null \
+        | grep -a '__timezone_ptr_t' | head -3 \
+        || echo "     （系统头里没有该名字 ⇒ 由我们的 compat 头提供）"
+done
+echo
+
 echo "======================= 编译（唯一变量 = 编译器）======================="
 echo "  源文件数 = $(ls -1 "$ROOT"/src/proprietary/*/*.c 2>/dev/null | wc -l)"
 
