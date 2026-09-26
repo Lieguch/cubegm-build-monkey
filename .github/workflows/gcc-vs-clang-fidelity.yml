@@ -15,6 +15,8 @@ on:
   push:
     paths:
       - '1to1/tools/gcc_fidelity.sh'
+      - '1to1/tools/fidelity_matrix.sh'      # ★ 第 65 轮重做的判决实验
+      - '1to1/tools/dwarf_recon.py'          # ★ 构建事实恢复（工具链/CFLAGS 的唯一真源）
       - '1to1/tools/fidelity_compare.py'
       - '.github/workflows/gcc-vs-clang-fidelity.yml'
 
@@ -32,7 +34,8 @@ jobs:
       - name: 装 ARM GCC（与原厂同族）
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+          sudo apt-get install -y -qq gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+            xz-utils curl ca-certificates
           arm-linux-gnueabihf-gcc --version | head -1
           echo "--- 记录本机 GCC 版本（≠ 原厂 6.2.0，这一点必须写进报告口径）---"
 
@@ -47,11 +50,23 @@ jobs:
           readelf -p .comment golden/factory.rkgame.bin || true
           readelf -S golden/factory.rkgame.bin | grep -a -E 'comment|gold-version' || true
 
-      - name: 跑对照实验
+      # ★★★ 第 65 轮重做：本步骤原来是"Ubuntu 自带 gcc vs zig"，**问错了问题**
+      #   （工厂是 GCC 6.2.0，而 ubuntu-22.04 的 arm-linux-gnueabihf-gcc 是 11/12）。
+      #   现在：**先把目标程序自带的 DWARF 读出来**（那里写着编译器、CFLAGS、构建目录），
+      #   再按读出来的事实去下**同款**工具链，做真正的单变量对比。
+      - name: ⑪ DWARF 构建事实恢复（工具链 / CFLAGS / 源文件树）
+        run: |
+          cd 1to1
+          python3 tools/dwarf_recon.py --selftest
+          python3 tools/dwarf_recon.py --out report/dwarf_recon.txt
+          echo '--- 构建事实 ---'
+          sed -n '/【一】/,/【三】/p' report/dwarf_recon.txt | head -40
+
+      - name: 工具链对齐判决实验（clang vs Linaro 4.9.4 vs Linaro 6.2.1；flags 取自 DWARF）
         run: |
           cd 1to1
           mkdir -p report
-          sh tools/gcc_fidelity.sh 2>&1 | tee report/gcc_fidelity.txt
+          sh tools/fidelity_matrix.sh 2>&1 | tee report/fidelity_matrix_stdout.txt
           exit ${PIPESTATUS[0]}
 
       - name: 上传报告
@@ -60,7 +75,10 @@ jobs:
         with:
           name: gcc-vs-clang-fidelity
           path: |
+            1to1/report/fidelity_matrix.txt
+            1to1/report/fidelity_matrix_stdout.txt
+            1to1/report/dwarf_recon.txt
+            1to1/report/_fid_matrix_results.txt
+            1to1/report/_fid_err_*.txt
             1to1/report/gcc_fidelity.txt
-            1to1/report/_gcc_first_err.txt
-            1to1/report/_clang_first_err.txt
           if-no-files-found: warn

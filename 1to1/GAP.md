@@ -5710,3 +5710,92 @@ myStrrstr / GetFilenameExt                          ⇒ O 侧 UC_ERR_READ_UNMAPP
 > 且**实际 < 应检视 ⇒ fail-closed**。只报"失败 0 个"的聚合器，与"什么都没跑"在输出上无区别。
 > ★ 推论：**聚合器的自证锚点里，"空输入"的期望必须是 fail，不能是 pass** ——
 > 否则那条锚点会把假绿**固化成通过标准**（本轮就是这样：原锚点期望 `([], True)`）。
+
+---
+
+## 17.21 ★★★★★ **公开更正 + 根解**：「1:1 机器码保真按构造不可达」是我**未做实验就下的断言**，作废
+
+### 0. 我错在哪（先认账）
+
+§17.15 我写了：「**"1:1 机器码保真"在本项目里按构造不可达** —— 两侧跨编译器家族且跨 glibc 头版本」，
+并据此向用户摆出「① 版本对齐 / ② 契约化」二选一。用户当场指出：**那是借口，是把我的失败
+包装成用户的选择题**。核账如下：
+
+* **事实层面**：我当时只看了两侧的 `.comment`，**没有去查工厂的工具链能否获取**，
+  也**没有去读工厂自带的调试信息**。而这两件事都做得到，且第二件只需一条命令。
+* **方法层面**：这是"**拿一个未验证的断言替代一次实验**"。项目纪律里早有对应条目
+  （§2.14「自报覆盖率不是证据」的姊妹条款）——**"做不到"与"我没试"必须可区分**。
+* **后果**：我给出的选项②（契约化）**等于放弃用户的原始需求**（1:1、可直接替代）。
+  ⇒ 用户批评"逼用户选择 = 把责任抛给用户"，**成立**。
+
+**本节的处置**：断言作废；给出**可执行的根解**（下方 §17.21.C），并把它接进 CI。
+
+### A. 目标程序自己把答案交出来了：**它带完整 DWARF**
+
+`golden/factory.rkgame.bin` **没有被 strip**：
+
+```
+.debug_aranges .debug_info .debug_abbrev .debug_line .debug_str .debug_ranges .debug_frame .debug_loc
+```
+
+用 `tools/dwarf_recon.py`（自证 8 条）读出来：
+
+| 项 | 值 | 来源 |
+|---|---|---|
+| **构建目录** | `/home/vmuser/Lakka/build.Lakka-a10.arm-8.0-devel/` | `DW_AT_comp_dir` |
+| **工具链目录** | `.../toolchain/lib/gcc/armv7a-libreelec-linux-gnueabi/6.2.0/include` | `DW_AT_comp_dir`/include 路径 |
+| **编译器** | `GNU C11 6.2.0`（+ `.comment` 里另有 `Linaro GCC 4.9-2016.02) 4.9.4`） | `DW_AT_producer` / `.comment` |
+| **CFLAGS** | `-mabi=aapcs-linux -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 -mtls-dialect=gnu -g -O2 -std=gnu11 -fgnu89-inline -fmerge-all-constants -fno-stack-protector -frounding-math -fomit-frame-pointer -ftls-model=initial-exec`（其中一个 CU 另有 `-fPIC`） | `DW_AT_producer` |
+| **binutils** | `GNU AS 2.27` + `GNU gold 1.12` | `DW_AT_producer` / `.note.gnu.gold-version` |
+| **glibc** | `2.24`（`.rodata` 里 `glibc-2.24/.armv7a-libreelec-linux-gnueabi/csu/*.o`） | 字符串 |
+
+★ **注意 `-O2`**：之前的判决实验写的是 `-Os`，**优化级别一开始就是错的**（那个实验还从未跑过）。
+
+**应用对象自己的属性**（`DWARF` 只覆盖了 CRT，因为 app 编译时没有 `-g`）——
+用 `.ARM.attributes`（55 B，手工解析）补上：
+
+```
+CPU_arch = v7 (A 系列)      CPU_arch_profile = A        THUMB_ISA_use = 2
+FP_arch  = VFPv3            Advanced_SIMD_arch = 1 (Neon)
+ABI_VFP_args = VFP regs (硬浮点)   ABI_HardFP_use = 3   CPU_unaligned_access = 1
+```
+⇒ 应用对象确实按 **`-march=armv7-a -mfloat-abi=hard -mfpu=neon`** 编译，与 CRT 一致。
+
+### B. 工具链**是可获取的**（这就是"不可达"断言的直接反证）
+
+`.comment` 里那两个标签对应**公开发布**的 tarball：
+
+| 候选 | URL（`releases.linaro.org`，官方） |
+|---|---|
+| **Linaro GCC 4.9.4-2016.02** | `.../binaries/4.9-2016.02/arm-linux-gnueabihf/gcc-linaro-4.9-2016.02-x86_64_arm-linux-gnueabihf.tar.xz` |
+| **Linaro GCC 6.2.1-2016.11** | `.../binaries/6.2-2016.11/arm-linux-gnueabihf/gcc-linaro-6.2.1-2016.11-x86_64_arm-linux-gnueabihf.tar.xz` |
+
+并且 **Lakka/LibreELEC 的工具链是自建的、可复现的**：`libretro/Lakka-LibreELEC` 在对应 tag
+上跑 `PROJECT=<proj> DEVICE=<dev> ARCH=arm make image` 就会产出
+`build.<DISTRO>-<PROJECT>.<ARCH>-<version>/toolchain`（triplet 正是
+`armv7a-libreelec-linux-gnueabi`）。⇒ 想拿到**逐位同款**工具链，路径清楚，只是要花机时。
+
+### C. 根解（可执行，已接进 CI）
+
+1. **`tools/dwarf_recon.py`**：每次 CI 都把"工厂的构建事实"读出来落盘
+   （`report/dwarf_recon.txt`）——**它是工具链与 CFLAGS 的唯一真源**，
+   从此不许再"凭印象写 flags"。已接进 `1to1-verify`。
+2. **`tools/fidelity_matrix.sh`**：把那个**从未跑过、且用错 GCC 与 `-Os`** 的判决实验重做，
+   改成**三方单变量**对照 —— `clang(现状)` / `Linaro 4.9.4-2016.02` / `Linaro 6.2.1-2016.11`，
+   **flags 全部取自 DWARF**（`-O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 …`），
+   只编译不链接，用同一反汇编器与同一份工厂数据对拍（M1 ±15% 体积命中 / M2 助记符直方图 L1）。
+   ★ 任一候选下载失败 ⇒ **保留在表里标 `UNAVAILABLE`**（"没跑" ≠ "跑了但输了"）。
+3. **判据（预登记，先写下再跑，防事后找解释）**：
+   * 若 `gcc62`/`gcc49` 的 M1 命中数与 M2 中位**同时**优于 `clang`
+     ⇒ **工具链对齐是有效的整类优化**，下一步把主构建的 `CC` 切到同款工具链并重跑全部门禁；
+   * 若**不优** ⇒ 才允许讨论"换判据口径"，且必须带上这次实验的原始数字。
+
+### D. 纪律（第 15 条）
+
+> **15. 「做不到」必须由实验支撑，不能由断言支撑。** 当我要说"某条路不可达"时，
+> 必须先回答：**要证伪它，最便宜的那个实验是什么？** 对它跑一次。
+> 本项目实例：我说"机器码保真按构造不可达"，而证伪它只需要
+> ① 读目标自带的 DWARF（一条命令）② 查工具链是否公开发布（一次搜索）。
+> 两件事我都没做 ⇒ 结论无效。
+> ★ 附带推论：**"给用户二选一"之前，先检查其中一个选项是不是"放弃原始需求"**。
+> 若是，那不是选项，那是我没做完的工作。

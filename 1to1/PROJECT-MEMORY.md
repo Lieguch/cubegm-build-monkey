@@ -1406,3 +1406,54 @@ LLVM MC 的 `.set A, B + off` **继承 `B` 的 `st_size`**；`gen_data_module.py
 > **13. 访问粒度不是语义；但"粒度"与"集合"必须分开判。** 写按**字节覆盖区间**归一（可合并）；
 > 读的**宽度**差异当且仅当**对象与地址集合完全一致**时视为粒度（降级 INFO 留痕）；
 > 地址集合不同则是真差异（R-SET）。★ 方向敏感：读**不得**被写合并规则吸收。
+
+
+---
+
+## 0.10 ★★★★★ 第 65 轮（2026-09-26）：**§0.9 的"机器码保真按构造不可达"作废** —— 根解已接进 CI
+
+> 证据链：`GAP.md` **§17.21**。原始输出：`report/dwarf_recon.txt`、`report/fidelity_matrix.txt`。
+
+### A. 认账（先说错在哪）
+
+§0.9 我断言「"1:1 机器码保真"按构造不可达（跨编译器家族 + 跨 glibc 头）」，并据此给用户
+摆出「① 版本对齐 / ② 契约化」二选一。**两者都错**：
+* 事实层：我只看了两侧 `.comment`，**没查工厂工具链能否获取**、**没读工厂自带的调试信息**；
+* 方法层：**用未验证的断言替代了一次实验**；证伪它只需"读 DWARF（一条命令）+ 查工具链是否公开"；
+* 后果层：选项②等于**放弃用户的原始需求**（1:1 可直接替代）⇒ 用户指出"把责任抛给用户"，成立。
+
+### B. ★★★ 目标程序自己交出了构建事实（它**没有被 strip**）
+
+`golden/factory.rkgame.bin` 带完整 DWARF（`.debug_info/.debug_line/.debug_str/.debug_aranges/
+.debug_loc/.debug_frame/.debug_ranges/.debug_abbrev`）。新工具 **`tools/dwarf_recon.py`**（自证 8 条）读出：
+
+| 项 | 值 |
+|---|---|
+| 构建目录 | `/home/vmuser/Lakka/build.Lakka-a10.arm-8.0-devel/` |
+| 工具链 | `.../toolchain/lib/gcc/armv7a-libreelec-linux-gnueabi/6.2.0/include` |
+| 编译器 | `GNU C11 6.2.0`（`.comment` 另有 `Linaro GCC 4.9-2016.02) 4.9.4`） |
+| **CFLAGS** | `-mabi=aapcs-linux -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 -mtls-dialect=gnu -g `**`-O2`**` -std=gnu11 -fgnu89-inline -fmerge-all-constants -fno-stack-protector -frounding-math -fomit-frame-pointer -ftls-model=initial-exec` |
+| binutils | `GNU AS 2.27` + `GNU gold 1.12` |
+| glibc | `2.24` |
+
+应用对象的属性（app 没带 `-g`，用 `.ARM.attributes` 手工解析补上）：
+`CPU_arch=v7/A` · `FP_arch=VFPv3` · `Advanced_SIMD_arch=Neon` · `ABI_VFP_args=硬浮点` · `THUMB_ISA_use=2`。
+
+★ **`-O2`**：之前那个从未跑过的判决实验写的是 `-Os` —— 优化级别一开始就是错的。
+
+### C. 根解（已接进 CI，可执行）
+
+1. **`tools/dwarf_recon.py`** → 接进 `1to1-verify`：**每次 CI 都读一遍工厂的构建事实并落盘**，
+   它是工具链与 CFLAGS 的**唯一真源**，从此不许凭印象写 flags。
+2. **`tools/fidelity_matrix.sh`** → 重做判决实验为**三方单变量**（`clang` / `Linaro 4.9.4-2016.02` /
+   `Linaro 6.2.1-2016.11`），**flags 全部取自 DWARF**，只编译不链接，同一反汇编器 + 同一份工厂数据对拍。
+   工具链从 `releases.linaro.org` 官方 tarball 下载（已证实存在）。
+3. **预登记判据**（先写后跑，防事后解释）：M1 ±15% 体积命中 + M2 助记符直方图 L1 中位，
+   若 GCC 组**同时**优于 clang ⇒ **换工具链是有效的整类优化**，下一步把主构建 `CC` 切过去；
+   若不优 ⇒ 才允许讨论口径，且必须附本次原始数字。
+
+### D. 纪律（第 15 条，与 §0.6–§0.9 同族）
+
+> **15. 「做不到」必须由实验支撑，不能由断言支撑。** 要说"某条路不可达"时，先回答
+> **"证伪它最便宜的实验是什么"**并跑一次。★ 推论：**给用户二选一之前，先检查其中一个选项
+> 是不是"放弃原始需求"** —— 若是，那不是选项，是我没做完的工作。

@@ -557,6 +557,23 @@ jobs:
           echo '--- 类别归约（前 40 行）---'
           head -40 report/diverge_cluster.txt
 
+      - name: ★ 目标程序构建事实恢复（DWARF：工具链 / CFLAGS / 源文件树）
+        id: s43
+        run: |
+          cd 1to1
+          # 为什么（GAP 17.21）：工厂二进制**没有被 strip**，`.debug_info` 的 `DW_AT_producer`
+          #   里直接写着**编译器版本与全部 CFLAGS**，`DW_AT_comp_dir` 写着**构建目录**
+          #   （实测 = /home/vmuser/Lakka/build.Lakka-a10.arm-8.0-devel/）。
+          #   ⇒ 工具链与优化级别**不许再凭印象写**：本步每次 CI 都重新读一遍并落盘，
+          #     它是"我们的 flags 是否与工厂同源"的唯一真源。
+          #   ★ 硬门禁而非观测项：读不出构建事实 ⇒ 说明金标准被换掉/strip 了，
+          #     那之后所有"对齐工具链"的讨论都失去依据。
+          python3 tools/dwarf_recon.py --selftest
+          python3 tools/dwarf_recon.py --out report/dwarf_recon.txt
+          grep -aq 'GCC' report/dwarf_recon.txt
+          echo '--- 工厂构建事实（关键行）---'
+          grep -aE 'comp_dir|GNU C11|GNU AS|-O2' report/dwarf_recon.txt | head -6
+
       - name: ★ 外部调用语义模型自证（libc_model；差分器的"眼睛"）
         id: s38
         run: |

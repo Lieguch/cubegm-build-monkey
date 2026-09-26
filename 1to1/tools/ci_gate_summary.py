@@ -37,7 +37,7 @@ BAD = ('failure', 'cancelled', 'timed_out', 'action_required')
 # ★ 「检视到多少个步骤」的下界。低于它一律 fail-closed —— 因为"解析出 0 个"与
 #   "全部都过"在输出上一模一样，没有这条下界就分不清（本项目实测被此坑了一轮）。
 #   加步骤时**必须同步上调**本常量，否则是"覆盖率退化"而不是"通过"。
-MIN_STEPS = 30
+MIN_STEPS = 40
 
 
 def verdict(steps_json, min_steps=MIN_STEPS):
