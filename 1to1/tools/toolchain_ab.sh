@@ -46,6 +46,15 @@ TC_URL="$BB/armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1.tar.bz2"
 #   `unknown CPU: 'cortex'`）。
 FID_BASE="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 
+# ---- ★★ 默认值区（`set -u` 下**所有**外部可覆盖变量必须在此统一给默认）----
+#   为什么：本脚本曾在"预检块"里引用 `$AB_ONLY`，而它的默认值写在**后面**的腿 A 段
+#   ⇒ `AB_ONLY: parameter not set` ⇒ exit 2 ⇒ 一次 CI 白跑（只暴露一个比特）。
+#   同型缺陷上一轮已在 `ZIGBIN` 上出现过一次 ⇒ 现在改为**集中声明 + 机械 lint**双保险。
+AB_ONLY="${AB_ONLY:-both}"
+GLIBC_VER="${GLIBC_VER:-2.7}"
+SYSROOT="${SYSROOT:-}"
+FID_JOBS="${FID_JOBS:-}"
+
 RES=report/_ab_results.txt
 : > "$RES"
 OUT=report/toolchain_ab.txt
@@ -103,11 +112,19 @@ if [ "$AB_ONLY" = "both" ] || [ "$AB_ONLY" = "gcc63" ]; then
     if ensure_tc; then
         SR_TC=$(ls -d "$TC"/*/sysroot 2>/dev/null | head -1)
         say "  ① 声明文本双向自证（含两个缺陷态反例）"
-        CC=cc SYSROOT="$SR_TC" sh tools/glibc_compat_probe.sh --selftest \
-            | sed 's/^/    /' | tee -a "$OUT"
-        # shellcheck disable=SC2181
-        if [ "$(CC=cc SYSROOT="$SR_TC" sh tools/glibc_compat_probe.sh --selftest >/dev/null 2>&1; echo $?)" != "0" ]; then
-            say "  ★★ 预检失败：compat 声明与 glibc 原文不一致 ⇒ 停在此处（不浪费一次构建）"
+        # ★ 不写死 `CC=cc`：本机 Windows 无 cc/gcc/clang（探针自带 pick_cc 会兜到 $ZIG）。
+        SYSROOT="$SR_TC" ZIG="$ZIG" sh tools/glibc_compat_probe.sh --selftest \
+            > build/_ab_pre1.txt 2>&1
+        rc1=$?
+        sed 's/^/    /' build/_ab_pre1.txt | tee -a "$OUT"
+        if [ "$rc1" != "0" ]; then
+            # ★ 必须分辨原因：1=声明不一致（我们的问题）/ 2=不可判（仪器或环境的问题）。
+            #   混成一句话会让下一轮查错方向（本轮就写错过一次）。
+            case "$rc1" in
+              1) say "  ★★ 预检失败【声明不一致】：compat 的声明与 glibc 原文不同 ⇒ 停在此处";;
+              2) say "  ★★ 预检【不可判】：宿主编译器不可用（见上）⇒ fail-closed，停在此处";;
+              *) say "  ★★ 预检失败【rc=$rc1，原因未登记】⇒ fail-closed，停在此处";;
+            esac
             exit 1
         fi
         say "  ② 全量同名声明对拍（我方 vs 真实 sysroot）"
@@ -127,10 +144,9 @@ say ""
 # ---- 腿 A：zig（现状，glibc 头 = 2.7）--------------------------------------
 # ★ `AB_ONLY` 只跑指定腿 —— 本机（Windows）跑不了 Linux 版 GCC 工具链，
 #   但 zig 腿完全可跑 ⇒ 仪器必须支持"只跑能跑的那条"，否则本机就等于不可用。
-AB_ONLY="${AB_ONLY:-both}"
 if [ "$AB_ONLY" = "both" ] || [ "$AB_ONLY" = "zig" ]; then
 say "---- 腿 A：zig cc（GLIBC_VER=${GLIBC_VER:-2.7}，现状）----"
-GLIBC_VER="${GLIBC_VER:-2.7}" CC="$ZIG cc" PY="$PY" \
+GLIBC_VER="$GLIBC_VER" CC="$ZIG cc" PY="$PY" \
     FIDELITY="$FID_BASE -mtune=cortex_a8" \
     sh tools/link_full.sh build/ab/zig.elf 2>&1 | tail -3 | tee -a "$OUT"
 fi

@@ -32,7 +32,14 @@ mkdir -p "$WORK"
 
 # ---- 宿主编译器解析（★ 不可假设 `cc` 存在：本机 Windows 三者皆无）----------
 pick_cc() {
-    if [ -n "${CC:-}" ]; then printf '%s' "$CC"; return 0; fi
+    # ★ 环境里给的 `CC` 必须**先验证真能编译**再采用：
+    #   实测本机环境变量里有 `CC=cc`，而 `cc` 根本不存在 ⇒ 若不验证，探针会拿着一个
+    #   不能编译的 `cc` 一路跑下去，于是三个"必须失败"的缺陷态锚点**全部假通过**。
+    if [ -n "${CC:-}" ]; then
+        # shellcheck disable=SC2086
+        printf 'int x;\n' | $CC -x c -c - -o "$WORK/_probe_cc.o" 2>/dev/null \
+            && { printf '%s' "$CC"; return 0; }
+    fi
     for c in cc gcc clang; do
         command -v "$c" >/dev/null 2>&1 || continue
         printf 'int x;\n' | "$c" -x c -c - -o "$WORK/_probe_cc.o" 2>/dev/null && { printf '%s' "$c"; return 0; }
