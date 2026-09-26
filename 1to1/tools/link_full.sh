@@ -2,6 +2,14 @@
 # ============================================================
 # link_full.sh — P3 三期：完整链接（全部对象 + 工厂数据镜像 + 工厂布局）
 #
+# 环境变量：
+#   CC / SYSROOT / GLIBC_VER / FIDELITY / DIAG_*  —— 见下
+#   ★ EXTRA_LDFLAGS —— 追加到链接行尾的额外 ld 参数（默认空 ⇒ 与旧版逐字等价）。
+#     用途：单变量 A/B 给非 zig 工具链补齐**工厂同样拥有的**库。
+#     实测依据：工厂 `DT_NEEDED` 含 `libm.so.6`，其动态未定义符号含
+#     `pow/sqrt/sqrtf/floorf/ceilf/fmod`；而 `zig cc`（clang 驱动）会**自动加 `-lm`**，
+#     GCC 路径不会 ⇒ 不补就 `undefined reference to pow/...`（CI 实测）。
+#
 # 输入（均已存在）：
 #   build/obj/*.o         213 个专有函数对象
 #   src/upstream/xunzip/XUnzip.o      XUnzip（C++ 移植）
@@ -127,7 +135,7 @@ $CC $ARCH $FIDELITY -no-pie \
     -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \
     ${DIAG_LDFLAGS:-} \
-    $WOBJS "$LIBZ_W" -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
+    $WOBJS "$LIBZ_W" ${EXTRA_LDFLAGS:-} -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
 rc=$?
 echo "链接 rc=$rc"
 if [ -f "$OUT" ]; then

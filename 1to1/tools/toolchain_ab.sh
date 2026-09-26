@@ -137,7 +137,11 @@ build_leg() {
         > "report/_ab_compile_$lab.txt" 2>&1
     rc1=$?
     n_obj=$(ls -1 build/obj/*.o 2>/dev/null | wc -l)
-    say "  ① link_audit    rc=$rc1  产出对象 $n_obj"
+    say "  ① link_audit    rc=$rc1  产出对象 $n_obj（期望 213）"
+    if [ "$n_obj" -lt 213 ]; then
+        say "     ★ 有文件编译失败："
+        head -6 report/_link_bad.txt 2>/dev/null | sed 's/^/       /' | tee -a "$OUT"
+    fi
     # ② 上游库对象
     CC="$cc" SYSROOT="$sr" PY="$PY" sh tools/build_upstream.sh build/upstream \
         >> "report/_ab_compile_$lab.txt" 2>&1
@@ -145,16 +149,25 @@ build_leg() {
     n_up=$(ls -1 build/upstream/*.o 2>/dev/null | wc -l)
     say "  ② build_upstream rc=$rc2  产出对象 $n_up"
     # ③ 链接
-    CC="$cc" SYSROOT="$sr" PY="$PY" sh tools/link_full.sh "build/ab/$lab.elf" \
-        > "report/_ab_build_$lab.txt" 2>&1
+    # ★ 非 zig 腿补 `-lm`：工厂 DT_NEEDED 含 libm.so.6；clang 驱动会自动加，GCC 不会。
+    case "$cc" in
+      *zig*) ld_extra="" ;;
+      *)     ld_extra="-lm" ;;
+    esac
+    CC="$cc" SYSROOT="$sr" PY="$PY" EXTRA_LDFLAGS="$ld_extra" \
+        sh tools/link_full.sh "build/ab/$lab.elf" > "report/_ab_build_$lab.txt" 2>&1
     rc3=$?
     tail -3 "report/_ab_build_$lab.txt" | sed 's/^/     /' | tee -a "$OUT"
     if [ "$rc3" != "0" ] || [ ! -s "build/ab/$lab.elf" ]; then
         say "  ★★ 腿 $lab 构建失败 rc=$rc3 —— 可检索错误行（完整输出见 report/_ab_build_$lab.txt）："
-        grep -aE 'error|Error|undefined|not found|cannot|FATAL' "report/_ab_build_$lab.txt" \
-            | head -10 | sed 's/^/     /' | tee -a "$OUT"
-        grep -aE 'error|Error|undefined|not found|cannot|FATAL' "report/_ab_compile_$lab.txt" \
-            | head -6 | sed 's/^/     (compile) /' | tee -a "$OUT"
+        # ★ 用 `error:`（带冒号）而不是裸 `error`：后者会撞上 `dlerror` 这类**函数名**
+        #   ⇒ 报出"看起来像错误"的行，把人引向错方向（本轮实测）。
+        grep -aE 'error:|Error|undefined reference|not found|cannot|FATAL' \
+            "report/_ab_build_$lab.txt" | head -12 | sed 's/^/     /' | tee -a "$OUT"
+        say "     --- 编译失败清单（report/_link_bad.txt：文件 + 首条 error:）---"
+        head -12 report/_link_bad.txt 2>/dev/null | sed 's/^/     /' | tee -a "$OUT"
+        grep -aE 'error:|undefined reference' "report/_link_err_all.txt" 2>/dev/null \
+            | head -8 | sed 's/^/     /' | tee -a "$OUT"
     fi
 }
 
