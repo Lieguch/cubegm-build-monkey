@@ -84,4 +84,6 @@ jobs:
             1to1/report/_ab_diff_*.txt
             1to1/report/_ab_abi_*.txt
             1to1/report/link_full_err.txt
+            1to1/report/_ab_build_*.txt
+            1to1/report/_ab_tc.txt
           if-no-files-found: warn

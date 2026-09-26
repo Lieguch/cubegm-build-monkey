@@ -35,7 +35,11 @@ ZIG="${ZIG:-}"
 if [ -z "$ZIG" ]; then
     ZIG=$("$PY" -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)
 fi
-mkdir -p report build/ab
+# ★ 必须**先建 `cache_tc`**：CI 首跑即因缺此目录而 `curl -o cache_tc/xxx.tar.bz2` 失败
+#   （本机恰好已存在该目录 ⇒ 只有 CI 暴露）。
+mkdir -p report build/ab cache_tc
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$ROOT/build/_zigcache_ab}"
+mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 
 TC=cache_tc/bootlin63
 BB="https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs"
@@ -66,13 +70,30 @@ say() { echo "$@" | tee -a "$OUT"; }
 ensure_tc() {
     # ★ `.ok` 由 `touch` 创建（0644）⇒ 判定必须用 `-f`，`-x` 永远不命中（会重复下载）。
     [ -f "$TC/.ok" ] && return 0
+    mkdir -p cache_tc
     if [ ! -s "$TC.tar.bz2" ]; then
-        echo "  下载 bootlin63（约 64 MB）..."
-        curl -fsSL --retry 3 --retry-delay 2 --max-time 900 -o "$TC.tar.bz2" "$TC_URL" || return 1
+        echo "  下载 bootlin63（约 64 MB）...  url=$TC_URL"
+        curl -fsSL --retry 3 --retry-delay 2 --max-time 900 -o "$TC.tar.bz2" "$TC_URL" \
+            2>report/_ab_tc.txt
+        rc=$?
+        if [ "$rc" != "0" ]; then
+            echo "   ★★ 下载失败 curl rc=$rc"; sed 's/^/     /' report/_ab_tc.txt | head -6
+            echo "     --- 环境事实（供定位：URL / 网络 / 磁盘）---"
+            df -h . 2>/dev/null | head -3
+            return 1
+        fi
     fi
+    echo "  tarball = $(stat -c%s "$TC.tar.bz2" 2>/dev/null) B；解压中 ..."
     rm -rf "$TC"; mkdir -p "$TC"
-    tar -xjf "$TC.tar.bz2" -C "$TC" --strip-components=1 || return 1
+    tar -xjf "$TC.tar.bz2" -C "$TC" --strip-components=1 2>report/_ab_tc.txt
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        echo "   ★★ 解压失败 tar rc=$rc"; sed 's/^/     /' report/_ab_tc.txt | head -6
+        df -h . 2>/dev/null | head -3
+        return 1
+    fi
     touch "$TC/.ok"
+    echo "  工具链就绪：$(ls "$TC"/bin/*-gcc.br_real 2>/dev/null | head -1)"
 }
 
 # ---- 量一条腿 ---------------------------------------------------------------
@@ -145,10 +166,22 @@ say ""
 # ★ `AB_ONLY` 只跑指定腿 —— 本机（Windows）跑不了 Linux 版 GCC 工具链，
 #   但 zig 腿完全可跑 ⇒ 仪器必须支持"只跑能跑的那条"，否则本机就等于不可用。
 if [ "$AB_ONLY" = "both" ] || [ "$AB_ONLY" = "zig" ]; then
-say "---- 腿 A：zig cc（GLIBC_VER=${GLIBC_VER:-2.7}，现状）----"
-GLIBC_VER="$GLIBC_VER" CC="$ZIG cc" PY="$PY" \
-    FIDELITY="$FID_BASE -mtune=cortex_a8" \
-    sh tools/link_full.sh build/ab/zig.elf 2>&1 | tail -3 | tee -a "$OUT"
+say "---- 腿 A：zig cc（GLIBC_VER=$GLIBC_VER，现状）----"
+# ★ zig 存在性 fail-closed（空 ZIG 会让 link_full 以奇怪方式失败，掩盖真因）
+if [ -z "$ZIG" ] || [ ! -x "$ZIG" ]; then
+    say "  ★★ zig 不可用（ZIG='$ZIG'）⇒ 腿 A 不可判；这不是代码问题"
+else
+    GLIBC_VER="$GLIBC_VER" CC="$ZIG cc" PY="$PY" \
+        FIDELITY="$FID_BASE -mtune=cortex_a8" \
+        sh tools/link_full.sh build/ab/zig.elf > report/_ab_build_zig.txt 2>&1
+    rc=$?
+    tail -4 report/_ab_build_zig.txt | tee -a "$OUT"
+    if [ "$rc" != "0" ]; then
+        say "  ★★ 腿 A 构建失败 rc=$rc —— 可检索错误行（完整输出见 report/_ab_build_zig.txt）："
+        grep -aE 'error|Error|undefined|not found|cannot|FATAL' report/_ab_build_zig.txt \
+            | head -12 | sed 's/^/     /' | tee -a "$OUT"
+    fi
+fi
 fi
 
 # ---- 腿 B：bootlin63（GCC 6.3.0 + glibc 2.24 + binutils 2.27）----------------
@@ -166,7 +199,14 @@ if ensure_tc; then
         say "  SYSROOT = $SYSROOT_TC"
         CC="$CCB" SYSROOT="$SYSROOT_TC" PY="$PY" \
             FIDELITY="$FID_BASE -mtune=cortex-a8" \
-            sh tools/link_full.sh build/ab/gcc63.elf 2>&1 | tail -4 | tee -a "$OUT"
+            sh tools/link_full.sh build/ab/gcc63.elf > report/_ab_build_gcc63.txt 2>&1
+        rc=$?
+        tail -4 report/_ab_build_gcc63.txt | tee -a "$OUT"
+        if [ "$rc" != "0" ]; then
+            say "  ★★ 腿 B 构建失败 rc=$rc —— 可检索错误行（完整输出见 report/_ab_build_gcc63.txt）："
+            grep -aE 'error|Error|undefined|not found|cannot|FATAL' report/_ab_build_gcc63.txt \
+                | head -12 | sed 's/^/     /' | tee -a "$OUT"
+        fi
     else
         say "  ★ UNAVAILABLE（工具链内没有 *-gcc.br_real 或 sysroot）"
     fi
@@ -192,5 +232,15 @@ cat "$RES" | tee -a "$OUT"
 
 say ""
 say "→ 已写入 $OUT"
-[ -s build/ab/zig.elf ] || exit 11
-exit 0
+
+# ★★ 退出码必须表达"**判决是否真的做出来了**"，否则"job 绿 + 腿 B 缺失"会被读成通过：
+#   0 = 两条腿都量到（判决成立）
+#   3 = 至少一条腿没量到 ⇒ **不可判**（工作流会因此判红，不会静默）
+n_ok=0
+for lab in zig gcc63; do
+    grep -q "^$lab sha256=" "$RES" 2>/dev/null && n_ok=$((n_ok + 1))
+done
+say "  度量成功腿数 = $n_ok / 2"
+if [ "$n_ok" -ge 2 ]; then exit 0; fi
+say "  ★★ 判决不成立（$n_ok/2 条腿量到）⇒ 退出码 3（不可判，不得当作通过）"
+exit 3
