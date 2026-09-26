@@ -39,6 +39,16 @@ jobs:
           arm-linux-gnueabihf-gcc --version | head -1
           echo "--- 记录本机 GCC 版本（≠ 原厂 6.2.0，这一点必须写进报告口径）---"
 
+      # ★ 第 65 轮补齐：本 job 原先**没装 pyelftools**，而新增的 dwarf_recon.py 依赖它
+      #   ⇒ 首跑直接 ModuleNotFoundError，并且把它后面的**判决实验整步 skip 掉**
+      #   ⇒ 数据一步都没产出（GAP 17.20 那条纪律的又一实例：
+      #     "被 skip 的步骤" 与 "跑过且通过" 必须可区分）。
+      - name: 装 python 依赖（pyelftools：DWARF / ELF 解析）
+        id: f02
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyelftools
+          python3 -c 'import elftools,sys; print("pyelftools OK", elftools.__file__)'
+
       - name: 装 zig（clang 侧同口径）
         run: |
           python3 -m pip install -q --break-system-packages 'ziglang==0.16.0' || python3 -m pip install -q 'ziglang==0.16.0'
