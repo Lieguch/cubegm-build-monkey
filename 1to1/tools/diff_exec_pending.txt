@@ -4,7 +4,6 @@
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10
 ConvertCode
-DequantBlock
 DisplayPage_list
 DrawFrame
 DrawSelectBar
@@ -20,11 +19,9 @@ _Z14timet2filetimel
 _Z17FormatZipMessageUjPcj
 _Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm
 _Z25unzlocal_DosDateToTmuDatemP8tm_unz_s
-_Z6zErrori
 _Z8luferrorP6LUFILE
 _mxml_entity_cb
 _mxml_fini
-_mxml_global
 _mxml_strdupf
 _mxml_vstrdupf
 _start
@@ -38,8 +35,6 @@ cns11643_7_mbtowc
 cns11643_inv_wctomb
 cp1255_wctomb
 cp1258_wctomb
-gb2312_wctomb
-gbk_wctomb
 get_from_line
 get_value_from_items
 hkscs1999_wctomb
@@ -47,10 +42,6 @@ hkscs2001_wctomb
 hkscs2004_wctomb
 init_user_joy_key_mask
 iso2022_jp2_wctomb
-isoir165_wctomb
-jisx0208_wctomb
-jisx0212_wctomb
-ksc5601_wctomb
 libiconvlist
 locale_charset
 main_Menu
@@ -69,36 +60,17 @@ mui_setting
 mui_type
 mui_type_file_list
 mui_video_setting
-mxmlEntityAddCallback
-mxmlEntityGetValue
-mxmlEntityRemoveCallback
 mxmlIndexDelete
 mxmlIndexNew
-mxmlLoadFd
-mxmlLoadFile
-mxmlLoadString
-mxmlSAXLoadFd
-mxmlSAXLoadFile
-mxmlSAXLoadString
-mxmlSaveAllocString
-mxmlSaveFd
-mxmlSaveFile
-mxmlSaveString
 mxmlSetCDATA
 mxmlSetCustom
-mxmlSetCustomHandlers
 mxmlSetElement
-mxmlSetErrorCallback
 mxmlSetInteger
 mxmlSetOpaque
 mxmlSetReal
 mxmlSetText
 mxmlSetTextf
-mxmlSetWrapMargin
-mxml_error
 mxml_file_getc
-mxml_load_data
-mxml_set_attr
 mxml_write_node
 myStrrstr
 outputblankxy
@@ -112,8 +84,6 @@ stbtt_PackFontRangesPackRects
 stbtt__get_subrs
 stbtt__tesselate_curve
 strupr
-tcvn_mbtowc
 tcvn_wctomb
 unicode_loop_reset
-viscii_mbtowc
 xmp3_FDCT32

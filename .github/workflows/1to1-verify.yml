@@ -506,6 +506,20 @@ jobs:
             --out report/diff_exec.txt \
             --ledger tools/diff_exec_pending.txt
 
+      - name: 发散**类别**归约（把 N 条发散聚成若干根因类别）
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # 为什么（GAP 17.14）：逐条修发散 = 打地鼠；实测**一次根因能同时消掉 20 个函数**
+          #   （mxml 的 file-static `_mxml_key` 私有副本一例）。本步骤把"N 个观测"
+          #   归约成"若干类别"，让下一次该打哪个根因**从报告里自己浮出来**。
+          #   `--self-test` 的锚点是**机制稳定**的事实（含"曾因仪器盲区误报的函数必须 PASS"），
+          #   不是"某函数当前判为发散"这种与仪器状态耦合的观测。
+          python tools/diverge_cluster.py --self-test
+          python tools/diverge_cluster.py --top 12 --out report/diverge_cluster.txt
+          echo '--- 类别归约（前 40 行）---'
+          head -40 report/diverge_cluster.txt
+
       - name: 门禁汇总（写入 Job Summary）
         if: always()
         run: |

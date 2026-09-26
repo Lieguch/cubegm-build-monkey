@@ -49,6 +49,7 @@
 import argparse
 import bisect
 import gc
+from collections import Counter
 import hashlib
 import os
 import re
@@ -97,8 +98,10 @@ class Bin(object):
         #   `ArchivePath` 有一个 LOCAL 0x3AE610(size=64, .data) **和** 一个 GLOBAL 0x3E18D4(size=28)，
         #   而工厂的代码引用的是 **LOCAL** 那个（intra-object 引用优先绑定本地符号）。
         #   以名字为键的字典会**静默折叠**成后者 ⇒ 归因错误 ⇒ 可能产出**假 PASS**。
-        #   本轮只登记+报警（不改偏好，避免引入未经验证的语义变更）：见 GAP 17.12。
         self.dup_objs = {}
+        self.sym_names = set()        # 全部符号名（判"这个名字在不在"）
+        self.sym_bind = {}            # (addr, name) -> bind（用于"私有副本"判定）
+        self.name_bind = {}           # name -> bind（同名多份时**优先 LOCAL**）
         st = self.elf.get_section_by_name('.symtab')
         if st is not None:
             for s in st.iter_symbols():
@@ -108,6 +111,11 @@ class Bin(object):
                 if a == 0 or not n:
                     continue
                 self.sym_list.append((a, sz, n, ty))
+                self.sym_names.add(n)
+                self.sym_bind[(a, n)] = s['st_info']['bind']
+                b = self.name_bind.get(n)
+                if b is None or s['st_info']['bind'] == 'STB_LOCAL':
+                    self.name_bind[n] = s['st_info']['bind']
                 if ty == 'STT_FUNC':
                     if n not in self.funcs or sz > self.funcs[n][1]:
                         self.funcs[n] = (a, sz)
@@ -115,8 +123,60 @@ class Bin(object):
                     self.dup_objs.setdefault(n, []).append((a, sz, s['st_shndx']))
                     self.data_syms[n] = (a, sz)
         self.sym_list.sort()
+        self._addr_col = [x[0] for x in self.sym_list]
         self._dregion = self._pick_dregion()
         self.plt_map, self.plt_lo, self.plt_hi = self._build_plt()
+
+    # --- 地址 → 最近前驱符号（与尺寸无关；见 GAP 17.15 的"尺寸继承"陷阱）---
+    def nearest_sym(self, addr):
+        """→ (符号名, 符号地址) 或 None。取**最近的前驱** OBJECT/FUNC。
+
+        ★ 为什么用"最近前驱"而不是"最小覆盖尺寸"：我方镜像段别名的 st_size 曾全部等于
+          整段大小（`.set A, B + off` 继承 B 的 `.size`），那种符号表里"最小尺寸"退化成
+          任意选择。最近前驱这条规则与尺寸无关，对两种符号表都给同一个正确答案。
+        ★ 为什么**跳过 Ghidra 合成名**（`DAT_<hex>` / `UNK_<hex>`）：它们是我们自己造的名字，
+          工厂里没有 ⇒ 一旦命中就配不上对，会把真正的语义名（如 `m_ui`）盖掉。
+          实测（GAP 17.14）：`m_ui+80` 被盖成裸地址 `0x003af2b4` ⇒ 15+ 个函数凭空多了
+          "仅O" 差异。合成名**把地址编进了名字**，对"跨侧配对"零信息量 ⇒ 归因时优先用真名。
+        """
+        i = bisect.bisect_right(self._addr_col, addr)
+        fallback = None
+        for j in range(i - 1, max(-1, i - 400), -1):
+            a, sz, n, ty = self.sym_list[j]
+            if ty not in ('STT_OBJECT', 'STT_FUNC') or a > addr:
+                continue
+            if fallback is None:
+                fallback = (n, a)
+            if not RE_SYNTH.match(n):
+                return n, a
+        return fallback
+
+    def bind_of(self, name):
+        """该名字在**本**二进制里的绑定：'STB_LOCAL' / 'STB_GLOBAL' / None（有多个则优先 LOCAL）。"""
+        return self.name_bind.get(name)
+
+    def pure_private(self):
+        """→ "地址是实现细节"的名字集合：在本二进制里**唯一**且绑定为 `STB_LOCAL` 的数据对象。
+
+        ★ 三个条件缺一不可（GAP 17.14，两次自我纠错后的定论）：
+          ① **唯一**：`handle` 在工厂里有**两份**（0x3B21C8 / 0x3CF988，都是 LOCAL）
+             —— 两份是**不同对象**，"某函数用了哪一份"是语义（一份被写、另一份被读就是 bug）
+             ⇒ 必须按**地址**配对。
+          ② **LOCAL**：`key2` 是 GLOBAL ⇒ 外部可见 ⇒ 地址就是契约 ⇒ 必须按地址。
+          ③ 我方即便另持同名私有副本，也按**名字**配对（`_mxml_key` / `m_ui`）。
+        ★ 最初我用"名字级优先 LOCAL"的绑定表 ⇒ 把 `handle` 的 GLOBAL 那份也判成私有
+          ⇒ 同一地址在两侧配不上 ⇒ 凭空造出 6 个假发散（`FBA_Load`/`Load_Proc2`/…）。
+          第二次我把规则写成"LOCAL 且无同名 GLOBAL"，但工厂的 `handle` **两份都是 LOCAL**
+          ⇒ 仍然判成私有 ⇒ 假发散照旧。**"唯一"这一条才是关键。**
+        """
+        cnt, loc = {}, set()
+        for a, sz, n, ty in self.sym_list:
+            if ty != 'STT_OBJECT':
+                continue
+            cnt[n] = cnt.get(n, 0) + 1
+            if self.sym_bind.get((a, n)) == 'STB_LOCAL':
+                loc.add(n)
+        return {n for n in loc if cnt.get(n, 0) == 1}
 
     # --- 数据区：含最多数据符号的可写段（两侧因此指向同一批 vaddr）---
     def _pick_dregion(self):
@@ -189,28 +249,40 @@ class Bin(object):
 
 
 # --------------------------------------------------------------------------- #
-def _build_spans(bf):
-    """可比访问区 = **工厂具名数据对象**的地址区间并集。
-
-    ★ 为什么不是"数据段整体"（第 59 轮实测暴露）
-      工厂的可写段里**包含 `.got`**（0x3b1cfc..），而我们的 `.got` 在 0x4e13c8
-      ⇒ 若按"整段"比较，工厂的 GOT 槽读取会被计入、我们的同名读取落在区域外被过滤
-      ⇒ 产生"仅F有 (0x3B1D04,4,R)"这类**假发散**（实测 4 个函数全中同一模式）。
-      收紧到"具名数据对象"后：GOT/link-time 元数据天然被排除，只剩**真数据访问**可比。
-    """
-    bad = []
-    for sname in ('.got', '.got.plt', '.dynamic', '.dynsym', '.dynstr', '.hash', '.plt', '.rel.plt'):
-        sec = bf.elf.get_section_by_name(sname)
+def _linkmeta_ranges(b):
+    """link 元数据段（GOT/.dynamic/...）—— 两侧各自的都要排除。"""
+    out = []
+    for sname in ('.got', '.got.plt', '.dynamic', '.dynsym', '.dynstr', '.hash',
+                  '.plt', '.rel.plt', '.rel.dyn'):
+        sec = b.elf.get_section_by_name(sname)
         if sec is not None and sec['sh_size']:
-            bad.append((sec['sh_addr'], sec['sh_addr'] + sec['sh_size']))
-    spans = []
-    for nm, (a, sz) in bf.data_syms.items():
-        if not sz or sz > 1 << 20:
-            continue
-        lo, hi = a, a + sz
-        if any(not (hi <= b0 or lo >= b1) for b0, b1 in bad):
-            continue
-        spans.append((lo, hi))
+            out.append((sec['sh_addr'], sec['sh_addr'] + sec['sh_size']))
+    return out
+
+
+def _build_spans(*bins):
+    """可比访问区 = **两侧**具名数据对象的地址区间并集（排除 link 元数据段）。
+
+    ★ 为什么不是"只取工厂"（第 59 轮）→ 为什么必须改成"两侧取并集"（GAP 17.14）
+      只取工厂的后果：**我方自己的数据对象整体在区外被过滤**。实测 `mxml` 的 file-static
+      `_mxml_key` 我方编译后落在我们自己的 `.bss`（0x4E32C4，工厂的在 0x3B1E34）
+      ⇒ 工厂侧"读了 `_mxml_key`"被记成 `仅F`，而我方读自己那份**根本没被记录**
+      ⇒ **20 个 mxml 函数被判 DIVERGE**，其实只是"双方各自访问私有副本"（语义等价）。
+      ⇒ 并集既保留"排除 GOT/link 元数据"的原意，又不再盲掉我方自己的数据。
+      ★ 与 §"按符号名归一对 LOCAL 私有副本"配套使用；两者必须一起改，否则会从
+        "盲掉我方" 变成 "我方多出"（同一个假发散的另一个方向）。
+    ★ 用 `sym_list`（**保留同名多份**）而不是 `data_syms`（以名字为键会折叠掉同名）。
+    """
+    spans, bad = [], []
+    for b in bins:
+        bad += _linkmeta_ranges(b)
+        for a, sz, n, ty in b.sym_list:
+            if ty != 'STT_OBJECT' or not sz or sz > 1 << 20:
+                continue
+            lo, hi = a, a + sz
+            if any(not (hi <= b0 or lo >= b1) for b0, b1 in bad):
+                continue
+            spans.append((lo, hi))
     spans.sort()
     merged = []
     for lo, hi in spans:
@@ -416,6 +488,74 @@ def norm_calls(seq):
     return [CALL_ALIAS.get(x, x) for x in seq]
 
 
+# Ghidra 合成名（把地址编进了名字）——归因时**优先跳过**，因为工厂里没有这些名字 ⇒ 无法跨侧配对
+RE_SYNTH = re.compile(r'^(?:DAT|UNK)_[0-9a-fA-F]{6,8}$')
+
+
+def fp_key(b, t, spec_private):
+    """访存指纹归一：`(地址,宽度,读/写)` → **可比键**（GAP 17.14）。
+
+    规则（**以工厂的"是否纯私有"为准**，因为工厂才是规格）：
+      * 覆盖该地址的符号名 ∈ 工厂的 `pure_private`（工厂只有 LOCAL 定义、没有同名 GLOBAL）
+        ⇒ 该对象的**地址是实现细节** ⇒ 键 = `('LN', 名字, 偏移, 宽度, 读写)`，两侧**按名字配对**
+          （我方另持私有副本是合法的：mxml 的 file-static `_mxml_key`、`m_ui` 等）。
+      * 否则（工厂里是 GLOBAL，或同名既有 LOCAL 又有 GLOBAL，或工厂根本没有这个名字）
+        ⇒ **地址有意义** ⇒ 键 = `('A', 地址, 宽度, 读写)`。
+        ★ GLOBAL 对象必须落在工厂地址（其它模块/烧死的绝对地址会引用它）——这正是
+          `ArchivePath` 那类"绑错地址"缺陷的信号，**不得**因为名字相同就放行。
+    """
+    a, w, rw = t
+    hit = b.nearest_sym(a)
+    if hit:
+        nm, sa = hit
+        if nm in spec_private:
+            # ★ 显示里**必须带上绝对地址**：同名两份时只写 `handle+0` 读者无法判断是哪一份
+            #   ⇒ 失去可审计性（本条的实测教训：曾因此把"同址"误读成"异址"）。
+            return (('LN', nm, a - sa, w, rw),
+                    '%s+%d:%d:%s@0x%x' % (nm, a - sa, w, rw, a))
+    return ('A', a, w, rw), '0x%08x:%d:%s' % (a, w, rw)
+
+
+def _fp_diff(kf, shf, ko, sho):
+    """访存指纹的差异展示 —— **按多重集**（计数）而不是按集合。
+
+    ★ 为什么必须按多重集（GAP 17.14 的可审计性修复）：旧写法用集合差集，
+      于是"同一地址但**次数不同**"会打印成 `仅F=[] 仅O=[]`（两侧都空）——
+      读者完全看不出差异在哪（实测 `TestUSBJoy` 就是这种：写地址相同、次数不同）。
+      现在打印 `地址 ×次数差`。
+    """
+    Cf, Co = Counter(kf), Counter(ko)
+    df = {}
+    for k, s in zip(kf, shf):
+        df.setdefault(k, s)
+    do = {}
+    for k, s in zip(ko, sho):
+        do.setdefault(k, s)
+    ex_f = ['%s ×%d' % (df[k], n - Co.get(k, 0)) for k, n in sorted(Cf.items())
+            if n > Co.get(k, 0)]
+    ex_o = ['%s ×%d' % (do[k], n - Cf.get(k, 0)) for k, n in sorted(Co.items())
+            if n > Cf.get(k, 0)]
+    return '仅F=%s 仅O=%s' % (ex_f[:6], ex_o[:6])
+
+
+def norm_fp(b, tuples, spec_private, fspans):
+    """→ (可比较的键多重集, 人类可读的展示列表)
+
+    ★ 额外过滤（GAP 17.14）：**按地址配对（'A' 形）的访问必须落在"工厂侧有具名对象的区段"内**。
+      理由：我方自己的无名区域（例：我们 `.bss` 头部的填充字节 0x4E3000）在工厂侧**没有对应区段**，
+      拿它去比绝对地址必然不对称 —— 实测 `__libc_csu_init` / `_mxml_init` 就因此凭空多出"仅O"。
+      我方**有名字**的私有对象不受影响：它们走 'LN' 形按名字配对。
+    """
+    keys, show = [], []
+    for t in tuples:
+        k, s = fp_key(b, t, spec_private)
+        if k[0] == 'A' and not _in_spans(fspans, k[1]):
+            continue
+        keys.append(k)
+        show.append(s)
+    return sorted(keys), sorted(show)
+
+
 # --------------------------------------------------------------------------- #
 # 棘轮台账：格式 + 语义（**纯函数**，可离线自证；见 GAP 17.10）
 # --------------------------------------------------------------------------- #
@@ -516,8 +656,11 @@ def ledger_update(old, diverging, undecidable):
 
 def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     rows, verdict = [], 'PASS'
-    # ★ 可比访问区 = 工厂**具名数据对象**的区间并集（排除 .got/.dynamic 等 link 元数据）
-    spans = _build_spans(bf)
+    # ★ 可比访问区 = **两侧**具名数据对象的区间并集（排除 .got/.dynamic 等 link 元数据）
+    spans = _build_spans(bf, bo)
+    # ★ 访存指纹的归一口径以**工厂的符号绑定**为准（工厂是规格）
+    spec_private = bf.pure_private()   # 工厂里"唯一且 LOCAL"的名字（地址是实现细节）
+    fspans = _build_spans(bf)          # 工厂侧单独的可比区段（用于"按地址配对"的过滤）
     # ★ 最终内容两侧共用**工厂的符号名**（同址同名才可比）
     kw = dict(steps=steps, spans=spans, syms_for_final=bf.data_syms)
     ret_unjudged = False
@@ -559,14 +702,14 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
             else:
                 diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
         cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
-        wf, wo = sorted(rf['writes']), sorted(ro['writes'])
-        if wf != wo:
-            diffs.append('data-writes 仅F=%s 仅O=%s'
-                         % ([x for x in wf if x not in wo][:6], [x for x in wo if x not in wf][:6]))
-        rf_, ro_ = sorted(rf['reads']), sorted(ro['reads'])
-        if rf_ != ro_:
-            diffs.append('data-reads 仅F=%s 仅O=%s'
-                         % ([x for x in rf_ if x not in ro_][:6], [x for x in ro_ if x not in rf_][:6]))
+        wk_f, wsh_f = norm_fp(bf, rf['writes'], spec_private, fspans)
+        wk_o, wsh_o = norm_fp(bo, ro['writes'], spec_private, fspans)
+        if wk_f != wk_o:
+            diffs.append('data-writes %s' % _fp_diff(wk_f, wsh_f, wk_o, wsh_o))
+        rk_f, rsh_f = norm_fp(bf, rf['reads'], spec_private, fspans)
+        rk_o, rsh_o = norm_fp(bo, ro['reads'], spec_private, fspans)
+        if rk_f != rk_o:
+            diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
         common = set(rf['final']) & set(ro['final'])
         fd = [k for k in sorted(common) if rf['final'][k] != ro['final'][k]]
         if fd:
@@ -724,6 +867,39 @@ def self_test():
               len(BF.dup_objs.get('ArchivePath', [])) >= 2, True)
             c('前提  我方 ArchivePath 为单一定义（生成器只映射了一个）',
               len(BO.dup_objs.get('ArchivePath', [])) <= 1, True)
+            # ---- 访存指纹归一：LOCAL 私有副本 / GLOBAL 必须同址（GAP 17.14）----
+            c('前提  工厂里 `_mxml_key` 是 LOCAL（文件私有 ⇒ 私有副本合法）',
+              BF.bind_of('_mxml_key'), 'STB_LOCAL')
+            c('前提  工厂里 `key2` 是 GLOBAL（必须落在工厂地址）',
+              BF.bind_of('key2'), 'STB_GLOBAL')
+            sb = BF.pure_private()
+            c('前提  工厂里 `_mxml_key` 是纯私有（LOCAL 且无同名 GLOBAL）', '_mxml_key' in sb, True)
+            c('前提  工厂里 `m_ui` 是纯私有', 'm_ui' in sb, True)
+            c('前提  工厂里 `key2` 不是纯私有（GLOBAL ⇒ 必须同址）', 'key2' not in sb, True)
+            c('前提  工厂里 `handle` 不是纯私有（**同名 LOCAL+GLOBAL** ⇒ 必须同址）',
+              'handle' not in sb, True)
+            # ★ 地址一律**从符号表查**，不手写常量（手写常量曾因我自己算错十六进制而误报）
+            f_key = sorted(a for a, sz, n, ty in BF.sym_list if n == '_mxml_key')
+            o_key = sorted(a for a, sz, n, ty in BO.sym_list if n == '_mxml_key')
+            priv = [a for a in o_key if a not in f_key]
+            c('正例  工厂与我方各有 `_mxml_key`；我方另有**私有副本**（地址不同、名字相同）',
+              bool(f_key) and bool(priv), True)
+            k1, _ = fp_key(BF, (f_key[0], 4, 'R'), sb)
+            k2, _ = fp_key(BO, (priv[0], 4, 'R'), sb)
+            c('正例  纯私有符号的**私有副本** ⇒ 两侧同一个键（不再假发散）', k1, k2)
+            # ★ 同名 LOCAL+GLOBAL（`handle`）⇒ 必须按地址，且**同址必须同键**
+            h = sorted(a for a, sz, n, ty in BF.sym_list if n == 'handle')
+            c('前提  工厂有两个 `handle`（同名两份，都是 LOCAL ⇒ "唯一"条件不成立）', len(h) >= 2, True)
+            kh_f, _ = fp_key(BF, (h[-1], 4, 'R'), sb)
+            kh_o, _ = fp_key(BO, (h[-1], 4, 'R'), sb)
+            c('正例  `handle` 同址 ⇒ 两侧同键（不得因"名字级 LOCAL 优先"而错配）', kh_f, kh_o)
+            f_g = sorted(a for a, sz, n, ty in BF.sym_list if n == 'key2')
+            g1, _ = fp_key(BF, (f_g[0], 4, 'R'), sb)
+            g2, _ = fp_key(BO, (f_g[0] + 0x40, 4, 'R'), sb)
+            c('反例  GLOBAL 符号 ⇒ 按**地址**配对，异址必不同键（ArchivePath 类缺陷的信号）',
+              (g1 != g2) and g1[0] == 'A', True)
+            c('反例  窄化必须仍被检出（宽度进键）',
+              fp_key(BF, (0x3BC40C, 4, 'R'), sb)[0] != fp_key(BF, (0x3BC40C, 1, 'R'), sb)[0], True)
             # ---- 回归锚点：把"非语义量"当判据的两类假发散（GAP 17.12）-------------
             vf, vmsg = void_fns_from_corpus()
             if vf:

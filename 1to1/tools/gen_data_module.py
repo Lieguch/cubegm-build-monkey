@@ -79,10 +79,12 @@ def bss_pad_vma(secs):
 #   | SoundBuffer   | 0x3ceaf0 ui_jkt.c        | 0x3e1944 GLOBAL     | 全局份零引用（DEAD）|
 #   | ArchivePath   | 0x3ae610 ui_jkt.c        | 0x3e18d4 GLOBAL     | 全局份零引用（DEAD）|
 SPLIT_ALIASES = {
-    'handle_emurun':      (0x3cf988, '.bss'),
-    'diff_prev_global':   (0x3e1a38, '.bss'),
-    'SoundBuffer_global': (0x3e1944, '.bss'),
-    'ArchivePath_global': (0x3e18d4, '.bss'),
+    # 尺寸取自**工厂 symtab 实测**（GAP 17.15 起每个别名都显式写 `.size`，
+    # 否则会继承基址符号的 st_size = 整段大小）。
+    'handle_emurun':      (0x3cf988, '.bss', 4),
+    'diff_prev_global':   (0x3e1a38, '.bss', 4),
+    'SoundBuffer_global': (0x3e1944, '.bss', 16),
+    'ArchivePath_global': (0x3e18d4, '.bss', 28),
 }
 # 由链接器生成（不占独立空间）
 LINKER_DEFINED = {'__frame_dummy_init_array_entry': '.init_array',
@@ -198,7 +200,7 @@ def main():
         if g['name'] in LINKER_DEFINED:
             skipped_crt.append(g['name'])
             continue
-        syms.setdefault(g['name'], (g['addr'], g['section']))
+        syms.setdefault(g['name'], (g['addr'], g['section'], g['size']))
     unplaced = []
     for m in missing:
         if m in syms:
@@ -212,7 +214,7 @@ def main():
         if not s:
             unplaced.append(m)
             continue
-        syms[m] = (addr, s)
+        syms[m] = (addr, s, 0)          # DAT_/UNK_ 合成名：真实尺寸未知 ⇒ 0
 
     # ---- 生成汇编 ----
     lines = []
@@ -252,28 +254,36 @@ def main():
             A('')
     A('/* ---- 符号别名 ---- */')
     per_sec = {nm: [] for nm, _, _, _ in SEC_DEF}
-    for name, (addr, sec) in sorted(syms.items(), key=lambda kv: (kv[1][1], kv[1][0])):
-        per_sec[sec].append((addr, name))
+    for name, (addr, sec, sz) in sorted(syms.items(), key=lambda kv: (kv[1][1], kv[1][0])):
+        per_sec[sec].append((addr, name, sz))
     total = 0
     for nm, _, _, _ in SEC_DEF:
         A('/* %s：%d 个符号 */' % (nm, len(per_sec[nm])))
         skip = SKIP_HEAD.get(nm, 0)
-        for addr, name in per_sec[nm]:
+        for addr, name, sz in per_sec[nm]:
             off = addr - secs[nm]['addr'] - skip
             if off < 0:
                 continue      # 位于被跳过的 CRT 头部内（_IO_stdin_used）
             A('\t.globl %s' % name)
             A('\t.set %s, __f%s_base + 0x%x' % (name, nm.replace('.', '_'), off))
+            A('\t.size %s, 0x%x' % (name, sz))
+            # ★★ 必须显式写 `.size`（GAP 17.15）：LLVM MC 的 `.set A, B + off` 会**继承 B 的 st_size**。
+            #   本项目给每个 `__f*_base` 都写了 `.size`（= 整段大小）⇒ 1117 个别名的 st_size
+            #   全部变成段大小（`.fimg_bss` 194907 / `.fimg_rodata` 856920）。
+            #   单变量实测：基址带 `.size 0x100` ⇒ 未写 `.size` 的别名也变成 256；写 `.size X, 0`
+            #   则正确覆盖为 0。尺寸错会让一切**按名字归因**的工具（含差分器的符号化归一、
+            #   `nm -S` 类分析）指错对象。
             total += 1
         A('')
     A('/* ---- 重名符号拆分别名（P3 二期④）----')
     A(' * 依据：tools/xref_scan.py（A32 PIC 指令级交叉引用）+ tools/dup_assign.py（TU 归属）')
     A(' * 实测报告见 report/xref_dup.txt。同名两份分属不同编译单元，合并会造成静默语义错位。 */')
     for alt in sorted(SPLIT_ALIASES):
-        addr, sec = SPLIT_ALIASES[alt]
+        addr, sec, sz = SPLIT_ALIASES[alt]
         off = addr - secs[sec]['addr'] - SKIP_HEAD.get(sec, 0)
         A('\t.globl %s' % alt)
         A('\t.set %s, __f%s_base + 0x%x' % (alt, sec.replace('.', '_'), off))
+        A('\t.size %s, 0x%x' % (alt, sz))
         total += 1
     A('')
     open(os.path.join(datadir, 'factory_image.S'), 'w', encoding='utf-8', newline='\n').write('\n'.join(lines) + '\n')
