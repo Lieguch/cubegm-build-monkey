@@ -5799,3 +5799,76 @@ ABI_VFP_args = VFP regs (硬浮点)   ABI_HardFP_use = 3   CPU_unaligned_access 
 > 两件事我都没做 ⇒ 结论无效。
 > ★ 附带推论：**"给用户二选一"之前，先检查其中一个选项是不是"放弃原始需求"**。
 > 若是，那不是选项，那是我没做完的工作。
+
+---
+
+## 17.22 ★★★★★ 工具链溯源：从「拿不到」到**四档可达候选 + 预登记判据**（根解的第 2 步）
+
+### A. 上一步卡在哪、为什么那不是"不可达"
+
+上一轮判决实验报 `gcc49/gcc62 : UNAVAILABLE（下载/解压失败）`。我当时的找法是**只盯 Linaro 一个站点**。
+本轮逐条 `curl` 实测后的真实情况：
+
+| 来源 | 实测 | 结论 |
+|---|---|---|
+| `releases.linaro.org/.../gcc-linaro-4.9-2016.02-...tar.xz` | `HTTP=301` 到同一路径，`curl -L` **exit 35（TLS 建连失败）** | 本机与 CI **都取不到** ⇒ 不是我的下载命令写错，是这个域名对我不可达 |
+| `snapshots.linaro.org/...` | `HTTP=000` | 同上 |
+| `developer.arm.com/-/media/...` | `HTTP=404` | 需要从**页面里**取真实文件 URL，不能拼路径 |
+| **`toolchains.bootlin.com/downloads/.../armv7-eabihf/tarballs/`** | **`HTTP=200`** | ★ 可达 |
+| `ftp.gnu.org/gnu/{gcc/gcc-6.2.0,binutils,glibc}` | **`HTTP=200`** | ★ 可达 |
+
+⇒ **"一个站点不可达" ≠ "工具链不可得"。** 这一步本身就是纪律 15 的正面用例：
+先查"还有哪些来源"，再决定说什么。
+
+### B. ★★★ 找到与工厂**逐位同 libc 同 binutils**的现成工具链
+
+Bootlin（原 Free Electrons）**用 Buildroot 自建并公开发布** armv7-eabihf 工具链，
+每档都列明 `GCC / GDB / kernel-headers / glibc / binutils`。抓取官方列表（`build/_bootlin.html`，curl 200）后：
+
+| 工具链 | GCC | headers | **glibc** | **binutils** |
+|---|---|---|---|---|
+| `armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1` | **6.3.0** | 4.9.30 | **2.24** | **2.27** |
+| `armv7-eabihf--glibc--stable-2017.05-toolchains-1-1` | 5.4.0 | 3.10.105 | **2.24** | **2.27** |
+| …（2018.02 起 glibc 升到 2.26/2.27，binutils 2.29+） | | | | |
+
+**工厂真值（DWARF 读出）**：`GCC 6.2.0` · **`glibc 2.24`** · **`AS 2.27` + `gold 1.12`**。
+
+⇒ **`bleeding-edge-2017.05-toolchains-1-1` 与工厂：同编译器族（GCC 6.x）、同 glibc（2.24）、同 binutils（2.27）**，
+只差 GCC 次版本（6.3.0 vs 6.2.0）。而 `stable-2017.05` 与它**libc/binutils 完全相同、只差 GCC 大版本** ——
+这正好构成一组**能把两个变量分开**的天然对照。
+
+两个 tarball 已实测 `HTTP=200`。
+
+### C. 本轮的判决实验设计（四方单变量，**判据预登记**）
+
+| 候选 | 编译器 | libc/binutils | 作用 |
+|---|---|---|---|
+| `clang` | zig cc（clang 21） | 自带 | **现状基线** |
+| `bootlin63` | **GCC 6.3.0** | **glibc 2.24 / binutils 2.27** | **主候选**（与工厂同族同 libc 同 binutils） |
+| `bootlin54` | GCC 5.4.0 | glibc 2.24 / binutils 2.27 | **对照**：libc/binutils 相同 ⇒ 它的差 = **GCC 大版本的贡献** |
+| `linaro49` | Linaro 4.9.4 | — | `.comment` 第二标签；**预期 UNAVAILABLE**（域名不可达），**保留在表里** |
+
+flags **逐字取自 DWARF**（`-O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -mtune=cortex-a8 …`），
+只编译不链接，同一反汇编器 + 同一份工厂数据对拍。
+
+**预登记判据**（先写下再跑，防事后找解释）：
+* `M1` = 体积比落在工厂 ±15% 内的函数数（越大越像）
+* `M2` = 助记符直方图 L1 距离中位数（越小越像）
+* `bootlin63` 的 M1 明显高于 clang 且 M2 明显低于 clang ⇒ **工具链对齐是有效的整类优化**，
+  下一步把主构建 `CC` 切过去并重跑全部门禁；
+* `bootlin63 ≈ clang` ⇒ **才允许**讨论"判据口径"，且必须附本次原始数字。
+
+**仪器侧的两条自证**（都是上一轮踩出来的）：
+* 解压器必须**按扩展名选**（Bootlin `.tar.bz2` / Linaro `.tar.xz`）——用错会得到"下载成功但解压失败"，
+  与"下载失败"同样表现为 UNAVAILABLE ⇒ 分不清原因（本轮已把两种原因**分别打印**）；
+* 编译器路径**自动判前缀**（`bin/*-gcc`），不写死 triplet —— 否则换个工具链就"找不到编译器"。
+
+### D. 补齐到 GCC **6.2.0** 的路径（本轮不硬等，但写清）
+
+1. **Buildroot 自建**：`buildroot-2016.11`（该周期的默认 GCC 即 6.2.0）配 `glibc 2.24 + binutils 2.27`，
+   `make toolchain`；产物可打包上传本仓 Releases 作**固定输入**（`ftp.gnu.org` 侧源全部可达）。
+2. **ARM 官方 legacy 下载页**取真实文件 URL（页面里的 media 直链不能靠拼）。
+3. **复现 Lakka 工具链**：`libretro/Lakka-LibreELEC` 在 8.0-devel 附近 tag 上构建 ⇒
+   拿到 `armv7a-libreelec-linux-gnueabi` 的**逐位同款**（含 LibreELEC 的 binutils/gold 1.12）。
+
+★ 这三条**都不依赖**"某个域名恰好活着"，所以即使 Linaro 永久下线，根解依然成立。

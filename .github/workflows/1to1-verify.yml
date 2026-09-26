@@ -570,7 +570,9 @@ jobs:
           #     那之后所有"对齐工具链"的讨论都失去依据。
           python3 tools/dwarf_recon.py --selftest
           python3 tools/dwarf_recon.py --out report/dwarf_recon.txt
-          grep -aq 'GCC' report/dwarf_recon.txt
+          # 断言对象 = 工具自己保证存在的标记
+          grep -aq 'GCC:' report/dwarf_recon.txt
+          grep -aq 'ARM.attributes' report/dwarf_recon.txt
           echo '--- 工厂构建事实（关键行）---'
           grep -aE 'comp_dir|GNU C11|GNU AS|-O2' report/dwarf_recon.txt | head -6
 

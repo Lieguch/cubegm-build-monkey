@@ -137,6 +137,7 @@ mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 if [ -n "$ZIGBIN" ] && [ -x "$ZIGBIN" ]; then
     r=$(compile_all build/fid/clang "$ZIGBIN cc -target arm-linux-gnueabihf")
     echo "  clang     : ok=${r% *} bad=${r#* }  [$("$ZIGBIN" cc --version 2>&1 | head -1)]"
+    [ "${r% *}" = "0" ] && { echo '    --- clang 前 5 条错误 ---'; grep -aE 'error|Error|not found' report/_fid_err_clang.txt | head -5; }
     echo "clang ok=${r% *} bad=${r#* }  $("$ZIGBIN" cc --version 2>&1 | head -1)" >> "$RESULTS"
 else
     echo "  clang     : UNAVAILABLE（找不到 zig）"; echo "clang UNAVAILABLE" >> "$RESULTS"
@@ -157,6 +158,7 @@ for spec in "bootlin63|$BOOTLIN63_URL|GCC6.3/glibc2.24/binutils2.27（与工厂�
         echo "$name UNAVAILABLE(no-gcc)  [$note]" >> "$RESULTS"; continue; }
     r=$(compile_all "build/fid/$name" "$cc")
     echo "  $name : ok=${r% *} bad=${r#* }  [$("$cc" --version | head -1)]  <- $note"
+    [ "${r% *}" = "0" ] && { echo '    --- 前 5 条错误 ---'; grep -aE 'error|Error|not found' "report/_fid_err_$name.txt" | head -5; }
     echo "$name ok=${r% *} bad=${r#* }  $("$cc" --version | head -1)  [$note]" >> "$RESULTS"
 done
 

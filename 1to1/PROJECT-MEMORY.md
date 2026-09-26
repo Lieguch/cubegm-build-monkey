@@ -1457,3 +1457,35 @@ LLVM MC 的 `.set A, B + off` **继承 `B` 的 `st_size`**；`gen_data_module.py
 > **15. 「做不到」必须由实验支撑，不能由断言支撑。** 要说"某条路不可达"时，先回答
 > **"证伪它最便宜的实验是什么"**并跑一次。★ 推论：**给用户二选一之前，先检查其中一个选项
 > 是不是"放弃原始需求"** —— 若是，那不是选项，是我没做完的工作。
+
+
+### 0.10 追加（同日，第 65 轮下半场）：工具链候选**已找到可达且版本对齐的**
+
+上一轮 `UNAVAILABLE` 的原因**不是"不可得"，是我只盯了 Linaro 一个站点**。逐条 curl 实测：
+
+| 来源 | 实测 | |
+|---|---|---|
+| `releases.linaro.org`（Linaro 4.9/6.2 tarball） | `curl -L` **exit 35（TLS 建连失败）** | 本机与 CI **都不可达** |
+| `snapshots.linaro.org` | `HTTP=000` | 不可达 |
+| `developer.arm.com/-/media/...` | `HTTP=404` | 直链要从页面取，不能拼 |
+| **`toolchains.bootlin.com/.../armv7-eabihf/tarballs/`** | **`HTTP=200`** | ★ |
+| **`ftp.gnu.org/gnu/{gcc-6.2.0,binutils,glibc}`** | **`HTTP=200`** | ★ |
+
+★★ **Bootlin（Buildroot 自建、公开发布）里有一档与工厂"同族同 libc 同 binutils"**：
+
+| 工具链 | GCC | **glibc** | **binutils** |
+|---|---|---|---|
+| `armv7-eabihf--glibc--bleeding-edge-2017.05-toolchains-1-1` | **6.3.0** | **2.24** | **2.27** |
+| `armv7-eabihf--glibc--stable-2017.05-toolchains-1-1` | 5.4.0 | **2.24** | **2.27** |
+
+工厂真值 = `GCC 6.2.0` / `glibc 2.24` / `AS 2.27` + `gold 1.12` ⇒ 只差 GCC 次版本。
+两档 tarball 实测 `HTTP=200`。**`stable` vs `bleeding-edge` 的差别恰好只有 GCC 大版本** ⇒
+天然一组能把"libc/binutils 对齐的贡献"与"GCC 版本的贡献"**分开**的对照。
+
+**判决实验（`tools/fidelity_matrix.sh`）已改成四方单变量**：`clang` / `bootlin63` /
+`bootlin54` / `linaro49`（预期 UNAVAILABLE 但**保留在表里**），flags 逐字取自 DWARF，
+判据**预登记**（M1 ±15% 体积命中 / M2 助记符 L1 中位）。仪器侧两条自证：解压器按扩展名选、
+编译器路径自动判前缀（`bin/*-gcc`），不写死 triplet。
+
+**补齐到 GCC 6.2.0 本体（本轮不硬等）**：Buildroot 2016.11 自建（源全可达）/
+ARM 官方 legacy 页面取真链 / 在 `libretro/Lakka-LibreELEC` 8.0-devel 附近 tag 复现逐位同款工具链。
