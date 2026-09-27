@@ -162,7 +162,11 @@ build_leg() {
     #   ⇒ 两个都带上：谁认得哪个就用哪个，两个链接器行为一致。
     case "$cc" in
       *zig*) ld_extra="" ;;
-      *)     ld_extra="-lm -lpthread -ldl -Wl,--unresolved-symbols=ignore-all" ;;
+      #   `-nostartfiles`（**只砍 crt1/crti/crtbegin/crtend/crtn，保留 `-lc`**）：BFD ld 会按
+    #   sysroot 自动链 crti.o/crtbegin.o，与我们的 crt_init.o(`_init`/`_fini`) 和
+    #   factory_local.o(`__dso_handle`) 重复定义 ⇒ 必须砍 startfiles。
+    #   ⚠ 千万别用 `-nostdlib`：它连 `-lc` 一起砍，zig 腿会因为 `undefined symbol: printf/...` 全崩（实测）。
+    *)     ld_extra="-lm -lpthread -ldl -nostartfiles -Wl,--unresolved-symbols=ignore-all" ;;
     esac
     CC="$cc" SYSROOT="$sr" PY="$PY" EXTRA_LDFLAGS="$ld_extra" \
         sh tools/link_full.sh "build/ab/$lab.elf" > "report/_ab_build_$lab.txt" 2>&1

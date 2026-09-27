@@ -18,7 +18,10 @@
 # 输出：build/rkgame.rebuilt.elf
 #
 # 说明：
-#   · -nostdlib：不拉 CRT（数据段布局由脚本钉死；libc 符号留 UNDEF 由 -z undefs 放行）
+#   · CRT：**本脚本不加任何 -nostdlib/-nostartfiles**（见下方「CRT 与链接器方言」注释）。
+#     数据段布局由脚本钉死；libc 符号走正常动态链接（工厂同样 DT_NEEDED libc.so.6）。
+#     ⚠ `-z undefs` 是 **lld 专属**写法，BFD ld 会 `warning: -z undefs ignored`
+#       并真的忽略它 ⇒ BFD 侧需要 `--unresolved-symbols=ignore-all`（由调用方给）。
 #   · -T linker/factory.ld：复刻工厂 VMA（代码里有烧死的绝对地址）
 #   · 本步骤用于验证「能否链接 + 段地址是否正确」，运行期仍需 P4/P5/P6
 # ============================================================
@@ -130,12 +133,19 @@ fi
 #   工厂那里是空洞 ⇒ NULL 写会静默成功而不是 SIGSEGV（真实差分抓到的假分歧）。
 #   注意：注释必须写在命令**之前** —— `\` 续行后的 `#` 不是注释，会作为参数传给编译器。
 # shellcheck disable=SC2086
-# ★★ 第 66 轮实测修正：**`-nostdlib` 必须在命令行里**（上面注释一直这么写，但命令行漏了）——
-#   缺它的后果（CNB 容器实测）：GCC 驱动自动链 `crti.o`/`crtbegin.o`，与本工程的
-#   `build/crt_init.o`（提供 `_init`/`_fini`）与 `factory_local.o`（提供 `__dso_handle`）
-#   **重复定义** ⇒ `multiple definition of '_init'/'_fini'/'__dso_handle'` ⇒ 链接 rc=1。
-#   zig(lld) 恰好没暴露，是因为它的 glibc 桩里没有同名符号 ⇒ **只在真 GCC 上炸**。
-$CC $ARCH $FIDELITY -nostdlib -no-pie \
+# ★★★ CRT 与「允许未解析符号」的正确开关 —— **规范文档：docs/LINKER-FLAGS.md**
+#   （GCC 手册 & ld 手册逐字条款 + 本工程该用哪个 + 怎么问工具自己核实版本支持）。
+#   结论：该由**调用方按链接器方言**决定，本脚本**不加**任何 nostdlib/nostartfiles：
+#   ① 命令行原本就没有 `-nostdlib`（上面第 21 行的注释是**旧的、与代码不符**）；
+#   ② 我一度真的加上 `-nostdlib`，结果 **zig/lld 侧全崩**：
+#        `ld.lld: error: undefined symbol: printf/malloc/sprintf/...`
+#      —— 因为 `-nostdlib` = `-nodefaultlibs` + `-nostartfiles`，把 clang 默认的 `-lc` 一起砍了。
+#   ③ GCC 侧的真问题**不是**缺 `-nostdlib`，而是 BFD ld 会按 sysroot 自动链
+#      `crti.o`/`crtbegin.o`，与本工程的 `crt_init.o`（提供 `_init`/`_fini`）与
+#      `factory_local.o`（提供 `__dso_handle`）**重复定义** ⇒ 正确的开关是 **`-nostartfiles`**
+#      （只砍 crt1/crti/crtbegin/crtend/crtn，**保留 `-lc`**），且**只对需要的链接器加**
+#      ⇒ 由 `EXTRA_LDFLAGS` 从外部传入（A/B 的 GCC 腿就是这样传的），主链行为逐字不变。
+$CC $ARCH $FIDELITY -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
     -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \
