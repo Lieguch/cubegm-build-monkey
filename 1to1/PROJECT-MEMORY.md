@@ -1567,3 +1567,61 @@ typedef void *__restrict __timezone_ptr_t;
 2. 若两者接近 ⇒ 差异不来自编译器族/libc 头，回 **§17.19 上游库版本错配**（mxml ≤2.x / libiconv 1.15级）；
 3. 主构建的 `GLIBC_VER` 目前是 **2.7**（编译头 = glibc 2.7），与工厂 2.24 不同 ——
    切换后要重新核对 **GLIBC 运行时下限仍 ≤ 工厂**（`abi_check` 是硬门禁）。
+
+---
+
+## 0.12 ★★★★★ 第 67 轮（2026-09-27）：**工具链对齐假设被证伪**（判决数据首次拿到）+ 平台/方法论两处纠正
+
+> 完整证据链：`GAP.md` **§17.24**；链接开关规范：**`docs/LINKER-FLAGS.md`**。
+
+### A. 判决（三条腿首次全部量到：`toolchain-ab @31eabfed` success，3/3）
+
+| 腿 | 编译器 / libc 头 | `-O` | ELF 大小 | ABI | PASS | **DIVERGE** | INFO |
+|---|---|---|---|---|---|---|---|
+| **zig-Os**（现状） | clang 21 + **glibc 2.7** 头 | `-Os` | 5,664,464 | rc=0 | 665 | **75** | 41 |
+| gcc63-Os | GCC 6.3.0 + **glibc 2.24** + binutils 2.27 | `-Os` | 5,158,868 | rc=0 | 645 | **109** | 15 |
+| gcc63-O2 | 同上（= 工厂 DWARF 真值） | `-O2` | 5,171,340 | rc=0 | 654 | **100** | 12 |
+
+工厂：GCC 6.2.0 / glibc 2.24 / binutils 2.27 / `-O2` / ELF **3,921,108 B**。
+
+### B. ★ 结论：**不换工具链**（假设被证伪，不是"再试一次"）
+
+* 行为尺（权威）：**zig 75 < gcc63-O2 100 < gcc63-Os 109** ⇒ 对齐工具链反而**变差**。
+* 体积（代理）：gcc63（+31.6%）比 zig（+44.5%）更接近工厂 ⇒ **与行为尺结论相反**
+  ⇒ 代理指标不能当判据（GAP 16.43 的又一实证）。
+* `-O2` 在 GCC 内优于 `-Os`（100 < 109）⇒ 独立佐证 DWARF 的 `-O2`；但整体仍劣于 zig ⇒ 主构建不动。
+* ★ 诚实保留：`INFO` 桶依赖编译器内联程度；三家 `PASS+DIVERGE+INFO` = **116 / 124 / 112** 接近
+  ⇒ 稳的说法是"**换工具链没有带来整类改善**"；剩余 75 个分歧**不是编译器族伪影**，
+  要回到 §17.19（上游库版本错配）与 §17.12（符号绑定）那类真缺陷上打。
+* **下一轮**：`zig-O2` 已加入默认腿（假设驱动：`-O2` 在 GCC 侧确实更优，需验证 zig 侧）。
+
+### C. 平台纠正：**cnb.cool 云开发是本项目已定案的 Linux 执行环境，我此前 6 轮没用**
+
+| 事实 | 值 |
+|---|---|
+| 环境 | `Linux x86_64` / **8 核** / **16 GB** / root / apt / 512 G |
+| 连接 | `ssh cnb-<sn>-001.…@cnb.space`（**出站**，不开本机端口 ✅符合铁律） |
+| 项目根 | **`/workspace/1to1`**（旧记忆写的 `/workspace/rkgame-1to1/1to1` **已过时**） |
+| 默认镜像 | 极精简：**无 pip/gcc/make**；`python3`=3.12 而 apt 装到 3.13 ⇒ **两套解释器**，脚本要 `PY=/usr/bin/python3` |
+| ★ 限制 | **按 idle 自动关闭**（本轮 3 个工作区全被回收）⇒ **长任务结果必须落到仓库** |
+
+启动：`cnb workspace start-workspace --repo lieguch/cubeGM --branch main` →
+`cnb workspace get-workspace-detail --repo lieguch/cubeGM --sn <sn>` 取 `ssh …@cnb.space`。
+同步：`python tools/sync_mirror.py --remote cnb`。云端跑判决：`build/_ab_run.sh`（结果推独立分支 `ab-results`）。
+
+### D. 方法论纠正：**链接开关读手册，不试错**（已固化为 `docs/LINKER-FLAGS.md`）
+
+* GCC 手册：`-nostartfiles`=不链启动文件但**保留标准库**；`-nostdlib`=**两者都不**。
+  ⇒ 本工程要的是 **`-nostartfiles`**（GCC 腿）；我一度加的 `-nostdlib` **打红了 `1to1-verify`**（已撤销，
+  命令行与最后绿灯版 `8d920d3c` 逐字比对相同）。
+* ld 手册：`-z undefs` 与 `--unresolved-symbols=ignore-all` 语义相同，但**旧 binutils(2.27) 要用后者**。
+* 本轮顺带修掉的真缺陷：GCC 腿补 `-lm -lpthread -ldl`（工厂 `DT_NEEDED` 逐项核对）；
+  源码末尾标签 `LAB_…:` → `LAB_…: ;`（真 GCC 报 `label at end of compound statement`，clang 容忍）
+  + 新门禁 `tools/scan_trailing_label.py`（自证 7 条，256 文件全树 0 处）。
+
+### E. 新纪律（20–23，与既有 19 条同族）
+
+> **20.** 已定案的平台分工**要照做**（有云开发却只用 CI = 每轮只换回一个比特）。
+> **21.** 长任务结果**必须落到仓库**（交互式环境会被 idle 回收）。
+> **22.** 编译/链接开关**先查手册再改代码**；手册给语义、`--help` 给该版本事实，两条都要。
+> **23.** 只在一条腿上验证过的改动**不许进主链**（主链改动必须由主链门禁验证）。

@@ -39,7 +39,7 @@ set -u
 #   `ZIGBIN` 上出现过 ⇒ 现在集中声明，并配 `tools/lint_setu_order.py` 机械兜底。
 PY="${PY:-python3}"
 ZIG="${ZIG:-}"
-AB_LEGS="${AB_LEGS:-zig-Os,gcc63-Os,gcc63-O2}"
+AB_LEGS="${AB_LEGS:-zig-Os,zig-O2,gcc63-Os,gcc63-O2}"
 GLIBC_VER="${GLIBC_VER:-2.7}"
 SYSROOT="${SYSROOT:-}"
 FID_JOBS="${FID_JOBS:-}"

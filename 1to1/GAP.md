@@ -6016,3 +6016,87 @@ typedef void *__restrict __timezone_ptr_t;
 > 所有"必须编译失败"的锚点全部假通过。凡自证必须带**活性控制**，不成立就判**不可判**。
 > **19. 假阳性比漏报更坏。** 它会让人去修一个不存在的问题（`scandir` 参数名一例）。
 > 凡"提取/归因"型仪器，必须同时有**正例**与**缺陷态反例**锚点。
+
+---
+
+## 17.24 ★★★★★ 第 67 轮：**工具链对齐假设被行为尺证伪**（判决数据首次拿到）+ 两条方法论根因
+
+### A. 判决（三条腿首次全部量到，CI `toolchain-ab @31eabfed` success）
+
+| 腿 | 编译器 / libc 头 | `-O` | ELF 大小 | ABI 门禁 | PASS | **DIVERGE** | INFO | TRUNC |
+|---|---|---|---|---|---|---|---|---|
+| **zig-Os**（现状） | clang 21 + **glibc 2.7** 头 | `-Os` | 5,664,464 | rc=0 | 665 | **75** | 41 | 6 |
+| gcc63-Os | GCC 6.3.0 + **glibc 2.24** + binutils 2.27 | `-Os` | 5,158,868 | rc=0 | 645 | **109** | 15 | 6 |
+| gcc63-O2 | 同上（**= 工厂 DWARF 真值**） | `-O2` | 5,171,340 | rc=0 | 654 | **100** | 12 | 6 |
+
+工厂真值：GCC 6.2.0 / glibc 2.24 / binutils 2.27 / gold 1.12 / `-O2` / ELF **3,921,108 B**。
+
+### B. ★ 结论：**"切到工厂同款工具链"不是根解，而是回归**
+
+* 行为尺（**权威判据**）：**zig 75 < gcc63-O2 100 < gcc63-Os 109** ⇒
+  把工具链对齐到工厂（GCC 6.3 + glibc 2.24 + binutils 2.27）**让行为保真度变差约 +33%~+45%**。
+* 体积（**代理指标，仅参考**）：工厂 3.92 MB；zig **+44.5%**、gcc63 **+31.6%** ⇒
+  **代理指标偏向 gcc63，与行为尺结论相反** ⇒ 再次证明代理指标不能当判据（GAP 16.43 的应用）。
+* ABI：三条腿 `abi_rc=0` ⇒ **都**满足设备 GLIBC 下限，所以这不是"能不能用"的问题，而是"谁更接近"的问题。
+* `-O2` 优于 `-Os`（GCC 内 100 < 109），**独立佐证**工厂 DWARF 的 `-O2` 是真的；
+  但整体仍劣于 zig `-Os` ⇒ **不改主构建**（`zig-O2` 已加入下一轮默认腿，验证 `-O2` 在 zig 侧是否同样更优）。
+
+★ **诚实保留**：`INFO` 桶是"外部调用被内联/等价实现，其余观测量全一致"，它**依赖编译器的内联程度**
+⇒ GCC 内联更少，部分原本进 `INFO` 的案例会落进 `DIVERGE`。
+三家 `PASS+DIVERGE+INFO` 之和为 **116 / 124 / 112**（zig / gcc63-Os / gcc63-O2）**接近**
+⇒ 更稳的说法是"**换工具链没有带来整类改善**"，而不是"zig 全面更优"。
+但"切工具链能整类消掉分歧"这个假设，**已被证伪**——剩余 75 个分歧**不是编译器族/libc 头的伪影**，
+必须回到 §17.19（上游库版本错配）与 §17.12（符号绑定）那类**真缺陷**上打。
+
+### C. 方法论根因一：**没有使用已定案的平台**（用户指出，成立）
+
+`PROJECT-MEMORY.md` §第 51 轮已定案：**「cnb.cool 托管 + cnb.cool 云开发 + GitHub 构建」**，
+并写明"CNB 云开发 = 本机缺 qemu 的解法……可直接 SSH，容器 8 核 / 16 G"。
+我前 6 轮**完全没用它**，把 Linux 执行权全押在 GitHub Actions 上
+⇒ 每轮 25 分钟、一次只换回一个比特。
+
+**本轮实地启用并核实**（`cnb workspace start-workspace --repo lieguch/cubeGM --branch main`）：
+
+| 事实 | 值 |
+|---|---|
+| 环境 | `Linux x86_64` / **8 核** / **16 GB** / root / apt / 磁盘 512 G |
+| 连接 | `ssh cnb-<sn>-001.…@cnb.space`（**出站，不开本机端口**，符合用户铁律） |
+| 项目根 | `/workspace/1to1`（**注意**：不是旧记忆里的 `/workspace/rkgame-1to1/1to1`，布局变了） |
+| 默认镜像 | 极精简：**无 pip / 无 gcc / 无 make**；`python3` 是 3.12 但 apt 装的是 3.13 ⇒ **两套解释器**，要靠 `PY=/usr/bin/python3` 指认 |
+| ★ 限制 | **环境会按 idle 自动关闭**（`status: closed`）⇒ 长任务的结果必须**落到仓库**，不能只活在容器里 |
+
+**⇒ 纪律：Linux 长任务用"声明式流水线 + 结果入库"，交互式工作区只用来看与调试。**
+（`build/_ab_run.sh` 已按此写：跑完把结果推到独立分支 `ab-results`，避免被镜像同步覆盖。）
+
+### D. 方法论根因二：**用失败反推编译开关，而不是读手册**（用户指出，成立）
+
+`-nostdlib` / `-nostartfiles` / `-z undefs` 这几个开关我是靠 CI 失败一个一个试出来的。
+而官方手册**逐字**写着语义：
+
+* GCC 手册（<https://gcc.gnu.org/onlinedocs/gcc/Link-Options.html>）：
+  `-nostartfiles` = "不链启动文件，**标准库照常使用**"；
+  `-nodefaultlibs` = "不链标准库，启动文件照常"；
+  **`-nostdlib` = 两者都不**。
+* GNU ld 手册：`-z undefs` = "Do not report unresolved symbol references from regular object files"；
+  `--unresolved-symbols=ignore-all` 语义等价但**出现更早** ⇒ 旧 binutils（本项目对照是 **2.27**）要用后者。
+
+**规范给语义，`--help` 给"该版本的事实"**（`ld --help | grep -i undefs`、`gcc -dumpspecs | grep nostartfiles`）。
+两条都要。已固化为 **`docs/LINKER-FLAGS.md`**（含手册原文引用 + 本工程的 flag 组合表）。
+
+**本轮由此修掉的两处实现缺陷**：
+
+| # | 缺陷 | 症状 | 修法 |
+|---|---|---|---|
+| 1 | 我一度给主链加了 `-nostdlib` | zig/lld 侧 `undefined symbol: printf/malloc/…`（**打红了 `1to1-verify`**） | **撤销**（`-nostdlib` 连 `-lc` 一起砍）；命令行已与最后绿灯版 `8d920d3c` **逐字比对相同** |
+| 2 | BFD ld 的 CRT 冲突 | `multiple definition of '_init'/'_fini'/'__dso_handle'` | GCC 腿传 **`-nostartfiles`**（只砍启动文件、保留 `-lc`），经 `EXTRA_LDFLAGS` 外部传入 ⇒ **主链行为逐字不变** |
+| 3 | 工厂有而 clang 自动加、GCC 不自动加的库 | `undefined reference to pow/sqrt/…`、`pthread_create`、`dlopen` | GCC 腿补 **`-lm -lpthread -ldl`**（工厂 `DT_NEEDED` 逐项核对） |
+| 4 | 源码里 Ghidra 的**末尾标签** | 真 GCC `error: label at end of compound statement`（clang 容忍） | `LAB_…:` → `LAB_…: ;`；新增门禁 **`tools/scan_trailing_label.py`**（自证 7 条，全树 256 文件 0 处） |
+
+### E. 新增纪律（第 20–23 条）
+
+> **20. 已定案的平台分工要**照做**，不是"记着"。** 有云开发环境却只用 CI，等于把每轮信息量压到一个比特。
+> **21. 长任务的结果必须**落到仓库**，不能只活在容器里。** 交互式环境会被 idle 回收（本轮 3 个工作区全被回收）。
+> **22. 编译/链接开关先查官方手册，再改代码。** 手册一句"`-nostdlib` = 两者都不"抵得过两轮 CI 反推；
+> 但**手册描述当前版本**，旧工具链要用 `--help`/`-dumpspecs` 问工具自己。
+> **23. 只在一条腿上验证过的改动，不许进主链。** 本轮 `-nostdlib` 在主链打红 `1to1-verify`，
+> 而它在 GCC 腿上"看起来是对的" ⇒ **主链改动必须用主链自己的门禁验证**。
