@@ -130,7 +130,12 @@ fi
 #   工厂那里是空洞 ⇒ NULL 写会静默成功而不是 SIGSEGV（真实差分抓到的假分歧）。
 #   注意：注释必须写在命令**之前** —— `\` 续行后的 `#` 不是注释，会作为参数传给编译器。
 # shellcheck disable=SC2086
-$CC $ARCH $FIDELITY -no-pie \
+# ★★ 第 66 轮实测修正：**`-nostdlib` 必须在命令行里**（上面注释一直这么写，但命令行漏了）——
+#   缺它的后果（CNB 容器实测）：GCC 驱动自动链 `crti.o`/`crtbegin.o`，与本工程的
+#   `build/crt_init.o`（提供 `_init`/`_fini`）与 `factory_local.o`（提供 `__dso_handle`）
+#   **重复定义** ⇒ `multiple definition of '_init'/'_fini'/'__dso_handle'` ⇒ 链接 rc=1。
+#   zig(lld) 恰好没暴露，是因为它的 glibc 桩里没有同名符号 ⇒ **只在真 GCC 上炸**。
+$CC $ARCH $FIDELITY -nostdlib -no-pie \
     -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
     -Wl,-z,max-page-size=0x1000 \
     -Wl,-z,undefs -Wl,--build-id=none \

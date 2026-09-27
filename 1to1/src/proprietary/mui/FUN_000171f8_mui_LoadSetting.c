@@ -187,7 +187,7 @@ void mui_LoadSetting(void)
           DAT_003b0298[iVar5] = 0;
           *(gh_u4 *)(DAT_003b02b8 + iVar5) = 0;
           DAT_003b02bc[iVar5] = 0;
-LAB_000178ec:
+LAB_000178ec: ;
         }
         iVar3 = mxmlFindElement(tree,tree,DAT_002dcd50,0,0,1);
         iVar5 = DAT_003af30c;

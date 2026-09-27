@@ -149,10 +149,20 @@ build_leg() {
     n_up=$(ls -1 build/upstream/*.o 2>/dev/null | wc -l)
     say "  ② build_upstream rc=$rc2  产出对象 $n_up"
     # ③ 链接
-    # ★ 非 zig 腿补 `-lm`：工厂 DT_NEEDED 含 libm.so.6；clang 驱动会自动加，GCC 不会。
+    # ★ 非 zig 腿补齐**工厂同样拥有的**库：工厂 DT_NEEDED =
+    #   libz.so.1 / libdl.so.2 / libm.so.6 / libstdc++.so.6 / libpthread.so.0 /
+    #   libgcc_s.so.1 / libc.so.6。
+    #   clang 驱动（zig cc）会**自动**加 `-lm -lpthread -ldl`，GCC 路径不会
+    #   ⇒ 不补就 `undefined reference to pow/sqrt/…` / `pthread_create` / `dlopen/dlsym`（CI 实测两轮）。
+    #   ★ 这是"把缺的库给全"，不是"忽略未定义符号"—— 后者（`-z undefs`）在 lld 与 BFD ld
+    #     下语义不同，赌它只会引入方言差异。
+    # ★★ BFD ld 与 lld 的**方言差异**（CNB 容器实测）：`-Wl,-z undefs` 是 lld 的写法，
+    #   BFD ld 会 `warning: -z undefs ignored` 并**真的忽略**它 ⇒ 未定义符号会变成硬错误。
+    #   BFD 的对应写法是 `-Wl,--unresolved-symbols=ignore-all`。
+    #   ⇒ 两个都带上：谁认得哪个就用哪个，两个链接器行为一致。
     case "$cc" in
       *zig*) ld_extra="" ;;
-      *)     ld_extra="-lm" ;;
+      *)     ld_extra="-lm -lpthread -ldl -Wl,--unresolved-symbols=ignore-all" ;;
     esac
     CC="$cc" SYSROOT="$sr" PY="$PY" EXTRA_LDFLAGS="$ld_extra" \
         sh tools/link_full.sh "build/ab/$lab.elf" > "report/_ab_build_$lab.txt" 2>&1
@@ -168,6 +178,10 @@ build_leg() {
         head -12 report/_link_bad.txt 2>/dev/null | sed 's/^/     /' | tee -a "$OUT"
         grep -aE 'error:|undefined reference' "report/_link_err_all.txt" 2>/dev/null \
             | head -8 | sed 's/^/     /' | tee -a "$OUT"
+        # ★ 链接器的真实错误只写在 link_full_err.txt 里（link_full.sh 用 2> 重定向）
+        #   —— 不打印它就只能看到 `collect2: error: ld returned 1 exit status`（实测吃过大亏）。
+        say "     --- 链接器原文（report/link_full_err.txt）---"
+        head -14 report/link_full_err.txt 2>/dev/null | sed 's/^/     /' | tee -a "$OUT"
     fi
 }
 
