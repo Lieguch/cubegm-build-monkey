@@ -40,8 +40,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #   实证：云开发跑编译器对齐实验时，链接本身成功（elf 5,442,408 B 已产出），却被本门禁拦死，
 #        `link rc=18` ⇒ 整轮实验白跑。这与 §0.4 的 `src_transcript_parity.py` 硬编码语料路径同族。
 #   现改为**多级解析 + 找不到就 fail-closed（并指名）**，与 `check_obj_fresh.py` 同一套口径。
-_ZIG_FALLBACK = (r"C:\Users\Administrator\.workbuddy\binaries\python\envs\default"
-                 r"\Lib\site-packages\ziglang\zig.exe")
+# ★★★ 2026-09-29 修（根因，同类第 4 次）：**删掉宿主专有兜底路径**。
+#   旧实现在链尾多写了一个 Windows venv 的绝对路径 `_ZIG_FALLBACK`。它是**纯冗余**：
+#   上面的 `import ziglang; dirname(ziglang.__file__)` 分支在 Windows 上解析出的就是
+#   同一路径，同时还能覆盖 Linux（包内二进制名是 `zig` 而非 `zig.exe`）。
+#   留着它的唯一效果 = 让「CI 可达性 / 宿主绝对路径门禁」(s08) 判 FAIL(exit 17)。
+#   ⇒ 判据：**凡"只在本机成立"的候选，一律不写进代码**；本机路径应由环境变量 `ZIG`/`ZIG_BIN` 提供。
 
 
 def resolve_zig():
@@ -81,10 +85,6 @@ def resolve_zig():
         tried.append('python 包 ziglang：目录里无 zig/zig.exe')
     except Exception as e:
         tried.append('python 包 ziglang 不可用（%s）' % type(e).__name__)
-    r, why = _ok(_ZIG_FALLBACK, '本机 Windows 默认路径')
-    if r:
-        return r, why
-    tried.append('本机 Windows 默认路径（不存在）')
     return None, tried
 
 

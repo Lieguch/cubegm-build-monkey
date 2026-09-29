@@ -843,6 +843,29 @@ def norm_fp(b, tuples, spec_private, fspans):
 # --------------------------------------------------------------------------- #
 LEDGER_STEPS_RE = re.compile(r'^#\s*steps\s*=\s*(\d+)\s*$')
 LEDGER_ESC_RE = re.compile(r'^#\s*escalate\s*=\s*(\d+)\s*$')
+# ★★★ 2026-09-29（纪律 73/74）：台账必须自带**尺子口径指纹 + 被测产物 sha**。
+#   病灶（CI s36 实测，见 §0.36）：台账只记 `steps`/`escalate`，**不记判据口径**。
+#   §0.26 把行为尺升到 v2（机械实现 §2.3：参照侧早死 ⇒ 新桶 REFDEAD）之后，
+#   同一份产物、同一份台账，"DIVERGE 集合"**已不可比** —— 于是 CI 报
+#   「★新增 9」时，**分不清是"我们改坏了"还是"尺子换了"**（这正是本项目反复出现的
+#   "假绿/假红同源"问题）。实测该次 CI：既有 81 项 / 本轮发散 36 / 新增 9 / 收敛 49。
+#   修法：指纹**从事实机械推导**（`compare()`/`partition_ok()` 的源码 + 判据常量取值），
+#   不手填版本号 ⇒ 任何改动判据核心的编辑都会改变指纹 ⇒ 台账立刻失效 ⇒ fail-closed，
+#   必须显式 `--rebaseline --reason "..."` 才能重新记账。**不得静默沿用旧账。**
+LEDGER_RULER_RE = re.compile(r'^#\s*ruler\s*=\s*([0-9a-fA-F]{8,64})\s*$')
+LEDGER_OURS_RE = re.compile(r'^#\s*ours\s*=\s*([0-9a-fA-F]{4,64})\s*$')
+LEDGER_WHY_RE = re.compile(r'^#\s*rebaseline\s*:\s*(.+?)\s*$')
+# 判据口径的"常量面"：新增/修改**任何影响分桶的开关或常量**时，必须登记到这里
+# （登记后指纹自动变化 ⇒ 旧台账自动失效 ⇒ 不会静默沿用）。
+RULER_CONSTANT_NAMES = ('ESCALATE_FACTOR',)
+# ★ 开关分两类，**必须区别对待**（否则指纹会把"后端等价"误判成"判据变更"）：
+#   · 判据开关：**改变分桶语义** ⇒ 必须把**生效值**纳入指纹
+#     （如 `CGM_REFDEAD_OFF=1` 会取消 REFDEAD 桶 ⇒ "DIVERGE 集合"随之改变）。
+#   · 执行后端开关：只换实现、**不改判据** ⇒ 只记**名字**，不记值
+#     （`CGM_MACHINE_REUSE` 已在 §0.28 用 sha256 逐字节证明与默认路径等价；
+#      记值会让"本地带 reuse、CI 不带"这种无关差异把台账判废）。
+RULER_PROTOCOL_SWITCHES = ('CGM_REFDEAD_OFF',)
+RULER_BACKEND_SWITCH_NAMES = ('CGM_MACHINE_REUSE', 'CGM_NO_LIBC_MODEL')
 
 # 触到步数上限 ⇒ 以 ESCALATE_FACTOR× 预算**重试一次**。
 # 为什么必须有它：被判据忽略的东西会因为"跑不完"落进 TRUNC 桶；若台账在低预算下重写，
@@ -957,6 +980,54 @@ def read_ledger_text(txt):
             continue
         names.append(s)
     return steps, esc, names
+
+
+def read_ledger_meta(txt):
+    """台账头部元信息 → {'ruler':.., 'ours':.., 'rebaseline':..}（缺失记 None）。
+
+    ★ 与 `read_ledger_text` 分开：后者是既有**纯函数接口**（自证锚点在用），
+      不动它可保证"台账内容语义"零回归；元信息是本次新增的**第二类**信息。
+    """
+    meta = {'ruler': None, 'ours': None, 'rebaseline': None}
+    for ln in txt.splitlines():
+        s = ln.strip()
+        if not s.startswith('#'):
+            continue
+        for key, rx in (('ruler', LEDGER_RULER_RE), ('ours', LEDGER_OURS_RE),
+                        ('rebaseline', LEDGER_WHY_RE)):
+            m = rx.match(s)
+            if m and meta[key] is None:
+                meta[key] = m.group(1)
+    return meta
+
+
+def ledger_protocol_guard(ledger_path, cur_ruler, will_write, steps=3000):
+    """台账**口径门禁**（fail-closed）。返回 `(ok, lines)`。
+
+    ★ 必须在**批量对拍之前**调用：否则会先白跑一整轮（本机 ≈2.5 min / 云上更贵）
+      才报"台账口径不一致"—— 那既浪费算力，也鼓励"把门禁绕过去"。
+    ★ 为什么必须是硬失败而不是告警：口径一变，"DIVERGE 集合"就**不可比**；
+      沿用旧账会把"尺子换了"报成「★新增发散」（CI s36 实测：既有 81 / 发散 36 / 新增 9），
+      于是**真回归与口径漂移混在一起**，两个方向都读不出来。
+    """
+    if not ledger_path or will_write or not os.path.exists(ledger_path):
+        return True, []
+    txt = open(ledger_path, encoding='utf-8', errors='replace').read()
+    meta = read_ledger_meta(txt)
+    if meta['ruler'] == cur_ruler:
+        return True, []
+    lines = [
+        '',
+        '  ★★ 台账的**判据口径**与当前尺子不一致 ⇒ fail-closed（exit 3）',
+        '     台账 ruler = %s' % (meta['ruler'] or '（缺 —— 旧台账未记口径）'),
+        '     当前 ruler = %s' % cur_ruler,
+        '     为什么   ： 口径一变，"DIVERGE 集合"就**不可比**；沿用旧账会把"尺子换了"'
+        '误报成「★新增发散」',
+        '     修法     ： **显式重新记账**（留痕；新台账会记下 ruler / 被测产物 sha / 原因）——',
+        '                python tools/diff_exec.py --batch --steps %d --ledger %s '
+        '--rebaseline --reason "口径变更原因"' % (steps, ledger_path),
+    ]
+    return False, lines
 
 
 def ledger_steps_ok(declared_steps, declared_esc, actual_steps, actual_esc):
@@ -1200,6 +1271,43 @@ def partition_ok(stats, n_funcs):
     return (stats.get('PASS', 0) + stats.get('DIVERGE', 0)
             + stats.get('TRUNC', 0) + stats.get('SKIP', 0)
             + stats.get('REFDEAD', 0)) == n_funcs
+
+
+def _strip_src(s):
+    """去掉空行与**整行注释**，保留代码与 docstring（减少"只改注释就作废台账"的噪声）。"""
+    out = []
+    for ln in s.splitlines():
+        t = ln.strip()
+        if not t or t.startswith('#'):
+            continue
+        out.append(ln.rstrip())
+    return '\n'.join(out)
+
+
+def ruler_protocol_fingerprint():
+    """判据口径指纹 = sha256( `compare()` 源码 + `partition_ok()` 源码 + 常量/开关面 )。
+
+    ★ 为什么是**源码 + 常量取值**而不是手填版本串（纪律 73）：
+      手填的版本号会与代码脱节（本项目已 4 次栽在"硬编码与事实脱节"上）。
+      取 `compare()` 的源码 ⇒ 任何改动**判据核心**的编辑都会改变指纹，
+      台账随之失效并 fail-closed ⇒ 逼迫一次**显式、留痕**的重新记账。
+    ★ 为什么把常量与开关名也纳入：它们同样是判据的一部分
+      （改 `ESCALATE_FACTOR` 或关掉 `CGM_REFDEAD_OFF` 都会改分桶，必须让旧账作废）。
+    """
+    import hashlib
+    import inspect
+    parts = []
+    for fn in (compare, partition_ok):
+        try:
+            parts.append(_strip_src(inspect.getsource(fn)))
+        except Exception as e:                                  # pragma: no cover
+            parts.append('%s<source-unavailable:%s>' % (fn.__name__, type(e).__name__))
+    for nm in RULER_CONSTANT_NAMES:
+        parts.append('%s=%r' % (nm, globals().get(nm, '<缺失>')))
+    for nm in RULER_PROTOCOL_SWITCHES:
+        parts.append('%s=%r' % (nm, os.environ.get(nm, '<未设>')))
+    parts.append('backend-switches=' + ','.join(RULER_BACKEND_SWITCH_NAMES))
+    return hashlib.sha256('\n'.join(parts).encode('utf-8')).hexdigest()
 
 
 def self_test():
@@ -1470,6 +1578,51 @@ def self_test():
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0}, 761), False)
             c('正例  REFDEAD 计入后自洽：661+75+5+0+20 == 761',
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 20}, 761), True)
+
+        # ---- ★ 2026-09-29 新增：台账**口径指纹**（防"尺子换了却被读成 ★新增发散"）----
+        if 1:
+            _mm = read_ledger_meta('# steps=3000\n# escalate=60000\n# ruler=deadbeef\n'
+                                   '# ours=ac6bb562a0d20561\n'
+                                   '# rebaseline: 行为尺升 v2（新增 REFDEAD 桶）\nfoo\nbar\n')
+            c('台账元信息  解析 ruler', _mm['ruler'], 'deadbeef')
+            c('台账元信息  解析 ours（被测产物 sha）', _mm['ours'], 'ac6bb562a0d20561')
+            c('台账元信息  解析 rebaseline 原因（留痕）', _mm['rebaseline'],
+              '行为尺升 v2（新增 REFDEAD 桶）')
+            c('反例  旧台账（只记 steps/escalate）⇒ ruler 必须为 None（⇒ 判为口径不一致）',
+              read_ledger_meta('# steps=3000\n# escalate=60000\nfoo\n')['ruler'], None)
+            c('正例  台账正文不被元信息干扰（read_ledger_text 语义零回归）',
+              read_ledger_text('# steps=3000\n# ruler=deadbeef\nfoo\nbar\n')[2], ['foo', 'bar'])
+            _f1 = ruler_protocol_fingerprint()
+            _f2 = ruler_protocol_fingerprint()
+            c('口径指纹  可复现（同一次运行两次调用相同）', _f1 == _f2, True)
+            c('口径指纹  形态 = 64 位小写 hex', bool(re.fullmatch(r'[0-9a-f]{64}', _f1)), True)
+            _saved = ESCALATE_FACTOR
+            globals()['ESCALATE_FACTOR'] = _saved + 1
+            _f3 = ruler_protocol_fingerprint()
+            globals()['ESCALATE_FACTOR'] = _saved
+            c('反例  改判据常量（ESCALATE_FACTOR）⇒ 口径指纹**必须**变化'
+              '（否则旧账会被静默沿用）', _f3 != _f1, True)
+            c('正例  恢复常量后指纹回到原值（证明变化确实来自该常量）',
+              ruler_protocol_fingerprint() == _f1, True)
+            # ★ 开关分两类：判据开关改**值**必须变指纹；执行后端开关**不得**影响指纹
+            _saved_env = {k: os.environ.get(k) for k in
+                          (RULER_PROTOCOL_SWITCHES + RULER_BACKEND_SWITCH_NAMES)}
+            try:
+                os.environ['CGM_MACHINE_REUSE'] = '1'
+                c('反例  执行后端开关（CGM_MACHINE_REUSE）**不得**影响口径指纹'
+                  '（否则"本地带 reuse / CI 不带"这种无关差异会判废台账）',
+                  ruler_protocol_fingerprint() == _f1, True)
+                os.environ['CGM_REFDEAD_OFF'] = '1'
+                c('反例  判据开关改生效值（CGM_REFDEAD_OFF=1）**必须**改变口径指纹'
+                  '（它取消 REFDEAD 桶 ⇒ DIVERGE 集合随之改变）',
+                  ruler_protocol_fingerprint() != _f1, True)
+            finally:
+                for k, v in _saved_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+            c('正例  恢复开关后指纹回到原值', ruler_protocol_fingerprint() == _f1, True)
     return chk
 
 
@@ -1487,6 +1640,11 @@ def main():
                          '★ 归类（差异类别收敛）必须用它，不得用报告里的"前 80"截断摘要。')
     ap.add_argument('--ledger', help='发散棘轮台账：只允许减少，不允许新增')
     ap.add_argument('--update-ledger', action='store_true', help='用当前发散集重写台账')
+    ap.add_argument('--rebaseline', action='store_true',
+                    help='★ 显式重新记账：口径（ruler 指纹）变更后必须走这条路；'
+                         '新台账会记下 ruler / 被测产物 sha / 原因（配 --reason）')
+    ap.add_argument('--reason', default=None,
+                    help='--rebaseline 的原因（写进台账头部，留痕；强烈建议填写）')
     ap.add_argument('--self-test', action='store_true')
     ap.add_argument('--ours', help='被测产物（默认 build/rkgame.rebuilt.elf）；'
                                    '用于单变量 A/B：同一把尺子量不同工具链/不同 flags 的产物')
@@ -1516,6 +1674,18 @@ def main():
     sys.stderr.write('  被测 = %s\n    sha256=%s\n' % (ours, _sha[ours]))
     BF, BO = Bin(fac), Bin(ours)
     common = sorted(set(BF.funcs) & set(BO.funcs))
+
+    # ★★ 台账口径门禁：**跑之前**就判（口径不一致 ⇒ 直接 exit 3，不白跑一轮）。
+    _cur_ruler = ruler_protocol_fingerprint()
+    _gok, _glines = ledger_protocol_guard(a.ledger, _cur_ruler,
+                                          bool(a.update_ledger or a.rebaseline), a.steps)
+    if not _gok:
+        _txt = '\n'.join(['=' * 70, '差分执行对拍（工厂 vs 重建产物）', '=' * 70] + _glines)
+        print(_txt)
+        if a.out:
+            with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
+                fh.write(_txt + '\n')
+        return 3
 
     if a.list:
         print('  两侧共有函数 %d 个（工厂 %d / 我们 %d）；数据区 F=%s O=%s'
@@ -1669,25 +1839,40 @@ def main():
         if a.ledger:
             old_steps = old_esc = None
             old = []
+            led_txt = ''
             if os.path.exists(a.ledger):
-                txt = open(a.ledger, encoding='utf-8', errors='replace').read()
-                old_steps, old_esc, old = read_ledger_text(txt)
-            if a.update_ledger:
+                led_txt = open(a.ledger, encoding='utf-8', errors='replace').read()
+                old_steps, old_esc, old = read_ledger_text(led_txt)
+            _meta = read_ledger_meta(led_txt)
+            _write = bool(a.update_ledger or a.rebaseline)
+            # （★ 口径门禁已在**跑之前**执行 —— 见 `ledger_protocol_guard`。此处不重复实现，纪律 69。）
+            if _write:
                 keep, removed, kept_und = ledger_update(old, div_names, undecidable)
                 os.makedirs(os.path.dirname(a.ledger) or '.', exist_ok=True)
                 with open(a.ledger, 'w', encoding='utf-8', newline='\n') as fh:
                     fh.write('# diff_exec 发散棘轮台账（只允许减少）\n')
                     fh.write('# steps=%d\n' % a.steps)
                     fh.write('# escalate=%d\n' % esc_steps)
+                    fh.write('# ruler=%s\n' % _cur_ruler)
+                    fh.write('# ours=%s\n' % ART['ours']['sha256'])
+                    if a.reason:
+                        fh.write('# rebaseline: %s\n' % a.reason)
                     fh.write('# 生成：python tools/diff_exec.py --batch --steps %d '
                              '--ledger <本文件> --update-ledger\n' % a.steps)
-                    fh.write('# ★ 评测时必须用**相同的 steps/escalate**，否则本工具 fail-closed '
-                             '(exit 3) —— 见 GAP 17.10\n')
+                    fh.write('# ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 '
+                             'fail-closed (exit 3) —— 见 GAP 17.10 / §0.36\n')
+                    fh.write('# ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；'
+                             '口径变了必须 --rebaseline --reason "..." 留痕\n')
                     for n in keep:
                         fh.write(n + '\n')
                 lines.append('')
-                lines.append('  台账已重写：%d 项（发散 %d + 旧台账中本轮不可判 %d）-> %s'
-                             % (len(keep), len(div_names), len(kept_und), a.ledger))
+                lines.append('  台账已重写%s：%d 项（发散 %d + 旧台账中本轮不可判 %d）-> %s'
+                             % ('（--rebaseline）' if a.rebaseline else '', len(keep),
+                                len(div_names), len(kept_und), a.ledger))
+                if a.rebaseline:
+                    lines.append('    ruler = %s' % _cur_ruler)
+                    lines.append('    ours  = %s' % ART['ours']['sha256'][:16])
+                    lines.append('    原因  = %s' % (a.reason or '★ 未填（建议补 --reason）'))
                 lines.append('  收敛移除 %d 项：%s' % (len(removed), removed[:30]))
                 if kept_und:
                     lines.append('  ★ 保留的"不可判"债务（TRUNC/SKIP ≠ 已收敛）：%s' % kept_und[:30])

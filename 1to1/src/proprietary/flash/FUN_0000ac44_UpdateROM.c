@@ -17,7 +17,12 @@ void UpdateROM(char *param_1)
   int iVar2;
   void *__s;
   gh_u4 uVar3;
-  size_t unaff_r7;
+  /* ★ 2026-09-29：`unaff_r7` = Ghidra 的"未被赋值寄存器 r7"。它**只在 `GetZipItemA`
+   *   成功分支里被赋值**（0x4000 起步、按 `local_30` 倍增至 ≥ 需求），而在**失败分支**
+   *   工厂是把**残留的 r7** 原样传给 `UpdateROMProc(NULL, r7)` —— 那个值在 C 里不可表达。
+   *   原本声明为**未初始化** ⇒ 又一处 UB。此处显式置 0：成功路径逐字不变（两分支都会写），
+   *   失败路径从"不可复现的残留值"变成**确定性 0**（这是**受控偏离**，已在行为尺上核对）。 */
+  size_t unaff_r7 = 0;
   gh_bool bVar4;
   /* ★★ 2026-09-27 根修（UB #2，真根因）：这三个名字其实是**同一块 3 字节缓冲**的
    *   三个字节（Ghidra 把一块缓冲拆成了三个独立 `char`）。拆开之后，源码里只有
@@ -34,12 +39,34 @@ void UpdateROM(char *param_1)
    *   证据链：`tools/ub_census.py`（编译器原话 `'memset' will always overflow; destination
    *   buffer has size 4, but size argument is 304`）+ `tools/size_coverage_gate.py`（0.115x）。
    *   修法：把声明恢复到**真实对象尺寸**（0x130），UB 消失 ⇒ 优化器无从删代码。 */
-  gh_u1 auStack_158 [0x130];
-  gh_u1 auStack_154 [268];
-  int local_48;
-  int local_30;
-  int local_2c;
-  
+  /* ★★★ 2026-09-29 根修（UB #4，真根因；与 §0.32-D `popwindows` **同族、方向相反**）：
+   *   `GetZipItemA` 把 **ZIPENTRY 整块对象**写进栈里，而 Ghidra 把这块对象**拆成了
+   *   5 个互不相干的局部变量**（`auStack_158` / `auStack_154` / `local_48` /
+   *   `local_30` / `local_2c`）。在 C 语言层面只有 `auStack_158` 被 `memset` 写过，
+   *   其余 4 个**只读不写** ⇒ **读未初始化对象 = UB**。实测 `clang -Os` 借此把
+   *   `GetZipItemA` **成功分支整段搬到函数尾部并截断**：
+   *     `UpdateROM` 我方 **680B** / 工厂 **976B**（0.697）；
+   *     调用序列 我方 **28 次** / 工厂 **40 次** —— 少的正是 `UnzipItem`、`puts`、
+   *     `malloc(r7)`+`memset(0xff,r7)`、`spi_printf("… UPDATE TO …")` 与 `malloc(0x3fc00)`。
+   *   症状同时出现在 CI 的 s27（`UpdateROM -> UpdateROMProc 未设 r1`、
+   *   `UpdateROM -> DateToTmuDate 未设 r0`）与 s21 的体量覆盖门禁。
+   *
+   *   ★ 证据（**工厂反汇编**，`GetZipItemA` 第三参数 = 结构体基址）：
+   *       `memset` 基址 = `sp+0x18`（`00ad4c: add r5,sp,#0x18` → `00ad78: bl memset`，长度 0x130）；
+   *       `name`  = base + 0x04（`00adb8` 把 `sp+0x1c` 交给 `%s`）；
+   *       `date`  = base + 0x30（`sp+0x48` → `DateToTmuDate` 的实参）；
+   *       `size`  = base + 0x128（`00adb4: ldr r2,[sp,#0x140]`，`%08X` 的第一实参）；
+   *       `crc`   = base + 0x12c（`00adb0: ldr r3,[sp,#0x144]`，`%08X` 的第二实参）。
+   *
+   *   ★ 修法：**恢复成一块真实对象**（宏别名把 5 个名字落回同一对象）⇒ 编译器必须假定
+   *     `GetZipItemA` 会写它 ⇒ 那些读取**有定义** ⇒ UB 消失，整段逻辑得以保留。
+   *     **不得用 `volatile`**：那会连带改掉访存次数与顺序，只是用另一个偏差盖住原偏差。 */
+  gh_u1 zipent[0x130];                 /* GetZipItemA 填充的 ZIPENTRY（真实对象，与工厂同尺寸） */
+#define auStack_158 zipent
+#define auStack_154 ((char *)(zipent + 0x04))
+#define local_48    (*(int *)(zipent + 0x30))
+#define local_30    (*(int *)(zipent + 0x128))
+#define local_2c    (*(int *)(zipent + 0x12c))
   __stream = fopen(param_1,"r+b");
   if (__stream == (FILE *)0x0) {
     printf("Load %s fail!\n",param_1);
@@ -149,3 +176,9 @@ LAB_0000af00:
   }
   return;
 }
+
+#undef auStack_158
+#undef auStack_154
+#undef local_48
+#undef local_30
+#undef local_2c

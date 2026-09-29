@@ -83,6 +83,68 @@ LIBC_PREFIX = (
 EABI_PREFIX = ('__aeabi_', '__gnu_', '_Unwind_', '__div', '__udiv', '__mod',
                '__mul', '__cmp', '__float', '__fix', '__add', '__sub', '__neg')
 
+# ★★★ 2026-09-29 修（根因；纪律 73「常量式门槛必须能从事实自动推导」）
+#   病灶：上面的 `LIBC_EXACT` 是**手维护名单**，含 `putc/getc/strdup`，却**不含** glibc 的
+#   extern-inline 真身 `_IO_putc/_IO_getc/__strdup`，也缺 `mbrtowc/mbsinit/wcrtomb/reboot/sync`。
+#   §0.26 把编译头换成**工厂同期 glibc 2.24 真头**之后，这些名字立刻出现在 UNDEF 里
+#   ⇒ 被误判成 `MISSING` ⇒ 本门禁硬失败（CI 实测 `MISSING=8`，见 §0.36）。
+#   判据本该是「链接期由哪个库提供」，那就**直接读那个库的导出表**，不猜。
+#   实测：bootlin63 sysroot 的 `libc.so.6` 导出 2224 个符号，上列 8 个**全部命中**。
+RT_LIB_DIRS = (
+    'cache_tc/bootlin63/arm-buildroot-linux-gnueabihf/sysroot/lib',
+    'cache_tc/bootlin63/arm-buildroot-linux-gnueabihf/sysroot/usr/lib',
+    'golden/device_rootfs_min/lib',
+    'golden/device_rootfs_min/usr/lib',
+)
+# 未解析引用的**全部分类桶**（报告必须逐桶印出；漏一个 ⇒ 汇总行不闭合 ⇒ 那是假绿）。
+CATS = ('MISSING', 'upstream', 'libstdc++', 'runtime', 'libc', 'crt', 'eabi')
+RT_LIB_NAMES = ('libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2',
+                'librt.so.1', 'libstdc++.so.6', 'libgcc_s.so.1')
+
+
+def sysroot_runtime_symbols():
+    """从**实际链接所用的** sysroot 共享库读导出表。
+
+    返回 `(symbols, sources, notes)`：
+      * `sources` = 命中的文件（相对路径 + 贡献符号数）⇒ 报告里给**出处**，可复核；
+      * 一个库都没读到 ⇒ `symbols` 为空，调用方**必须显式降级并打印警告**（不得静默）。
+    覆盖路径可用环境变量 `CGM_RT_LIBS`（`os.pathsep` 分隔的目录）追加/覆盖。
+    """
+    try:
+        from elftools.elf.elffile import ELFFile
+    except Exception as e:
+        return set(), [], ['pyelftools 不可用（%s）⇒ 无法推导' % type(e).__name__]
+    dirs = []
+    for d in (os.environ.get('CGM_RT_LIBS') or '').split(os.pathsep):
+        if d.strip():
+            dirs.append(d.strip())
+    dirs.extend(RT_LIB_DIRS)
+    syms, srcs, notes, seen = set(), [], [], set()
+    for d in dirs:
+        p = d if os.path.isabs(d) else os.path.join(ROOT, d)
+        if p in seen:
+            continue
+        seen.add(p)
+        if not os.path.isdir(p):
+            continue
+        for nm in RT_LIB_NAMES:
+            fp = os.path.join(p, nm)
+            if not os.path.isfile(fp):
+                continue
+            try:
+                with open(fp, 'rb') as fh:
+                    ds = ELFFile(fh).get_section_by_name('.dynsym')
+                    if ds is None:
+                        continue
+                    before = len(syms)
+                    for s in ds.iter_symbols():
+                        if s.name:
+                            syms.add(s.name)
+                    srcs.append('%s (+%d)' % (os.path.relpath(fp, ROOT), len(syms) - before))
+            except Exception as ex:
+                notes.append('%s（%s）' % (os.path.relpath(fp, ROOT), type(ex).__name__))
+    return syms, srcs, notes
+
 
 def load_manifest():
     names = set()
@@ -124,6 +186,7 @@ def main():
             undef[sym].add(obj)
 
     upstream = load_manifest()
+    rt_syms, rt_srcs, rt_notes = sysroot_runtime_symbols()
     local_all = set(defined) | set(common)
 
     dups = {s: sorted(o) for s, o in defined.items() if len(o) > 1}
@@ -133,6 +196,8 @@ def main():
             continue
         if s in upstream:
             unresolved[s] = 'upstream'
+        elif s in rt_syms:
+            unresolved[s] = 'runtime'
         elif s in LIBSTDCXX:
             unresolved[s] = 'libstdc++'
         elif s in FORTIFY:
@@ -162,13 +227,30 @@ def main():
     for s, objs in sorted(dups.items())[:60]:
         A('   %-44s %s' % (s[:44], ', '.join(os.path.basename(x) for x in objs)[:120]))
     A('')
+    A('  ★ 运行时库导出表来源（%s）：%s'
+      % ('机械推导' if rt_syms else '★ 推导失败 ⇒ 降级为硬编码名单',
+         ' ｜ '.join(rt_srcs) if rt_srcs else '（未读到任何 .so.6/.so）'))
+    A('    共 %d 个导出符号；命中 UNDEF 分类为 `runtime` = %d 个'
+      % (len(rt_syms), len([1 for c in unresolved.values() if c == 'runtime'])))
+    for n in rt_notes:
+        A('    ⚠ %s' % n)
+    if not rt_syms:
+        A('    ⚠ 未读到任何 sysroot 共享库 ⇒ 本次只能靠手维护的 LIBC_EXACT，'
+          '**可能把真库符号误判成 MISSING**（用 CGM_RT_LIBS=<dir> 指定目录）。')
+    A('')
     cats = defaultdict(list)
     for s, c in unresolved.items():
         cats[c].append(s)
     A('【2】未解析引用（本体重无定义）: %d' % len(unresolved))
-    for c in ('MISSING', 'upstream', 'libstdc++', 'libc', 'eabi'):
+    for c in CATS:
         v = sorted(cats.get(c, []))
         A('   %-9s : %d' % (c, len(v)))
+    # ★ 分桶自洽（fail-closed）：各桶之和**必须等于**总数。不等 ⇒ 有类别没被印出来，
+    #   读者会把"漏印"读成"没这类" ⇒ 与"分桶漏项"同族的假绿（本仓已在 diff_exec.py 栽过一次）。
+    _buckets = sum(len(cats.get(c, [])) for c in CATS)
+    A('   ---- 分桶自洽：%d（各桶之和）vs 总计 %d ⇒ %s'
+      % (_buckets, len(unresolved),
+         'OK' if _buckets == len(unresolved) else '★★ 不一致 ⇒ 有类别漏项，本报告不可引用'))
     A('')
     A('【3】MISSING 明细（既非上游组件、也非已知运行时库）')
     miss = sorted(cats.get('MISSING', []))
