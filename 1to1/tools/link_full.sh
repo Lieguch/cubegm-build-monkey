@@ -46,7 +46,15 @@ if ! "$PY" -c 'import elftools' 2>/dev/null; then
     done
 fi
 "$PY" -c 'import elftools' >/dev/null 2>&1 || {
-    echo "★★ 门禁依赖缺失：PY=$PY 无法 import elftools（pip install pyelftools）" >&2
+    # ★★★ 2026-09-29（§0.35）：**脚本自足**（纪律 71）。原逻辑只找"本机 venv + python3"，
+    #   CI 上都不含 pyelftools ⇒ `exit 5` ⇒ `1to1-verify` #233 / `1to1-qemu-behav` #201 连锁红。
+    #   现在交给 `tools/ensure_pydeps.sh`：已就绪 ⇒ 零开销；缺 ⇒ 就地 `pip install`（幂等）；
+    #   装不上 ⇒ 它自己 fail-closed（**不静默跳过门禁**）。引导逻辑**只此一处**（纪律 69）。
+    #   回退：删掉下面这一行（回到"缺失即 exit 5"）。
+    PY="$PY" sh "$ROOT/tools/ensure_pydeps.sh" || exit $?
+}
+"$PY" -c 'import elftools' >/dev/null 2>&1 || {
+    echo "★★ 门禁依赖缺失：PY=$PY 无法 import elftools（已试 ensure_pydeps.sh 就地安装）" >&2
     exit 5
 }
 

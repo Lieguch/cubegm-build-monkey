@@ -3097,3 +3097,66 @@ int blkA[6];   /* local_40, 3c, 38, 34, 30, 2c */
 | P1 | §0.19-F.3 `.dynsym` 28 项差异 | 消除假发散 |
 | P2 | §0.29-F P1 ONLY-ONE-SIDE 剩余项 / TRUNC 5 个 | 逐项定性 |
 | P3 | §0.29-F P3 目的 2 两项（evdev / SRAM） | 功能就位 |
+
+---
+
+## 0.34 ★★★★★ 第 87 轮（2026-09-29）：**CI 三红根因定位并修复**（一个修复救三个 workflow）+ 撤销自动化
+
+### A. 用户口径（原话，最高优先级）
+> 「**不要建自动化监控，这会损耗资源。**」
+
+* 我建的每小时自动化 `rkgame CI 状态监控`（id `5238c7ab…`）**已删除**（`automation_update --mode delete`）。
+* ★ **口径更正（已写入跨项目偏好 `~/.workbuddy/MEMORY.md`）**：
+  「主动监控 CI」= **在本轮内主动去查、必要时本轮内修**；**不是**挂一个定时/轮询任务。
+  之前"每小时自动化 + 本地 3 分钟监控"的旧口径**作废**。
+
+### B. ★★★★★ CI 三红根因（commit `259abb43ce51` 实测）
+| workflow | run | 结论 |
+|---|---|---|
+| `rkgame-rebuild` | #1093 | ✅ success |
+| `1to1-verify` | #232 | ❌ failure（门禁总账 `exit 11`；`★FAIL 前置 两侧产物存在 got=False`；`FileNotFoundError: 1to1/build/rkgame.rebuilt.elf`） |
+| `1to1-qemu-behav` | #200 | ❌ failure（`[ -s src/upstream/xunzip/XUnzip.o ]` 断言：`XUnzip.o 未产出`） |
+| `toolchain-ab` | #9 | ❌ failure（`gcc63-Os/-O2 BUILD_FAILED`；但 `zig-Os`/`zig-O2` 成功，`DIVERGE 36 / 39`） |
+
+**根因链（一条线，不是三个问题）**：
+```
+CI 上**从未** fetch_bootlin63（.github/workflows/ 里没有该步骤，
+   而该目录在本机被代理拦截 ⇒ 无法推送修改）
+  → link_audit.sh 第 68 行的「工厂同期真头」检查失败 ⇒ exit 4
+  → 213 个 build/obj/*.o 未产出（-nostdinc 且找不到头）
+  → link_audit.sh 的「XUnzip 编译失败 ⇒ 删掉目标 ⇒ 中止」把 src/upstream/xunzip/XUnzip.o 删掉
+  → 后续 [ -s XUnzip.o ] 硬断言失败 + 无 rkgame.rebuilt.elf
+  → 三个 workflow 连锁红
+```
+* **为什么 09-27 那版（`6f2c5131`）是绿的**：当时 `link_audit.sh` 还**没有**"工厂同期真头"这条要求
+  （§0.26 才引入）⇒ 不是"我改坏了"，而是**新要求从未在 CI 侧被满足过**。
+* 排除项（用证据）：**与我改的 `popwindows`/`popoffwindows` 两处源码无关**
+  —— `zig-Os`/`zig-O2` 两条腿都构建成功且行为尺更好（**DIVERGE 36 / 39**）。
+
+### C. ★★★★ 根本修复（不依赖改 workflow）
+`tools/link_audit.sh`：把"先跑 `fetch_bootlin63.sh`"改成**脚本自己就地抓取**（幂等：
+有 `cache_tc/bootlin63/.ok` 即秒返回），抓不到 ⇒ **fail-closed**（不静默降级到宿主头）。
+```sh
+if [ ! -f "$CGM_GD/stdio.h" ] || [ ! -f "$CGM_GI/stddef.h" ]; then
+    sh "$ROOT/tools/fetch_bootlin63.sh" >&2 || { echo "…fail-closed"; exit 4; }
+fi
+if [ ! -f "$CGM_GD/stdio.h" ] || [ ! -f "$CGM_GI/stddef.h" ]; then exit 4; fi   # 抓完仍缺 ⇒ 硬失败
+```
+* 本地验证：语法 OK；跑一次 `link_audit.sh` ⇒ **无"缺真头"**、**213 对象全产出**（正常路径未破坏）。
+* **回退**：删掉那 3 行（回到"缺失即 exit 4"）。
+* 推送：**`new commit = 0e14448ffa968a87e80aa29cd5e472c6ba0bec35`**；`VERIFY 1309/1309 blobs match`。
+* 新 CI 已触发：`rkgame-rebuild` #1094 · `1to1-verify` #233 · `1to1-qemu-behav` #201（head `0e14448ffa96`）。
+
+### D. 新纪律 71–72
+> **71.** CI 需要的**输入必须在脚本内自足** —— 凡"依赖 workflow 里的某一步先做"的假设，
+>   一旦 workflow 不可改（本仓 `.github/workflows/` 被代理拦截），就变成**永远不满足的前置**。
+>   判据：脚本在**干净检出**下能独立跑通（本地 + CI 两处都验）。
+> **72.** **不建定时/轮询自动化**（用户口径：损耗资源）。「主动」= 在**轮内**查与修。
+
+### E. 下一步
+| 优先 | 动作 | 判据 |
+|---|---|---|
+| **P0** | 轮内复查 CI（`0e14448f`） | 4 个 workflow 全绿；任一红即继续根因修复 |
+| **P0** | 云开发装 `gdb-multiarch` → 抓 M6 处 SIGSEGV 的 PC | 拿到崩溃指令地址（§0.33-A） |
+| P1 | §0.29-F P0' INLINE-MOVE 判据（DIVERGE 38 → 22 预登记） | 其余一个不许变 |
+| P1 | §0.19-F.3 `.dynsym` 28 项 / §0.29-F TRUNC 5 个 | 逐项定性 |

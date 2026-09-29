@@ -26,6 +26,7 @@
 
 import json
 import os
+import re
 import sys
 
 # 这些步骤"失败"不构成门禁失败：本身是收尾/上传类，或已有自己的判定
@@ -36,8 +37,31 @@ BAD = ('failure', 'cancelled', 'timed_out', 'action_required')
 
 # ★ 「检视到多少个步骤」的下界。低于它一律 fail-closed —— 因为"解析出 0 个"与
 #   "全部都过"在输出上一模一样，没有这条下界就分不清（本项目实测被此坑了一轮）。
-#   加步骤时**必须同步上调**本常量，否则是"覆盖率退化"而不是"通过"。
-MIN_STEPS = 44
+#
+# ★★★ 2026-09-29（§0.35）：**改为从 workflow 自动推导**，不再硬编码。
+#   病灶（CI 实测，commit `0e14448f`）：`MIN_STEPS = 44` 写死，而
+#   **"门禁总账"这一步在它自己运行时并不出现在 `toJSON(steps)` 里** ——
+#   本文件 docstring 的**不变式 ③**（"自己不在被检查的集合里"）早就写了，
+#   但常量没落实它 ⇒ CI 上 `seen = 43 < 44` ⇒ **门槛不可达** ⇒
+#   每轮都报"STEPS_JSON 解析失败"并硬失败（`1to1-verify` 因此常红）。
+#   （09-27 那版能绿，只是因为当时的步骤数与该常量**恰好对齐** —— 靠巧合，不是靠机制。）
+#   ⇒ 修法：数 `1to1-verify.yml` 里 `id: sNN` 的个数，**减 1**（总账自身，落实不变式 ③）。
+#     加/删步骤自动跟随，**不会再出现"加步骤忘改常量"的漂移**。
+#   读不到 workflow 文件 ⇒ 返回 None，调用方用保守兜底（43 = 44 步减自身）。
+def _derive_min_steps():
+    wf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      '.github', 'workflows', '1to1-verify.yml')
+    try:
+        with open(wf, encoding='utf-8', errors='replace') as fh:
+            txt = fh.read()
+    except OSError:
+        return None
+    n = len(re.findall(r'^\s+id:\s*s\d+\s*$', txt, re.M))
+    return (n - 1) if n > 1 else None
+
+
+MIN_STEPS_DERIVED = _derive_min_steps()
+MIN_STEPS = MIN_STEPS_DERIVED if MIN_STEPS_DERIVED else 43
 
 
 def verdict(steps_json, min_steps=MIN_STEPS):
@@ -98,6 +122,27 @@ def self_test():
     c('缺陷态 解析不了 ⇒ parsed_ok=False（调用方必须 fail-closed）', ok, False)
     b, s, ok = verdict('[]')
     c('缺陷态 形态不对 ⇒ parsed_ok=False', ok, False)
+
+    # ★★★ 2026-09-29（§0.35）：**门槛必须与 workflow 实际步骤数自动对齐**（不变式 ③）。
+    #   正例 / 缺陷态都要有 —— 否则"门槛不可达"这种病会再次静默复发。
+    _wf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       '.github', 'workflows', '1to1-verify.yml')
+    try:
+        _wf_n = len(re.findall(r'^\s+id:\s*s\d+\s*$',
+                               open(_wf, encoding='utf-8', errors='replace').read(), re.M))
+    except OSError:
+        _wf_n = 0
+    c('正例 推导门槛 = workflow 步骤数 - 1（落实不变式③"自己不在被检查集合里"）',
+      MIN_STEPS_DERIVED, (_wf_n - 1) if _wf_n > 1 else None)
+    c('正例 推导门槛 > 0（不是恒真/恒假）', (MIN_STEPS_DERIVED or 0) > 0, True)
+    if _wf_n > 1:
+        # ★ 构造要与**实测事实**一致：CI 上 `toJSON(steps)` 只含 **43** 个（缺"总账"自己）。
+        _seen_total = json.dumps({('s%02d' % i): {'outcome': 'success'}
+                                  for i in range(1, _wf_n)})
+        c('缺陷态 用"总数"(%d)当门槛 ⇒ 真实 CI 上不可达（本轮 `0e14448f` 红的原因）' % _wf_n,
+          verdict(_seen_total, min_steps=_wf_n)[2], False)
+        c('正例 用"总数-1"(%d)当门槛 ⇒ 可达（总账自身不出现）' % (_wf_n - 1),
+          verdict(_seen_total, min_steps=_wf_n - 1)[2], True)
     b, s, ok = verdict('{}')
     # ★ 本锚点**原来的期望是 `([], True)`（"空 dict 解析成功、无失败项"）—— 已更正**：
     #   那正是本轮实测到的假绿（`toJSON(steps)` 返回空 ⇒ 报"✓ 全部步骤 success"）。
