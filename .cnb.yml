@@ -1,3 +1,40 @@
+# =============================================================================
+# 云原生开发（远程开发）—— 开发环境声明
+# -----------------------------------------------------------------------------
+# ★ 根因（2026-09-29，官方文档核实：docs.cnb.cool/zh/workspaces/workspace-recycling.html
+#   + docs.cnb.build/zh/workspaces/only-preview.html）：
+#   工作区被回收的**唯一**触发条件是「检测不到 HTTP/SSH 心跳持续超过 keepAliveTimeout」，
+#   默认 600000 ms = **10 分钟**；平台**最大保持 18 小时**（持续心跳可维持）。
+#   ⇒ 旧记忆里的"约 15 分钟自动关闭 / 容器周期性重启"是**对默认离线保活的误判**，
+#     不是平台硬上限，也不是"配额"。
+#   ⇒ 对策：显式把 keepAliveTimeout 抬到平台上限 18h，让 20+ 分钟的重建/实验一次跑完。
+#   ★ 与 main: 构建流水线的"CPU 核时配额不足"是**两回事**：云原生开发独立额度（1600 核时/月），
+#     云原生构建只有 160 核时/月 —— 这解释了"构建卡 Prepare、云开发照样能开"。
+#
+# 回退：删掉下面整段 `$:` 配置即可（工作区回到平台默认环境 + 默认 10 分钟保活）。
+# =============================================================================
+$: # 兜底匹配所有分支
+  vscode:
+    - runner:
+        cpus: 8 # 8 核 / 16 GB（核时 = 8 × 小时；云原生开发免费额度 1600 核时/月）
+      docker:
+        image: cnbcool/default-dev-env:latest
+      services:
+        - name: vscode
+          options:
+            keepAliveTimeout: 18h # ← 根因修复：默认仅 10 分钟无心跳即回收
+        - docker
+      stages:
+        # 环境就绪即自证重建所需的 Python 依赖，避免每次会话重复装
+        - name: deps-selftest
+          script: |
+            set -u
+            python3 -m pip install -q --break-system-packages pyelftools capstone unicorn ziglang 2>/dev/null \
+              || python3 -m pip install -q pyelftools capstone unicorn ziglang 2>/dev/null \
+              || echo "(pip 安装失败，进入环境后手动装)"
+            python3 -c "import elftools,capstone,unicorn;print('elftools/capstone/unicorn OK')" || true
+            python3 -c "import ziglang,os;print('zig =',os.path.join(os.path.dirname(ziglang.__file__),'zig'))" || true
+
 main:
   push:
     - name: rkgame-rebuild
@@ -621,3 +658,69 @@ main:
             git checkout main
             echo "TEST DONE ($RESULT)"
             exit 0
+
+    # =====================================================================
+    # 1to1 Linux-only 门禁（2026-09-28 新增）
+    #   目的：关闭"11 道门禁在 Windows/Git Bash 上跑不了（缺 arm objdump/readelf）"
+    #         这条长期只写在诚实声明里、从未闭合的缺口。
+    #   触发：api_trigger_build（手动/API 触发，不在每次 push 跑，省额度）
+    #   依赖：1to1/golden/factory.rkgame.bin（已在镜像清单内）
+    #   ★ 为什么不走交互式云开发：实测容器会周期性重启（观测到 `up 3 min`）
+    #     ＋ 约 15 分钟自动关闭（duration≈924s 后 closed）⇒ 上传与执行拆成两次
+    #     SSH 就会因重启丢 /tmp，表现为"命令没有任何输出"。
+    # =====================================================================
+    - name: 1to1-linux-gates
+      docker:
+        image: ubuntu:22.04
+      env:
+        PIP_INDEX_URL: https://mirrors.cloud.tencent.com/pypi/simple/
+        DEBIAN_FRONTEND: noninteractive
+      stages:
+        - name: deps
+          timeout: 30m
+          script: |
+            set -e
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              binutils-arm-linux-gnueabihf python3 python3-pip \
+              python3-pyelftools ca-certificates git
+            command -v arm-linux-gnueabihf-objdump
+            python3 -m pip install -q --break-system-packages pyelftools capstone unicorn \
+              || python3 -m pip install -q pyelftools capstone unicorn
+            python3 -c "import elftools, capstone, unicorn; print('deps OK')"
+
+        - name: build-1to1
+          timeout: 2h
+          script: |
+            set -e
+            cd 1to1
+            echo "== 复用项目自己的环境引导（apt + sysroot + shim + 1:1 产物，幂等）=="
+            sh tools/cnb_env.sh --fast || sh tools/cnb_env.sh
+            ls -la build/rkgame.rebuilt.elf
+            sha256sum build/rkgame.rebuilt.elf
+
+        - name: linux-only-gates
+          timeout: 1h
+          script: |
+            set -e
+            cd 1to1
+            sh tools/cnb_gates.sh || true
+            if [ -f /tmp/cnb_gates.txt ]; then cp /tmp/cnb_gates.txt gate-report.txt; fi
+            echo "== 摘要 =="
+            grep -aE "rc=[0-9]+$|结论|★|失败项数" /tmp/cnb_gates.txt 2>/dev/null | tail -30 || true
+
+        - name: publish-log
+          timeout: 10m
+          allowFailure: true
+          script: |
+            cd 1to1
+            cp -f /tmp/cnb_gates.txt gate-report.txt 2>/dev/null || echo "(no /tmp/cnb_gates.txt)" > gate-report.txt
+            cd ..
+            git config user.email "cnb@lieguch"
+            git config user.name "CNB-Gates"
+            git checkout -B artifacts-gates
+            git add -f 1to1/gate-report.txt 2>/dev/null || true
+            git commit -m "auto: 1to1 linux-only gates report" || true
+            git push origin artifacts-gates --force || true
+            git checkout main || true
+            echo "LOG DONE"

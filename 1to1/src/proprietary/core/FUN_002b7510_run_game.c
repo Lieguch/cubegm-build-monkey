@@ -19,7 +19,10 @@ gh_u4 run_game(char *param_1)
   size_t sVar5;
   gh_uint uVar6;
   char acStack_160 [8];
-  int local_158;
+  /* 根修（UB）：这是**一块 0x130 字节栈缓冲**（Ghidra 误声明为 4 字节 int）。
+     `memset(&local_158,0,0x130)` / `GetZipItemA(...,&local_158)` /
+     `extract_basepath((char*)&local_158,...)` 都按缓冲用 ⇒ 原声明使 memset 越界 = UB。 */
+  gh_u1 local_158[0x130];
   char acStack_154 [4];
   char acStack_150 [288];
   size_t local_30;
@@ -49,7 +52,7 @@ gh_u4 run_game(char *param_1)
         strupr(acStack_154);
         pcVar1 = (char *)GetFilenameExt(acStack_154);
         strcpy(acStack_160,pcVar1);
-        if (1 < local_158) {
+        if (1 < *(int *)(void *)local_158) {
           Filetype = Filetype | 1;
           CloseZipU(iVar3);
           FBA_Load(param_1,Filetype);

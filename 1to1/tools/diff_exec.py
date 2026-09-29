@@ -51,6 +51,7 @@ import bisect
 import gc
 from collections import Counter
 import hashlib
+import json
 import os
 import re
 import struct
@@ -99,6 +100,15 @@ class Bin(object):
                 self.segs.append((s['p_vaddr'], s['p_filesz'], s['p_memsz'], s['p_flags'], s['p_offset']))
         self.segs.sort()
         self.funcs, self.data_syms, self.sym_list = {}, {}, []
+        # ★ 口径（2026-09-27 对齐，P0-B）：工厂侧 `st_size==0` 的 STT_FUNC 是**无长度别名**
+        #   （实测 10 个：_start/_init/_fini/frame_dummy/register_tm_clones/deregister_tm_clones/
+        #    __do_global_dtors_aux/call_weak_fn/__aeabi_idiv/__aeabi_uidiv），
+        #   它们由工具链 CRT/libgcc 提供，**不属于重建范围**，且 st_size==0 ⇒ 对"执行范围"
+        #   没有定义 ⇒ 拿它们做逐指令对拍无判据价值。
+        #   旧版不滤 ⇒ 共有函数集 746（含其中 5 个）⇒ **头条数字的分母被污染**。
+        #   权威分母 = 工厂 STT_FUNC ∧ 有名 ∧ st_size>0 = **804**；可对拍交集 = **741**。
+        #   排除项一律**列名**（口径差必须可见，GAP 17.10 同族）。
+        self.zero_len_funcs = set()
         # ★ 同名数据符号（LOCAL + GLOBAL 同名是**合法 ELF**）：实测工厂里
         #   `ArchivePath` 有一个 LOCAL 0x3AE610(size=64, .data) **和** 一个 GLOBAL 0x3E18D4(size=28)，
         #   而工厂的代码引用的是 **LOCAL** 那个（intra-object 引用优先绑定本地符号）。
@@ -122,7 +132,10 @@ class Bin(object):
                 if b is None or s['st_info']['bind'] == 'STB_LOCAL':
                     self.name_bind[n] = s['st_info']['bind']
                 if ty == 'STT_FUNC':
-                    if n not in self.funcs or sz > self.funcs[n][1]:
+                    if sz == 0:
+                        # 无长度别名：不参与对拍（口径 = st_size>0），但必须**记录并公示**
+                        self.zero_len_funcs.add(n)
+                    elif n not in self.funcs or sz > self.funcs[n][1]:
                         self.funcs[n] = (a, sz)
                 elif ty == 'STT_OBJECT':
                     self.dup_objs.setdefault(n, []).append((a, sz, s['st_shndx']))
@@ -306,6 +319,101 @@ def _in_spans(sp, addr):
     return i >= 0 and sp[i][0] <= addr < sp[i][1]
 
 
+# --------------------------------------------------------------------------- #
+# ★★★ 2026-09-29：**可复用的执行环境**（几何一次，内容每次重写）
+# --------------------------------------------------------------------------- #
+_MACHINES = {}
+_ZEROS = {}
+
+
+def _zeros(n):
+    """长度 n 的零缓冲**复用**（不要每次 `b'\x00' * n`：那会在 commit 吃紧时
+    造成瞬时分配尖峰 —— 2026-09-29 实测 `MemoryError`）。"""
+    z = _ZEROS.get(n)
+    if z is None:
+        z = b'\x00' * n
+        _ZEROS[n] = z
+    return z
+
+
+def _machine_for(b, mode):
+    """返回 (mu, model, gaps)。同一二进制只建**一次**；几何（段/栈/PRNG区/模型区）只 map 一次。
+
+    ★ 为什么必须复用（可选）：见 run_func 里 2026-09-29 那段注释
+      （4700 个实例 ⇒ 本机 commit 吃紧时 `MemoryError`；复用后 2m24s → 33s）。
+    ★★ **默认关闭**（`CGM_MACHINE_REUSE=1` 才开），因为它是**行为敏感**改动：
+      复用会把"新实例本来是 0"的栈/空洞带进来 ⇒ 实测 737/40 变成 731/46
+      （已补 ① VFP/NEON 寄存器清零 ② 栈与映射空洞显式补零 两处，但**尚未在
+       有内存的机器上完成回归对账**）。回归判据（必须逐字相同）：
+         python tools/diff_exec.py --batch --steps 3000 --ours build/rkgame.rebuilt.elf
+         ⇒ 期望 共有 782 ｜ PASS 737 ｜ DIVERGE 40 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0
+    ★ 关闭时**每调用新建**（与改造前语义完全一致：新实例的映射区天然为零）——
+      下面对寄存器/栈/空洞的复位与补零在"新实例"上都是**幂等的无操作**，所以两条路径
+      共用同一段代码体，不存在"两条实现漂移"的风险。
+    ★ 缓存键带 `id(b)`，并把 `b` **强引用**存在缓存里 ⇒ 防止 id 复用造成串味。
+    """
+    reuse = os.environ.get('CGM_MACHINE_REUSE') == '1'
+    key = (id(b), mode)
+    if reuse:
+        hit = _MACHINES.get(key)
+        if hit is not None and hit[0] is b:
+            return hit[1], hit[2], hit[3]
+    mu = Uc(UC_ARCH_ARM, mode)
+    # ★ 必须开 FPU（CPACR + FPEXC.EN **两个都要**）：我们的产物是
+    #   `-mfpu=neon -mfloat-abi=hard` 编的，含 VFP/NEON 指令；Unicorn 默认两者都没开
+    #   ⇒ 一执行到 `vpush {d8,d9}` 就 UC_ERR_INSN_INVALID。
+    #   最小复现（第 59 轮实测，同 4 条指令）：
+    #       不加设置         → 执行 3 条即 INSN_INVALID
+    #       CPACR=0xF00000   → 仍然 3 条即 INSN_INVALID（**只设 CPACR 不够**）
+    #       +FPEXC=0x40000000→ 正常执行
+    try:
+        mu.reg_write(ac.UC_ARM_REG_C1_C0_2, 0x00F00000)
+        mu.reg_write(ac.UC_ARM_REG_FPEXC, 0x40000000)
+    except UcError:
+        pass
+    # ★ 不能"逐段 mem_map"：Unicorn 的 mem_map 只要与**已映射页**有重叠就整体失败
+    #   （我们产物的 9 个 PT_LOAD 里，0x400fd0 / 0x4e00e0 / 0x5630c8 三段都跨进了
+    #    前一段的页 ⇒ 整段未映射 ⇒ 后续 mem_write 报 WRITE_UNMAPPED）。
+    #   正确做法：先把所有段的页区间**合并成不相交并集**一次映射，再逐段写文件内容。
+    pages = sorted((va & ~0xFFF, (va + msz + 0xFFF) & ~0xFFF) for va, fsz, msz, fl, off in b.segs)
+    merged = []
+    for lo, hi in pages:
+        if merged and lo <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    for lo, hi in merged:
+        if hi > lo:
+            mu.mem_map(lo, hi - lo, 7)
+    # ★ 只算"映射了但段内容写不到"的**空洞**（复用实例时唯一需要显式补零的地方）。
+    #   段本身（含 bss 的 memsz 段）per-call 都会重写 ⇒ 不必整段补零。
+    gaps, cur = [], None
+    for lo, hi in merged:
+        for va, fsz, msz, fl, off in sorted(b.segs):
+            s, e = va, va + msz
+            if e <= lo or s >= hi:
+                continue
+            if cur is None:
+                cur = lo
+            if s > cur:
+                gaps.append((cur, min(s, hi)))
+            cur = max(cur, e)
+        if cur is None:
+            cur = lo
+        if cur < hi:
+            gaps.append((cur, hi))
+        cur = None
+    mu.mem_map(STACK_BASE, STACK_SIZE, 7)
+    mu.mem_map(SCRATCH, SCRATCH_SIZE, 7)
+    mu.mem_map(SENTINEL & ~0xFFF, 0x1000, 7)
+    model = libc_model.Model()
+    model.map_regions(mu)
+    if reuse:
+        _MACHINES[key] = (b, mu, model, gaps)
+    return mu, model, gaps
+
+
+
 def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None,
              mode=None, _retry=True):
     """执行 fname(args)。mode=None 时自动判 ARM/Thumb（先 ARM，遇 INSN_INVALID 再试 Thumb）。
@@ -327,43 +435,59 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     if fname not in b.funcs:
         return {'error': 'no-such-func'}
     addr, _size = b.funcs[fname]
-    mu = Uc(UC_ARCH_ARM, mode)
-    # ★ 必须开 FPU（CPACR + FPEXC.EN **两个都要**）：我们的产物是
-    #   `-mfpu=neon -mfloat-abi=hard` 编的，含 VFP/NEON 指令；Unicorn 默认两者都没开
-    #   ⇒ 一执行到 `vpush {d8,d9}` 就 UC_ERR_INSN_INVALID。
-    #   最小复现（第 59 轮实测，同 4 条指令）：
-    #       不加设置         → 执行 3 条即 INSN_INVALID
-    #       CPACR=0xF00000   → 仍然 3 条即 INSN_INVALID（**只设 CPACR 不够**）
-    #       +FPEXC=0x40000000→ 正常执行
+    # ★★★ 2026-09-29 结构性修复：**复用执行环境**（几何建一次，内容每次重写）。
+    #   病灶（实测）：746 函数 × 2 二进制 × 3 组语料 ≈ **4700 个 Unicorn 实例**，
+    #   每个 mem_map 数 MB；Unicorn 的 **C 侧内存归还给 OS 不及时** ⇒ 本机 commit 吃紧时
+    #   直接 `MemoryError` / `UC_ERR_NOMEM`（本轮实测：`--limit 5` 就炸，单函数却能过）。
+    #   而**同一个二进制**的段几何 + 模型映射是**常量**，每次变的只有**内容** ——
+    #   所以正确做法是把 `mem_map` 提出来只做一次，per-call 只重写内容 + 复位寄存器/模型。
+    #   ⇒ commit 峰值 ~4700×11 MB → **2×11 MB**；顺带省掉每函数重复的段 mem_write。
+    mu, _model, _gaps = _machine_for(b, mode)
+    # ★ 寄存器必须显式复位：复用实例会把上一个函数的 r0/sp/pc 带进来（会伪造 PASS/发散）
+    for _r in (ac.UC_ARM_REG_R0, ac.UC_ARM_REG_R1, ac.UC_ARM_REG_R2, ac.UC_ARM_REG_R3,
+               ac.UC_ARM_REG_R4, ac.UC_ARM_REG_R5, ac.UC_ARM_REG_R6, ac.UC_ARM_REG_R7,
+               ac.UC_ARM_REG_R8, ac.UC_ARM_REG_R9, ac.UC_ARM_REG_R10, ac.UC_ARM_REG_R11,
+               ac.UC_ARM_REG_R12, ac.UC_ARM_REG_LR, ac.UC_ARM_REG_CPSR):
+        try:
+            mu.reg_write(_r, 0)
+        except UcError:
+            pass
     try:
-        mu.reg_write(ac.UC_ARM_REG_C1_C0_2, 0x00F00000)
-        mu.reg_write(ac.UC_ARM_REG_FPEXC, 0x40000000)
+        mu.reg_write(ac.UC_ARM_REG_SP, STACK_BASE + STACK_SIZE - 0x100)
     except UcError:
         pass
-    # ★ 不能"逐段 mem_map"：Unicorn 的 mem_map 只要与**已映射页**有重叠就整体失败
-    #   （我们产物的 9 个 PT_LOAD 里，0x400fd0 / 0x4e00e0 / 0x5630c8 三段都跨进了
-    #    前一段的页 ⇒ 整段未映射 ⇒ 后续 mem_write 报 WRITE_UNMAPPED）。
-    #   正确做法：先把所有段的页区间**合并成不相交并集**一次映射，再逐段写文件内容。
-    # ★ 注意：这里的局部变量**必须叫 pages**，不能叫 spans —— 否则会覆盖上面传入的
-    #   `spans`（可比访问区过滤器），让过滤静默失效（第 59 轮踩过：表现为"过滤没生效"）。
-    pages = sorted((va & ~0xFFF, (va + msz + 0xFFF) & ~0xFFF) for va, fsz, msz, fl, off in b.segs)
-    merged = []
-    for lo, hi in pages:
-        if merged and lo <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], hi)
-        else:
-            merged.append([lo, hi])
-    for lo, hi in merged:
+    # ★★ 复用实例必须把 **VFP/NEON 寄存器**也清零（2026-09-29 回归实测抓到的泄漏）：
+    #   第一次复用版本只清了 r0~r12/lr/cpsr/sp ⇒ 上一函数残留在 d0~d31/fpscr 的垃圾
+    #   会被下一函数的"先读后写"路径吃到 ⇒ 产物侧行为改变 ⇒ 行为尺 737/40 变成 **731/46**。
+    #   这正是复用方案的风险点，靠"批量汇总必须逐字相同"这条回归判据当场抓到。
+    for _i in range(32):
+        _r = getattr(ac, 'UC_ARM_REG_D%d' % _i, None)
+        if _r is None:
+            continue
+        try:
+            mu.reg_write(_r, 0)
+        except UcError:
+            pass
+    try:
+        mu.reg_write(ac.UC_ARM_REG_FPSCR, 0)
+    except (UcError, AttributeError):
+        pass
+    _model.reset(mu)                 # 堆重新涂 0xa5（**不清零**，见 map_regions 注释）+ 状态清零
+    # ★★★ 复用实例的**正确性前提**（2026-09-29 回归实测抓到的第二个泄漏）：
+    #   新建实例时 `mem_map` 会把**整段映射区**（含段与段之间的空洞）补零；复用不会
+    #   ⇒ 上一函数留在**栈**与**映射空洞**里的残留会被这一函数的"读未初始化"路径吃到
+    #   ⇒ 回归实测：737/40 变成 **731/46**，受影响的是 `stbtt_*`（大量局部缓冲）一族。
+    #   所以：把"新实例本来会是 0 的地方"**显式清零**，再写段内容。顺序不可颠倒。
+    for lo, hi in _gaps:
         if hi > lo:
-            mu.mem_map(lo, hi - lo, 7)
+            mu.mem_write(lo, _zeros(hi - lo))
+    mu.mem_write(STACK_BASE, _zeros(STACK_SIZE))
+    # ★ 段内容每次重写：**内容才是变量**，几何不是
     for va, fsz, msz, fl, off in b.segs:
         if fsz:
             mu.mem_write(va, b.raw[off:off + fsz])
         if msz > fsz:
             mu.mem_write(va + fsz, b'\x00' * (msz - fsz))
-    mu.mem_map(STACK_BASE, STACK_SIZE, 7)
-    mu.mem_map(SCRATCH, SCRATCH_SIZE, 7)
-    mu.mem_map(SENTINEL & ~0xFFF, 0x1000, 7)
     mu.mem_write(SCRATCH, b'\x00' * SCRATCH_SIZE)
     mu.mem_write(SCRATCH + 0x100, b'A\x00')
     mu.mem_write(SCRATCH + 0x200, b'core\x00')
@@ -376,15 +500,31 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     #   对**指针返回型**函数等于"返回 NULL" ⇒ 调用方一解引用就 UC_ERR_READ_UNMAPPED
     #   ⇒ 4 个函数（strupr/get_from_line/myStrrstr/GetFilenameExt）被**仪器**判成发散。
     #   现在两侧共用同一份模型与同一组地址 ⇒ 差异只可能来自被测代码。
-    _model = libc_model.Model()
-    _model.map_regions(mu)
+    #   ★ 2026-09-29：映射已由 `_machine_for` 做过**一次**（复用实例），这里**不再** map
+    #     —— 重复 mem_map 同址会 `UC_ERR_MAP`（本轮实测踩到）。
     # ★ A/B 开关：`CGM_NO_LIBC_MODEL=1` 时退回"所有外部调用返回 0"的旧行为。
     #   存在意义是**可证伪**：任何"模型只是让尺子变准、没有掩盖差异"的论断，
     #   都必须能靠这个开关做**单变量**对照（同一工具、同一产物、只差这一个开关）。
     _use_model = os.environ.get('CGM_NO_LIBC_MODEL') != '1'
 
+    _dbg = os.environ.get('CGM_DBG_REGS') == '1'
+
     def code_hook(m, address, size_, user):
         ctx['insns'] += 1
+        # ★ 逐指令探针（CGM_DBG_REGS=1）：打印**前 6 条**指令 + CPSR 的 T 位。
+        #   为什么需要它（2026-09-27）：ARM/Thumb **混编**是工厂的真实形态
+        #   （804 个函数里 308 个是 Thumb）。任何"两侧行为不同"的结论，
+        #   都必须先排除"执行模式/入口约定不同"这一仪器层面的可能 ——
+        #   Thumb-2 被当 ARM 解码常常**不报** INSN_INVALID，而是解成一串看似合法的指令。
+        if _dbg and ctx['insns'] <= 6:
+            try:
+                _t = (m.reg_read(ac.UC_ARM_REG_CPSR) >> 5) & 1
+            except Exception:
+                _t = -1
+            sys.stderr.write('     [ins %d] pc=0x%x T=%s r0=0x%x r1=0x%x r2=0x%x r3=0x%x\n'
+                             % (ctx['insns'], address, _t,
+                                m.reg_read(ac.UC_ARM_REG_R0), m.reg_read(ac.UC_ARM_REG_R1),
+                                m.reg_read(ac.UC_ARM_REG_R2), m.reg_read(ac.UC_ARM_REG_R3)))
         nm = b.plt_name(address)
         if nm is not None:
             if len(ctx['calls']) < MAX_TRACE:
@@ -428,6 +568,10 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     for i, v in enumerate(list(args)[:4]):
         mu.reg_write(ac.UC_ARM_REG_R0 + i, v & 0xFFFFFFFF)
 
+    if os.environ.get('CGM_DBG_REGS') == '1':
+        sys.stderr.write('   [entry] %-30s mode=%s addr=0x%x (lowbit=%d) r0=0x%x r1=0x%x r2=0x%x r3=0x%x\n'
+                         % (fname, 'THUMB' if mode == UC_MODE_THUMB else 'ARM', addr,
+                            addr & 1, *[mu.reg_read(ac.UC_ARM_REG_R0 + i) for i in range(4)]))
     stopped = 'return'
     try:
         mu.emu_start(addr, SENTINEL, count=steps)
@@ -641,19 +785,36 @@ def read_width_only(kf, ko):
     """
     if not kf or not ko:
         return False, []
-    # 键形如 ('A', addr, w, rw) 或 ('LN', name, off, w, rw)：取"对象标识（去掉宽度）"
+    # ★★ 2026-09-28 修（键布局缺陷）：两种键形的宽度下标**不同**。
+    #   'LN' 形 = ('LN', name, off, w, rw)  ⇒ 宽度 k[3]、偏移 k[2]
+    #   'A'  形 = ('A',  addr, w, rw)       ⇒ 宽度 k[2]
+    #   旧实现一律取 k[2] ⇒ 对 'LN' 取到的是**偏移**（两侧通常都是 0）⇒ 差值恒空
+    #   ⇒ `rw_only` 恒 False ⇒ "合法窄化降级 INFO"对具名全局从未生效。
+    #   自证盲区的原因：旧锚点只用 'A' 形。
+    def width_of(k):
+        return k[3] if k[0] == 'LN' else k[2]
+
+    # 对象标识（**去掉宽度、保留偏移**）：
+    #   'LN' → (kind, name, off, rw)；'A' → (kind, addr, rw)
+    #   ★ 保留 off 是关键：否则"同一对象不同偏移"会被合并，
+    #     一侧**少读一次**也会被当成"仅宽度不同"放过（放宽滥用）。
     def ident(k):
-        return k[:2] + k[4:] if k[0] == 'LN' else (k[0], k[1], k[3])
+        return (k[0], k[1], k[2], k[4]) if k[0] == 'LN' else (k[0], k[1], k[3])
 
     mf, mo = {}, {}
     for k in kf:
-        mf.setdefault(ident(k), []).append(k[2])
+        mf.setdefault(ident(k), []).append(width_of(k))
     for k in ko:
-        mo.setdefault(ident(k), []).append(k[2])
+        mo.setdefault(ident(k), []).append(width_of(k))
     if set(mf) != set(mo):
         return False, []
     diff = []
     for i in mf:
+        # ★★ 2026-09-28 收紧：**次数必须相同**才谈"仅宽度不同"。
+        #   实测（新锚点）：同（对象,偏移,方向）下"读 2 次 vs 读 1 次"会被旧实现
+        #   当成宽度差异而放过 —— 那是"少读/多读"，必须照旧报发散。
+        if len(mf[i]) != len(mo[i]):
+            return False, []
         if sorted(mf[i]) != sorted(mo[i]):
             diff.append('%s 宽 F=%s O=%s' % (i, sorted(set(mf[i])), sorted(set(mo[i]))))
     return bool(diff), diff[:6]
@@ -729,6 +890,54 @@ def void_fns_from_corpus():
     return out, '语料 %s：void 函数 %d 个' % (os.path.basename(d), len(out))
 
 
+def itanium_base(name):
+    """Itanium C++ ABI mangled 名 → **基础函数名**（最内层那一节）。非 mangled 原样返回。
+
+    ★ 为什么必须有它（2026-09-27，尺子缺陷实证）：
+      `void_fns_from_corpus()` 从 Ghidra 语料取的是**反编译后的名字**（demangle 形态）：
+          void inflate_blocks_reset(inflate_blocks_state *param_1, ...)
+          void unzlocal_DosDateToTmuDate(ulong param_1, tm_unz_s *param_2)
+      而 `compare()` 收到的 `fname` 是 **ELF 符号表里的 mangled 名**：
+          _Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm
+          _Z25unzlocal_DosDateToTmuDatemP8tm_unz_s
+      ⇒ `fname in void_fns` **永远 False** ⇒ 所有 C++ 函数的 void 判定失效
+      ⇒ 拿 void 函数的 **r0 残留值**当返回值比 ⇒ **假发散**（实测两条：
+         `_Z20inflate_blocks_reset` 的 `ret F=0x7d000100 O=0x0`、
+         `_Z25unzlocal_DosDateToTmuDate` 的 `ret F=0x8 O=0x7`）。
+
+    规则（Itanium ABI）：`_Z` 之后若为 `N` 则是嵌套名，逐节 `<长度><标识符>` 直到 `E`；
+    否则是单节 `<长度><标识符>`。函数名 = **最后一节**。
+    """
+    if not name or not name.startswith('_Z') or len(name) < 3:
+        return name
+    i = 2
+    last = None
+    nested = name[2:3] == 'N'
+    if nested:
+        i = 3
+    while i < len(name):
+        j = i
+        while j < len(name) and name[j].isdigit():
+            j += 1
+        if j == i or j >= len(name):
+            break                      # 没有长度前缀 ⇒ 不是合法的节
+        ln = int(name[i:j])
+        if ln <= 0 or j + ln > len(name):
+            break
+        last = name[j:j + ln]
+        i = j + ln
+        if not nested:
+            break
+    return last or name
+
+
+def is_void_fn(void_fns, fname):
+    """→ 该函数是否为 void（**同时按原名与 demangle 后的基础名查**）。"""
+    if not void_fns:
+        return False
+    return fname in void_fns or itanium_base(fname) in void_fns
+
+
 
 def read_ledger_text(txt):
     """台账文本 → (declared_steps|None, declared_escalate|None, [名字])。"""
@@ -786,6 +995,17 @@ def ledger_update(old, diverging, undecidable):
 
 def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     rows, verdict = [], 'PASS'
+    # ★★★ 2026-09-29 新增：**逐组机器可读明细**（`--dump-rows`）。
+    #   为什么必须（否则归类只能看人类的"前 80 行"截断）：
+    #   收敛的单位是**差异类别**（§0.2），而类别只能从**完整**的逐组指纹里聚出来。
+    #   报告里的 "前 80" 是给人看的摘要，**不是**可统计的数据源 ——
+    #   拿它做分类等于抽样，会直接导致"逐函数打补丁"式的绕圈。
+    xr = []
+
+    def _x(kind, sf_, so_, **kw):
+        d = dict(fn=fname, grp=cname, kind=kind, sf=sf_, so=so_)
+        d.update(kw)
+        xr.append(d)
     # ★ 可比访问区 = **两侧**具名数据对象的区间并集（排除 .got/.dynamic 等 link 元数据）
     spans = _build_spans(bf, bo)
     # ★ 访存指纹的归一口径以**工厂的符号绑定**为准（工厂是规格）
@@ -799,6 +1019,7 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
         ro = run_func(bo, fname, args, **kw)
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
+            _x('SKIP', None, None, err=str(rf.get('error') or ro.get('error'))[:100])
             continue
         cap_f, cap_o = rf['capped'], ro['capped']
         cap_both = cap_f and cap_o
@@ -813,9 +1034,28 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
             rows.append((cname, 'trunc', rf['ret'], ro['ret'], rf['insns'], ro['insns'],
                          'return', 'return', [],
                          '%s ⇒ 本组不可判（截断的一侧无观测力；需能终止的输入或提高 --steps）' % why))
+            _x('trunc', 'cap', 'cap', why=why)
             continue
         diffs = []
         sf, so = norm_stop(rf['stopped']), norm_stop(ro['stopped'])
+        # ★★★ 2026-09-29 新增：**参照侧(F)内存未映射早死 ⇒ 本组不可判**（机械实现 §2.3）。
+        #   机制：沙箱里 F 侧一解引用就 UC_ERR_*_UNMAPPED ⇒ 它的 calls_ext/访存/final **全都没有观测力**；
+        #   而我们这一侧继续跑完 ⇒ "F 侧空、O 侧有" 会被算成**我们的发散**。这就是 §2.3 点名、
+        #   但从 2026-09-22 起一直**没有做成机械判据**的老账。
+        #   实证（2026-09-29 GCC 6.3 臂）：80 行明细里 31 个函数中有 **22 个**是这一类
+        #   （clang 基线只有 6/39）⇒ 直接把 DIVERGE 从 44 抬到 92，**掩盖了真实信号**。
+        #   判据：仅当 **F 侧**因内存未映射停下、而 O 侧不是同一类停下 ⇒ 本组不可判（REFDEAD）。
+        #   ★ 反向（O 侧早死、F 侧正常）**不**豁免 —— 那才是我们自己的信号。
+        #   ★ 可关：`CGM_REFDEAD_OFF=1` 恢复旧口径（便于 A/B 与回归）。
+        _EARLY = ('UC_ERR_READ_UNMAPPED', 'UC_ERR_WRITE_UNMAPPED', 'UC_ERR_FETCH_UNMAPPED')
+        if (os.environ.get('CGM_REFDEAD_OFF') != '1' and sf in _EARLY and so not in _EARLY
+                and not cap_f and not cap_o):
+            rows.append((cname, 'refdead', rf['ret'], ro['ret'], rf['insns'], ro['insns'],
+                         sf, so, [],
+                         '参照侧(F)在 %s 早死（沙箱缺内存映射）⇒ 本组不可判；'
+                         'F 侧的外部调用/访存指纹无观测力，不得据此判我们发散（§2.3）' % sf))
+            _x('refdead', sf, so)
+            continue
         if sf != so:
             diffs.append('stop F=%s O=%s%s' % (sf, so, ' (cap-asym)' if cap_asym else ''))
         # ★ ret 只在**两侧都正常返回**且**都没被截断**时才是判据
@@ -825,9 +1065,11 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
             #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
             if rf['ret_content'] and rf['ret_content'] == ro['ret_content']:
                 pass
-            elif void_fns is not None and fname in void_fns:
+            elif is_void_fn(void_fns, fname):
                 # ★ void 函数的 r0 **不是输出**（实测 AudioProcess：工厂残留 0xf4240、
                 #   我们残留 0x0，其余观测量全一致）⇒ 不作判据（GAP 17.12）
+                # ★ 2026-09-27 修：查表必须走 `is_void_fn`（含 Itanium demangle），
+                #   否则所有 C++ mangled 函数都漏判 ⇒ 假发散（见 itanium_base 注释）。
                 ret_unjudged = True
             else:
                 diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
@@ -841,6 +1083,10 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
         rw_only, rw_why = (False, [])
         if rk_f != rk_o:
             rw_only, rw_why = read_width_only(rk_f, rk_o)
+            if os.environ.get('CGM_DBG_RW') == '1':
+                # ★ 调试钩子（2026-09-28）：宽度降级为什么没生效？打印**原始键**。
+                sys.stderr.write('  [rw] %s rw_only=%s\n      F=%s\n      O=%s\n'
+                                 % (fname, rw_only, rk_f, rk_o))
             if not rw_only:
                 diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
         common = set(rf['final']) & set(ro['final'])
@@ -875,21 +1121,49 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
                 '仪器：未建模外部调用不同 F=%s O=%s' % (sorted(um_f)[:5], sorted(um_o)[:5])
         if diffs:
             verdict = 'DIVERGE'
+        _x('DIVERGE' if diffs else ('info' if note else 'ok'), sf, so,
+           diffs=list(diffs), note=note,
+           wr_f=[list(x) for x in sorted(wk_f)], wr_o=[list(x) for x in sorted(wk_o)],
+           rd_f=[list(x) for x in sorted(rk_f)], rd_o=[list(x) for x in sorted(rk_o)],
+           ca_f=list(cf), ca_o=list(co))
         rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
                      rf['ret'], ro['ret'], rf['insns'], ro['insns'], sf, so, diffs, note))
     # 若**没有任何一组**能给出判定（全是 trunc）⇒ 该函数整体不可判
     if rows and all(r[1] == 'trunc' for r in rows):
         verdict = 'TRUNC'
+    # 若**没有任何一组**能给出判定（全是"参照侧早死"）⇒ 该函数整体不可判（REFDEAD）
+    elif rows and all(r[1] == 'refdead' for r in rows):
+        verdict = 'REFDEAD'
     if out is not None:
         out['ret_unjudged'] = 1 if ret_unjudged else 0
+        out['xrows'] = xr
     return verdict, rows
 
 
 # --------------------------------------------------------------------------- #
 def _zig():
-    z = os.environ.get('ZIG')
+    """多级解析 zig —— 必须同时在 Windows（zig.exe）与 Linux（zig）可用。
+    ★ 2026-09-29：旧实现只试环境变量 + Windows 默认路径 ⇒ 在 Linux/CI 上返回 None
+      （与 ub_census.py 同族缺陷；那一个直接导致云开发实验 link rc=18）。"""
+    import shutil
+    z = os.environ.get('ZIG') or os.environ.get('ZIG_BIN')
     if z and os.path.exists(z):
         return z
+    cc = (os.environ.get('CC') or '').strip()
+    if 'zig' in cc and os.path.exists(cc.split()[0]):
+        return cc.split()[0]
+    p = shutil.which('zig')
+    if p:
+        return p
+    try:
+        import ziglang
+        d = os.path.dirname(ziglang.__file__)
+        for nm in ('zig', 'zig.exe'):
+            c = os.path.join(d, nm)
+            if os.path.exists(c):
+                return os.path.abspath(c)
+    except Exception:
+        pass
     cand = os.path.join(os.path.dirname(sys.executable), '..', 'Lib', 'site-packages',
                         'ziglang', 'zig.exe')
     if os.path.exists(cand):
@@ -911,6 +1185,21 @@ unsigned probe(unsigned s) {
 }
 void _start(void) { for (;;) probe(1); }
 '''
+
+
+def partition_ok(stats, n_funcs):
+    """判据分桶自洽：PASS+DIVERGE+TRUNC+SKIP+REFDEAD 必须等于本轮函数数。
+
+    ★ 为什么必须独立成纯函数（2026-09-27）：汇总行曾把 INFO 并列成第四类，
+      让读者以为四类可相加 —— 实际 INFO 是**重叠计数**（只在 ok/info 行上另计）。
+      一旦某类被判据漏计，肉眼加总不会发现，报告会被当成"全绿"引用。
+      现在：不一致 ⇒ fail-closed（退出码 1），且本函数有正/反例锚点自证。
+    ★ 2026-09-29：新增第 5 桶 REFDEAD（参照侧库存早死 ⇒ 本组不可判，机械实现 §2.3）——
+      它**必须**计入等式，否则新桶会被静默漏计（正是本函数存在的理由）。
+    """
+    return (stats.get('PASS', 0) + stats.get('DIVERGE', 0)
+            + stats.get('TRUNC', 0) + stats.get('SKIP', 0)
+            + stats.get('REFDEAD', 0)) == n_funcs
 
 
 def self_test():
@@ -1064,6 +1353,26 @@ def self_test():
                 c('正例  void 集合从语料解析出来（AudioProcess 在其中）',
                   'AudioProcess' in vf, True)
                 c('正例  void 集合非平凡（>50 个）', len(vf) > 50, True)
+                # ★★ 2026-09-27 新增：Itanium demangle 查表（修 C++ 函数漏判 void）
+                c('正例  _Z20inflate_blocks_reset… → 基础名',
+                  itanium_base('_Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm'),
+                  'inflate_blocks_reset')
+                c('正例  _Z25unzlocal_DosDateToTmuDate… → 基础名',
+                  itanium_base('_Z25unzlocal_DosDateToTmuDatemP8tm_unz_s'),
+                  'unzlocal_DosDateToTmuDate')
+                c('正例  嵌套名 _ZN6TUnzip4OpenEPvjj → 最内层节',
+                  itanium_base('_ZN6TUnzip4OpenEPvjj'), 'Open')
+                c('正例  非 mangled 名原样返回', itanium_base('AudioProcess'), 'AudioProcess')
+                c('反例  基础名不在 void 集合 ⇒ 仍作判据（不得宽放）',
+                  is_void_fn({'inflate_blocks_reset'}, '_Z8luferrorP6LUFILE'), False)
+                c('正例  mangled 名经 demangle 命中 void 集合',
+                  is_void_fn({'inflate_blocks_reset'},
+                             '_Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm'),
+                  True)
+                c('正例  真 void 名两种形态都命中（AudioProcess）',
+                  is_void_fn({'AudioProcess'}, 'AudioProcess'), True)
+                c('反例  畸形 mangled 名不得抛出（且不得误命中）',
+                  itanium_base('_Z9') in (None, '_Z9'), True)
                 # ★ 只在一侧触上限时**不得**判 DIVERGE（否则把"跑得慢"当成"语义不同"）
                 v_a, _ = compare(BF, BO, 'AudioProcess', 3000, void_fns=vf)
                 c('反例  一侧触上限（3000 步）⇒ 必须 TRUNC，不得 DIVERGE', v_a, 'TRUNC')
@@ -1126,10 +1435,41 @@ def self_test():
             c('反例  地址集合不同（少读一个对象）⇒ 不得判为粒度差异',
               read_width_only([('A', 0x10, 4, 'R'), ('A', 0x20, 4, 'R')],
                               [('A', 0x10, 4, 'R')])[0], False)
-            c('反例  次数不同 ⇒ 不得判为粒度差异',
+            # ★ 2026-09-28 更正标签：本锚点实际比较的是 **0x10 vs 0x3BC40C**
+            #   ⇒ 它测的是"地址集合不同"，之前写成"次数不同"是**标签与内容不符**，
+            #   导致 count 这条语义长期没有锚点覆盖（真覆盖见下面 LN 的两条）。
+            c('反例  地址集合不同（两次读 vs 另一地址一次读）⇒ 不得判为粒度差异',
               read_width_only([('A', 0x10, 4, 'R'), ('A', 0x10, 4, 'R')], A4)[0], False)
+            c('反例  同址同宽但次数不同（2 vs 1）⇒ 不得判为粒度差异',
+              read_width_only([('A', 0x10, 4, 'R'), ('A', 0x10, 4, 'R')],
+                              [('A', 0x10, 4, 'R')])[0], False)
+            # ★★ 2026-09-28 新增：**'LN'（具名全局）形式的锚点** —— 旧锚点全是 'A' 形，
+            #   正是这个形态盲区让"取错宽度下标"的 bug 活了很久（实测 mui_search/mui_setting）。
+            c('正例  LN 同对象同偏移、仅宽度不同（4 vs 1）⇒ 粒度差异',
+              read_width_only([('LN', 'Flag', 0, 4, 'R')], [('LN', 'Flag', 0, 1, 'R')])[0], True)
+            c('反例  LN 同对象**不同偏移**（一侧少读）⇒ 不得判粒度',
+              read_width_only([('LN', 'G', 0, 4, 'R'), ('LN', 'G', 4, 4, 'R')],
+                              [('LN', 'G', 0, 4, 'R')])[0], False)
+            c('反例  LN 同偏移但读次数不同（2 vs 1）⇒ 不得判粒度',
+              read_width_only([('LN', 'G', 0, 4, 'R'), ('LN', 'G', 0, 4, 'R')],
+                              [('LN', 'G', 0, 4, 'R')])[0], False)
+            c('反例  LN 对象不同 ⇒ 不得判粒度',
+              read_width_only([('LN', 'A', 0, 4, 'R')], [('LN', 'B', 0, 4, 'R')])[0], False)
             c('反例  读写方向不同 ⇒ 不得判为粒度差异',
               read_width_only([('A', 0x10, 4, 'R')], [('A', 0x10, 4, 'W')])[0], False)
+            # 分桶自洽（2026-09-27，P0-B）：真实头条数字 661/75/5/0 = 741
+            c('正例  分桶自洽：661+75+5+0+0 == 741',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 0}, 741), True)
+            c('反例  少算一个函数（741 vs 746）⇒ 必须判为不自洽',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 0}, 746), False)
+            c('反例  把 INFO 当加数（661+75+39+5=780≠741）⇒ 必须判为不自洽',
+              partition_ok({'PASS': 661 + 39, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 0},
+                           741), False)
+            # ★ 2026-09-29 新增锚点：REFDEAD 桶**必须**计入等式（否则新桶被静默漏计）
+            c('反例  REFDEAD 漏计（661+75+5+0=741，另有 20 个 REFDEAD）⇒ 必须判为不自洽',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0}, 761), False)
+            c('正例  REFDEAD 计入后自洽：661+75+5+0+20 == 761',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 20}, 761), True)
     return chk
 
 
@@ -1142,6 +1482,9 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--steps', type=int, default=20000)
     ap.add_argument('--out')
+    ap.add_argument('--dump-rows', dest='dump_rows',
+                    help='把**逐组机器可读明细**（含两侧归一化后的访存/调用指纹）写成 JSON。'
+                         '★ 归类（差异类别收敛）必须用它，不得用报告里的"前 80"截断摘要。')
     ap.add_argument('--ledger', help='发散棘轮台账：只允许减少，不允许新增')
     ap.add_argument('--update-ledger', action='store_true', help='用当前发散集重写台账')
     ap.add_argument('--self-test', action='store_true')
@@ -1206,7 +1549,7 @@ def main():
         names = common[:a.limit] if a.limit else common
         esc_steps = a.steps * ESCALATE_FACTOR
         void_fns, vmsg = void_fns_from_corpus()
-        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0}
+        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0, 'REFDEAD': 0}
         n_esc = 0                      # 靠放大预算才判出来的函数数
         n_voidret = 0                  # r0 因"返回类型 void"而未作判据的函数数
         voidret_names = []
@@ -1214,7 +1557,9 @@ def main():
         det = []
         div_names_all = []
         trunc_names = []
+        refdead_names = []
         skip_names = []
+        all_x = []          # ★ `--dump-rows` 用：逐组机器可读明细（**不截断**）
         for i, n in enumerate(names):
             o = {}
             v, rows = compare(BF, BO, n, a.steps, void_fns=void_fns, out=o)
@@ -1225,6 +1570,8 @@ def main():
                 if v2 != 'TRUNC':
                     v, rows, o = v2, rows2, o2
                     n_esc += 1
+            if a.dump_rows:
+                all_x.extend(o.get('xrows') or [])
             if o.get('ret_unjudged'):
                 n_voidret += 1
                 if len(voidret_names) < 40:
@@ -1236,6 +1583,8 @@ def main():
                 div_names_all.append(n)
             elif v == 'TRUNC':
                 trunc_names.append(n)
+            elif v == 'REFDEAD':
+                refdead_names.append(n)
             elif v == 'SKIP':
                 skip_names.append(n)
             if any(len(r) > 9 and r[9] for r in rows if r[1] in ('ok', 'info')):
@@ -1250,6 +1599,9 @@ def main():
             if (i + 1) % 10 == 0:
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
+                 '  分母口径：工厂 STT_FUNC ∧ 有名 ∧ st_size>0 = 804（权威，与 ledger/functions.csv 同源）',
+                 '  ⚠ 已排除工厂 st_size==0 的无长度别名 %d 个（工具链 CRT/libgcc，非重建范围）：%s'
+                 % (len(BF.zero_len_funcs), ', '.join(sorted(BF.zero_len_funcs)) or '（无）'),
                  '  共有函数 %d；本轮 %d 个；每函数 3 组输入' % (len(common), len(names)),
                  '  被测产物：%s (sha256 %s)' % (ART['ours']['path'], ART['ours']['sha256'][:16]),
                  '  对照产物：%s (sha256 %s)' % (ART['factory']['path'], ART['factory']['sha256'][:16]),
@@ -1257,8 +1609,17 @@ def main():
                  % (a.steps, ESCALATE_FACTOR, n_esc),
                  '  返回类型：%s；r0 未作判据（void）的函数 %d 个'
                  % (vmsg, n_voidret),
-                 '  汇总：PASS %d | DIVERGE %d | INFO(内联等价) %d | TRUNC(不可判) %d | SKIP %d'
-                 % (stats['PASS'], stats['DIVERGE'], stats['INFO'], stats['TRUNC'], stats['SKIP']),
+                 '  汇总：PASS %d ｜ DIVERGE %d ｜ TRUNC(不可判) %d ｜ REFDEAD(参照侧早死) %d ｜ SKIP %d'
+                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP']),
+                 '        （另：INFO「内联等价留痕」%d 个 —— 在 ok/info 行上单独计数，**与上面各类不互斥**，'
+                 '不可相加）' % stats['INFO'],
+                 '  ★ 自洽校验：%d + %d + %d + %d + %d = %d ；本轮函数数 = %d ⇒ %s'
+                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP'],
+                    stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['REFDEAD'] + stats['SKIP'],
+                    len(names),
+                    'OK' if (stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['REFDEAD']
+                             + stats['SKIP']) == len(names)
+                    else '★ 不一致 ⇒ 判据分桶有漏项，本报告不可引用 ★'),
                  '', '  --- DIVERGE 明细（前 80）---']
         lines.extend(det[:80])
         lines.append('')
@@ -1271,6 +1632,10 @@ def main():
         lines.append('')
         lines.append('  --- TRUNC：两侧均触步数上限，判据对其无观测力（不可判 ≠ 已收敛）---')
         lines.extend('  %s' % n for n in (trunc_names[:40] or ['（无）']))
+        lines.append('')
+        lines.append('  --- REFDEAD：**参照侧(F)在沙箱里内存未映射早死** ⇒ 本组不可判'
+                     '（不得算成我们的发散；§2.3 的机械实现）---')
+        lines.extend('  %s' % n for n in (refdead_names[:40] or ['（无）']))
         lines.append('')
         lines.append('  --- SKIP：一侧执行环境报错，本组无判据 ---')
         lines.extend('  %s' % n for n in (skip_names[:40] or ['（无）']))
@@ -1289,8 +1654,18 @@ def main():
             lines.append('  （无）')
         # ★ 棘轮台账：只允许"发散函数减少"，不允许新增（防"修一个坏一个"）
         div_names = sorted(set(div_names_all))
-        undecidable = set(trunc_names) | set(skip_names)
+        undecidable = set(trunc_names) | set(skip_names) | set(refdead_names)
         rc = 1 if stats['DIVERGE'] else 0
+        # ★ 分桶自洽（fail-closed）：PASS+DIVERGE+TRUNC+SKIP+REFDEAD 必须**等于**本轮函数数。
+        #   不等 ⇒ 有函数没被计入任何一桶（判据漏项）⇒ 报告不可引用 ⇒ 直接红。
+        #   来源：2026-09-27 发现 INFO 曾被并列在汇总行里，让人误以为四类可相加（实际 INFO 是重叠计数）。
+        _part_ok = partition_ok(stats, len(names))
+        if not _part_ok:
+            sys.stderr.write('★★ 分桶不自洽：PASS+DIVERGE+TRUNC+SKIP+REFDEAD ≠ 本轮函数数 '
+                             '(%d+%d+%d+%d+%d vs %d)\n'
+                             % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'],
+                                stats['SKIP'], stats['REFDEAD'], len(names)))
+            rc = 1
         if a.ledger:
             old_steps = old_esc = None
             old = []
@@ -1316,7 +1691,7 @@ def main():
                 lines.append('  收敛移除 %d 项：%s' % (len(removed), removed[:30]))
                 if kept_und:
                     lines.append('  ★ 保留的"不可判"债务（TRUNC/SKIP ≠ 已收敛）：%s' % kept_und[:30])
-                rc = 0
+                rc = 0 if _part_ok else 1
             else:
                 if not ledger_steps_ok(old_steps, old_esc, a.steps, esc_steps):
                     lines.append('')
@@ -1357,6 +1732,19 @@ def main():
         if a.out:
             with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
                 fh.write(txt + '\n')
+        if a.dump_rows:
+            # ★★★ 机器可读明细（不截断）：归类唯一合法的数据源。
+            #   同时记录**两侧产物 sha + 判据强度**，否则下游归类无法证明它读的是哪一版。
+            meta = dict(ours=ART['ours'], factory=ART['factory'],
+                        steps=a.steps, escalate_factor=ESCALATE_FACTOR,
+                        shared=len(common), judged=len(names),
+                        stats={k: stats[k] for k in
+                               ('PASS', 'DIVERGE', 'TRUNC', 'REFDEAD', 'SKIP', 'INFO')},
+                        refdead_off=(os.environ.get('CGM_REFDEAD_OFF') == '1'))
+            with open(a.dump_rows, 'w', encoding='utf-8', newline='\n') as fh:
+                json.dump(dict(meta=meta, rows=all_x), fh, ensure_ascii=False)
+            print('  ★ 逐组明细已写出：%s（%d 行；含两侧归一化访存/调用指纹）'
+                  % (a.dump_rows, len(all_x)))
         return rc
 
     ap.print_help()

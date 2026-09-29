@@ -78,7 +78,22 @@ fi
 #   构建到 "$OUT/guest_shim.so"，再由 run_side 在铺完环境之后 cp 进 $WORK。
 SHIM="$OUT/guest_shim.so"
 SHIM_ON=0
-if [ "${CGM_GUEST_SHIM:-1}" = "1" ] && sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
+# ★★ 2026-09-27 新增：`CGM_SHIM_SO=<预编译 .so>` 时**直接用**它，不现场编译。
+#   为什么需要（实证）：CNB 工作区里**没有 armhf 交叉编译器**（`cc: command not found`）
+#   ⇒ 旧逻辑静默把 SHIM 置空 ⇒ **guest 不带 shim** ⇒ 走不到 SFC 就崩在 NULL GPIO，
+#     于是"严格设备模式"实验得到 violation=0 的**假阴性**。
+#   shim 本身可以用 `zig cc -target arm-linux-gnueabihf.2.29` 在开发机编好（已验证），
+#   没必要要求每台运行机都装交叉编译器。
+if [ -n "${CGM_SHIM_SO:-}" ]; then
+    if [ -f "$CGM_SHIM_SO" ]; then
+        cp -f "$CGM_SHIM_SO" "$SHIM"
+        SHIM_ON=1
+        echo "guest shim = $SHIM（来自 CGM_SHIM_SO=$CGM_SHIM_SO，跳过现场编译）"
+    else
+        echo "!! CGM_SHIM_SO 指定了不存在的文件：$CGM_SHIM_SO"
+        SHIM=""
+    fi
+elif [ "${CGM_GUEST_SHIM:-1}" = "1" ] && sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
     SHIM_ON=1
     echo "guest shim = $SHIM（已构建；两侧都加载它）"
 else
@@ -121,7 +136,7 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done

@@ -813,6 +813,64 @@ static void mmio_trace(unsigned int off, unsigned int size, int is_read, unsigne
          g_mmio_seq, off, size, is_read ? "R" : "W", pc);
 }
 
+/* ============================================================
+ * ★★ 严格设备模式（CGM_MMIO_STRICT=1）：把"真机的总线约束"搬进沙箱
+ *
+ * 为什么必须有它（这是"每轮一次上机"的**结构性成因 #2**，见 ROUTE-DECISION.md §一）：
+ *   真机上 SFC 寄存器区只接受 **32 位**访问；做 16 位访问 ⇒ **SIGBUS(7)**
+ *   （实测 PC = `sfc_init+0x6c` = `ldrh r1,[r0,#0x2c]`）。
+ *   而本 shim 此前**刻意容忍**窄访问（`sfc_dev_read` 的注释写着"重建侧读状态用的是
+ *   `ldrh r1,[r0,#34]`"⇒ 按字节偏移应答，好让 guest 走得更深）。
+ *   ⇒ 后果：**真机判死的缺陷，沙箱里判活** ⇒ 每次判定只能真机往返一次。
+ *
+ * 做法（类级，不是抽样）：本函数挂在**所有已解码设备访问路径的唯一咽喉点**
+ *   `mmio_access()` 上——即 LDM/STM、半字/字节、单寄存器 三组的共同出口。
+ *   宽度 < 下限 ⇒ 复刻设备行为：**交付 SIGBUS**（`signal(SIGBUS,SIG_DFL); raise(SIGBUS);`）。
+ *
+ * 开关与下限（都可调，默认关以免污染既有场景）：
+ *   CGM_MMIO_STRICT=1        启用
+ *   CGM_MMIO_MIN_WIDTH=4     最小合法宽度（真机 SFC 为 4）
+ *
+ * ★ 判据的双向要求（防"放宽/收紧各自作弊"）：
+ *   · 修复前产物（`build/_prewidth.rebuilt.elf`）**必须**在此模式下 SIGBUS
+ *     ⇒ 证明装置真的能复现真机缺陷；
+ *   · 当前交付产物**必须**不报 violation ⇒ 证明修复在沙箱里可验证。
+ *   两条都成立，才允许把结论写成"根因已修"，不必再消耗真机往返。
+ * ============================================================ */
+static int g_mmio_strict   = -1;
+static unsigned int g_mmio_min_w = 4;
+
+static void mmio_strict_check(unsigned int off, unsigned int size,
+                              int is_read, unsigned long pc)
+{
+    if (g_mmio_strict < 0) {
+        const char *e = getenv("CGM_MMIO_STRICT");
+        const char *m = getenv("CGM_MMIO_MIN_WIDTH");
+        g_mmio_strict = (e && e[0] && e[0] != '0') ? 1 : 0;
+        if (m && m[0]) {
+            unsigned int w = (unsigned int)atoi(m);
+            if (w >= 1u && w <= 4u) g_mmio_min_w = w;
+        }
+    }
+    if (!g_mmio_strict) return;
+    if (size >= g_mmio_min_w) return;
+    note("★★ MMIO-STRICT VIOLATION: off=0x%x w=%u < min=%u dir=%s pc=0x%08lx\n",
+         off, size, g_mmio_min_w, is_read ? "R" : "W", pc);
+    fflush(stderr);
+    (void)signal(SIGBUS, SIG_DFL);
+    (void)raise(SIGBUS);
+    /* 保底（raise 理论上不会返回）：对非法地址写一次，确保进程以 SIGBUS/SIGSEGV 终止 */
+    *(volatile unsigned int *)0 = 0u;
+}
+
+/* 所有设备访问路径的**唯一咽喉点**：trace + 严格检查。 */
+static void mmio_access(unsigned int off, unsigned int size,
+                        int is_read, unsigned long pc)
+{
+    mmio_trace(off, size, is_read, pc);
+    mmio_strict_check(off, size, is_read, pc);
+}
+
 static void sfc_fault(int sig, siginfo_t *si, void *vctx)
 {
     ucontext_t *uc = (ucontext_t *)vctx;
@@ -933,7 +991,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
         {   /* ★ trace：块传送（宽度 = 4 × 寄存器个数） */
             unsigned int nc = 0;
             for (i = 0; i < 16; i++) if ((rl >> i) & 1u) nc++;
-            mmio_trace(off, nc * 4u, (ins >> 20) & 1u, (unsigned long)m->arm_pc);
+            mmio_access(off, nc * 4u, (ins >> 20) & 1u, (unsigned long)m->arm_pc);
         }
         if (ins & (1u << 20)) {
             for (i = 0; i < 16; i++) {
@@ -954,7 +1012,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
         P = (ins >> 24) & 1u; U = (ins >> 23) & 1u; W = (ins >> 21) & 1u;
         size = ((ins >> 5) & 1u) ? 2u : 1u;          /* H=1 → 半字；H=0（S=1）→ 有符号字节 */
         wb = (P == 0) || W;
-        mmio_trace(off, size, L, (unsigned long)m->arm_pc);      /* ★ trace：半字/字节组 */
+        mmio_access(off, size, L, (unsigned long)m->arm_pc);      /* ★ trace+严格：半字/字节组 */
         if (L) {
             v = sfc_dev_read(off, size);
             if ((ins >> 6) & 1u) {                   /* S=1：LDRSB / LDRSH → 符号扩展 */
@@ -994,7 +1052,7 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
     W = (ins >> 21) & 1u; L = (ins >> 20) & 1u;
     Rn = (ins >> 16) & 0xFu; Rd = (ins >> 12) & 0xFu;
     wb = (P == 0) || W;
-    mmio_trace(off, size, L, (unsigned long)m->arm_pc);          /* ★ trace：单寄存器组 */
+    mmio_access(off, size, L, (unsigned long)m->arm_pc);          /* ★ trace+严格：单寄存器组 */
 
     if (L) {
         v = sfc_dev_read(off, size);

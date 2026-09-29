@@ -14,7 +14,9 @@ void mui_DisplayGameSum(void)
   gh_u4 uVar1;
   int iVar2;
   int iVar3;
-  gh_u4 uStack_98;
+  /* 根修（UB）：`sprintf((char*)&uStack_98, "%3d/%3d", ...)` 最多写 7 字节 + NUL，
+     而 Ghidra 只声明 4 字节 gh_u4 ⇒ 越界 = UB。恢复成 16 字节缓冲（保对齐）。 */
+  gh_u1 uStack_98[16];
   gh_undef *puStack_94;
   
   iVar3 = DAT_003af318;
@@ -26,16 +28,16 @@ void mui_DisplayGameSum(void)
   mui_Undisplay(DAT_003af314,DAT_003af318,DAT_003af31c,DAT_003af320);
   uVar1 = DAT_003af394;
   if (DAT_003af288 == 0) {
-    uStack_98 = 0x2f2d2020;
+    *(gh_u4 *)(void *)uStack_98 = 0x2f2d2020;
     puStack_94 = DAT_0020202d;
   }
   else {
     iVar2 = __aeabi_idiv(DAT_003af288,DAT_003af394);
     iVar3 = __aeabi_idiv(DAT_003af278 + DAT_003af27c,uVar1);
-    sprintf((char *)&uStack_98,"%3d/%3d",iVar3 + 1,iVar2 + 1);
+    sprintf((char *)uStack_98,"%3d/%3d",iVar3 + 1,iVar2 + 1);
     iVar2 = OutRect._8_4_;
     iVar3 = OutRect._12_4_;
   }
-  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(gh_u1)DAT_003af324,DAT_003af328,(gh_byte *)&uStack_98);
+  mui_outputxy_t(DAT_003af29c,iVar2 + 8,iVar3 + 6,(gh_u1)DAT_003af324,DAT_003af328,(gh_byte *)uStack_98);
   return;
 }

@@ -27,7 +27,6 @@ filelist_run_game SoundPlay LOW
 mui_SoundplayThread SoundPlay LOW
 mui_run_game SoundPlay LOW
 main UpdateROM LOW
-_ZN6TUnzip4FindEPKchPiP8ZIPENTRY _Z13unzLocateFileP5unz_sPKci LOW
 mui_load_state blockadaptive LOW
 mui_save_state blockadaptive LOW
 PauseMenu blockcopy LOW

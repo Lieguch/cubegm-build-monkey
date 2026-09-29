@@ -133,7 +133,7 @@ void mui_LoadSetting(void)
           }
         }
         DAT_003af30c = 0;
-        memset(&DAT_003af2bc,0,0x50);
+        memset(DAT_003af2bc,0,0x50);
         iVar3 = mxmlFindElement(tree,tree,"filebrowser",0,0,1);
         if (iVar3 == 0) {
           DAT_003af748 = 0x6d6f722f;
@@ -212,7 +212,7 @@ LAB_000178ec: ;
         }
         if (iVar5 == 0) {
           puVar12 = malloc(0x44);
-          DAT_003af2bc = puVar12;
+          *(void **)(void *)DAT_003af2bc = puVar12;
           *puVar12 = 0xe480aee7;
           puVar12[1] = 0xb8e493bd;
           puVar12[2] = 0x8796e6ad;

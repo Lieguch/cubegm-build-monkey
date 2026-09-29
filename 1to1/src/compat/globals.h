@@ -4147,7 +4147,10 @@ extern char DAT_002dcea4[];
 /* @0x003af2b0 undefined4 */ extern gh_u1 *  DAT_003af2b0;
 /* @0x003af2b4 undefined4 */ extern gh_u1 *  DAT_003af2b4;
 /* retyped */ extern gh_u4 * DAT_003af2b8;  /* 证据：同 DAT+1 代码模式 */
-/* @0x003af2bc undefined4 */ extern void * DAT_003af2bc;  /* 修正：承载 UI 缓冲指针(puVar12) */
+/* @0x003af2bc **0x50 字节对象**（不是 4 字节指针）——
+   根修（UB）：`memset(&DAT_003af2bc, 0, 0x50)` 写 80 字节，而声明只有 4 字节 ⇒ 越界 = UB。
+   首个字段是 `void*`（`DAT_003af2bc = puVar12`），故用缓冲 + 显式转换。 */
+extern gh_u1 DAT_003af2bc[0x50];
 /* @0x003af2c0 undefined4 */ extern void * DAT_003af2c0;  /* 修正：承载字符串指针(pcVar4) */
 /* @0x003af30c undefined4 */ extern unsigned int DAT_003af30c;
 /* @0x003af310 undefined4 */ extern unsigned int DAT_003af310;

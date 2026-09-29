@@ -615,6 +615,22 @@ jobs:
           echo '--- 发散 → 根因类别 ---'
           sed -n '/类别            个数/,/^$/p' report/audit_vs_factory.txt
 
+      - name: 末尾标签门禁（真 GCC 不容忍、clang 容忍）★ 硬门禁
+        id: s44
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # 为什么（第 66 轮缺陷 + 2026-09-27 审计补漏）：
+          #   真实 GCC 6.3（`-std=gnu11`）对 `LAB_...:` 紧跟 `}` 报
+          #   `error: label at end of compound statement`，而 **clang 容忍** ⇒
+          #   只用 clang/zig 编译时该缺陷**从不暴露**。
+          #   ★ 补漏发现两件事（都属"造了闸门却没上锁"）：
+          #     ① 本门禁此前**从未接进任何 workflow/脚本** ⇒ 永远不会让构建变红；
+          #     ② 它自己的 --selftest 有 1 条失败（"连续两个末尾标签"只报 B、漏报 A）
+          #        ⇒ 闸门自证都没过，却在日志里宣称"0 处"。两处本轮都已修。
+          python3 tools/scan_trailing_label.py --selftest
+          python3 tools/scan_trailing_label.py --root .
+
       - name: 门禁汇总（写入 Job Summary）
         id: s40
         if: always()

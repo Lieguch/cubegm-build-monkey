@@ -19,10 +19,22 @@ void UpdateROM(char *param_1)
   gh_u4 uVar3;
   size_t unaff_r7;
   gh_bool bVar4;
-  char local_15c;
-  char local_15b;
-  char local_15a;
-  gh_u1 auStack_158 [4];
+  /* ★★ 2026-09-27 根修（UB #2，真根因）：这三个名字其实是**同一块 3 字节缓冲**的
+   *   三个字节（Ghidra 把一块缓冲拆成了三个独立 `char`）。拆开之后，源码里只有
+   *   `local_15c` 被 `fread` 写过，`local_15b`/`local_15a` 在编译器看来**从未被写**
+   *   ⇒ 读未初始化值 = **UB** ⇒ clang 可任意取值，实测它选了"条件恒真"
+   *   ⇒ **把 fread 之后的整段函数体删掉**（-O0=2660B 完整 / -Os=112B / 工厂 976B）。
+   *   修法：恢复成一块真正的 3 字节缓冲并按字节读。 */
+  char local_magic[3];
+  /* ★★ 2026-09-27 根修（UB）：Ghidra 把这块栈缓冲写成 `[4]`（**假尺寸**），
+   *   而函数体 `memset(auStack_158, 0, 0x130)` 实际写 304 字节 ⇒ **越界 = UB** ⇒
+   *   clang 在任何 `-O1` 及以上**判定其后代码不可达并删掉整段**：
+   *     实测 UpdateROM 尺寸 -O0=2660B（完整） / -O1=116B / -Os=112B / -O2=116B，
+   *     工厂（GCC 6.2 优化） = **976B** ⇒ 闪写 + CRC 校验 + 安全区写 + sync/reboot **约 864B 被删**。
+   *   证据链：`tools/ub_census.py`（编译器原话 `'memset' will always overflow; destination
+   *   buffer has size 4, but size argument is 304`）+ `tools/size_coverage_gate.py`（0.115x）。
+   *   修法：把声明恢复到**真实对象尺寸**（0x130），UB 消失 ⇒ 优化器无从删代码。 */
+  gh_u1 auStack_158 [0x130];
   gh_u1 auStack_154 [268];
   int local_48;
   int local_30;
@@ -33,9 +45,9 @@ void UpdateROM(char *param_1)
     printf("Load %s fail!\n",param_1);
     return;
   }
-  fread(&local_15c,1,3,__stream);
+  fread(local_magic,1,3,__stream);
   fclose(__stream);
-  if (((local_15c != 'W') || (local_15b != 'Q')) || (local_15a != 'W')) {
+  if (((local_magic[0] != 'W') || (local_magic[1] != 'Q')) || (local_magic[2] != 'W')) {
     printf("%s format error!\n",param_1);
     return;
   }

@@ -29,6 +29,8 @@
 3. **可自证**：表与判定函数都是**纯函数**，不依赖本项目数据即可断言
    （见 `--self-test`），例如 `_ISbit` 必须等于 glibc 文档值、`toupper` 表与 `toupper()` 函数一致。
 """
+import io
+import re
 import struct
 
 # --------------------------------------------------------------------------- #
@@ -155,6 +157,11 @@ def _cmp(a, b):
 #   工厂侧因名字不同而"未建模 ⇒ 返回 0"，我们的 `strdup` 却真执行 ⇒ 制造假发散。
 #   ★ `_chk` 版本的额外参数（destlen）在尾部 ⇒ 前几个参数与主名一致，可直接复用。
 # --------------------------------------------------------------------------- #
+# 模型**故意不建模**的别名目标（必须显式列出，不得静默）：
+#   它们没有处理分支 ⇒ 调用走兜底 0 并记进 `unmodelled`。仍然建别名，是为了让
+#   两侧归一到**同一个未建模名**（否则一侧建模、一侧不建模 ⇒ 假发散）。
+NOT_MODELLED = frozenset({"getc", "putc"})
+
 ALIASES = {
     '__strdup': 'strdup',
     '__strndup': 'strndup',
@@ -166,6 +173,16 @@ ALIASES = {
     '__strcat_chk': 'strcat',
     '__stpcpy_chk': 'stpcpy',
     '_IO_getc': 'getc',
+    # ★★ 2026-09-28 补：`_IO_putc` 曾是**漏网**（模型只建了 `_IO_getc`）。
+    #   证据：工厂导入 `_IO_putc`（真 glibc 2.24 头 + 优化档 ⇒ stdio.h 走 extern-inline），
+    #   我方旧构建导入 `putc` ⇒ 工厂侧这条外部调用**只有一侧被建模** ⇒ 假发散。
+    #   对账工具：`python tools/model_coverage.py`（列"单侧未建模"符号）。
+    '_IO_putc': 'putc',
+    # ★★ 2026-09-28 补：`bcmp` = glibc 里 `memcmp` 的别名。
+    #   而 clang 会把 `strcmp(x,"字面量") == 0` 优化成 `bcmp(x,"字面量",len+1)`
+    #   （实测站点 `main` r2=0x11=17、`mui_InitFont`；GCC 6.2 不做这个变换）
+    #   ⇒ 我方侧 `bcmp` 未建模、工厂侧 `strcmp` 已建模 ⇒ 假发散。
+    'bcmp': 'memcmp',
     '__getc': 'getc',
     '__libc_malloc': 'malloc',
     # ★ C++ `operator new/delete`（工厂的 zip_utils/xunzip 是 C++）——**必须有**：
@@ -184,6 +201,20 @@ class Model(object):
         self.unmodelled = []          # 未建模的调用名（**必须列名落盘**）
         self.modelled = []            # 已建模的调用名
         self.heap_top = HEAP_BASE
+
+    def reset(self, mu):
+        """★ 2026-09-29：**复用同一个 Unicorn 实例**时的复位（几何不变，只重置状态与内容）。
+
+        为什么需要：`diff_exec` 原先每个函数新建实例 ⇒ 4700 个实例、C 侧内存归还不及 ⇒
+        `MemoryError`。改成复用后，`map_regions` 只能调一次（重复 mem_map 同址会整体失败），
+        所以把"每次都要重置"的部分单独拆到这里。
+        ★ 堆**重新涂 0xa5**而不是清零 —— 与 `map_regions` 同一条纪律：
+          `malloc` 的未初始化内存若被读到，差异必须暴露（清零会抹掉 malloc/calloc 的语义差）。
+        """
+        self.unmodelled = []
+        self.modelled = []
+        self.heap_top = HEAP_BASE
+        mu.mem_write(HEAP_BASE, b'\xa5' * HEAP_SIZE)
 
     # ---- 与 Unicorn 的接口 -------------------------------------------------
     def map_regions(self, mu):
@@ -430,13 +461,26 @@ def self_test():
     # 6) 堆不清零（否则 malloc/calloc 语义差被抹掉 ⇒ 假 PASS）
     c('堆哨兵字节非 0（不清零）', 0xA5 != 0, True)
 
-    # 7) 异名同函数表：必须都指向**模型里真的实现了**的主名（防悬空别名）
-    impl = {'strdup', 'strndup', 'memcpy', 'memmove', 'memset', 'strcpy',
-            'strncpy', 'strcat', 'stpcpy', 'malloc', 'free', 'getc'}
-    c('ALIASES 的主名都在模型里存在（或明确不建模）',
-      set(ALIASES.values()) <= impl, True)
+    # 7) 异名同函数表：别名目标必须**要么被真正实现、要么显式声明不建模**
+    #    ★★ 2026-09-28 修：旧实现用手写集合 `impl`，**已经腐烂** —— 它把 `getc` 列成
+    #       "已实现"，而模型里没有 getc 的处理分支 ⇒ 断言恒真、从未真正生效。
+    #       改为**从模型源码机械推导**已实现名（`if name == 'x'` / `if name in (...)`）。
+    _src = io.open(__file__, encoding='utf-8').read()
+    _modelled = set(re.findall(r"if name == '([^']+)'", _src))
+    for _t in re.findall(r"if name in \(([^)]*)\):", _src):
+        _modelled |= set(re.findall(r"'([^']+)'", _t))
+    c('ALIASES 的别名目标：都被实现或显式不建模（机械推导，非手写清单）',
+      set(ALIASES.values()) <= (_modelled | NOT_MODELLED), True)
+    c('反例  手写清单式断言会腐烂：getc 不在已实现集（模型确无处理分支）',
+      'getc' in _modelled, False)
+    c('正例  memcmp 已被实现（由源码机械推导出来）', 'memcmp' in _modelled, True)
+    c('正例  putc 被显式声明为不建模（不得静默）', 'putc' in NOT_MODELLED, True)
     c("__strdup ⇒ strdup（实测工厂侧用 __strdup、我方用 strdup）",
       ALIASES.get('__strdup'), 'strdup')
+    c("_IO_putc ⇒ putc（工厂导入 _IO_putc；旧模型漏建）",
+      ALIASES.get('_IO_putc'), 'putc')
+    c("bcmp ⇒ memcmp（glibc 别名；clang 把 strcmp==0 优化成它）",
+      ALIASES.get('bcmp'), 'memcmp')
     return chk
 
 

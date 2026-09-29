@@ -1,12 +1,17 @@
 /*
- * Attribute support code for Mini-XML, a small XML file parsing library.
+ * "$Id$"
  *
- * https://www.msweet.org/mxml
+ * Attribute support code for Mini-XML, a small XML-like file parsing library.
  *
- * Copyright © 2003-2021 by Michael R Sweet.
+ * Copyright 2003-2014 by Michael R Sweet.
  *
- * Licensed under Apache License v2.0.  See the file "LICENSE" for more
- * information.
+ * These coded instructions, statements, and computer programs are the
+ * property of Michael R Sweet and are protected by Federal copyright
+ * law.  Distribution and use rights are outlined in the file "COPYING"
+ * which should have been included with this file.  If this file is
+ * missing or damaged, see the license at:
+ *
+ *     http://www.msweet.org/projects.php/Mini-XML
  */
 
 /*
@@ -14,14 +19,15 @@
  */
 
 #include "config.h"
-#include "mxml-private.h"
+#include "mxml.h"
 
 
 /*
  * Local functions...
  */
 
-static int	mxml_set_attr(mxml_node_t *node, const char *name, char *value);
+static int	mxml_set_attr(mxml_node_t *node, const char *name,
+		              char *value);
 
 
 /*
@@ -35,7 +41,7 @@ mxmlElementDeleteAttr(mxml_node_t *node,/* I - Element */
                       const char  *name)/* I - Attribute name */
 {
   int		i;			/* Looping var */
-  _mxml_attr_t	*attr;			/* Cirrent attribute */
+  mxml_attr_t	*attr;			/* Cirrent attribute */
 
 
 #ifdef DEBUG
@@ -73,7 +79,7 @@ mxmlElementDeleteAttr(mxml_node_t *node,/* I - Element */
 
       i --;
       if (i > 0)
-        memmove(attr, attr + 1, i * sizeof(_mxml_attr_t));
+        memmove(attr, attr + 1, i * sizeof(mxml_attr_t));
 
       node->value.element.num_attrs --;
 
@@ -88,16 +94,16 @@ mxmlElementDeleteAttr(mxml_node_t *node,/* I - Element */
 /*
  * 'mxmlElementGetAttr()' - Get an attribute.
  *
- * This function returns @code NULL@ if the node is not an element or the
+ * This function returns NULL if the node is not an element or the
  * named attribute does not exist.
  */
 
-const char *				/* O - Attribute value or @code NULL@ */
+const char *				/* O - Attribute value or NULL */
 mxmlElementGetAttr(mxml_node_t *node,	/* I - Element node */
                    const char  *name)	/* I - Name of attribute */
 {
   int		i;			/* Looping var */
-  _mxml_attr_t	*attr;			/* Cirrent attribute */
+  mxml_attr_t	*attr;			/* Cirrent attribute */
 
 
 #ifdef DEBUG
@@ -146,48 +152,6 @@ mxmlElementGetAttr(mxml_node_t *node,	/* I - Element node */
 
 
 /*
- * 'mxmlElementGetAttrByIndex()' - Get an element attribute by index.
- *
- * The index ("idx") is 0-based.  @code NULL@ is returned if the specified index
- * is out of range.
- *
- * @since Mini-XML 2.11@
- */
-
-const char *                            /* O - Attribute value */
-mxmlElementGetAttrByIndex(
-    mxml_node_t *node,                  /* I - Node */
-    int         idx,                    /* I - Attribute index, starting at 0 */
-    const char  **name)                 /* O - Attribute name */
-{
-  if (!node || node->type != MXML_ELEMENT || idx < 0 || idx >= node->value.element.num_attrs)
-    return (NULL);
-
-  if (name)
-    *name = node->value.element.attrs[idx].name;
-
-  return (node->value.element.attrs[idx].value);
-}
-
-
-/*
- * 'mxmlElementGetAttrCount()' - Get the number of element attributes.
- *
- * @since Mini-XML 2.11@
- */
-
-int                                     /* O - Number of attributes */
-mxmlElementGetAttrCount(
-    mxml_node_t *node)                  /* I - Node */
-{
-  if (node && node->type == MXML_ELEMENT)
-    return (node->value.element.num_attrs);
-  else
-    return (0);
-}
-
-
-/*
  * 'mxmlElementSetAttr()' - Set an attribute.
  *
  * If the named attribute already exists, the value of the attribute
@@ -217,13 +181,7 @@ mxmlElementSetAttr(mxml_node_t *node,	/* I - Element node */
     return;
 
   if (value)
-  {
-    if ((valuec = strdup(value)) == NULL)
-    {
-      mxml_error("Unable to allocate memory for attribute '%s' in element %s.", name, node->value.element.name);
-      return;
-    }
-  }
+    valuec = strdup(value);
   else
     valuec = NULL;
 
@@ -275,7 +233,7 @@ mxmlElementSetAttrf(mxml_node_t *node,	/* I - Element node */
   va_end(ap);
 
   if (!value)
-    mxml_error("Unable to allocate memory for attribute '%s' in element %s.",
+    mxml_error("Unable to allocate memory for attribute '%s' in element %s!",
                name, node->value.element.name);
   else if (mxml_set_attr(node, name, value))
     free(value);
@@ -292,7 +250,7 @@ mxml_set_attr(mxml_node_t *node,	/* I - Element node */
               char        *value)	/* I - Attribute value */
 {
   int		i;			/* Looping var */
-  _mxml_attr_t	*attr;			/* New attribute */
+  mxml_attr_t	*attr;			/* New attribute */
 
 
  /*
@@ -308,7 +266,9 @@ mxml_set_attr(mxml_node_t *node,	/* I - Element node */
       * Free the old value as needed...
       */
 
-      free(attr->value);
+      if (attr->value)
+        free(attr->value);
+
       attr->value = value;
 
       return (0);
@@ -319,14 +279,14 @@ mxml_set_attr(mxml_node_t *node,	/* I - Element node */
   */
 
   if (node->value.element.num_attrs == 0)
-    attr = malloc(sizeof(_mxml_attr_t));
+    attr = malloc(sizeof(mxml_attr_t));
   else
     attr = realloc(node->value.element.attrs,
-                   (node->value.element.num_attrs + 1) * sizeof(_mxml_attr_t));
+                   (node->value.element.num_attrs + 1) * sizeof(mxml_attr_t));
 
   if (!attr)
   {
-    mxml_error("Unable to allocate memory for attribute '%s' in element %s.",
+    mxml_error("Unable to allocate memory for attribute '%s' in element %s!",
                name, node->value.element.name);
     return (-1);
   }
@@ -336,7 +296,7 @@ mxml_set_attr(mxml_node_t *node,	/* I - Element node */
 
   if ((attr->name = strdup(name)) == NULL)
   {
-    mxml_error("Unable to allocate memory for attribute '%s' in element %s.",
+    mxml_error("Unable to allocate memory for attribute '%s' in element %s!",
                name, node->value.element.name);
     return (-1);
   }
@@ -347,3 +307,8 @@ mxml_set_attr(mxml_node_t *node,	/* I - Element node */
 
   return (0);
 }
+
+
+/*
+ * End of "$Id$".
+ */

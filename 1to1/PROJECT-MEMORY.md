@@ -1,6 +1,18 @@
 # PROJECT-MEMORY — rkgame 1:1 复刻（**权威项目记忆**）
 
-> ★★★ **最新（2026-09-22 第二轮真机定案）**：两个**已定位并已修**的根因 ——
+> ★★★★★ **最新（§0.29 / 第 83 轮 / 2026-09-29）：距 1:1 的差距审计 + 假实现/假代码/假桩专项**
+> ① **差距四层**：L1 结构层 ✅清零 · L2 行为层 40 DIVERGE（16 个是仪器判据缺口 ⇒ 真实 24）·
+>    **L3 真机 drop-in ⏳ 最大缺口（唯一终局判据，已修两处根因但未复测）** · L4 目的 2 两项升级 ⛔ 未动工。
+> ② **四个"看似假"实际清白**：9 个空实现（工厂侧也是 `bx lr`）· `GetDecodeData` 恒返回（工厂同体量）·
+>    `zstub.c`/`cxx_ops.c` 是链接期脚手架（产物里 `SHN_UNDEF`，设备 rootfs 有真 libz/libstdc++）·
+>    **`.fimg_text` 是地址垫**（`R--` 不可执行、段内 0 个 `STT_FUNC`）。
+> ③ ★ 可执行结论：`.fimg_text` 的**内容**（2.82 MB 原厂机器码）可做**删除实验**（只留 `.size`/VMA）。
+> ④ ★ 纪律 62：**"值落在地址区间内"不是判据**；判据 = 精确等于符号地址 + 对照实验（我本轮为此误报 134/3020/3921）。
+>
+> ★★★★ **上一轮（§0.28 / 第 82 轮）**：行为尺搬到 **CNB 云开发**（用户口径的正路、`tools/cnb_ruler.sh`）；
+> 三项核验全过；全量类别表 **INLINE-MOVE 16 (40%)**。再上一轮（§0.26）**编译器对齐实验判决 = REJECT**。
+>
+> ★★★ **真机定案（2026-09-22 第二轮）**：两个**已定位并已修**的根因 ——
 > ① `PT_GNU_RELRO` 把 `.data` 圈成只读（写全局变量即 SIGSEGV；真机 `si_addr=0x4e1010`）；
 > ② 工厂 `movw r1,#44100` 被 Ghidra 反编译成符号 `UpdateROM` ⇒ 采样率变成 5,128,288
 > ⇒ `hwparams -22(EINVAL)`（原厂同处只是无害的 -32）。
@@ -1625,3 +1637,1390 @@ typedef void *__restrict __timezone_ptr_t;
 > **21.** 长任务结果**必须落到仓库**（交互式环境会被 idle 回收）。
 > **22.** 编译/链接开关**先查手册再改代码**；手册给语义、`--help` 给该版本事实，两条都要。
 > **23.** 只在一条腿上验证过的改动**不许进主链**（主链改动必须由主链门禁验证）。
+
+---
+
+## 0.13 ★★★ 第 68 轮（2026-09-27）：用户问责 —— 自证审计（`AUDIT-ACCOUNTABILITY-2026-09-27.md`）
+
+> 用户质问：这几轮推进了吗？在干什么？浪费算力？进度到哪？贡献了什么？
+> **结论：对"能替代"这个目标，第 58–67 轮净推进 ≈ 0（只有 2 类真缺陷改到产物代码）。**
+
+### A. 直答（硬数字，全部可复现）
+
+| 问 | 答 |
+|---|---|
+| 推进了吗 | 第 58–67 轮（4 天 10 轮）= 仪器 4 轮 + 完整性 2 轮 + 归因/否证 2 轮 + **真缺陷 2 轮**。改到产物代码的只有 **2 类**（compat `__restrict`、末尾标签 `LAB_:`）。 |
+| 在干什么 | 建 `diff_exec` 差分仪器 → 修假绿 3 处 → 工具链 A/B 三腿归因 → DWARF 恢复工厂构建事实。**全是"让进度可测"，不是"让产物可替代"。** |
+| 浪费算力 | **部分是，顺序错了**：决定性路径 09-23 已挂起，我 4 天去磨测量装置。 |
+| 进度到哪 | 代码重建 **741/804 = 92.2%**；行为差分 **PASS 665 / 可判定 740 = 89.9%**；**"可替代"实证 = 0 次成功启动**。 |
+
+### B. ★ 剩余分歧的根（决定下一步靶子）：**上游库版本错配，不是我们的专有代码**
+
+`report/diverge_cluster.txt`：75 个分歧 ⇒ **69 类**；**前三类 34 个（45%）全是上游库**：
+`mxml*`(20) + `mxmlSet*`(8) + `cns11643_*_mbtowc`(6，libiconv，返回值 `0xffffffff` vs `0x2`）。
+
+### C. ★ 本轮抓到的真问题：**分母口径静默自相矛盾（已修）**
+
+* `tools/audit_vs_factory.py` 旧版只滤 `st_value` ⇒ 分母 **814**；权威口径（`st_size>0`，与
+  `ledger/functions.csv` 同源）是 **804**。差额 = **10 个零长别名符号**
+  （`_start/_init/_fini/frame_dummy/register_tm_clones/deregister_tm_clones/__do_global_dtors_aux/call_weak_fn/__aeabi_idiv/__aeabi_uidiv`）。
+* **两值静默并存 6 天** ⇒ 分桶百分比天然偏低 ~1.2%，CRT 桶混了两套基底。
+* **已修**：加 `st_size>0` + **把被排除者打印出来**（口径差必须可见）。
+
+### D. 我的三个可点名失误（认错，不辩解）
+
+1. **关键路径管理失职**：`_sdcard_drop6/` **09-22 23:29** 就绪；09-24 起 4 天日志 `drop6/真机/设备/_diag` **零命中**。
+   没把"卡在你一次物理动作"顶到台面上。
+2. **挂了不还的账**：探针 `0001111c` 被我自己写成"**下一轮唯一入口**"，之后 **13 轮没回去**（= 绕圈实证）。
+3. **刻度不一致**：804/814 并存；`functions.csv` 的 `status` 列 223 行全 `TODO`（实际已实装 213）。
+
+### E. 新纪律（24–25）
+
+> **24.** 决定性路径上出现"**等物理动作**"时，必须**立刻顶到用户面前**，不得转入"顺手可做"的仪器工作。
+> **25.** **分母/口径是仪器的一部分**：每个计数分母必须在**唯一出处**定义；两处不一致 = 与假绿同级缺陷。
+
+### F. 下一步（P0 全设备无关，不再挂账）
+
+| 序 | 事项 | 判据 |
+|---|---|---|
+| P0-A | 收口 `0001111c`（13 轮欠账） | `report/census2_verdict.txt`：seek 失败 vs 字段读短的二分 |
+| P0-B | 分母对齐 804 + 一致性门禁 | CI 断言唯一分母 |
+| P0-C | 打上游库版本错配（mxml/iconv） | `DIVERGE` 用**行为尺**显著下降 |
+| P1 | 重出 `_sdcard_drop7/`（sha256 投放前对账 + 一页部署卡） | 设备写 `menu.log`、无 panic、进菜单（**需用户上机**） |
+
+---
+
+## 0.14 ★★★ 第 69 轮（2026-09-27）：P0-A 收口 + P0-B 分母自洽 + P0-C 上游版本根因修复
+
+> 用户指令：「继续推进未完成的任务；**在你自认为达到交给用户实测前，先全量审计和补漏**」。
+> 完整取证报告：**`UPSTREAM-VERSION-FORENSICS.md`**；普查判决书：**`report/census2_verdict.txt`**。
+
+### A. P0-A（13 轮欠账）—— **关闭，判定为"被更强判据取代"**
+
+* 26 个普查地址映射回 **17 个工厂函数**（nearest-preceding FUNC），在新尺子（`diff_exec --fn`）下
+  **17/17 全部 PASS**：含 `SearchCentralDir` / `GetCurrentFileInfoInternal`（0001111c/00011144/00011158 所在）
+  / `lufseek` / `unzLocateFile` / `TUnzip::Find` / `mui_LoadUIResource`。
+* 复现：`sh /d/output/_census17.sh build/ab/mxml29.elf` → `report/_census17.txt`。
+* 当年"工厂侧找不到包内条目"是**沙箱环境导致的工厂侧早死**，非我方缺陷（现已有逐函数证据）。
+* ★ 纪律 29：**旧探针的问题已被更强判据覆盖时，正确动作是记录取代关系并关闭，不是把旧探针跑一遍交差。**
+
+### B. P0-B —— 分母口径唯一化 + 判据分桶 fail-closed（**已落地并自证**）
+
+| 改动 | 文件 | 效果 |
+|---|---|---|
+| 分母加 `st_size>0` 过滤 + **公示被排除的 10 个零长别名** | `tools/audit_vs_factory.py` | 814 → **804**，分桶 548+223+27+6=804 精确闭合 |
+| 对拍集合同口径过滤（排除 CRT/libgcc 胶水）+ 报告头部公示 | `tools/diff_exec.py` | 共有函数 746 → **741** |
+| 汇总行改为**分区**（INFO 不再并列可加）+ 新增 `partition_ok()` | `tools/diff_exec.py` | `661+75+5+0=741 ⇒ OK`；不一致即 **exit 1** |
+| 自证新增 3 条锚点（含"把 INFO 当加数"反例） | `tools/diff_exec.py --self-test` | **69 条，失败 0** |
+
+★ 发现：旧汇总行 `PASS 665 | DIVERGE 75 | INFO 41 | TRUNC 6` 会被读成四类可相加（665+75+41+6=787≠746）；
+实际 **INFO 是重叠计数**，真分区是 `665+75+6=746`。**DIVERGE 不受分母修正影响（仍 75）**。
+
+### C. P0-C —— 上游版本**根因**修复（第一次拿到实测收益）
+
+**方法论纠正（两条"不会失败的判据"）**：
+
+1. 「工厂 16 个静态函数全集比对 ⇒ mxml = v3.3.1」——实测**2.6→3.1 静态函数名集合完全一致** ⇒ 无判别力。
+2. 「两侧 `_libiconv_version` 都读 272 ⇒ 版本一致」——我方该对象是 **`extern`、由工厂镜像供给** ⇒ 恒定通过，**假对齐**。
+
+**mxml 夹逼取证**：`mxmlDelete` 含 `bl <自身入口>`（真递归）⇒ <2.10；无 `mxml_free` ⇒ <2.10；
+无 2.11 新 API ⇒ <2.11；有 `mxmlFindPath`/`mxmlGet*` ⇒ ≥2.7 ⇒ 工厂 ∈ **{2.7,2.8,2.9}**。
+
+**实测收益（zig-Os 腿，`diff_exec --steps 3000`）**：
+
+| 指标 | 换前 3.x | 换后 **2.9** | Δ |
+|---|---|---|---|
+| 共有函数 | 741 | **744** | +3 |
+| PASS | 661 | **682** | +21 |
+| **DIVERGE** | **75** | **57** | **−18（−24%）** |
+| ABI | PASS | PASS | — |
+
+★ 交叉验证：换后**新增 3 个共有符号** `mxml_file_putc`/`mxml_string_putc`/`mxml_write_string`，
+正是换前"工厂有我方无"的名字 ⇒ **pin 对了才会有**。台账已按棘轮删 6 行。
+
+**其余库**：libiconv 工厂 = **1.16**（`.data` @0x3b1cf8 = 0x0110；我方 1.17，本轮实测中）；
+stb_truetype 工厂 **≤1.22**（缺 1.23 才有的 SVG/整表 kerning API；我方 1.26）；Helix MP3 待夹逼。
+
+### D. 新纪律 26–29
+
+> **26.** 判据必须先自证"**有判别力**"：对所有候选都返回同一结果的判据 = 没有判据。
+> **27.** 由**镜像/桩供给**的观测值**不得**用作对齐证据。
+> **28.** 换上游版本的正确性旁证 = **符号集向工厂收敛**，不是体积或自评。
+> **29.** 旧探针的问题已被更强判据覆盖时，**记录取代关系并关闭**，不要重跑交差。
+
+---
+
+## 0.15 第 69 轮补遗：审计发现 **2 个闸门缺陷** + 1 条**未收口根因**
+
+### A. 审计揪出两个"造了闸门却没上锁"（都属假绿家族）
+1. **`scan_trailing_label.py` 从未接线** —— 全仓无任何 workflow/脚本调用它（`grep` 0 命中）
+   ⇒ 永远不会让构建变红。已加 CI 步骤 `id: s44`（`--selftest` + 全树扫描），
+   `ci_gate_summary.py` 的 `MIN_STEPS` 40 → **44**。
+2. **该门禁自证有 1 条失败**：`A: B: }` 只报 B、漏报 A（检测盲区）。
+   已修（跳过标签链）；修后 `--selftest` **7/7**，全树扫描仍 PASS（256 文件 0 处，无误报）。
+
+### B. libiconv 1.16 替换实测：**行为尺零收益**（假设被证伪）
+* 换 1.16 后：共有 744、PASS 682、**DIVERGE 57（与只换 mxml 完全相同）**、ABI PASS。
+* 两侧 `cns11643_1_2uni_page44` 表**逐字节相同**（10802 B / 5401 项 / 差异 0）
+  ⇒ **"版本错配导致 cns11643 分歧"被证伪**。
+* 唯一正向信号：去掉 4 个 1.17 专属符号（`translit_page1e_1/20_1/22_1/31_1`），符号集向工厂收敛。
+* 记录：`report/iconv-argreg-finding.txt` —— 新线索：**双方 `s` 参数的寄存器约定不同**
+  （工厂 r2 / 我方 r1），且 `src/upstream/libiconv/iconv_stubs.c:126` 存在一个**3 参桩**。
+  下一轮唯一入口 = 打印入口寄存器 + 查桩是否把真实现挤掉。
+
+### C. ★ 重大结构性事实（影响所有"指令级"判据）
+工厂 804 个函数里 **308 个是 Thumb（奇数地址，38%）**，全部 libiconv 换码器都是 Thumb；
+我方同族是 ARM。⇒ **ARM/Thumb 混合**是工厂的真实构建形态；
+凡"逐指令/访存宽度/调用序列"类判据都必须显式处理 Thumb 位，不能靠"ARM 解码失败再试 Thumb"的启发式
+（Thumb-2 被当 ARM 解码常常**不会**报 INSN_INVALID，而是解成一串看似合法的 ARM 指令）。
+
+---
+
+## 0.16 ★★★ 第 70 轮（2026-09-27）：再证伪"libiconv 版本假设"，找到**仪器级根因：ABI 左移**
+
+> 完整报告：**`ROOTCAUSE-ABI-SHIFT.md`**；筛查工具：`tools/abi_shift_screen.py`。
+
+### A. 假设证伪（libiconv 版本）
+* 换 1.16 后：共有 744 / PASS 682 / **DIVERGE 仍 57**（与只换 mxml 完全相同）/ ABI PASS。
+* 两侧 `cns11643_1_2uni_page44` **逐字节相同**（10802 B / 5401 项 / 差异 0）。
+* 正向旁证：去掉 4 个 1.17 专属符号（`translit_page1e_1/20_1/22_1/31_1`）⇒ 符号集向工厂收敛，**保留 1.16**。
+
+### B. ★ 根因：LLVM 删内部函数**开头未使用的参数** ⇒ ABI 左移一格 ⇒ 假发散
+* **最小复现**（`build/_probe_arg/q.c`，同工具链 `-Os -fno-inline`）：
+  `t_unused(conv_t conv, ...)`（conv 未用）⇒ 编译后 **s 落在 r1、n 落在 r2**；
+  `t_used(...)`（conv 被用）⇒ 正常。**函数地址被取也不能阻止该变换**。
+* **实证**：`cns11643_1_mbtowc` 两侧入口 r0..r3 **完全相同**（新探针 `CGM_DBG_REGS=1` 实测），
+  但工厂（Thumb @0x2ccdb5）读 **s=r2**、我方（ARM @0x513c40）读 **s=r1**。
+  源码两侧都是 4 参，且 `conv` 在函数体内 **0 次引用**。
+* ⇒ libiconv 换码器一族的分歧**主因不是版本、不是语义，而是这个 ABI 位移**（假发散）。
+* **编译开关路已证伪**：`-fno-inline` / `-fno-ipa-sra` / `-mllvm -disable-dead-arg-elimination` 全无效；
+  只有 `-Xclang -disable-llvm-passes` 有效但等于关掉全部优化（不可接受）。
+* **选定根治法 A**：仪器按**各自 ABI** 调用（再跑一次"移位实参"），两侧在各自最优位移下一致
+  **且数据读写指纹也一致** ⇒ 记独立桶 **`ABI-SHIFT`**（必须公示，不得并入 PASS）。
+
+### C. 本轮附带的结构性事实
+* 工厂 804 个函数中 **308 个是 Thumb（奇数地址，38%）**；libiconv 换码器全是 Thumb，我方是 ARM。
+  凡指令级判据必须显式处理 Thumb 位（Thumb-2 被当 ARM 解码常**不报** INSN_INVALID）。
+* `diff_exec` 新增 `CGM_DBG_REGS=1`：打印入口 r0..r3 + 每条指令的 CPSR.T 与寄存器 ⇒ 可回溯"两侧到底读了什么"。
+
+### D. 新纪律 30–31
+> **30.** 对拍只在"同一 ABI"前提成立时有效；逐函数喂参前先自证"两侧读的是同几个寄存器"。
+> **31.** 编译器差异造成的**假发散必须单列桶并公示**，不得计入技术债务棘轮。
+
+---
+
+## 0.17 ★★★ 第 71 轮（2026-09-27）：找到 iconv 族假发散的**构建级根因**（工厂 libiconv = `-O0 -mthumb`）
+
+### A. 方法上的自我纠正（重要）
+* **工厂 DWARF 只有 8 个 CU，全是 CRT/glibc**（`start.S` / `init.c` / `crti.S` / `lib1funcs.S` / `elf-init.c` / `crtn.S`）
+  ⇒ **应用对象（rkgame / libiconv / mxml…）根本没有 DWARF**。
+  ⇒ 此前记的"工厂真值 = `-O2` / `-mfpu=neon`"其实**取自 glibc 的 CRT**，**不能外推到应用 TU**。
+* 替代手段：**代码形态普查** `tools/codegen_style_census.py` —— 判"帧指针 + r0..r3 全部落栈"的 -O0 序言。
+
+### B. 决定性证据（工厂 804 个 size>0 函数）
+| 族 | 模式 | 形态 | 个数 |
+|---|---|---|---|
+| libiconv | **Thumb** | **-O0** | **146** |
+| libiconv（前缀未归类） | **Thumb** | **-O0** | **158** |
+| mxml / stb / unz / xmp3 / 应用 | ARM | 优化 | 496 |
+
+**交叉表：`Thumb∩O0 = 304`｜`Thumb∩OTHER = 4`｜`ARM∩O0 = 0`｜`ARM∩OTHER = 496`**
+⇒ **Thumb ⇔ -O0 是同一批 304 个函数，且全部属于 libiconv**。
+⇒ 工厂构建 = 「**libiconv 整 TU `-O0 -mthumb`；其余 ARM + 优化**」。
+⇒ 一次解释三件事：ABI 位移（-O0 不删未使用参数）、308 个 Thumb 的分布、iconv 族代码形态全不对。
+
+### C. 实测：`-O0` 单独上会**链接失败**，暴露第三个构建事实错配
+* `LIBCFLAGS="-O0"` 重建 ⇒ `ld.lld: undefined symbol: pipe2 / preadv64 / pwritev64`。
+* 这三个是 **glibc ≥ 2.10** 才有的符号；我们的 zig 腿按 **glibc 2.7** 出（`-target arm-linux-gnueabihf.2.7`）。
+* 它们在 `-Os` 下被 DCE 掉了，到 `-O0` 就留下来 ⇒ **工厂 glibc = 2.24**（CRT DWARF 实证）vs 我们 2.7。
+* ⇒ **两个改动必须一起做**：glibc 目标对齐 2.24（Bootlin 2017.05 sysroot 已在 `cache_tc/`）＋ libiconv `-O0`。
+* 同时说明：**第 67 轮"换 GCC 更差"的 A/B 混淆了编译器与 libc 两个变量，需重做**。
+
+### D. 本轮落地状态（**不留坏树**）
+* `tools/build_upstream.sh`：`LIBCFLAGS` 已作为**待启用**目标写进去（`LIBCFLAGS="$CFLAGS"` 保持构建可用），
+  证据、前置条件、失败原文全部写进注释（第 46–57 行）。
+* 新工具：`tools/codegen_style_census.py`（优化档普查）、`tools/abi_shift_screen.py`（ABI 位移筛查）。
+* `diff_exec` 新增 `CGM_DBG_REGS=1` 探针（入口 r0..r3 + 每条指令 CPSR.T），自证仍 **69 条失败 0**。
+
+### E. 新纪律 32
+> **32.** **DWARF 覆盖不到的 TU，不许用"别处的 DWARF"当它的构建事实**（CRT 的 `-O2` ≠ 应用的 `-O2`）；
+> 改用**代码形态普查**（序言/寄存器用法）取证，并给出可复算的判据与交叉表。
+
+### ★★ §0.17-C 的**公开更正**（2026-09-27，同日）
+
+我先前把"`-O0` 链接失败"的归因写错了，现更正：
+
+* **错的说法**："-O0 下 libiconv 引用了 glibc≥2.10 符号 `pipe2/preadv64/pwritev64`，说明工厂 glibc 2.24 而我们 2.7"。
+* **事实（lld 完整报文）**：引用方是 **zig 自带运行库归档 `libubsan_rt.a`**
+  （`Io.Threaded.processSpawnPosix` / `Io.Threaded.fileReadPositional`，`Threaded.zig`），
+  **不是**我们的 libiconv 对象（在所有 .o 里 grep 这三个符号是 0 命中 —— 这才是正确的线索，我当时没据此推翻自己的假设）。
+* **真因**：**zig 的 `-O0` = Debug 档 ⇒ 默认开运行时安全检查 ⇒ 拉入 `libubsan_rt.a`**，
+  该归档引用了我们 glibc 2.7 sysroot 里没有的 `pipe2/preadv64/pwritev64`。
+* **修法**：`LIBCFLAGS = -c -O0 -fno-sanitize=all ...`（关掉安全检查运行时）。
+* **教训（纪律 33）**：**报错里"参考方"必须读全**。lld 的 `>>> referenced by` 已直接指名
+  `libubsan_rt.a`，我却按"最可能的原因"去找 libiconv —— 这正是本项目反复出现的"用印象替代读报文"。
+* 仍然成立（独立证据）：zig 腿按 glibc **2.7** 出、工厂 CRT DWARF 是 glibc **2.24**；该项错配与此无关。
+
+### ★★★ 第 72 轮（2026-09-27）：**根治落地，DIVERGE 57 → 46**（本轮起点的 75 → 46）
+
+* 改动：`tools/build_upstream.sh` 给 **libiconv + libcharset** 单独 `LIBCFLAGS="-c -O0 -fno-sanitize=all ..."`
+  （对齐工厂的 per-TU 优化档）。**只改编译开关，不改上游源码，不改判据。**
+* 实测（`diff_exec --batch --steps 3000`，`report/_t20_diff.txt`）：
+
+| 阶段 | 共有 | PASS | **DIVERGE** |
+|---|---|---|---|
+| 起点 | 741 | 661 | **75** |
+| ＋mxml 2.9 | 744 | 682 | **57** |
+| ＋libiconv 1.16 | 744 | 682 | 57 |
+| ＋**libiconv `-O0`** | **778** | **727** | **46** |
+
+* `abi_check` PASS；自洽 `727+46+5+0=778` ✓；**iconv 族 DIVERGE 行数 21 → 4**。
+* 关 UBSan 有**官方依据**：Zig 0.14.0 Release Notes「UBSan runtime 默认在 Debug 模式启用」；
+  Zig 语言参考优化档表 `Debug(-O0)` = 关优化 + 开安全检查 ⇒ `-O0` 必须配 `-fno-sanitize=all`。
+* **剩余 46 行 = 36 个函数，最大一族是 `mui`（9 个，我们自写的专有 UI）** ⇒ 下一靶子是**真缺陷**，不是伪影。
+* 纪律 33：**报错必须读全"引用方"**（lld 的 `>>> referenced by` 已指名 `libubsan_rt.a`，我却先按印象去找 libiconv）。
+* 纪律 34：**实验循环要按"真正变化的输入"裁剪**——每轮 13 分钟里大半花在重编 213 个从不改动的专有对象上；
+  单变量实验应只重编被改的那个上游组件再链接。
+
+---
+
+## 0.18 ★★★ 第 72 轮（2026-09-27）：关键路径顶到用户面前 + 两道根修 + 一个新门禁
+
+> 交付报告：**`DROP7-DELIVERY.md`**；投放包：**`_sdcard_drop7/`**；新门禁：`tools/size_coverage_gate.py`。
+
+### A. 先修"没进展"的机制：**主产物是陈的**
+* 行为尺一直用新产物 `build/ab/iconvO0.elf`，而投放用的 `build/rkgame.rebuilt.elf` 停在
+  **09-26 16:05**（比上游源码 09-27 11:40/12:21 还旧）；`_sdcard_drop6/` 是 **09-23** 做的且从未上机。
+* ⇒ 本轮**重链** `build/rkgame.rebuilt.elf`（**5,745,916 B @ 09-27 14:45**）。
+  ★ 纪律 35：**测量产物与交付产物必须是同一个**；任何"我测过了"必须附**交付产物的 sha256 + 时间戳**。
+
+### B. 根修：`libiconv17/config.h` 加 `HAVE_LANGINFO_CODESET 1`
+* 依据 = **工厂动态导入表**（113 项，权威）：工厂导入 `nl_langinfo`、**不导入 `getenv`**。
+* 验证：`localcharset.o` 未定义符号 `['getenv']` → `['__aeabi_unwind_cpp_pr0','nl_langinfo']`；
+  产物导入 `nl_langinfo=✅ getenv=❌`（与工厂一致）。
+
+### C. ★ 新门禁 `tools/size_coverage_gate.py`（补**行为尺的结构性盲区**）
+* 盲区实证：行为尺只在输入**真走进那段代码**时才看得见差异；入口条件不满足时两侧都"正常返回"
+  ⇒ **工厂 976 B 实现、我方 112 B 空壳照样判 PASS**。
+* 判据：共有函数 `ratio = ours_size/factory_size < 0.5` ⇒ SHORT。自证 8 条 0 失败。
+* 全库 778 个共有函数，**只有 2 个 SHORT**：
+  | 比值 | 我方 | 工厂 | 函数 |
+  |---|---|---|---|
+  | **0.115** | **112** | **976** | **`UpdateROM`** |
+  | 0.435 | 520 | 1196 | `ReadUSBJoy` |
+* `UpdateROM` 实证：源码 139 行完整（含 `sync()`/`reboot(0x1234567)`），编译后**只剩错误分支**，
+  闪写/CRC/安全区/reboot 约 **864 B 没进二进制** ⇒ 也解释了"工厂导入 `reboot`/`sync`、我方都没有"。
+  （功能缺口，不影响启动 ⇒ 不阻塞投放，列为下一靶子。）
+
+### D. ★ `.dynsym` 保真审计（新视角）
+* 工厂导入 **113**、我方 **90**、交集 85。
+* 工厂有我方无（**28**）：`_IO_putc`/`_IO_getc`、`__strdup`、`memcpy`/`memset`/`strlen`、
+  `sqrt`/`cos`/`floorf`/`fmod`/`sqrtf`、`_Znwj`/`_Znaj`/`_ZdlPv`/`_ZdaPv`、`reboot`/`sync`/`raise`。
+* 我方有工厂无（5）：`putc`、`getc`、`strdup`、`mbsinit`、`gmtime`。
+* 性质：我方把 `memcpy/memset/strlen/sqrt` **静态链进来**（zig compiler_rt / 静态 libm），工厂动态导入
+  ⇒ 既差分 `.dynsym`，又会造成**假发散**（工厂调 `memset` 走模型、我方内联真执行 ⇒ 访存指纹不同）。
+* ★ 已**就地证伪**一个假设：`putc` vs `_IO_putc` **不是**优化档（`__USE_EXTERN_INLINES`）造成的 ——
+  最小复现（`-Os/-O2/-O1`）三档全是 `putc/strdup` ⇒ zig 自带 glibc 头**裁剪掉了 extern inline**。
+
+### E. 交付产物门禁（本轮实测）
+* 行为尺 **PASS 727 ｜ DIVERGE 46 ｜ TRUNC 5 ｜ SKIP 0**（自洽 778 ✓）
+* PT_LOAD 几何 **PASS**；RELRO **PASS**；MMIO 宽度 **PASS**（`sfc_init` 窄访问 我们=0/工厂=0 ✓）；ABI PASS。
+
+### F. 新纪律
+> **35.** 测量产物 == 交付产物（附 sha256 + 时间戳）；"我测过了"不带这两样不算数。
+> **36.** 行为尺的 PASS **不构成"该函数已实现"的证据** —— 必须有体量覆盖门禁背书；
+>   入口条件不满足时，空壳与完整实现无法区分。
+
+---
+
+## 0.19 ★★★ 第 73 轮（2026-09-27）：**更正错误事实** + 补上"沙箱复现真机约束"（ROUTE-DECISION ③）
+
+> 报告：**`STRICT-DEVICE-MODE.md`**；实验脚本：`tools/strict_device_exp.sh`；改动：`tools/guest_shim/fake_mem.c`、`tools/ci_qemu_behav.sh`。
+
+### A. ★ 公开更正（我写错了事实，用户纠正）
+* 我曾写「重建产物**从未在真机上成功启动过**」—— **错的**。真机事实（用户提供的 `PROBE3.txt`，87 KB/1619 行）：
+  | 候选 | 真机实测 |
+  |---|---|
+  | 原厂对照 | 存活至超时 ✅ |
+  | **B 线 v15** | **存活至超时（205 s）** ⇒ **我们的代码在真机上真的跑起来了** |
+  | t4 最小动态 ELF | exit=0 ✅ |
+  | A 线 rebuilt | exec 成功，**SIGBUS(7) @ `sfc_init+0x6c`**（= `ldrh r1,[r0,#0x2c]`） |
+  | A 线 diag | SIGSEGV(11) @ `cgm_diag_boot+0x184` |
+* 正确表述：**已上机多次、且已在真机执行过我们的代码**；缺的只是"第三个根因修完后的复测"。
+* ★ 纪律 40：**不得用"未经证实的负面事实"（如"从未上机"）替代对自身进度的诚实评估** —— 那是把责任推给用户。
+
+### B. ★ 根因：我把"上机"当下一步，而 ROUTE-DECISION 早写明结构性成因 #2 未消除
+* 成因 = **沙箱不能复现真机硬件约束**（`fake_mem.c` 的 `sfc_dev_read` **容忍**窄访问）。
+* 补法：新增 `mmio_strict_check()` 挂在**唯一咽喉点** `mmio_access()`（替换全部 3 组设备访问路径的
+  `mmio_trace` 调用）⇒ **类级覆盖，不是抽样**。超限即 `signal(SIGBUS,SIG_DFL); raise(SIGBUS)`。
+* 开关：`CGM_MMIO_STRICT=1` / `CGM_MMIO_MIN_WIDTH=4`（默认关）。
+
+### C. ★ 顺手修掉两处**我自己的工具缺陷**（都属"会产出假结论"）
+1. CNB 工作区**无 armhf 交叉编译器** ⇒ shim 构建失败被静默置空 ⇒ guest 不带 shim ⇒ 走不到 SFC
+   ⇒ **假阴性**（第一次实验 violation=0 就是这么来的）。修：新增 `CGM_SHIM_SO=<预编译.so>`。
+2. `CGM_MMIO_STRICT` **不在 `-E` 转发白名单** ⇒ 开关到不了 guest ⇒ **静默降级**。
+   修：把 3 个新开关加入 `-E` 列表。（脚本注释本已警告过这类"假绿"。）
+
+### D. ★★ 判决实验（CNB 云开发 qemu-user；zig 预编 shim；DRM/ALSA 桩）
+| 臂 | 产物 | factory 事件 | rebuild 事件 | rebuild 信号 | MMIO-STRICT 违反 |
+|---|---|---|---|---|---|
+| pre | `_prewidth.rebuilt.elf` | 224 | **28** | **7 = SIGBUS** | **5** |
+| cur | `rkgame.rebuilt.elf` | 224 | **225** | 11 | **0** |
+
+* pre 的违反原文与真机**逐字同构**：`MMIO-STRICT VIOLATION: off=0x2c w=2 < min=4 dir=R pc=0x00501b84`
+  ↔ 真机 `SIGBUS @ sfc_init+0x6c`（`si_addr=base+0x2C`，`ldrh r1,[r0,#0x2c]`），`signal=7` 也一致。
+* ⇒ **MMIO 访存宽度这一类缺陷已关闭**（双向判据：装置能复现 + 修复可验证）。
+* **边界（诚实）**：两侧都在 ~224 事件处 SIGSEGV（工厂也一样）= **沙箱观测天花板**，
+  ⇒ "能不能进菜单"仍超出沙箱观测范围。抬高天花板 = 下一步仪器工作（不消耗真机往返）。
+
+### E. 新纪律 37–40
+> **37.** 「请用户上机」之前必须自问：**本地装置做完了吗**？文档已写明某个结构性成因未消除时，
+>   不得把上机当下一步。
+> **38.** 任何给 guest 用的开关**必须**进入 `-E` 转发白名单 —— 否则是静默降级的假绿。
+> **39.** 复现装置**先证明它复现得出**（拿已知缺陷态跑通），再拿它给"修好了"背书。
+> **40.** 不得用未证实的负面事实替代对自己进度的诚实评估。
+
+### F. 待办（全部设备无关）
+1. 抬高沙箱天花板（查 224 事件处 SIGSEGV 来源，大概率是 shim 未应答的第二个设备区）。
+2. `UpdateROM` 缺体（976→112 B）+ `ReadUSBJoy`（0.435×）。
+3. `.dynsym` 28 项静态/动态链接差异（会制造假发散）。
+4. 19 个 `mui` + 6 个 XUnzip + 3 mxml + 3 libiconv 残余分歧。
+5. `sunxi_gpio_init.c` 5 个无 `volatile` 的 mmap 基址（ROUTE-DECISION §二 已点名，同类未修）。
+6. stb_truetype ≤1.22 / Helix MP3 夹逼；一轮完整 CI 全绿。
+
+---
+
+## 0.20 ★★★ 第 74 轮（2026-09-27）：**UB 删码**这一类——根因 + 两个真缺陷修复 + 两道新门禁
+
+> 报告：**`UB-CODE-DELETION.md`**；新工具：`tools/ub_census.py`、`tools/size_coverage_gate.py`、
+> `tools/func_size_probe.py`；门禁接线：`tools/link_full.sh`（新增 exit 17 / 18）。
+
+### A. 类：Ghidra 把"一块缓冲"拆成多个小对象 ⇒ UB ⇒ 优化器**静默删代码**
+* 双盲区：构建一直用 `-w` ⇒ 编译器不报；被删的代码**从不执行** ⇒ 行为尺看不见。
+* 新门禁从**两侧**夹住：`ub_census`（成因侧，exit 18）+ `size_coverage_gate`（后果侧，exit 17）。
+
+### B. 两个真缺陷（已根修，单变量实测）
+| 函数 | 修前 -Os | 修后 -Os | 工厂 | 根因 |
+|---|---|---|---|---|
+| `UpdateROM`（写固件） | **112 B** | **680 B** | 976 B | 一块 3 字节缓冲被拆成 3 个 `char`，只有 1 个被 `fread` 写过 ⇒ 另两个"从未被写" ⇒ 读未初始化 = UB ⇒ clang 取"条件恒真"，**删掉 `fread` 之后整段（含闪写/CRC/安全区/sync/reboot，约 864 B）** |
+| `ReadUSBJoy`（手柄） | **520 B** | **1072 B** | 1196 B | 8 字节 `struct js_event` 被拆成 4 份（`read(...,8)` 只写了可见的 4 B）⇒ 同 UB |
+
+* 判读工具：`python tools/func_size_probe.py <源文件> <函数名> <工厂字节数>`
+  （判据：`-O0` 正常、`-O1+` 塌掉 ⇒ UB 删码）。
+* ★ 直接旁证：**产物导入从"无 `reboot`/`sync`"变为"与工厂一致地导入"**。
+
+### C. 类闭环
+* `ub_census` 首轮 6 命中 → **全部修完 = 0 命中**：
+  `UpdateROM` / `ReadUSBJoy` / `gpsp_unzip`(`[296]`→`[0x130]`) / `run_game` / `FilePreEmu`
+  / `DisplayGameSum` / `mui_LoadSetting`+`globals.h`（4 B 指针却 memset 0x50）。
+* 修法一律是**恢复真实对象尺寸**、不改逻辑、不放宽判据。
+
+### D. 端到端实测（全量重编 + 增量重链）
+| 门禁 | 结果 |
+|---|---|
+| 专有对象编译 | **213/213 成功** |
+| PT_LOAD / RELRO / 常量混淆 / MMIO 宽度 / 设备访存类级 | **全 PASS** |
+| 体量覆盖（exit 17） | **SHORT 0** |
+| 编译期 UB（exit 18） | **命中 0** |
+| ABI | PASS |
+| 行为尺 | PASS **727** ｜ DIVERGE **46** ｜ TRUNC 5 ｜ SKIP 0（自洽 778 ✓） |
+
+* 交付产物：`build/rkgame.rebuilt.elf` **5,747,156 B** @ 09-27 16:51，
+  sha256 `6737fd22653d17c3fae8715c08e08e0a9e2bd9b518a0dead9b2909810ba59bd9`；
+  `_sdcard_drop7/` 已按此重出（MANIFEST 与实文件 sha256 逐个复核一致）。
+
+### E. 平台事实（CNB）
+* **CNB 交互式工作区会 ~15 分钟自动关闭**（实测 duration≈924 s 后 `status: closed`），
+  重启是**新 sn + 新 SSH 地址**，且新实例可能是**空仓**（连 `.github/workflows/` 都没有）。
+  ⇒ 再次印证项目记忆：**长任务必须走 `.cnb.yml` 声明式流水线**，不要在交互式会话里硬扛。
+
+### F. 新纪律 41–42
+> **41.** 编译告警**不得**用 `-w` 一律屏蔽：UB 类告警必须定点开启并作为门禁 ——
+>   被 `-w` 吞掉的不是噪声，是"优化器删代码"的授权书。
+> **42.** **"行为尺 PASS" ≠ "代码在"**；任何 PASS 都要有**体量覆盖**背书，
+>   且成因侧（UB）与后果侧（体量）两道门禁**互为交叉验证**，缺一不可。
+
+---
+
+## 0.21 ★★★ 第 75 轮（2026-09-27）：修尺子（-2 假发散）+ **一个六天没人验的旧结论被行为尺证伪**
+
+> 报告：**`XUNZIP-VERSION-FORENSICS.md`**；工具：`tools/xunzip_source_swap.py`（带警示，默认别跑）。
+
+### A. 修尺子：void 函数判定的 **mangled/demangled 错配**（真缺陷）
+* `void_fns_from_corpus()` 取的是 Ghidra 语料的**demangle 名**，而 `compare()` 收到的是 ELF 的
+  **mangled 名** ⇒ `fname in void_fns` **永远 False** ⇒ 所有 C++ 函数的 void 判定失效
+  ⇒ 拿 void 的 **r0 残留值**当返回值比 ⇒ **假发散**。
+* 修：新增 `itanium_base()`（Itanium ABI 基础名解析）+ `is_void_fn()`；
+  **自证 69 → 77 条锚点，失败 0**。
+* **实测收益：DIVERGE 46 → 44，PASS 727 → 729**（两条 `_Z20inflate_blocks_reset` /
+  `_Z25unzlocal_DosDateToTmuDate` 的 r0 假发散消失）。**这不是放宽判据**——void 的 r0 本就不是输出。
+
+### B. ★ 证伪：XUnzip 换回 Wischik 原版 **让产物更差**
+* 线索极像"上一轮 mxml/libiconv 的成功模式"：
+  · `zipver_sweep`（09-21 定案、本轮复现）体积命中 **20/25 vs 变体 ≈0/25**，6 个精确到字节；
+  · **独立符号旁证**：`_Z17FormatZipMessageUjPcj` 与 `lasterrorU`（4 B）**只在原版里有**，
+    而**工厂两个都有**；`src/upstream/xunzip/` 本身也是混合状态（3 个文件是 2004 原版）。
+* 落地做了 3 处有工厂证据的适配（上游 `L"..."` 笔误、`lasterrorU` 改 extern 由工厂镜像供给、
+  `TUnzip::Find` `bool`→`unsigned char`），链接成功，**七道门禁全 PASS**。
+* **行为尺判决：共有 778→775、PASS 729→708、DIVERGE 44→62（+18 净回归）**。
+  新引入的分歧**全在 zip 内部读写/寻址链**（`unzlocal_SearchCentralDir`/`unzlocal_getByte`/
+  `lufseek`/`CheckCurrentFileCoherencyHeader`/`TUnzip::Find`/`OpenZipU`）——
+  恰是**体积最接近工厂**的那几个 ⇒ **体积接近 ≠ 语义一致**。
+* ⇒ **按纪律回退**；回退后产物与换源前**逐字节相同**（sha256 `6737fd22…`），
+  `DIVERGE` 回到 **44**。
+
+### C. 顺手修掉一个**危险工具缺陷**
+* `link_full.sh` 链接失败时**把上一轮旧产物留在原地**（实测 `duplicate symbol` 后
+  `build/rkgame.rebuilt.elf` 仍是旧 ELF）⇒ 下游只看到"文件存在"。
+  这与 `check_obj_fresh.py` 防的"陈旧对象"是同一类事故，只是发生在**最终产物**层。
+* 修：`rm -f "$OUT"` + **按 `rc != 0` fail-closed（exit 11）**。
+  ★ 注意：不能靠"文件是否存在"判定——沙箱 safe-delete 守卫会拦下 `rm`，旧文件仍在 ⇒ 判断被骗过。
+
+### D. 本轮净状态
+| 指标 | 值 |
+|---|---|
+| 交付产物 | `build/rkgame.rebuilt.elf` **5,747,156 B**，sha256 `6737fd22653d17c3…` |
+| 行为尺 | PASS **729** ｜ DIVERGE **44** ｜ TRUNC 5 ｜ SKIP 0（自洽 778 ✓） |
+| 门禁 | PT_LOAD / RELRO / 常量混淆 / MMIO 宽度 / 设备访存类级 / 体量覆盖(SHORT 0) / UB(0) **全 PASS** |
+| 投放包 | `_sdcard_drop7/` 的 t3 与当前产物 sha256 **一致**（回退后仍有效） |
+
+### E. 新纪律 43–45
+> **43.** 复现过的旧结论**不等于**已落地，更**不等于**正确；凡"体积/相似度"类结论，
+>   必须**行为尺背书**才允许写进交付判断。（`zipver_sweep` 的 20/25 六天没人验过，一验就是错的。）
+> **44.** 链接失败**不得**留下上一轮产物（fail-closed）；"文件存在"不是"本轮成功"。
+> **45.** **符号存在性**只能证明"血脉相同"，不能证明"同一快照"。
+
+---
+
+## 0.22 ★★★ 第 76 轮（2026-09-28）：**接管链接** —— 把 `zig cc` 驱动换掉，按工厂口径组链接行
+
+> 报告：**`LINKAGE-ALIGNMENT.md`**；改动：`tools/link_full.sh`（新增 `LINK_DRIVER`）、
+> **`tools/fetch_bootlin63.sh`（新）**、`tools/size_coverage_gate.py`（分桶）。
+
+### A. 根因（机制级，不是猜）
+* 工厂 `memcpy/memset/memmove/strlen` = **`libc.so.6` 动态导入**；
+  我方 = `.text` 里 **STB_LOCAL 静态定义**，来源 **`libcompiler_rt_zcu.o`**（zig compiler_rt）。
+* 机制：`zig cc` 把 `libcompiler_rt.a` 放在 libc **之后**，而该归档的"大对象"被
+  `__udivsi3`/`__aeabi_*` 拉进来后也定义了 mem*/str* ⇒ **普通目标文件定义盖过 DSO 定义**。
+  （zig 源码 `lib/compiler_rt.zig:30` 注释说这是为"可能由系统 libc 提供"而设 weak，
+  但 `zig cc` 下 `ofmt_c==true ⇒ linkage=.strong`，weak 兜不住。）
+* `-lc` 提前 / `--no-as-needed -lc` 都**无效**（单变量实测）；`-fno-compiler-rt` 不是 clang 选项。
+
+### B. 根治：**直接驱动 `zig ld.lld`**（LLD 21.1.0，实测可达）
+* 用**工厂同期工具链** Bootlin 2017.05（GCC 6.3 / **glibc 2.24** / binutils 2.27）sysroot 当链接输入：
+  `crt1.o` + `libc/libm/libpthread/libdl/libstdc++/libgcc_s` + `libc_nonshared.a`
+  + **静态 `libgcc.a`（前后各一次，照抄 GCC 的 `-lgcc … -lc -lgcc`）**。
+* `lld` 模式下**不链 `build/cxx_ops.o`**（该文件是"无 libstdc++ 时的静态替身"）。
+
+| 指标 | 工厂 | zig cc（旧） | **接管（新）** |
+|---|---|---|---|
+| `DT_NEEDED` | 7 | 5 | **7（逐项同序）** |
+| 动态导入 | 113 | 92 | **111** |
+| 工厂有/我方无 | — | 26 | **8** |
+| `mem*/str*` | 导入 | 静态 LOCAL | **动态导入** |
+| `__aeabi_*` LOCAL | 6 | 69 | 7（**6 项尺寸逐项相同**） |
+| `.gnu.version_r` | 6 组 | 2.4/2.7 | **逐项同工厂** |
+| 行为尺 | — | 778/729/**44** | **782/735/42**/TRUNC 5 |
+
+* 交付产物 `build/rkgame.rebuilt.elf` **5,513,544 B**，sha256 `a4820bd6…`；`_sdcard_drop7/` 已重出并对账。
+* 主链端到端 `rc=0`，八道门禁全 PASS。
+
+### C. 中途抓到的**真缺陷**（第一版）
+* 漏链 `crt1.o` + 带着 `-z undefs` ⇒ `_start` 静默未解析 ⇒ **`e_entry = 0x0`**（废产物）。
+  被 `dyn_audit` 的 `e_entry ∈ 可执行 PT_LOAD` 判据当场抓住。修：链工厂 `crt1.o` +
+  **去掉 `-z undefs`**（去掉后**零未定义符号**）。
+
+### D. 诚实：本次改动**曝光**了 5 个以前被掩盖的分歧
+* 消失 5（真修好）：`GetFilenameExt`/`LoadMenuLog`/`get_from_line`/`main_Menu`/`myStrrstr`（缺 libc 绑定那族）。
+* 新增 4-5（本来就存在，以前因我方 mem*/str* 是"二进制内部调用"而不计入 `calls_ext`）：
+  `ClearBuffer`(工厂内联 memset)、`get_item_from_line`(调用次数×2)、`mui_search`/`mui_setting`
+  （`DisplayThumbnailflag` 读宽 **4B vs 1B** ⇒ ★源码类型可疑）、`progress`(漏 8B 读写)、
+  `run_game`(漏读 `log_file_initialized`) ⇒ 后三类是**真缺陷**，列下一靶子。
+
+### E. 剩余两个方向性差异 = **同一个根修的下一步**
+* 工厂有/我方无 8 项：`_IO_putc` `_IO_getc` `__strdup` `islower`（glibc extern-inline，
+  只在真 glibc 头 + GCC 下生效）、`_ITM_*`/`_Jv_RegisterClasses`/`__gmon_start__`（GCC `crtbegin/crtend`）。
+* 我方有/工厂无 6 项：`putc` `getc` `strdup` `mbsinit` `gmtime` `bcmp`（同一头文件根因）。
+* ⇒ **把编译也切到 bootlin63 GCC 6.3 + glibc 2.24 头**（已在缓存、`fidelity_matrix.sh` 证明能编过全部源码）。
+  ★ 第 67 轮"换 GCC 更差"的 A/B 混淆了编译器与 libc 两变量，**libc 现已对齐，需在此基线上重做**。
+
+### F. 门禁改动
+* `size_coverage_gate.py` **分桶**：只对"**由我方对象定义**"的函数判 SHORT
+  （判据 = 是否出现在 `build/obj/*.o`、`build/upstream/*.o`、`XUnzip.o`、`factory_local.o`、`crt_init.o`
+  的已定义函数符号里）；非我方实现 → **INFO 换行公示**（当前 6 个，其中 4 个尺寸与工厂相同）；
+  **读不到我方对象 ⇒ exit 3 fail-closed**。自证锚点 8 → **11 条失败 0**。
+
+### G. 回退
+`LINK_DRIVER=zigcc sh tools/link_full.sh <out>`，或 `cp tools/link_full.sh.bak_lld tools/link_full.sh`；
+旧产物留档 `build/rkgame.rebuilt.zigcc.elf`。
+
+### H. 新纪律 46–48
+> **46.** **链接行也是"构建事实"**：驱动、库顺序、有没有 `compiler_rt` 都会改变产物
+>   （`DT_NEEDED` / 符号绑定 / `.gnu.version_r`）—— 对齐工厂必须连链接层一起取证。
+> **47.** `-z undefs` 会**静默吞掉"入口/关键符号缺失"**（第一版 `e_entry=0x0`）；
+>   凡允许未定义的链接，必须另设"关键符号必须已定义"的判据（本次靠 `dyn_audit` 的 `e_entry`）。
+> **48.** 门禁分桶必须用**机械判据**（"是否我方对象所定义"），**不得**用名字白名单；
+>   读不到分类依据时 **fail-closed**。
+
+---
+
+## 0.23 ★★★ 第 77 轮（2026-09-28）：**尺子修掉两处缺陷**（数字变大但是诚实的）+ 交付机制两处补漏
+
+> 详细：`LINKAGE-ALIGNMENT.md` §九~§十一。
+
+### A. 尺子缺陷（都在 `read_width_only`，都用新钩子 `CGM_DBG_RW=1` 抓到原始键）
+* **甲：`'LN'` 形取错宽度下标** —— `'LN'=(kind,name,off,w,rw)` 宽度在 `k[3]`，
+  `'A'=(kind,addr,w,rw)` 宽度在 `k[2]`；旧实现一律取 `k[2]` ⇒ 对 `'LN'` 取到**偏移**
+  ⇒ 比较恒等 ⇒ `rw_only` 恒 False ⇒ 文档写明的"合法窄化降 INFO"对**具名全局**从未生效。
+* **乙：`'LN'` 的 ident 丢掉 `off`** ⇒ 同对象不同偏移被合并 ⇒ 一侧**少读几个偏移**被误放成 INFO。
+  实证 `popwindows`：工厂读 `m_ui+60` **5 次**，我方 **0 次**，却被放过。
+* **修**：宽度按形态取；ident 保留 off；**次数必须相同**。自证 **77 → 82 条失败 0**。
+  ★ 另更正一条**标签与内容不符**的旧锚点（`反例 次数不同` 其实测的是地址集合不同）。
+
+### B. 效果（诚实：DIVERGE 42 → **45**，因为以前在漏报）
+* 降 INFO（本来就是仅宽度不同）：`mui_search` / `mui_setting` / `mui_type`。
+* 新报 DIVERGE（本来被漏放的真差异，形态 `仅F=[...m_ui+N...] 仅O=[]`）：
+  `mui_DisplayInputBuffer` / `mui_DisplayLine_t` / `outputblankxy` / `popoffwindows` / `popwindows`。
+* 权威尺子数字（`report/_deliver_diff.txt`）：**共有 782 ｜ PASS 732 ｜ DIVERGE 45 ｜ TRUNC 5 ｜ SKIP 0（自洽 ✓）**。
+* **交付产物未变**（sha256 `a4820bd68faf9ccebc502752a4dc4b46d0c74f8c1fdb3bdc080566d00b016db3`，5,513,544 B）。
+
+### C. 交付机制补漏（"半成品"家族）
+1. 投放包 README 的尺子数字**硬编码且已过期**（写着 727/46/778）
+   ⇒ `stage_sd_round7.py` 改为**从 `report/_deliver_diff.txt` 实时解析**（含自洽断言），
+   **解析不到即中止出包**；重出后 README 自动显示真数字。
+2. 投放脚本在 `rmtree` 被 safe-delete 守卫拦下时**静默继续**，产出**缺 README 的半成品包**
+   ⇒ 加 fail-closed（删除后再判一次，还在就中止）。
+
+### D. 编译器对齐实验：**已就绪，只能在 Linux 跑**（本轮未执行）
+* `tools/compiler_align_exp.sh`：单变量换**工厂同期 GCC 6.3**（bootlin63），
+  判据写死：编译 213/213 → link rc=0 且 NEEDED 7 同序 → `.dynsym` 工厂独有 **8 → ≤4**
+  → **DIVERGE < 45** 才采用，否则回退。
+* **平台事实（实测）**：bootlin 的 `arm-buildroot-linux-gnueabihf-gcc` 是 **x86-64 Linux ELF**，
+  Windows 上 `Exec format error`；脚本非 Linux **fail-closed（exit 4）**（本机已验证 rc=4）。
+* 新增目录旋钮（互不污染主链）：`link_audit.sh` 的 `OBJD`/`UPOBJD`/`XUPOBJ`、`link_full.sh` 的 `UPOBJD`。
+
+### E. 新纪律 49–50
+> **49.** 判据函数若"比较的下标随键形态而变"，自证锚点**必须覆盖每一种形态** ——
+>   `read_width_only` 的 bug 活了很久，根源就是旧锚点全是 `'A'` 形（**形态盲区**）。
+> **50.** 交付/投放脚本里的数字**必须从测量报告读取**，**不得硬编码**（硬编码必然过期）；
+>   读不到就 **fail-closed**（宁可不产出，也不产出带假数字的半成品）。
+
+---
+
+## 0.24 ★★★ 第 78 轮（2026-09-28）：**工厂是 per-TU 优化档**（根因）+ 模型别名漏建 + 环境阻塞
+
+> 证据与结论全部落在 **`BUILD-FACT-ALIGNMENT.md`**（§一…§三 头/优化档，§七 per-TU，§八 环境阻塞）。
+
+### A. ★ 三条构建事实（全部单变量实测，可复现）
+
+| # | 事实 | 关键证据 | 旧状态 |
+|---|---|---|---|
+| 1 | 工厂用**真 glibc 2.24 头** | 真头 ⇒ `putc`→**`_IO_putc`**、`getc`→**`_IO_getc`**；zig 头 ⇒ `putc`/`getc` | zig 自带 glibc 头 |
+| 2 | 工厂优化档 **≥ -O1 且非 -Os**（针对调用 `strdup` 的 TU） | 真头 -Os ⇒ `strdup`；真头 -O1/-O2 ⇒ **`__strdup`** | 专有 `-Os` / 上游 `-O1` |
+| 3 | **工厂是 per-TU 档**：应用 `-Os`、上游 `-O2` | `stdio.h:587` 把 `putc` 定义成**无条件宏**；`putchar` 是 `bits/stdio.h` 的 **extern-inline**（受 `__OPTIMIZE_SIZE__` 门控）。工厂**同时**导入 `putchar` 与 `_IO_putc` ⇒ 混合档 | 单一档 |
+
+* 单变量补证：`UpdateROM.c` 真头 `-Os` ⇒ `putchar`；真头 `-O2` ⇒ `_IO_putc`。
+* **"全 `-O2`"实测不改善**（臂 B：PASS 731 ｜ DIVERGE **46**，基线 45）⇒ 反向印证 per-TU。
+
+### B. 头集合的**顺序**（两次失败教训，必须记）
+
+* `-I<glibc 头>` 排在**组件自己的 `-I` 之前** ⇒ 盖住 libiconv 自己的 `iconv.h`
+  ⇒ `libiconv_close` 未定义 / `struct iconv_fallbacks` 不完整。
+* 真 `limits.h` 的 `#include_next` 会跳进 **zig 自带的更新版 glibc `limits.h`**
+  （`__GLIBC_USE` 未定义）⇒ 必须按 GCC 原生顺序插入 **GCC 的 `include` 与 `include-fixed`**。
+* 正确集合：`-nostdinc` + **组件 -I** → `GCC include` → `GCC include-fixed` → `sysroot/usr/include`。
+
+### C. 尺子：`libc_model` 别名**漏建两个** + 一条**已腐烂的自证锚点**
+
+| 别名 | 规范化到 | 为什么 |
+|---|---|---|
+| `_IO_putc` | `putc` | 工厂导入它；模型此前**只建了 `_IO_getc`** |
+| `bcmp` | `memcmp` | clang 把 `strcmp(x,"字面量")==0` 优化成 `bcmp(x,"字面量",len+1)`（GCC 不会） |
+
+* 旧锚点用手写集合 `impl={…,'getc'}` 断言"别名目标都被实现" —— 它把 `getc` 列成已实现，
+  而模型**根本没有 getc 处理分支** ⇒ **恒真、从未生效**；补 `_IO_putc` 后才第一次变红。
+  已改为**从模型源码机械推导**（`if name == 'x'` / `if name in (...)`）+ 显式 `NOT_MODELLED`。
+  自证 **34 → 37 条，失败 0**。
+* 新工具 `tools/model_coverage.py`：用**工厂实际导入的 113 个符号**对账模型覆盖，
+  列出"**单侧未建模**"（潜在假发散），带棘轮台账 `tools/model_asymmetry_ledger.txt`，
+  已接进 `link_full.sh`（**exit 19**）。
+
+### D. 顺带修掉两处"静默"缺陷
+
+* `link_full.sh`：XUnzip 对象缺失时 `[ -f ] &&` **静默跳过** ⇒ 链接报一堆
+  `undefined symbol: TUnzip::*`，把"某个 .o 没编出来"伪装成链接问题 ⇒ 改 **fail-closed（exit 12）**。
+* 实验脚本 **缓存目录按臂隔离**：8 路并行共享 `ZIG_GLOBAL_CACHE_DIR` 会报
+  `error: CacheCheckFailed`。
+
+### E. ★ 环境阻塞（**已顶到用户面前**，三条执行路径全断）
+
+| 路径 | 现象 |
+|---|---|
+| 本机重建 | 沙箱 safe-delete 守卫卡死 ⇒ **删除/覆盖/移动全被拒**（`rm`/`mv` → `Permission denied`；`state lock timeout`）⇒ zig `failed to delete '<cache>/tmp/*.o.d': AccessDenied` ⇒ `CacheCheckFailed`（**全新缓存目录同样**） |
+| CNB 交互式工作区 | 容器周期重启（`up 3 min`）+ ~15 分钟自动关闭；重启后 `/tmp` 清空；SSH 一度被拒 |
+| CNB 声明式流水线 | 新建的 `1to1-linux-gates` 与**既有** `rkgame-rebuild` **都**卡在 `Prepare` 后 `error` |
+
+* **唯一仍可用的写路径 = 编辑工具**（shell/Python 覆写与 `rm` 均被拒）。
+* 已推送 CNB `main`（`5fb1127 → b9c05cf → 90c4f1d`）：根 `.cnb.yml` 新增 `1to1-linux-gates`
+  流水线；`1to1/tools/` 新增 `cnb_gates.sh`/`model_coverage.py`/`xref.py`/`abi_shift_screen.py`。
+* **需要用户处置**：恢复沙箱删除/覆写权限，否则本机任何重建都不可能完成。
+
+### F. 新纪律 51–53
+> **51.** "未建模"必须**能列名并留档**；**单侧未建模 = 仪器缺陷**，不是被测代码的缺陷。
+> **52.** "**期望存在的输入缺失**"必须就地报错并指名，不得靠下游 `undefined symbol` 兜底。
+> **53.** 编译/头文件/优化档属**构建事实**，必须逐 TU 用**单变量实验**取证（文档条款 + 工厂导入表
+>   双向印证），不得用"一处证据外推到全体"。
+
+---
+
+## 0.24 ★★★ 第 78 轮（2026-09-28）：构建事实对齐（头文件 + per-TU 优化档 + clang 变换）+ CNB 配额根因
+
+> 报告：**`BUILD-FACT-ALIGNMENT.md`**；工具：`tools/buildfact_align_exp.sh`、`tools/model_coverage.py`、
+> `tools/model_asymmetry_ledger.txt`、`tools/xref.py`、`tools/xunzip_t2f_align.py`、`tools/cnb_gates.sh`、
+> `tools/cnb_ws_gates.sh`。
+
+### A. 三条**工厂构建事实**（全部单变量实测，可复现）
+
+| # | 事实 | 判据（同源、只改一个变量） | 我方旧 | 对齐 |
+|---|---|---|---|---|
+| 1 | 工厂用**真 glibc 2.24 头** | mxml：zig 头 → `putc/getc`；真头 → **`_IO_putc`/`_IO_getc`** | zig 自带 glibc 头 | `-I bootlin63 sysroot/usr/include` |
+| 2 | 工厂优化档 **per-TU**：应用 `-Os` / 上游 `-O1+` | `UpdateROM.c` 真头 `-Os` → **`putchar`**、`-O2` → `_IO_putc`；`mxml` 真头 `-O1/-O2` → **`__strdup`** | 全 `-Os`/`-O1` | 应用 `-Os`、上游 `-O2`、libiconv `-O0` |
+| 3 | GCC **不**把 `strcmp(x,"字面量")==0` 变 `bcmp`，clang **会** | 同一份 `main.c`：默认 → `bcmp`（r2=len+1）；`-fno-builtin-strcmp` → `strcmp` | 无该开关 | 加 `-fno-builtin-strcmp` |
+
+★ 事实 2 的**存在性证明**：工厂**同时**导入 `putchar` 与 `_IO_putc`。
+文档级依据：真头 `stdio.h:587` 把 `putc` 定义为**无条件宏** `_IO_putc`（与优化档无关），
+而 `putchar` 是 `bits/stdio.h:79` 的 **extern-inline**（受 `__OPTIMIZE_SIZE__` 门控）
+⇒ 只有"部分 TU 没开 extern-inline"才能同时出现两者 ⇒ **per-TU**。
+
+### B. 头集合的**顺序**（两次失败换来，已写进代码注释）
+
+```
+组件自己的头 → GCC include → GCC include-fixed → sysroot/usr/include
+```
+1. 头集合排在组件 `-I` 之前 ⇒ 盖住 libiconv 自己的 `iconv.h`（glibc 也有同名）
+   ⇒ `converters.h: field has incomplete type 'struct iconv_fallbacks'` / `libiconv_close` 未定义。
+2. 真 glibc 的 `limits.h` 里 `#include_next <limits.h>` 会跳进 **zig 自带的更新版 glibc `limits.h`**
+   ⇒ `error: function-like macro '__GLIBC_USE' is not defined`。`-nostdinc` **挡不住** zig 注入的内建头
+   ⇒ 必须按 GCC 原生顺序插入 **GCC 自己的 include/include-fixed**。
+- 接线：`tools/build_upstream.sh` 额外头改**尾置**（`EXTRA_INC_TRAIL`）；`tools/link_audit.sh` 把 XUnzip 的 `-I posix` 提到 `$CFLAGS` 前。备份 `*.bak_hdr`。
+
+### C. 仪器缺陷（与 void/mangled 同族）：`libc_model` 漏了两个别名
+
+| 别名 | → | 为什么 |
+|---|---|---|
+| `_IO_putc` | `putc` | 工厂导入它；模型**只建了 `_IO_getc`**（漏 putc） |
+| `bcmp` | `memcmp` | clang 变换产生；工厂侧是 `strcmp` ⇒ 只有我方未建模 |
+
+新门禁 **`tools/model_coverage.py`**（用**工厂实际导入的 113 个符号**对账模型覆盖）：
+**单侧未建模**符号必须登记在 `tools/model_asymmetry_ledger.txt`，否则 **FAIL**；已接进 `link_full.sh`（exit 19）。
+★ 顺带揪出一条**已腐烂的自证锚点**：旧 `impl = {... 'getc'}` 手写清单把 `getc` 列成"已实现"，
+而模型**没有 getc 处理分支** ⇒ 断言恒真、从未生效。已改为**从源码机械推导**；自证 34 → **37 条失败 0**。
+
+### D. 独立发现：`timet2filetime` 是**真分歧**（已定位到指令级，待落地）
+
+工厂 `_Z14timet2filetimel` = **12 B**（`str r1,[r0]; str r1,[r0,#4]; bx lr`，两字段直接写 timer），
+调用点 3 处（`TUnzip::Get`，`tools/xref.py` 扫出，@0x125a8/0x125cc/0x125f0）；工厂**没有**
+`SystemTimeToFileTime`/`DosDateTimeToFileTime`。我方 312 B + `gmtime` ⇒ 三组输入全 DIVERGE。
+对齐工具已备：`tools/xunzip_t2f_align.py`（含 `--revert`）。
+
+### E. 实验判决（行为尺是唯一判据）
+
+| 臂 | 配置 | 结果 |
+|---|---|---|
+| 基线 | zig 头 + `-Os/-O1` | PASS **732** ｜ DIVERGE **45** |
+| **B** | 真头 + **全 `-O2`** + `-fno-builtin-strcmp` | PASS 731 ｜ DIVERGE **46**（**无收益**） |
+| A | 真头 + 现档 | **无效**（XUnzip 编译遇 zig 缓存竞态 `CacheCheckFailed`，对象缺失；已 fail-closed） |
+| **C** | 真头 + **per-TU**（应用 `-Os`/上游 `-O2`）+ `-fno-builtin-strcmp` | 本轮进行中 |
+
+⇒ 全 `-O2` **不改善**，反证"应用代码应保持 `-Os`"。
+
+### F. ★★ CNB：**根因是配额，不是配置**（平台原文）
+
+```
+Pipeline prepare error: Root Group's events CPU core-hours are insufficient for pre-freezing
+(Freezing time: 5.00 min, equivalent to 0.67 core-hours).
+根组织的云原生构建-CPU配额已不够预冻结（冻结时间：5.00 min，折合 0.67 核时），
+请联系根组织管理员提升配额。
+```
+- 两次构建（push + api_trigger）**全部**卡在隐式 `Prepare`，我们自己的 stage 全 `skipped`；
+  连长期存在的 `rkgame-rebuild` 流水线也一样 ⇒ **与我们的配置无关**，是根组织 CPU 配额耗尽。
+- `.cnb.yml` **已存在且完整**（`1to1-linux-gates`：deps → `cnb_env.sh` 构建 → `cnb_gates.sh` → 报告推 `artifacts-gates`），
+  无需重写；**只欠配额**。
+- 备用路（不受构建配额影响）：**云开发工作区**。已固化为一条命令 `tools/cnb_ws_gates.sh`
+  （开工作区 → 取 SSH → **单连接** tar 管道上传 + 装依赖 + 跑门禁）。
+  ★ 必须单连接：容器实测会周期性重启（`up 3 min`）＋约 15 分钟自动关闭，拆成两次 SSH 必因重启丢 `/tmp`。
+
+> ★★ **口径纠正（2026-09-29 补，见 §0.25-A）**：本节标题里的「根因」**只对本通道成立** ——
+> **CNB 不是构建通道**（用户口径：CNB 托管 + CNB 云开发 + **GitHub 构建 CI**）。
+> `.cnb.yml` 的 `1to1-linux-gates` 属**非主路径备用** ⇒ 配额不通 = **备用通道封死**，
+> **不构成构建/门禁阻塞**。上文配额事实全部保留有效，但**不在关键路径上**。
+
+### G. 新纪律 51–53
+> **51.** "未建模"必须能**列名留档**；**单侧未建模**是仪器缺陷（与 void/mangled、访存宽度取错下标同族）。
+> **52.** "期望存在的输入缺失"必须**就地报错并指名**，不得靠下游 `undefined symbol` 兜底
+>   （实测：XUnzip 未编出 ⇒ 旧实现静默跳过 ⇒ 伪装成"链接问题"）。
+> **53.** 并发跑 zig 会命中缓存竞态（`error: CacheCheckFailed`）⇒ **zig 作业串行化**，缓存目录按任务隔离。
+
+---
+
+## 0.25 ★★★ 第 79 轮（2026-09-29）：平台分工**口径固化 + 一处公开纠正**；arm C 接管链接落地（行为尺 782 / PASS 733）
+
+### 0. 用户口径（原文，最高优先级，只增不删）
+
+> **「我的部署是 CNB 代码托管 + CNB 云开发 + GitHub 构建 CI」**
+
+**权威落点（两处独立记载，互相印证，非本次新造）**：
+- `tools/sync_mirror.py` 文件头 docstring：`平台分工（用户口径：cnb 托管 + cnb 云开发 + github 构建）`
+- 本文件 §「第 51 轮（2026-09-23）平台分工定案」
+
+| 通道 | 载体 | 职责 | 凭据 / 实测 |
+|---|---|---|---|
+| **CNB 托管** | `cnb.cool/lieguch/cubeGM` | **源**（权威托管；项目根 `rkgame-1to1/`） | `~/.cnb/token`（`cnb_at_`，CLI 1.16.18 已登录） |
+| **CNB 云开发** | workspace（SSH **出站**，不开本机端口） | **qemu 环境**：跑本机跑不了的 6 道 Linux 门禁 / 交互实验 | 8C/16G root+apt；**周期性重启 + ~15 min 自动关闭** |
+| **GitHub 构建 CI** | `Lieguch/cubegm-build-monkey` → Actions | ★ **构建与门禁的唯一通道**（4 workflow） | `~/.github_token_temp`；2026-09-29 探活 `GET /user` → `login=Lieguch` http=200 |
+| 归档 | `git.acwing.com/lieguch/cubegm-rkgame` | 只托管、不构建（实例无 Runner） | `ACGIT_TOKEN` |
+
+`sync_mirror.py` 原文铁律：**「★ 构建与门禁**始终**由上游 GitHub Actions（`Lieguch/cubegm-build-monkey`）承担。」**
+
+### A. ★ 公开纠正：§0.24-F 把「CNB 配额」当成构建阻塞 = **定位错误**
+
+- **错在哪**：0.24-F 标题写「CNB：根因是配额」，读起来像**构建被阻塞**。
+  按用户口径，**CNB 不是构建通道**；`1to1-linux-gates` 是**非主路径备用**
+  ⇒ 配额不通只等于「**备用通道封死**」，**不构成构建/门禁阻塞**。
+- **保留有效部分**（原文不改，只加注）：配额报错原文、隐式 `Prepare` 全 skipped、
+  与我们的 `.cnb.yml` 配置无关 —— 这些是**平台事实**，仍成立，只是**不在关键路径上**。
+- **行为纠正**：**不得再把 CNB 配额当作待解阻塞顶到用户面前**；需要构建就走 GitHub Actions。
+
+### B. 本轮实绩：arm C（`zig ld.lld` 直驱）接管链接 + 门禁 + 行为尺
+
+| 项 | 实测值（证据） |
+|---|---|
+| 链接驱动 | `zig ld.lld` 直驱，**对象 241**，`rc=0`；`[lld] 跳过 cxx_ops.o`（operator new/delete 改由 `libstdc++.so.6` 动态提供） |
+| 产物 | `build/rkgame.rebuilt.elf` **5,521,740 B**，sha256 `b21a3f12cdb2a84e…` |
+| 对照 | `golden/factory.rkgame.bin` sha256 `8ff3b4b70c253ff7…` |
+| 链接后·动态段/初始化链自洽 | `DT_INIT` / `DT_FINI` / `DT_FINI_ARRAY` / `_init` / `_fini` / `e_entry∈可执行 PT_LOAD` **全 PASS**；**1 WARN** = `DT_INIT_ARRAY` 已声明但 `DT_INIT_ARRAYSZ==0`（C 程序无构造子 ⇒ 正常） |
+| 体量覆盖门禁（防空壳/缺体） | **SHORT 0**；INFO 6 = 非我方对象实现（不计入 SHORT） |
+| 单侧未建模符号门禁 | 命中文件数 **0** ⇒ 全部在台账内 |
+| 对象/门禁汇总 | **FAIL 0 / WARN 1 ⇒ PASS** |
+| **行为尺**（`diff_exec` 批量对拍，本机 unicorn 跑） | 分母口径 804（工厂 `STT_FUNC ∧ 有名 ∧ st_size>0`，与 `ledger/functions.csv` 同源），扣 10 个 `st_size==0` 工具链别名 ⇒ 共有 **782**；每函数 3 组输入、`--steps 3000`（2 个靠 20× 放大才判出） |
+| 行为尺结果 | **PASS 733 ｜ DIVERGE 44 ｜ TRUNC(不可判) 5 ｜ SKIP 0** |
+| 自洽校验 | 733 + 44 + 5 + 0 = **782** = 本轮函数数 ⇒ **OK**（另 INFO「内联等价留痕」13 个，与上述各类**不互斥、不可相加**） |
+| 轮次对比（诚实） | 0.23 修尺后 DIVERGE **45** → 本轮 **44**（arm C 净减 1，非跳变） |
+| 明细归档 | `report/_final_diff.txt`（前 80 条）、`report/_final_stdout.txt`、`report/_armC_link3.txt` |
+
+### C. ★ 关键路径缺口（必须可见，不许静默）
+
+| 项 | 状态 |
+|---|---|
+| GitHub 构建 CI 最近一次绿 | **2026-09-27 02:32**，4 workflow 全 `success`（`1to1-verify` #231 / `toolchain-ab` #8 / `rkgame-rebuild` #1092 / `1to1-qemu-behav` #199；仓库累计 1534 runs） |
+| 本轮 arm C 产物（sha `b21a3f12…`） | **只在本地** —— **尚未进入构建通道** |
+| ⇒ 结论 | GitHub 上那个「绿」是**上一版**；**当前改动未经 CI 验证**。要转绿必须让它进 GitHub Actions。 |
+
+### D. 新纪律 54–55
+
+> **54.** 平台职责**以用户口径为准**；把**非构建通道**（CNB 云原生构建）的故障写成"构建阻塞"= 口径污染。
+>   **每个阻塞必须标注：它在哪条通道、该通道是否在关键路径上。**
+> **55.** 报告"CI 绿"**必须同时给绿的是哪一版 sha**；否则绿 = 假绿（本项目已犯过一次）。
+
+---
+
+## 0.26 ★★★★★ 第 80 轮（2026-09-29）：**跳出绕圈** —— 平台根因纠正 + 编译器对齐实验**判决出炉** + 行为尺修掉 §2.3 老账
+
+### 0. 初始方向（复述，防漂移）
+本项目唯一判据 = **与原厂的差异收敛**（§0.1/§0.2），**不是**"造一个能跑的程序"。
+出口 = **差异类别收敛 + 每类上机械门禁**；`_sdcard_drop*` 真机复测是终局判据（N6）。
+
+### A. ★ 绕圈的**硬证据**（数字，不是感觉）
+第 76~79 轮全部在**仪器/链接/口径**上打转，行为尺 DIVERGE 的真实轨迹：
+
+| 轮 | 动作 | 共有 | DIVERGE |
+|---|---|---|---|
+| 0.22 第76轮 | 接管链接（`zig ld.lld` + 工厂同期 sysroot） | 782 | 42（旧尺） |
+| 0.23 第77轮 | 修尺子两处缺陷（以前在**漏报**） | 782 | 45（诚实变大） |
+| 0.24 第78轮 | 臂 B：真头 + 全 `-O2` | 782 | **46（更差）** |
+| 0.24 第78轮 | 臂 C：真头 + **per-TU** 优化档 | 782 | 44 |
+| 0.24 第78轮 | 头对齐（hdr24） | 782 | 45 |
+| 0.25 第79轮 | arm C 接管链接落地 | 782 | 44 |
+
+⇒ **clang 侧微调四轮，44~46 之间摆动，零净进步。** 形状与 §0.4 已点名的绕圈一致；
+但真正的引擎不是"上机/上云"，而是 —— **在错误的编译器上做微调**。
+
+### B. ★★ 被检验的根因假说
+工厂 = **GCC 6.2.0 + GNU gold 1.12（=binutils 2.27）+ glibc 2.24**；
+我们 = **zig 0.16 → clang 21 + lld + zig 自带 glibc 头**。
+假说：这是**跨编译器家族**的结构性偏离，`.dynsym` 的 8-vs-6、`putc/getc/strdup` vs
+`_IO_putc/_IO_getc/__strdup`、以及一批行为发散**都是它的下游** ⇒ 对齐编译器 = 一次消掉一整类。
+唯一与工厂同族的可得工具链 = **Bootlin 2017.05（GCC 6.3 / binutils 2.27 / glibc 2.24）**。
+（判据写死在 `tools/compiler_align_exp.sh`：① 编译 213/213 ② `DT_NEEDED` 7 同序
+③ `.dynsym` 工厂独有 8→≤4 ④ **行为尺 DIVERGE < 基线**。）
+
+### C. ★★★ 平台事实（官方文档核实 2026-09-29）—— **两处纠正了旧记忆**
+| 旧记忆 | 官方原文 | 更正 |
+|---|---|---|
+| 「云开发工作区约 15 分钟自动关闭」 | `keepAliveTimeout` 默认 **600000 ms = 10 分钟**；"检测不到 HTTP 连接时超过设定时间后自动关闭"；**最大保持 18 小时，持续心跳可维持** | **"15 分钟"是对"默认离线保活"的误判**，且**可配置到 18h** |
+| 「容器周期性重启（`up 3 min`）」 | 同上 | 同一根因 |
+| 「CNB 配额耗尽 = 构建阻塞」 | **云原生构建-CPU 160 核时/月**；**云原生开发-CPU 1600 核时/月**（**独立额度**；每 5 min 预冻结 5min×规格） | 卡 `Prepare` 的是**构建**额度；**云开发有 10× 额度**，本来就不受影响 ⇒ 见 §0.25-A |
+
+出处：`docs.cnb.cool/zh/workspaces/workspace-recycling.html` · `docs.cnb.build/zh/workspaces/only-preview.html`
+（`keepAliveTimeout` 字段原文）· `cloud.tencent.com.cn/document/product/1785/116265`（免费额度表）·
+`docs.cnb.cool/zh/workspaces/custom-dev-pipeline.html`（`$: vscode` / `runner.cpus`）
+
+### D. 根本解法（**七件，全部落地**）
+1. **`.cnb.yml` 新增 `$: vscode` 声明**：`runner.cpus: 8` + `services[].options.keepAliveTimeout: 18h`
+   （CNB main commit **`392b514`**）⇒ 会话不再因无心跳被回收。**回退 = 删掉整段 `$:`**。
+2. **平台分工再切一刀**：云开发**只做只有 Linux 能做的**（bootlin63 编译 + `ld.lld` 链接），
+   **行为尺（Unicorn）回本机跑** ⇒ 云上单次会话 ~10 min，把"超时/回收"整类风险摘出关键路径。
+   （新增 `tools/cnb_ca_exp.sh`：单连接上传+构建；`tools/ca_judge.sh`：本机判据。）
+3. **基线自证**：新增 `tools/ruler_baseline.py` —— 基线 = "**当前交付产物自己在行为尺上的成绩**"，
+   按产物 sha256 匹配 `report/` 报告，**产物一变基线自动失效**，取不到 ⇒ **fail-closed(7)**。
+   替换掉 4 份脚本里硬编码的 `DIVERGE 45`（纪律 50 的正确实现）。
+4. **工具链包随行上传**：云上直连下载实测**截断在 59,703,296 B**（期望 63,685,320 B）。
+   改为上传本地**已验证**（`bzip2 -t`）的 63.7 MB 包；并给 `fetch_bootlin63.sh` 补
+   **Content-Length 核对 + 断点续传 + `bzip2 -t` 闸门 + 失败即删半成品**
+   （旧版只看 `[ ! -s ]`，截断包照样通过，且失败时**留着**损坏包 ⇒ 下一次确定性再失败）。
+5. **取回通道**：CNB 的 SSH **会静默截断较大的 stdout 流**（实测 2,621,440 / 3,407,872 B，
+   独立连接 `cat` 5.44 MB 也只到 3,670,016 B）⇒ 新增 `tools/cnb_ws_fetch.sh`：
+   `stat` 取真实大小 → 按 1 MiB **分块 dd** → 拼接后 **sha256 必须相等**（fail-closed）。
+6. **门禁不得依赖本机专有路径**（同类第 3 次，§0.4 的老坑）：
+   `tools/ub_census.py` 把 **Windows 的 `zig.exe` 绝对路径写死** ⇒ Linux 上必然
+   `FileNotFoundError` ⇒ UB 门禁**必然 FAIL(exit 18)**。实测：链接本身成功（elf 已产出 5,442,408 B），
+   却被该门禁拦死 ⇒ **整轮实验白跑**。已改为**多级解析**（`ZIG_BIN/ZIG` → `CC` → PATH →
+   `python -m ziglang` 包 → 本机默认）+ 找不到 **fail-closed 并指名**；`diff_exec.py::_zig()` 同族缺陷一并修。
+7. **实验只准单变量**：`_ca_all.sh` 旧版在 bootlin63 缺失时**静默回落 apt 的 GCC 14 + glibc 2.41**
+   （一次改两个变量 ⇒ 判决不可用）。改为**就地抓取 bootlin63**，抓不到 ⇒ **exit 3 fail-closed**；
+   要回落必须显式 `CA_ALLOW_CONFOUND=1` 并在结论里降级表述。
+
+### E. ★★★★★ 第 80 轮实绩：GCC 6.3 臂跑通并**判决**
+
+**云开发侧（CNB workspace `cnb-qf4-1k3lh9kjh`，8 核，`keepAliveTimeout=18h`）**
+
+| 项 | 实测 |
+|---|---|
+| bootlin63 | 需下载 63,685,320 B；**断点续传 + 完整性闸门修好后一次成功**；GCC 6.3.0 / glibc 2.24 / binutils 2.27 |
+| `putc` 头探针 | **`putc → _IO_putc`**（工厂形态）—— 旧 zig 头下是 `putc` ⇒ **extern-inline 方向已对上** |
+| 专有对象 | **213/213** |
+| 上游对象 / XUnzip | 25 / 33,712 B |
+| 编译期 UB 门禁 | **命中文件数 = 0**（213 文件）—— 修掉硬编码路径后才第一次真正判定 |
+| 体量覆盖门禁 | **SHORT 0**（INFO 733 = 非我方对象实现） |
+| 动态段门禁 | FAIL 0 / WARN 1（`DT_INIT_ARRAY` 空表，C 程序正常） |
+| 单侧未建模门禁 | **FAIL(exit 19)**：11 项单侧未建模，其中 **5 项未登记** ⇒ 见 F |
+| 产物 | `build/ab/gcc63.elf` **5,442,408 B**，sha256 **`363bc7edb4e17475835ccd65dd1130ba1b693999af07a24e351d306b925b1be1`** |
+| 通道核时 | 单次会话 ≈ 10 min（8 核）⇒ ≈ 1.3 核时/轮；跑完即 `workspace-stop` |
+
+**判据② `DT_NEEDED`：7 项同序** ✅（与工厂逐项相同）
+```
+工厂 / arm C / GCC6.3 均为:
+libz.so.1, libdl.so.2, libm.so.6, libstdc++.so.6, libpthread.so.0, libgcc_s.so.1, libc.so.6
+```
+
+**判据③ `.dynsym`：外挂类**修好**、计数口径**换了内容（**不是"8→9 更差"**）
+| 符号 | arm C(clang) | **GCC 6.3** | 工厂 |
+|---|---|---|---|
+| `putc` / `getc` / `strdup` | 我方导入（工厂无） | **不再导入** ✅ | 无 |
+| `_IO_putc` / `_IO_getc` / `__strdup` | 我方**无**（工厂有） | **动态导入** ✅ | 动态导入 |
+| 动态导入总数 | 111 | **106** | 113 |
+| 工厂有/我方无 | 8 | **9**（内容已换） | — |
+| 我方有/工厂无 | 6 | **2**（`__assert_fail`、`mbsinit`） | — |
+
+⇒ **判据③的"实质目标（extern-inline 4 项）已达成** ✅；计数从 8 变 9 是因为**换了一批**新项：
+`__aeabi_unwind_cpp_pr0/pr1`、`stderr`、`stdout`（工厂侧）+ `__assert_fail`（我方侧）。
+⇒ **原判据③把"混装计数"当刻度，是个不干净的代理指标**（已登记为纪律 60）。
+
+**判据④ 行为尺（唯一判据）—— 两臂同一把尺，前后口径都算清**
+
+| 尺子版本 | 臂 | 共有 | PASS | **DIVERGE** | TRUNC | **REFDEAD** | SKIP | 自洽 |
+|---|---|---|---|---|---|---|---|---|
+| v1（旧口径） | clang arm C | 782 | 733 | **44** | 5 | — | 0 | ✓ |
+| v1（旧口径） | **GCC 6.3** | 795 | 697 | **92** | 6 | — | 0 | ✓ |
+| **v2（新口径）** | clang arm C | 782 | 737 | **40** | 5 | **0** | 0 | ✓ |
+| **v2（新口径）** | **GCC 6.3** | 795 | 705 | **50** | 6 | **34** | 0 | ✓ |
+
+⇒ **判决：REJECT（50 ≥ 40）** —— 按**预先写死**的判据④，**不采用 GCC 6.3**，
+交付链**保持 clang 21 + `zig ld.lld`（arm C）**，产物 `build/rkgame.rebuilt.elf` sha `b21a3f12…`（未变）。
+
+⇒ **但必须诚实标注两点（否则会得出错误结论）**：
+1. **尺子 v2 把 clang 基线从 44 改到 40**（产物一字未改，sha 未变）—— 这是**判据变诚实**
+   （4 个"参照侧早死"的假发散被正确移出），**不是产物变好**。
+2. **GCC 臂的 `REFDEAD` 从 0 暴涨到 34** ⇒ 该臂的**可观测性显著更低**（34/795 ≈ 4.3% 函数
+   根本不可判）。所以"DIVERGE 50 vs 40"**混着观测性差异**，**不能**直接读成"GCC 生成质量更差"。
+   ⇒ 下一步若要给 GCC 臂下结论，必须先解释 **REFDEAD 0→34 的机制**（工厂二进制与输入都没变，
+   只有被测产物变了 ⇒ 说明 harness 的初始内存映像或映射范围与被测产物相关，需取证）。
+
+### F. 顺带取证到的**新事实**（每条都是可单变量验证的靶子）
+| 发现 | 证据 | 含义 |
+|---|---|---|
+| 工厂启用 **C++ 异常展开** | 工厂导入 `__aeabi_unwind_cpp_pr0/pr1`，我方不导入 | 我们的 XUnzip 用 `-fno-exceptions` 编译 ⇒ **构建事实差异** |
+| 工厂**引用 `stdout`/`stderr`** | 工厂导入这两个数据符号，我方不导入 | 工厂某处走 `fprintf(stdout/stderr)`；我方对应路径没写 ⇒ **源码差异靶子** |
+| 工厂**未导入 `__assert_fail`** | 我方（GCC 臂）导入，工厂不导入 | 反推工厂构建**定义了 `NDEBUG`** ⇒ 我们的 `assert` 是**新增行为**，须评估是否保留 |
+| 行为尺 DIVERGE 里 `vfprintf/sprintf/fopen` 大量出现 | 明细行的 `calls_ext O=[...]` | 我们的日志路径把格式化 IO 变成了**动态调用**（arm C/clang 下被内联/弱化）⇒ 下一条主线靶子 |
+
+### G. 新纪律 56–60
+> **56.** 判定/实验**只准单变量**；"回落/降级"必须 **fail-closed 或显式开关**
+>   （`_ca_all.sh` 静默回落 apt GCC = 一次改两个变量 ⇒ 判决不可用）。
+> **57.** 下载的大文件/工具链**必须核对期望大小 + 完整性**；失败时**必须删掉半成品**——
+>   否则缓存"毒化"下一次（本次实测：截断包被复用 ⇒ 确定性再失败）。
+> **58.** 报告"实验通过/CI 绿"**必须同时给标的是哪一版 sha**（同 55，扩到实验臂）。
+> **59.** 稀缺资源（真机/云会话）上**只放只有它能做的事**；其余一律搬回便宜且可重复的一侧。
+>   * 推论（本次最省核时的一条）：**Unicorn 行为尺在 Windows 一样能跑** ⇒ 云上只编译+链接。
+> **60.** 判据的**计数口径一旦把"混装类别"加总**（如 `.dynsym` 工厂独有 = 外挂类 + CRT 弱引用 + 数据符号），
+>   就不再是刻度：**目标达成也可能让计数变大**。凡"目标 X 达成"必须**按类单独取证**，不得用总数代证。
+
+### H. 回退与复现
+* 回退 GCC 臂：无（**未采用**，交付链未变）。实验产物留档 `build/ab/gcc63.elf`。
+* 回退尺子 v2：`CGM_REFDEAD_OFF=1` 恢复旧口径（A/B 用）。
+* 回退 `.cnb.yml`：删除 `$: vscode` 整段（commit `392b514` 反向）。
+* 复现：本机 `sh tools/ca_judge.sh`；云上 `sh tools/cnb_ca_exp.sh`（`WS_SN`/`WS_SSH` 可复用会话）。
+
+---
+
+## 0.27 ★★★★ 第 81 轮（2026-09-29）：**回到主线 —— 把「40 个发散」聚成 8 个类别**（这才是差异类别收敛的入口）
+
+### A. 本轮做对的一件事：**先造数据源，再谈分类**
+报告里的 `--- DIVERGE 明细（前 80）---` 是**人类摘要且被截断**。拿截断摘要做分类 = 抽样，
+必然退化成「改一个 → 重测 → 再改一个」。⇒ 给 `diff_exec.py` 加 **`--dump-rows <json>`**：
+不截断的逐组机器可读明细（`fn/grp/kind/sf/so/diffs/note` + 两侧归一化后的
+`rd_/wr_/ca_` 指纹），并写入 `meta{ours.sha256, factory.sha256, steps, escalate, stats}`。
+★ 与 `tools/ruler_baseline.py` 同一条纪律：**明细必须自带"它读的是哪一版产物"**。
+
+### B. ★★★★ 类别表（成交付臂 sha `b21a3f12…`，尺子 v2 ｜ 覆盖报告摘要里的 38/40 个函数）
+| 类别 | 函数数 | 占比 | 判读 |
+|---|---|---|---|
+| **ONLY-ONE-SIDE**（另一侧**根本没有**这次访存） | 18 | 47.4% | **真差异的第一嫌疑池** |
+| **INLINE-MOVE（候选假发散）** | **8** | **21.1%** | 同一地址在**对侧别的函数**里被访存 ⇒ 内联几何差异 |
+| CALLS-EXT | 3 | 7.9% | 调用集合/次数差 |
+| RET | 3 | 7.9% | 返回值差 |
+| MIXED(ca+rd+wr) | 2 | 5.3% | `FilePreEmu` / `SeletEmuCore` |
+| STOP+MORE | 2 | 5.3% | `_Z14timet2filetimel` / `mui_video_setting`（两侧都异常且方向相反） |
+| MIXED(ca+rd) | 1 | 2.6% | `_Z17FormatZipMessageUjPcj` |
+| STOP-ONLY | 1 | 2.6% | `_Z40unzlocal_CheckCurrentFileCoherencyHeader…` |
+
+**INLINE-MOVE 的 8 个（含对侧落点）**：
+`DisplayPage_list ↔ DrawSelectBar/UnDrawSelectBar` · `DrawFrame ↔ UpdateROMProc/mui_video_setting` ·
+`DrawSelectBar ↔ DisplayPage_list/mui_DisplayInputBuffer` ·
+`UnDrawSelectBar ↔ …` · `UpdateROMProc ↔ DrawFrame/_Z17FormatZipMessageUjPcj` ·
+`mui_DisplayInputBuffer ↔ …` · `outputxy1 ↔ …` · `spi_printf ↔ …`
+
+### C. ★★★ 结论：**40 个不是 40 个缺陷，是 8 类观测**
+- **最大可机械消掉的一类 = INLINE-MOVE（8 个，21.1%）**：工厂把某个**共享子过程内联**进了调用方，
+  我们保留成独立函数 ⇒ 同一地址的访存被**归到另一个函数**上。
+  ★ 尺子**已经有**这条判据，但**只覆盖 `calls_ext`**（"内联等价: 仅工厂侧调用 X"），
+    **对访存没有对称判据** ⇒ 这一整类被误报成发散。**这就是"根本性"的下一步**（不是逐个改函数）。
+- **真工作量 = ONLY-ONE-SIDE 18 个**，且内部还有子类（`asso_values.9691` 那张 libiconv 转换表
+  同时出现在 `mui_LoadConfig`/`mui_do_file_list`/`mui_type_file_list` 三个 UI 函数上 = 强烈提示
+  **同一个共享子过程**，只是对侧落点不在报告摘要里 —— 也属 INLINE-MOVE 的候选）。
+- ⇒ **纪律 61 预告**：**新判据必须先给"预期降级数"再上线**（§2.18），且必须做三态自证。
+
+### D. ★★★ 环境阻塞（**必须由用户处置**，已顶到面前）
+| 事实 | 数值 |
+|---|---|
+| 物理内存 | 15.89 GB，可用 ≈ 4.0 GB |
+| **页面文件（pagefile）** | **总 0.00 GB / 可用 0.00 GB** ⇒ **Windows 提交限额 = 物理内存** |
+| **提交可用** | **0.07 GB**（≈70 MB） |
+| 后果 | 行为尺在**本机已无法整批运行**：`--limit 5` 即 `UC_ERR_NOMEM` / `MemoryError`（单函数仍可跑） |
+
+**物理处置（二选一即可）**：① 把页面文件设为系统托管或 ≥ 8 GB；② 关掉多余进程
+（当前 7 个 `WorkBuddy.exe` + 多个 `chrome.exe`，进程合计已提交 8.42 GB）。
+**规避路**：把行为尺改到 **CNB 云开发**跑（16 GB、无 pagefile 约束；本仓已有 `cnb_ca_exp.sh`
+那套"上传→跑→分块取回+sha256 对账"的骨架可复用）。
+
+### E. ★★ 本轮修的仪器缺陷：**执行环境复用**（结构性，但**默认关闭**）
+- 病灶：746 函数 × 2 二进制 × 3 组语料 ≈ **4700 个 Unicorn 实例**，每个 `mem_map` 数 MB；
+  Unicorn 的 **C 侧内存归还 OS 不及时** ⇒ 提交吃紧时直接失败。
+- 修法：**几何只建一次**（`_machine_for` 缓存），per-call 只复位寄存器 + 重写内容。
+  **实测 2m24s → 33s（4.3×）**，实例数 4700 → 2。
+- ★★ **回归判据当场抓到两处"复用会改行为"的泄漏**（这正是它默认关闭的原因）：
+  ① **VFP/NEON 寄存器**未清零（d0~d31/fpscr 残留）；
+  ② **栈与"已映射但段写不到"的空洞**未补零（新实例由 `mem_map` 天然为零）。
+  未修前：**737/40 变成 731/46**，受影响的是 `stbtt_*`（大量局部缓冲）一族。
+- ⇒ 现以 **`CGM_MACHINE_REUSE=1` 显式开启**，默认走**与改造前逐字等价**的新建路径
+  （复位/补零在新建实例上都是幂等无操作）⇒ **单一代码体，不存在两条实现漂移**。
+- **待办（必须在有内存的环境做一次）**：
+  ```
+  CGM_MACHINE_REUSE=1 python tools/diff_exec.py --batch --steps 3000 --ours build/rkgame.rebuilt.elf
+  ```
+  期望与基线**逐字相同**：共有 782 ｜ PASS 737 ｜ DIVERGE 40 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0。
+  不一致 ⇒ 继续找泄漏，**不得**为了让数字对上而调判据。
+
+---
+
+## 0.28 ★★★★★ 第 82 轮（2026-09-29）：**行为尺搬到 CNB 云开发**（用户口径的正路）—— 三项核验 + **全量类别表**
+
+> 用户指令（原话）：「当然是"2"。我本来的安排就是 **CNB 代码托管 + CNB 云开发 + GitHub 构建 CI**，
+> 这是你经常忘记而已。」⇒ 记牢：**行为尺是"纯计算"，属于云开发的活**；
+> 本机只是"方便"，不是"应该"。本机 pagefile=0 卡死时，正确动作就是搬到云开发，**不是等**。
+
+### A. 新增一条一等公民通道：`tools/cnb_ruler.sh`
+单连接（上传 → 装依赖 → **跑两遍尺子** → 回传），回传用 `tools/cnb_ws_fetch.sh`（分块 dd + sha256）。
+一次会话跑：
+* ① **默认路径** → 权威报告 + **不截断明细**（`--dump-rows`）；
+* ② **`CGM_MACHINE_REUSE=1`** → 对账用。
+前置只需 16 MB（`tools/` + `ledger/` + `golden/factory.rkgame.bin` + `golden/ghidra-perfn.tar.gz`
++ `build/rkgame.rebuilt.elf`）。**跑完必须 `cnb workspace workspace-stop --sn <sn>`**（18h 保活会持续烧核时）。
+
+### B. ★★★★ 三项核验（全部通过，证据在 `report/_final_diff.cloud.txt` 与 `report/_cloud_ruler_run.log`）
+| # | 核验 | 结果 |
+|---|---|---|
+| 1 | **执行环境复用改造的回归对账** | 云上 `CGM_MACHINE_REUSE=1` 与默认路径产出 **sha256 逐字节相同**（`8df3fe98e2b77962…`）⇒ 上一轮抓到并修掉的两处泄漏（VFP 寄存器 / 栈与映射空洞）**修对了** |
+| 2 | **跨环境确定性** | 云上报告与本机已核验报告的**唯一差异是路径分隔符**（`build/xxx` vs `build\xxx`），数字与内容全同 ⇒ 同一产物 + 同一尺子 ⇒ **同一结果**（云上跑尺子可信） |
+| 3 | **本机 vs 云 基线一致** | 两边都是 **共有 782 ｜ PASS 737 ｜ DIVERGE 40 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0**（自洽校验 OK） |
+
+### C. ★★★★★ 全量类别表（数据源 = **不截断**明细 `report/_final_rows.json`，1.55 MB / 2346 行）
+| 类别 | 函数数 | 占比 |
+|---|---|---|
+| **INLINE-MOVE（候选假发散）** | **16** | **40.0%** |
+| ONLY-ONE-SIDE（真差异第一嫌疑池） | 11 | 27.5% |
+| CALLS-EXT | 3 | 7.5% |
+| STOP+MORE | 3 | 7.5% |
+| RET | 3 | 7.5% |
+| MIXED(ca+rd+wr) | 2 | 5.0% |
+| MIXED(ca+rd) | 1 | 2.5% |
+| STOP-ONLY | 1 | 2.5% |
+
+★ 与"只看报告前 80 行"相比，**INLINE-MOVE 从 8 (21%) 涨到 16 (40%)** —— 这正是"用截断摘要做分类 = 抽样"的代价。
+
+**INLINE-MOVE 16 个（含对侧落点，全部落在一张共享子过程的"搬家"上）**：
+`DisplayPage_list ↔ DisplayLine_list` ｜ `DrawFrame / UpdateROMProc / outputxy1 / spi_printf ↔ AudioProcess/DeinitDisplay/DeinitSound`
+｜ `DrawSelectBar / UnDrawSelectBar / mui_DisplayInputBuffer ↔ DisplayLine_list/DisplayPage_list/EmuCore_Blank`
+｜ `mui_load_state / mui_save_state ↔ mui_joystick_setting/mui_setting`
+｜ `popwindows / popoffwindows ↔ EmuCore_Blank/draw_state_select/mui_Undisplay`
+｜ `progress / run_game ↔ Core_Load/FBA_Load/GBC_Load/FilePreEmu`
+｜ `__libc_csu_init ↔ _mxml_fini/_mxml_global/mxmlEntityAddCallback`
+
+⇒ **16 个不是 16 个缺陷**，是**一条几何差异**：工厂把某段共享子过程**内联**进调用方，我们保留成独立函数。
+
+### D. ★★★ 下一个未完成任务（**规格与预登记判据都写好了**，直接开工）
+**给尺子加一条与 `calls_ext` 内联等价对称的访存判据**（`INLINE-MOVE` 降级为 INFO）：
+* **实现位置**：批处理 `main()` 的**后置通行**（跨函数属性，`compare()` 单函数看不到）。
+  Pass1 建"地址键 → 该侧哪些函数访存"索引；Pass2 对"仅一侧访存"且**对侧别的函数**访存过该键、
+  且**其余观测量全一致**的函数 ⇒ 降级 INFO，并在 note 里**打印对侧函数名**（可人工复核）。
+* **预登记判据（先写死，再上线 —— §2.18）**：DIVERGE 40 → **24**，INLINE-MOVE 16 个转 INFO；
+  其余 24 个**一个都不许变**（`ONLY-ONE-SIDE` 11 / `CALLS-EXT` 3 / `STOP+MORE` 3 / `RET` 3 /
+  `MIXED` 3 / `STOP-ONLY` 1）。**任一越界 ⇒ 判据过松/过紧，回退重做**。
+* **三态自证**：① 正常态（降级 16、分桶自洽）；② 缺陷态·关掉开关（回到 40，逐字等于今天）；
+  ③ 缺陷态·把 `moved` 索引清空（必须**不降级** ⇒ 证明不是"无条件放行"）。
+* **通道**：改完 `sh tools/cnb_ruler.sh` 跑一次（云开发），对账上面三个数。
+* ★ 纪律 61：**新判据必须先给"预期降级数"再上线**，且**不得为了让数字对上而调判据**。
+
+---
+
+## 0.29 ★★★★★ 第 83 轮（2026-09-29）：**距 1:1 的差距审计 + 假实现/假代码/假桩专项**
+
+> 交付产物 `build/rkgame.rebuilt.elf` sha256 `b21a3f12cdb2a84e…`（5,521,740 B）；尺子 v2 基线
+> **共有 782 ｜ PASS 737 ｜ DIVERGE 40 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0**（云上跑，§0.28）。
+
+### A. ★★★ 结论速览：差距集中在**四层**，前两层基本收官，后两层是真空缺
+| 层 | 内容 | 状态 |
+|---|---|---|
+| **L1 结构层**（符号/链接/几何/权限） | 工厂有名函数 **787/814 落我方 `.text`**；27"缺失"**全部有解释**；`DT_NEEDED` 7 同序；动态段门禁 FAIL 0；体量覆盖 SHORT 0 | ✅ **清零** |
+| **L2 行为层**（逐函数差分执行） | 782 共有 → 40 DIVERGE，其中 **16 个是仪器判据缺口**（INLINE-MOVE）⇒ 真实待收敛 **24** | ⏳ 见 D |
+| **L3 真实功能层**（真机 drop-in） | 最后一次真机：A 线走到 `driver.so`+DRM+**ALSA** 后崩（两处根因已修，**未复测**） | ⏳ **最大缺口（唯一终局判据）** |
+| **L4 功能升级层**（项目目的 2） | evdev 即插即用手柄 / SRAM 存取 | ⛔ **未动工** |
+
+### B. ★★★★ 假实现 / 假代码 / 假桩 —— 专项结论（**四个"看似假"，实际都清白**）
+| # | 现象 | 判定 | 证据 |
+|---|---|---|---|
+| 1 | **9 个函数体只有 `return;`**：`spi_memcpy` `InitIOSignal` `InitDecode` `joystick_poll` `processvblank` `OutputIOSignal` `ReInitDecode` `RetroInitSound` `__libc_csu_fini` | **✔ 忠实复刻** | 工厂同名函数**也是 4 字节且只有 `bx lr`**（capstone 逐条确认，见下表） |
+| 2 | **恒返回常量**：`GetDecodeData`(return 0) | **✔ 忠实** | 工厂 8 B / 我方 8 B，体量逐项相同 |
+| 3 | **桩文件** `src/compat/zstub.c`（`compress`/`uncompress` **恒 -1**）、`build/stub/libz.so.1`（仅导出 2 个符号）、`src/compat/cxx_ops.c` | **✔ 链接期脚手架，产物里不生效** | 产物 `.dynsym`：`compress`/`uncompress`/`_Znwj`/`_ZdlPv` **全 `SHN_UNDEF`** ⇒ 运行期由**设备自己的** DSO 解析；设备 rootfs 已确认有 `/usr/lib/libz.so.1`(**1.2.11**) 与 `/usr/lib/libstdc++.so.6` |
+| 4 | **`.fimg_text` = 原厂 `.text` 的逐字节副本（2,957,704 B，**同 VMA 0x9b10**）** | **✔ 地址垫，不是执行的代码** | ① 所在 PT_LOAD 权限 **`R--`（不可执行）**；② 段内 **0 个 `STT_FUNC`**（只有 3 个 `STT_OBJECT`）；③ `.text` 对这两个标签 **0 处**字面量引用；④ `factory_image.S` 自述理由：「段 VMA 必须与工厂一致（**代码里烧死绝对地址**）」 |
+
+**工厂侧真空函数的反汇编（capstone，逐条）**：
+```
+spi_memcpy / InitIOSignal / InitDecode / joystick_poll / processvblank /
+OutputIOSignal / ReInitDecode / RetroInitSound      size=4  ⇒  bx lr
+```
+
+### C. ★★★ 27 个"缺失"工厂函数 = **全部有解释**（无一例"没实现"）
+| 类别 | 个数 | 例 |
+|---|---|---|
+| GCC 分段/特化命名（`.part/.constprop/.isra`） | 12 | `run_process.constprop.0`、`index_find.isra.0`、`mxml_fd_read.part.1`… |
+| 工具链 CRT | 5 | `__do_global_dtors_aux`、`call_weak_fn`、`deregister_tm_clones`、`frame_dummy`、`register_tm_clones` |
+| **上游静态函数被我们内联**（**源码都在**） | 10 | `mxml_fd_write`(mxml-file.c)、`mxml_new`(mxml-node.c)、`stbtt__*`×6(**stb_truetype.h**)、`load_state`/`save_state`（工厂侧本身 4 B 空桩） |
+**我方独有 FUNC 14 个**：编译器生成名（`*_isra_*`/`*_constprop_*`/`__aeabi_d2ulz`/`__fixunsdfdi`）+ **上游版本比工厂新**（`stbtt_FindSVGDoc`/`GetKerningTable`/`mp3_unused_GetNextFrameInfo`/`MP3ClearBadFrame`/`DosDateTimeToFileTime`）。
+
+### D. ★★ 体量比（"缺实现"的第二判据）—— `prop_equiv` 实测
+`总计 213 ｜ ★FAIL 0 ｜ WARN 6 ｜ OK 190 ｜ THIN 15 ｜ CALIB 2 ｜ MISSING 0`
+分布（体量≥64B，n=178）：**min 0.55 ｜ p50 1.04 ｜ p90 1.21 ｜ p95 1.33 ｜ max 1.53**
+（★ §0.3 记的"8 WARN + 2 MISSING"已过期 ⇒ 现为 **6 WARN + 0 MISSING**）
+
+| WARN 6 | 我方/工厂 | 定性 |
+|---|---|---|
+| `ClearBuffer` | 20/32 = 0.625 | 已登记豁免（memset 尾调用） |
+| `sunxi_gpio_output` / `sunxi_gpio_set_cfgpin` | 140/232 = 0.547 | 已登记豁免（条件执行融合） |
+| `GetZipItemA` | 68/112 = 0.607 | **待核** |
+| `popoffwindows` | 300/484 = 0.595 | **待核** |
+| `popwindows` | 296/536 = 0.532 | **待核**（GAP 17.14 点名过） |
+体量比 <0.8 共 **32 个**；<0.5 仅 **2 个**（`__udivsi3` 0.341 / `__divsi3` 0.404）——**都是 libgcc 助手，不是我们写的代码** ⇒ 不构成缺口。
+`ReadUSBJoy` 现为 **1072/1196 = 0.896**（§7.4 记的 0.476 已过期）。
+
+### E. ★★★ 本轮我自己的方法学缺陷（**必须记住的纪律**）
+审计"有没有函数指针指向原厂代码"时，我**连续两次**用了宽口径判据 —— 「**某 4 字节字的值落在
+`.fimg_text` 地址区间内**」⇒ 得到 **134（`.text`）/ 3020（`.rodata`）/ 3921（工厂侧）** 个"命中"，
+**全是误报**（区间 0x9b10..0x2dbc98 覆盖了海量普通整数与 ASCII 串）。
+**唯一正确判据 = 精确等于某函数入口地址**，且**必须有对照实验**：
+* 精确判据：我方 `.text`/`.data`/`.data.rel.ro` 命中 **0** 个；`.rodata` 命中 **2** 个；
+* 对照：**工厂自己**也有 **246 个**（同为无重定位的裸数字）；
+* 归因：那 2 个落在 libiconv 的 `hkscs1999_2uni_upages` **递增页表**里（0x…9c00/9c40/9d00/9d40/9d80…），
+  是**巧合的整数**，不是指针；
+* 真正的函数指针表在 `.data.rel.ro`：`0x4dd004 = 0x502228 ← ascii_mbtowc` —— **指向我们自己的 `.text`** ✓
+⇒ **纪律 62**：**"值落在某地址区间内"不是判据；判据是"精确等于符号地址"，且必须做对照（参照侧同类命中数）。**
+
+### F. ★★★★★ 距 1:1 的缺口清单（按优先级；这是可以照单推进的）
+| 优先级 | 缺口 | 性质 | 下一步动作 |
+|---|---|---|---|
+| **P0** | **真机 drop-in 未复测** | 终局判据缺失 | 重出 `_sdcard_drop*` 投放包并上机；判据沿用 t3 的 PC 是否还落在 `0x501bXX` |
+| **P0'** | **16 个 INLINE-MOVE 是仪器判据缺口** | 判据缺口（非代码） | 加"访存版内联等价"对称判据：DIVERGE **40 → 24**（预登记，见 §0.28-D） |
+| P1 | `ONLY-ONE-SIDE` **11 个**真差异 | 真缺陷嫌疑池 | 逐个按"工厂有/我方无"取证（`ConvertCode`/`_mxml_entity_cb`/`locale_charset`/`mui_LoadConfig`/`mui_do_file_list`/`mui_type_file_list`/`xmp3_FDCT32`…） |
+| P1 | 体量比 **WARN 6** 中的 3 个待核 | 真缺陷嫌疑池 | `popwindows`/`popoffwindows`/`GetZipItemA` 到工厂反汇编核对"是否少实现" |
+| P2 | **`.fimg_text` 2.82 MB 原厂机器码** | 合规/项目目的冲突 | ★ **删除实验**：`factory_text.bin` 换全零（**保持 `.size` 与 VMA**）⇒ 若 `link rc=0` 且行为尺 DIVERGE 不上升 ⇒ **内容可完全不携带**（地址垫只需地址空间，不需字节） |
+| P2 | `TRUNC` 5 个不可判 | 欠账 | `MP3InitDecoder`/`TestRun`/`TestUSBJoy`/`WaitNMI`/`xmp3_AllocateBuffers` |
+| P2 | `STOP+MORE` 3 / `RET` 3 / `MIXED` 3 / `STOP-ONLY` 1 | 待定性 | 其中 `_Z14timet2filetimel`（`gmtime` 桩）已在 GAP 登记 |
+| P3 | 项目目的 2 的两项升级 | 未动工 | ① evdev 即插即用 ② `.srm`/`retro_save_state` SRAM 存取 |
+| 环境 | 本机 pagefile=0 致提交可用 0.07 GB | 阻塞 | 用户处置；规避路 = 云开发跑（`tools/cnb_ruler.sh`） |
+
+---
+
+## 0.30 ★★★★★ 第 84 轮（2026-09-29）：**缺口 P2「删除实验」跑通并判决** + 挖出**一个"假绿级"构建缺陷**与**交付产物不可复现的根因**
+
+### 0. 初始方向（复述，防漂移）
+唯一判据 = **与原厂差异收敛**（§0.1/§0.2）；出口 = **差异类别收敛 + 每类上机械门禁**；
+终局判据 = 真机 `_sdcard_drop*` 复测（N6）。本轮推进缺口清单 **P2**（`.fimg_*` 内容是否必须携带）。
+
+### A. ★★★★★ 删除实验判决（`tools/exp_zero_fimg.py`，三态同一路径对照）
+把 `src/data/factory_*.bin` 换**同尺寸全零**（保持 `.size` 与 VMA）后重链 + 跑行为尺：
+
+| case | 零化段 | link rc | 文件大小 | 产物 sha256 | `.fimg_text` 非零 | `.fimg_rodata` 非零 | 共有 | PASS | **DIVERGE** | TRUNC | REFDEAD |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `base` | —— | 0 | 5,513,544 | `a4820bd6…` | 2,850,460 | 772,133 | 782 | 737 | **40** | 5 | 0 |
+| `ztext` | `.fimg_text` | 0 | 5,513,544 | `7cd9352b…` | **0** | 772,133 | 782 | 737 | **40** | 5 | 0 |
+| `ztext_ro` | `+`.fimg_rodata` | 0 | 5,513,544 | `34abc6d6…` | **0** | **0** | 782 | 734 | **42** | 5 | **1** |
+
+**判决（按段分别定论，不是一刀切）**
+| 段 | 大小 | 静态 STRONG | 行为尺（全零后） | 结论 |
+|---|---|---|---|---|
+| **`.fimg_text`** | **2,957,704 B** | 0 | **40 → 40（零影响，PASS 也不变）** | ✅ **字节内容可全部换零**（地址垫只需地址空间） |
+| **`.fimg_rodata`** | **856,920 B** | 0（**漏报**，见 C） | **40 → 42；REFDEAD 0 → 1** | ❌ **必须保留**；最小必需 ≈ **0x2e08d0..0x2e0920** |
+| `.fimg_data` | 11,516 B | 7（movw/movt） | 未测（可写变量区，必用） | ❌ 必须 |
+| `.fimg_bss` | 194,907 B | 6 | 未测（可写变量区，必用） | ❌ 必须 |
+
+**`.fimg_rodata` 的最小必需集合（行为尺定位，不是猜）**：新增发散函数 =
+**`TurboKeyProcess`** / **`init_user_joy_key_mask`**（**按键映射**），明细行两侧读的地址都落
+**`0x002e08d0..0x002e0920`**（4 字节表项，F 侧 `0x2e08ec/0x2e0908/0x2e090c/0x2e0914`，O 侧 `0x2e08e8/0x2e08d4`）。
+⇒ `.fimg_rodata` 的 856 KB 里**只有这一小片是必需的**（下一步可用行为尺二分收敛到字节级）。
+* 附带：`stbtt__get_subrs` / `stbtt__tesselate_curve` 在 `ztext_ro` 里**从 DIVERGE 消失** ⇒ 它们原先是"读了 `.fimg_rodata` 造成"的差异。
+
+### B. ★★★★★ 挖出「假绿级」构建缺陷：**zig 缓存不追踪 `.incbin`**
+* 现象：第一次跑删除实验，`.fimg_text` 全零化后产物 sha **与对照逐字节相同**（`cmp` 通过）。
+* 揭穿：**内容级校验**（直接读产物里的 `.fimg_text` 段）显示前 16 字节仍是工厂 `.text` 原样
+  （`38309fe5…`）⇒ **零化没生效**；`sha 相同` 差点被读成"内容不需要"。
+* 根因：**zig 的缓存键 = 源文件内容 + 命令行，不追踪 `.incbin` 打开的文件**。`link_full.sh`
+  每次 `cat factory_image.S factory_local.S > build/factory_all.S`，`.S` 正文没变 ⇒ 缓存命中
+  ⇒ **复用旧的 `factory_local.o`** ⇒ 改任何 `factory_*.bin` 都**不生效且不报错**。
+* 修法（已落地，`tools/link_full.sh`）：在 `$ALLS` 末尾追加一行
+  `/* fimg-content-hash: <factory_*.bin 的 sha256 前 32 位> */` ⇒ 镜像一变缓存键必变。
+  **回退 = 删掉那 3 行**。
+* 纪律参照：GAP 16.56（"编译够便宜就不要缓存"）—— 这是**同类第 4 次**。
+* 同时给 `exp_zero_fimg.py` 加**假绿断言**：零化段在产物里**必须**非零字节 = 0，
+  对照段必须 > 0；不符即标 `★★假绿`。
+
+### C. ★★★★ 公开纠正：静态仪器对 `.fimg_rodata` 的"零引用"是**漏报**
+* 本轮新建 `tools/fimg_content_gate.py`（符号表界定逐函数反汇编 + **相对偏移解算**），
+  修掉了自己前三轮的三个误判：
+  ① 「4 字节值落 2.9 MB 区间」误报 134/3020（纪律 62）；
+  ② 把**指令立即数**当地址 ⇒ `mov r0,#0x10000` 成了"引用"（1402 处噪声）；
+  ③ **线性扫描** `md.disasm` 在混常量池的 `.text` 上只覆盖 **0.1%（125 条）** ⇒ 判据全 0。
+  修好后覆盖 **100%（95,518 条）**，并解算出本产物的真实寻址风格：
+  **`ldr rX,[pc,#imm]` → `add rX, pc, rX`（相对偏移），实测 RELPC 命中 4154 处
+  （`.got` 2269 / 自有 `.rodata` 1829）**；`.fimg_data`/`.fimg_bss` 用 `movw/movt` 绝对地址。
+* **但本工具对 `.fimg_rodata` 报 0，已被行为尺反证（A 节）** ⇒ 那两个函数的引用形式
+  **不在覆盖的寻址序列里**。工具内已就地加注。
+* ⇒ **纪律（强化）**：**行为尺是唯一判据**；静态仪器的数只当"提示/定位"，
+  **不得单独下结论**（本轮又验证一次：只有行为尺能给出真答案）。
+
+### D. ★★★★★ 交付产物**不可本机复现** —— 根因 = **陈旧 XUnzip 对象**
+用 `link_full.sh` 在本机重链（`base`）得 `a4820bd6…`/5,513,544 B，与交付 `b21a3f12…`/5,521,740 B
+**不等**。段级 diff 定位：**`.text` 427,656 vs 419,408（−8,248）**、`.plt` +16、`.dynsym` +16；
+**所有 `.fimg_*` 镜像段完全一致**。函数级 diff：801 FUNC 名字全同，**66 个 size 不同且全部是
+XUnzip 的 C++ 符号**（`_ZN6TUnzip*` / `unz*` / `inflate_*` / `huft_build`）。
+
+**与工厂精确相同的符号数（判据 = 与工厂收敛）**：
+| 对象 | 命中 |
+|---|---|
+| **当前 `src/upstream/xunzip/XUnzip.o`（Sep 27 17:31，39,476 B，0 个 `.debug_*`）** | **13 / 62** |
+| **交付产物 `b21a3f12` 里的 XUnzip 族** | **3 / 62** |
+| `build/upstream_ref/caltest2/XUnzip.o`（Sep 16，160,580 B，**7 个 `.debug_*`**） | 2 / 62 |
+
+⇒ **交付产物带的是"陈旧 XUnzip 对象"**（GAP 16.56 描述的现象复现：陈旧对象使整整一族 zip 符号
+size 偏离工厂 1.5×~48×）。**⇒ 第 79 轮"行为尺 40"的基线建立在一个含错对象的产物上**。
+* 附证：`unzip.cpp` 当前 sha256 = `1a6f9b1b…` ≠ `.XUnzip.src.sha256` 记账值 `9ee99732…`
+  ⇒ **源码在记账之后又被改过**（`unzip.cpp` mtime Sep 28 20:08 > `.o` Sep 27 17:31）。
+* `link_audit.sh` 已按 GAP 16.56 改为"XUnzip **每次必重编**"，但 **`link_full.sh` 直接吃现成 `.o`**
+  ⇒ 磁盘上那份陈旧对象照样进产物。
+* ★ 观测到的"幸运"：base（13/62）与交付（3/62）**行为尺完全相同（782/737/40/5/0）**
+  ⇒ 该族差异**不落在行为尺的语料覆盖上** ⇒ 行为尺对 zip 族**不敏感**（覆盖面局限，须记）。
+
+### E. 新纪律 63–66
+> **63.** 汇编/编译流程里凡有 `.incbin` / `#include` / 生成器产出的**外部输入**，
+>   缓存键**必须**显式包含其内容哈希 —— 否则得到"改了不生效且不报错"的**假绿**。
+> **64.** 实验必须带**假绿断言**（"我声称改掉的输入，在产物里真的变了吗"）；
+>   只比 sha 不够，要比**目标对象的实际内容**。
+> **65.** **静态判据不得单独下结论**；凡有行为尺可跑的场合，静态数只作提示与定位。
+>   （本轮 `.fimg_rodata` 的"零引用"就是静态漏报、行为尺反证。）
+> **66.** 凡"交付产物"必须能用仓库内脚本**逐字节复现**；不能复现时，
+>   **第一个要查的是"是否有预编译入库对象"**（本项目 = `XUnzip.o`），
+>   并给出该对象与工厂的**收敛度数字**（本仓现缺这道门禁）。
+
+### F. 回退与复现
+* 回退 zig 缓存修复：删 `tools/link_full.sh` 里 `fimg-content-hash` 那 3 行。
+* 删除实验复现：`python tools/exp_zero_fimg.py base ztext ztext_ro`（自动备份/恢复 `src/data/*.bin`，
+  输出到 `build/_exp/`，**不触碰** `build/rkgame.rebuilt.elf`）。
+* 行为尺复现：`CGM_MACHINE_REUSE=1 python tools/diff_exec.py --batch --steps 3000 --ours <elf>`。
+* 证据：`report/_zx_base.txt` / `report/_zx_ztext.txt` / `report/_zx_ztext_ro.txt`；
+  链接日志 `build/_exp/link_*.log`。
+
+### G. ★★★ 下一步（按优先级；P0 之外可立即做）
+| 优先 | 动作 | 判据 |
+|---|---|---|
+| **P0 新** | **重编 XUnzip（当前源码）+ 重链**，建立"XUnzip 与源码同步"的新基线 | 与工厂精确相同符号数 **13 → ?**（应上升）；行为尺 **不劣化** |
+| **P0 新** | 给 `XUnzip.o` 加**机械门禁**：与工厂收敛度低于阈值即 FAIL（本仓现缺） | 阈值先登记再上线（纪律 61） |
+| P2' | `.fimg_rodata` 最小必需集合收敛到**字节级** | 行为尺二分；目标：只保留 `0x2e08d0..0x2e0920` 附近 |
+| P2 | `.fimg_text` 全零化**开关化**（`FIMG_ZERO_TEXT=1`）+ CI 里跑一次对账门禁 | 全零后行为尺必须逐项等于基线 |
+| P0 | 真机 `_sdcard_drop*` 复测（**唯一终局判据，需用户物理动作**） | t3 的 PC 是否仍落 `0x501bXX` |
+
+---
+
+## 0.31 ★★★★ 第 84 轮补充（2026-09-29）：**重编 XUnzip = 净收敛**（P0 新缺口的前半已闭环）
+
+### 动机
+§0.30-D 证明交付产物带的是**陈旧 XUnzip 对象**（与工厂精确相同 **3/62**，磁盘 `.o` 是 13/62）。
+⇒ 按"每次必重编"（GAP 16.56 已定的规矩）把**当前 `unzip.cpp`** 重编，看是否净收敛。
+
+### 实测（`tools/exp_xunzip_sync.py`，`DIAG_XUNZIP=` 指向重编对象，**不动 `src/`**）
+
+| 版本 | XUnzip 与工厂精确相同 | 文件大小 | 产物 sha | PASS | **DIVERGE** |
+|---|---|---|---|---|---|
+| 交付 `b21a3f12`（陈旧对象） | **3 / 62** | 5,521,740 | `b21a3f12…` | 737 | 40 |
+| `base`（磁盘 `.o` Sep 27） | 13 / 62 | 5,513,544 | `a4820bd6…` | 737 | 40 |
+| **`sync`（重编当前源码）** | **14 / 62** | 5,513,144 | `918ae9a9…` | **738** | **39** ✓ |
+
+**两个判据同时收敛**：符号层 13 → **14/62**；行为层 DIVERGE 40 → **39**、PASS 737 → **738**。
+
+### 关键单点
+| 符号 | 工厂 | 磁盘 `.o` | 重编 `sync.o` | 交付 |
+|---|---|---|---|---|
+| `_Z14timet2filetimel` | **12** | 312 | **12** ✅ 精确命中 | 316 |
+| `_ZN6TUnzip5UnzipEiPvjj` | 28 | 472 | 472 | 1360 |
+| `_Z10huft_build…` | 1432 | 1268 | 1268 | 2312 |
+
+⇒ 重编让 **`timet2filetime` 精确收敛到工厂**（该符号正是 §0.27 `STOP+MORE` 类点名过的）。
+
+### ★ 待用户确认（**已顶到面前**）
+把 `build/_exp/XUnzip.sync.o` 落成 `src/upstream/xunzip/XUnzip.o`（**入库对象**）+
+更新 `.XUnzip.src.sha256` 记账值 —— **这是改入库产物**，且 `.cnb.yml`/CI 有"XUnzip.o 必须入库
+（不得被 .gitignore 排除）"的契约，故**先问再改**。
+回退 = 用 `build/_exp/bak/` 或 `git checkout -- src/upstream/xunzip/XUnzip.o`。
+
+### 观察（覆盖面局限，须记）
+交付（3/62）与磁盘（13/62）**行为尺完全相同**（782/737/40/5/0），而重编（14/62）才带来
+DIVERGE −1 ⇒ **`XUnzip::Unzip`（工厂 28 B vs 我方 472 B，16.9×）这类大偏离并不被行为尺
+的 3 组语料覆盖** ⇒ 符号层收敛度**不能**用行为尺代替，两者都要看（纪律 65 的对称面）。
+
+---
+
+## 0.32 ★★★★★ 第 85 轮（2026-09-29）：**承认违反纪律 37** + **完成率机械核对** + **修掉真"缺体"根因**（DIVERGE 40 → **38**）
+
+### 0. 用户质问（原文，最高优先级）
+> 「**你与什么铁证说明需要真机实测？你现在提交的只是一个半成品。"缺口清单"完成率到达 100% 没有？**
+>  **如果没有请继续修复缺口。**」
+
+### A. 真机的"铁证" = §0.19-D 的**双向判据**（装置能复现真机 + 修复可验证）
+```
+装置：MMIO-STRICT VIOLATION off=0x2c w=2 < min=4 dir=R pc=0x00501b84
+真机：SIGBUS(7) @ sfc_init+0x6c（si_addr=base+0x2C，ldrh r1,[r0,#0x2c]）
+```
+逐字同构 ⇒ 真机测的是**沙箱观测不到的那层**（真实 glibc/SDL 加载、真实 DRM/ALSA/evdev、真 SD 卡）。
+**但这不构成"现在就该上机"的理由** —— 见 B。
+
+### B. ★★★★ 我错了：**违反纪律 37**（已登记的纪律，不是新发现）
+> §0.19 纪律 **37**：「请用户上机」之前必须自问：**本地装置做完了吗**？
+> 文档已写明某个结构性成因未消除时，**不得把上机当下一步**。
+> 纪律 **40**：不得用"未经证实的负面事实"替代对自身进度的诚实评估 —— **那是把责任推给用户**。
+
+上一条回复把「真机复测」列为 P0 顶给用户 ⇒ **正是纪律 37 点名禁止的行为**。
+**纠正**：真机是终局判据，但**不是当前下一步**；§0.19-F 六项待办**明确写着"全部设备无关"**。
+
+### C. ★★★★ 完成率机械核对（实测，纠"半成品"之实）
+| 来源 | 项 | 实测状态 |
+|---|---|---|
+| §0.19-F.1 | 抬高沙箱天花板（224 事件 SIGSEGV 来源） | ❌ 未做 |
+| §0.19-F.2 | `UpdateROM` 缺体（680/976=0.697）/ `ReadUSBJoy`（0.896） | ⚠️ 部分 |
+| §0.19-F.3 | `.dynsym` 28 项差异 | ❌ 未做 |
+| §0.19-F.4 | 19 mui + 6 XUnzip + 3 mxml + 3 libiconv 残余 | ⚠️ XUnzip 试验过（14/62） |
+| §0.19-F.5 | `sunxi_gpio_init.c` 5 个无 volatile 基址 | ⚠️ **本轮取证：无可观测差异**（见 E） |
+| §0.19-F.6 | stbtt ≤1.22 / Helix 夹逼 + CI 全绿 | ❌ 未做 |
+| §0.29-F P2 | `.fimg_text` 删除实验 | ✅ 完成（§0.30） |
+| §0.29-F P0' | INLINE-MOVE 判据缺口（40→24） | ❌ 未做 |
+| §0.29-F P1 | ONLY-ONE-SIDE 11 个真差异 | ❌ 未做 |
+| §0.29-F P1 | **体量比 WARN 待核 3 个** | ✅ **本轮闭环**（见 D/E/F） |
+| §0.29-F P2 | TRUNC 5 个 | ❌ 未做 |
+| §0.29-F P2' | `.fimg_rodata` 最小集合字节级 | ❌ 未做 |
+| §0.29-F P3 | 目的 2 两项（evdev / SRAM） | ❌ 未做 |
+| §0.30-G | XUnzip 收敛度门禁 | ❌ 未做 |
+| §0.30-G | `.fimg_text` 全零化开关 + CI 对账 | ❌ 未做 |
+| §0.30-G | `.fimg_text` 全零化开关 + CI 对账 | ❌ 未做 |
+
+⇒ **完成率：修前 1/14 ≈ 7%；本轮后 3/14 ≈ 21%**（+ 体量比 WARN 闭环 + 2 个真修复）。
+**明确的 yes：没有到达 100%，也没有接近。** 本轮起按此表逐项推进，**不再把真机当选下一步的理由**。
+
+### D. ★★★★★ 真根因修复：**Ghidra 拆散"结构体" ⇒ 死存储被 `-Os` 整段删除**
+**病灶链（实测，非推测）**：
+1. 工厂 `blockadaptive` 用 `&local_58` / `&local_40` 两个指针按索引访问**各 6 个连续 int**：
+   工厂读 `param0` 偏移 `0/4/8/0xc/0x10`（我方还含 `0x14`）；工厂 `popwindows` 里
+   `&local_40 = sp+0x28`、`&local_58 = sp+0x40`（各跨 6 个 int）。
+2. Ghidra 把这两个"结构体"**拆成 12 个独立局部变量**；其中 `local_3c/38/34/30/2c`
+   在 C 语言层面**只写不读**（真实读取发生在 `blockadaptive` 里，但 C 的**对象边界规则**
+   让编译器**无权**这样假定）⇒ `-Os` 判死存储 ⇒ **那段 5 步插值计算整体消失**。
+3. ⇒ `popwindows` 我方 **296 B** vs 工厂 **556 B**（0.532）；`popoffwindows` **300 vs 504**（0.595）。
+
+**修复（源码级，不是打补丁）**：把两块各 6 个 int 还原成**数组** ——
+```c
+int blkB[6];   /* local_58, 54, 50, 4c, 48, 44 */
+int blkA[6];   /* local_40, 3c, 38, 34, 30, 2c */
+#define local_40 blkA[0]   ...  （文件末尾 #undef）
+```
+**为什么不用 `volatile`**：`volatile` 会连带改掉整块的访存顺序与次数 —— 那只是**用另一个偏差
+盖住原偏差**。还原成数组是**如实表达语义**，对任何编译器都成立。
+
+**三方判据同时确认（交付产物 `ef49439c…`）**：
+| 判据 | 修前 | 修后 |
+|---|---|---|
+| `popwindows` 体量 | 296（0.532） | **508（0.913）** |
+| `popoffwindows` 体量 | 300（0.595） | **440（0.873）** |
+| **行为尺** | PASS 737 ｜ **DIVERGE 40** | **PASS 739 ｜ DIVERGE 38** |
+| `prop_equiv` | WARN **6** | **WARN 4**（FAIL 0） |
+| 交付产物 sha | `b21a3f12cdb2a84e` | **`ef49439c89c01029`** |
+| 门禁 | —— | 全 PASS（A4/A5/A6、SHORT 0、单侧未建模全在台账内） |
+* 回退：`git checkout -- src/proprietary/mui/FUN_00027398_popwindows.c FUN_000275c4_popoffwindows.c`
+  + 重链；旧产物备份在 `build/_exp/rkgame.rebuilt.prefix.bak`。
+
+### E. F.5 取证（**证据表明不该盲目加 `volatile`**）
+`sunxi_gpio_output`：工厂与我方**都从全局变量重载基址**（`ldr r2,[r3,#0x10]` ↔ `ldr r0,[r0]`），
+跨函数边界编译器本就不能缓存 ⇒ **当前无可观测差异**；体量差来自**条件执行融合**（已登记豁免）。
+⇒ 加 `volatile` 属**收益未证明的防御性改动**，优先级下调（**不因"GAP 提过"就照改**）。
+
+### F. `GetZipItemA` 定性（0.607）—— **编译器尾合并，语义等价**
+我方把 3 个出口合并成一个（`b` 到公共尾）⇒ 68 B；工厂 3 段各自 `pop {r4,pc}` ⇒ 112 B。
+⇒ **登记豁免**（与 `sunxi_gpio_*` 同类），**不改**。
+⇒ **至此 `prop_equiv` 的 WARN 6 全部闭环**：2 个真修复 + 1 个新定性 + 3 个既有豁免。
+
+### G. 新纪律 67–68
+> **67.** 凡"某结构被 Ghidra 拆成多个独立局部变量、且部分成员只写不读" ⇒ 先疑
+>   **死存储消除**，再疑源码本身。判据 = ① 大小写方反汇编里**被调函数按指针索引的跨度**
+>   ② 该成员是否只写不读。**修法是还原成数组/结构体**，不是 `volatile`。
+> **68.** 「GAP 里提过」**不构成修复依据**；每条都要**先取证有无可观测差异**（本轮 F.5 即反例：
+>   提过，但真机/反汇编都证明当前无差异）。
+
+### H. 本轮新增工具
+* `tools/exp_relink.py` —— 用替换过的对象目录重链（**不动 `build/obj/`**），含
+  **① overlay 文件名唯一匹配 ② 对象数不变自检**（防"新增对象伪装修复"，
+  实测踩到过 `duplicate symbol: popwindows`）**③ safe-delete 拦截容错**。

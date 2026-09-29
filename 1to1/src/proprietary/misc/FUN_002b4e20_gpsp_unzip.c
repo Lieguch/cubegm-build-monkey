@@ -13,7 +13,9 @@ gh_u4 gpsp_unzip(gh_u4 param_1,char *param_2)
 {
   gh_u4 *iVar1;
   int iVar2;
-  gh_u1 auStack_140 [296];
+  /* 根修（UB）：Ghidra 声明 296 B，函数体 `memset(auStack_140, 0, 0x130)` 实际写 304 B
+     ⇒ 越界 = UB ⇒ 优化器可删码。恢复真实尺寸。 */
+  gh_u1 auStack_140 [0x130];
   gh_u4 local_18;
   
   memset(auStack_140,0,0x130);

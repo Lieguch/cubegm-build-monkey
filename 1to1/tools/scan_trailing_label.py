@@ -50,6 +50,14 @@ def scan_text(text):
         j = i + 1
         while j < len(lines) and RE_ONLY_COMMENT.match(lines[j]) and lines[j].strip() == '':
             j += 1
+        # ★ 2026-09-27 修（自证反例锚点抓到的检测盲区）：
+        #   **连续标签链** `A: B: }` —— 标签的"有效下一条语句"要一路跳到标签链之后。
+        #   旧实现只看"紧邻的下一行"，于是 `A:` 的下一条是 `B:`（不以 `}` 开头）⇒ **只报 B，漏报 A**。
+        #   实测形态确实存在（Ghidra 反编译产物中同一基本块可能有多个入口标签）。
+        while j < len(lines) and RE_LABEL.match(lines[j]):
+            j += 1
+            while j < len(lines) and RE_ONLY_COMMENT.match(lines[j]) and lines[j].strip() == '':
+                j += 1
         if j >= len(lines):
             out.append((i + 1, name))          # 文件结束
             continue

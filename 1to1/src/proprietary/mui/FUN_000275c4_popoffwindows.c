@@ -8,6 +8,27 @@
 #include "globals.h"
 #include "proto.h"
 
+/* ============================================================================
+ * ★★★ 2026-09-29（§0.32）：与 `popwindows` **同一根因**的结构性修复。
+ * 工厂 `blockadaptive` 用 `&local_40` / `&local_58` 按指针索引**各 6 个连续 int**；
+ * Ghidra 把它们拆成 12 个独立局部变量，其中 `local_38/3c/30/34` 只写不读
+ * ⇒ `-Os` 删掉死存储 ⇒ 我方 300 B vs 工厂 504 B（0.595）、5 步插值计算整体消失。
+ * 修法 = 还原成数组（让"取首地址传外部函数"在编译器眼里可触及全部元素）。
+ * 回退：`git checkout -- src/proprietary/mui/FUN_000275c4_popoffwindows.c`
+ * ========================================================================== */
+#define local_58 blkB[0]
+#define local_54 blkB[1]
+#define local_50 blkB[2]
+#define local_4c blkB[3]
+#define local_48 blkB[4]
+#define local_44 blkB[5]
+#define local_40 blkA[0]
+#define local_3c blkA[1]
+#define local_38 blkA[2]
+#define local_34 blkA[3]
+#define local_30 blkA[4]
+#define local_2c blkA[5]
+
 void popoffwindows(gh_u4 *param_1)
 
 {
@@ -20,18 +41,9 @@ void popoffwindows(gh_u4 *param_1)
   int iVar7;
   int iVar8;
   int iVar9;
-  gh_u4 local_58;
-  gh_u4 local_54;
-  gh_u4 local_50;
-  int local_4c;
-  int local_48;
-  int local_44;
-  int local_40;
-  int local_3c;
-  int local_38;
-  int local_34;
-  int local_30;
-  int local_2c;
+  /* ★ 两块连续对象（各 6 个 int）；见文件头 §0.32 说明。 */
+  int blkB[6];
+  int blkA[6];
   
   iVar5 = param_1[2];
   iVar2 = param_1[1];
@@ -83,3 +95,16 @@ void popoffwindows(gh_u4 *param_1)
   free(scrbuf);
   return;
 }
+
+#undef local_58
+#undef local_54
+#undef local_50
+#undef local_4c
+#undef local_48
+#undef local_44
+#undef local_40
+#undef local_3c
+#undef local_38
+#undef local_34
+#undef local_30
+#undef local_2c

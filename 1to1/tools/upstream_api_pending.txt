@@ -1,14 +1,23 @@
 # 上游库公有 API「我们多出」· 已知待修台账（棘轮）
 # 格式: <符号名>   —— 修好（重新钉版本）后删行；新增不在台账内 ⇒ 门禁失败
+#
+# ---- 2026-09-27 已修（删行留档）：mini-XML 3.x -> 2.9 ----------------------------
+#   根因：工厂 mxml **不是 3.x**。硬证据（手工反汇编 + tools/mxml_version_fingerprint.py）：
+#     · 工厂 mxmlDelete 内含 `bl <自身入口>`（真递归）⇒ < 2.10（2.10 为 CVE-2016-4570 改迭代）
+#     · 工厂无 `mxml_free` 静态函数（2.10 引入）⇒ 再次 ⇒ < 2.10
+#     · 工厂无 mxmlElementGetAttrCount/ByIndex、mxmlNewOpaquef/SetOpaquef（2.11 引入）⇒ < 2.11
+#     · 工厂有 mxmlFindPath、mxmlGet* 访问器（2.7 引入）⇒ >= 2.7
+#   换成 release-2.9 后**实测删掉 6 行**，且 diff_exec DIVERGE 75 -> 57（-18）；
+#   同时**新增 3 个共有符号**（mxml_file_putc / mxml_string_putc / mxml_write_string）——
+#   正是版本 pin 正确才会出现的旁证。
+#   已删：mxmlElementGetAttrByIndex / mxmlElementGetAttrCount /
+#         mxmlNewOpaquef / mxmlSetOpaquef / mxml_free / mxml_parse_element
+# ---------------------------------------------------------------------------------
 MP3ClearBadFrame
 mp3_unused_GetNextFrameInfo
-mxmlElementGetAttrByIndex
-mxmlElementGetAttrCount
-mxmlNewOpaquef
-mxmlSetOpaquef
 mxml_fd_read
-mxml_free
-mxml_parse_element
+#   （保留项）工厂侧为 `mxml_fd_read.part.1`（GCC 冷热分割残留），本质同源同名；
+#   我们 2.9 里是普通 static ⇒ 只差后缀。不是版本问题，勿再动上游版本。
 stbtt_FindSVGDoc
 stbtt_GetCodepointSVG
 stbtt_GetGlyphSVG

@@ -331,9 +331,13 @@ def main():
     from elftools.elf.elffile import ELFFile
     with open(a.factory, 'rb') as f:
         ef = ELFFile(f)
-        ffuncs = {s.name: (s['st_value'], s['st_size'])
-                  for s in ef.get_section_by_name('.symtab').iter_symbols()
-                  if s.name and s['st_info']['type'] == 'STT_FUNC' and s['st_value']}
+        # ★ 口径（2026-09-27 对齐）：分母 = STT_FUNC ∧ 有名字 ∧ st_size>0（= 804，与 ledger/functions.csv 同源）。
+        #   此前只滤 st_value ⇒ 把 10 个"零长别名符号"也算进来 ⇒ 分母 814，与 804 静默并存 6 天。
+        #   现改为显式两段统计，**把差额打出来**（口径不一致必须可见，不得静默）。
+        _allf = [s for s in ef.get_section_by_name('.symtab').iter_symbols()
+                 if s.name and s['st_info']['type'] == 'STT_FUNC' and s['st_value']]
+        ffuncs = {s.name: (s['st_value'], s['st_size']) for s in _allf if s['st_size'] > 0}
+        ffuncs_zerolen = [s.name for s in _allf if s['st_size'] == 0]
         ftext = None
         for s in ef.iter_sections():
             if s.name in ('.text',):
@@ -360,9 +364,14 @@ def main():
     up_idx = build_upstream_index(ROOT)
 
     w('')
-    w('【C】函数覆盖（工厂有名 FUNC 为分母；按**来源**分桶）')
+    w('【C】函数覆盖（分母 = 工厂 STT_FUNC ∧ 有名 ∧ st_size>0；按**来源**分桶）')
     w('-' * 100)
-    w('  工厂有名 FUNC = %d ；我方 .text = [0x%x, 0x%x)' % (len(ffuncs), otext[0], otext[1]))
+    w('  工厂有名 FUNC = %d （= 804 口径）' % len(ffuncs))
+    w('  ⚠ 另排除 st_size==0 的 STT_FUNC 别名 %d 个（旧版把它们算进分母 ⇒ 814，与 804 静默矛盾）'
+      % len(ffuncs_zerolen))
+    if ffuncs_zerolen:
+        w('     被排除的名字：%s' % ', '.join(sorted(ffuncs_zerolen)[:20]))
+    w('  我方 .text = [0x%x, 0x%x)' % (otext[0], otext[1]))
     w('  我方符号表 FUNC 名 = %d ；专有清单(ledger/functions.csv) = %d ；上游标识符索引 = %d'
       % (len(ofuncs), len(prop_set), len(up_idx)))
 

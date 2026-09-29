@@ -17,7 +17,8 @@ gh_u4 FilePreEmu(char *param_1)
   gh_u4 *iVar3;
   int iVar4;
   gh_uint uVar5;
-  int local_158;
+  /* 根修（UB）：同 run_game.c —— 这是 0x130 字节栈缓冲，非 4 字节 int。 */
+  gh_u1 local_158[0x130];
   gh_u1 auStack_154 [292];
   int local_30;
   
@@ -60,7 +61,7 @@ gh_u4 FilePreEmu(char *param_1)
       }
       else {
         GetZipItemA(iVar3,0xffffffff,&local_158);
-        RARCH_LOG("zipcount %d\n",local_158);
+        RARCH_LOG("zipcount %d\n",*(int *)(void *)local_158);
         if (local_158 < 2) {
           iVar4 = GetZipItemA(iVar3,0,&local_158);
           if (iVar4 == 0) {

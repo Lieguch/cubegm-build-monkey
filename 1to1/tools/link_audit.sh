@@ -14,7 +14,8 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REP="${1:-$ROOT/report/link_audit.txt}"
-OBJD="$ROOT/build/obj"
+# ★ 2026-09-28：对象输出目录可用 OBJD 覆盖（编译器对齐实验用 build/gcc_obj，不污染主链）
+OBJD="${OBJD:-$ROOT/build/obj}"
 SRCDIR="$ROOT/src/proprietary"
 PY="${PY:-python}"
 
@@ -49,7 +50,31 @@ FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 #     被 tools/prop_equiv.py 的 size 比值判据误报成 FAIL（7 个 FAIL 里 5+ 个源于此）。
 #   ★ 单变量纪律：`OPT=-O1 sh tools/link_audit.sh <out>` 可回到旧口径做对照。
 OPT="${OPT:--Os}"
-CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat $ARCH $FIDELITY"
+# ★ 2026-09-28：EXTRA_INC 允许追加头文件搜索路径（头文件对齐实验用
+#   `-nostdinc -I<工厂同期 glibc 头>`；默认为空 ⇒ 主链行为逐字不变）。
+
+# ★★★ 2026-09-28：**构建事实**（臂 C 实测，见 BUILD-FACT-ALIGNMENT.md）
+#   工厂用**真 glibc 2.24 头**（证据：`putc`→`_IO_putc`、`getc`→`_IO_getc`；
+#   真头 `stdio.h:587` 把 putc 定义为无条件宏）＋ clang 不做 `strcmp(x,"lit")==0`→`bcmp`
+#   的变换（GCC 不做，需 `-fno-builtin-strcmp`）。
+#   头搜索顺序**必须**是「组件自己的头 → GCC include → GCC include-fixed → sysroot/usr/include」：
+#     · 额外头排在组件 `-I` 之前会盖住组件 vendored 头（实测盖住 libiconv 的 iconv.h）；
+#     · 真 glibc 的 limits.h 用 `#include_next`，不插 GCC include-fixed 会跳进 zig 自带的新版
+#       glibc limits.h ⇒ `'__GLIBC_USE' is not defined`。
+CGM_TC="${CGM_TC:-$ROOT/cache_tc/bootlin63}"
+CGM_GI="$CGM_TC/lib/gcc/arm-buildroot-linux-gnueabihf/6.3.0/include"
+CGM_GIF="$CGM_TC/lib/gcc/arm-buildroot-linux-gnueabihf/6.3.0/include-fixed"
+CGM_GD="$CGM_TC/arm-buildroot-linux-gnueabihf/sysroot/usr/include"
+if [ ! -f "$CGM_GD/stdio.h" ] || [ ! -f "$CGM_GI/stddef.h" ]; then
+    echo "★★ 缺工厂同期真头（$CGM_GD）—— 这是构建事实，不是可选优化。" >&2
+    echo "   先跑：sh tools/fetch_bootlin63.sh" >&2
+    exit 4
+fi
+CGM_HDR="-nostdinc -I$CGM_GI -I$CGM_GIF -I$CGM_GD"
+CGM_FID_EXTRA="-fno-builtin-strcmp"
+OPT="${OPT:--Os}"
+# ★ 头集合**排在组件 -I 之后**（这里只有 src/compat 在它前面，是故意的：compat 是我们的垫片）。
+CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat ${CGM_HDR} ${EXTRA_INC:-} $CGM_FID_EXTRA $ARCH $FIDELITY"
 
 mkdir -p "$OBJD" "$(dirname "$REP")"
 rm -f "$OBJD"/*.o 2>/dev/null
@@ -76,7 +101,7 @@ done
 echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 
 # 上游组件对象（已预编译 / 本脚本内编译）一并纳入符号审计
-XUPOBJ="$ROOT/src/upstream/xunzip/XUnzip.o"
+XUPOBJ="${XUPOBJ:-$ROOT/src/upstream/xunzip/XUnzip.o}"
 XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
 
 # ★★★ 2026-09-21（GAP 16.56）：**每次必重编**，不再用「源码哈希缓存」做跳过依据。
@@ -112,11 +137,11 @@ if [ -f "$XUSRC" ]; then
       *zig*)
         # zig cc 按扩展名自动按 C++ 编译 .cpp
         XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
-        $CC $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
+        $CC $XUXTRA $CFLAGS "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
         ;;
       *)
         XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
-        $CC -x c++ $CFLAGS $XUXTRA "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
+        $CC -x c++ $XUXTRA $CFLAGS "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
         ;;
     esac
     if [ -s "$XUTMP" ]; then
@@ -147,7 +172,7 @@ if [ "$ok" -gt 0 ]; then
         $PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$XUPOBJ")" >> "$ROOT/report/_link_syms.tsv" 2>/dev/null
     fi
     # 上游组件对象（stb / mxml / mp3）：若缺失则先构建
-    UPOUT="$ROOT/build/upstream"
+    UPOUT="${UPOBJD:-$ROOT/build/upstream}"
     if [ -z "$(ls -A "$UPOUT"/*.o 2>/dev/null)" ]; then
         echo "== 上游对象缺失，调用 build_upstream.sh =="
         CC="$CC" PY="$PY" sh "$ROOT/tools/build_upstream.sh" "$UPOUT" >/dev/null 2>&1

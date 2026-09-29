@@ -34,6 +34,21 @@ CC="${CC:-arm-linux-gnueabihf-gcc}"
 FIDELITY="${FIDELITY:--fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0}"
 OUT="${1:-$ROOT/build/rkgame.rebuilt.elf}"
 PY="${PY:-python}"
+# ★★ 2026-09-28：门禁脚本依赖 pyelftools。实测踩到：PY 回退到系统 python（无 elftools）
+#   ⇒ 门禁抛 `ModuleNotFoundError` 并以非零退出 ⇒ 被当成"门禁 FAIL"（**假失败**，
+#   与"参数传错"同族）。这里先自检，并尝试已知 venv 路径兜底；都不行就**指名报错**。
+if ! "$PY" -c 'import elftools' 2>/dev/null; then
+    for _c in "$HOME/.workbuddy/binaries/python/envs/default/Scripts/python.exe" \
+              "$HOME/.workbuddy/binaries/python/envs/default/bin/python" python3; do
+        if command -v "$_c" >/dev/null 2>&1 && "$_c" -c 'import elftools' 2>/dev/null; then
+            PY="$_c"; echo "  [env] PY 兜底为 $_c（含 pyelftools）"; break
+        fi
+    done
+fi
+"$PY" -c 'import elftools' >/dev/null 2>&1 || {
+    echo "★★ 门禁依赖缺失：PY=$PY 无法 import elftools（pip install pyelftools）" >&2
+    exit 5
+}
 
 # ★★ glibc 版本下限 —— 设备兼容性的硬约束
 #   实测（golden/factory.rkgame.bin 的 .gnu.version_r / .dynstr）：工厂 rkgame 需要的最高
@@ -46,6 +61,13 @@ PY="${PY:-python}"
 #   GLIBC_2.4/2.7（与工厂同级，向下兼容到任意 ≥2.7 的设备 glibc）。
 #   ⇒ 因此链接**必须**用 zig；用 GCC 时必须显式给 SYSROOT（否则 abi_check 的 GLIBC 门禁会 FAIL）。
 GLIBC_VER="${GLIBC_VER:-2.7}"
+
+# ★★ LINK_DRIVER —— 链接驱动（2026-09-28 新增）
+#   lld  （默认）：`zig ld.lld` + **工厂同期 sysroot**（Bootlin 2017.05）：
+#                  DT_NEEDED 7 项同序、mem*/str* 动态导入、__aeabi_* 6 个静态助手尺寸同工厂、
+#                  版本需求逐项同工厂；DIVERGE 44→42。
+#   zigcc        ：旧行为（`zig cc` 当驱动 + compiler_rt），保留用于 A/B 与回退。
+LINK_DRIVER="${LINK_DRIVER:-lld}"
 
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
@@ -69,8 +91,19 @@ fi
 # 工厂数据镜像对象：每次链接前重建（避免用旧的段名/旧别名）
 ALLS="$ROOT/build/factory_all.S"
 cat "$ROOT/src/data/factory_image.S" "$ROOT/src/data/factory_local.S" > "$ALLS"
+# ★★★ 2026-09-29（根因修复，勿删）：把**被 `.incbin` 引用的镜像内容**纳入汇编输入哈希。
+#   病灶：zig 的缓存键 = 源文件内容 + 命令行，**不追踪 `.incbin` 打开的文件**。
+#   ⇒ 改了 `src/data/factory_*.bin` 之后，zig 直接复用旧的 `factory_local.o`，
+#     产物**逐字节不变**（实测：`.fimg_text` 2,957,704 B 全零化后产物 sha 仍等于对照，
+#     删除实验得到的是**假绿**）。同类陷阱在 GAP 16.56 已付过一次代价。
+#   修法：在 `.S` 末尾追加一行含镜像 sha256 的注释 —— 内容一变，缓存键必变。
+#   回退：删掉下面这 3 行（回到"缓存可能假绿"的旧行为）。
+{
+  printf '/* fimg-content-hash: %s */\n' \
+    "$(cat "$ROOT"/src/data/factory_*.bin 2>/dev/null | sha256sum | cut -c1-32)"
+} >> "$ALLS"
 $CC $ARCH -c -I"$(winpath "$ROOT/src/data")" "$(winpath "$ALLS")" -o "$(winpath "$ROOT/build/factory_local.o")" \
-  && echo "  factory_local.o 已重建" || { echo "  factory_local.o 汇编失败"; exit 1; }
+  && echo "  factory_local.o 已重建（含镜像内容哈希）" || { echo "  factory_local.o 汇编失败"; exit 1; }
 
 # ★★ 最小 CRT 初始化桩（_init/_fini）：zig **不提供 crti.o**（GCC 提供）。
 #   缺了它 ⇒ `_init` 未定义 ⇒ 若链接脚本里还留 `PROVIDE_HIDDEN(_init = 0)` 就会生成
@@ -91,10 +124,30 @@ DIAG_XUNZIP="${DIAG_XUNZIP:-$ROOT/src/upstream/xunzip/XUnzip.o}"
 
 OBJS=""
 for o in "$DIAG_OBJD"/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
-[ -f "$CXXOBJ" ] && OBJS="$OBJS $CXXOBJ"
+# ★★ 2026-09-28：`LINK_DRIVER=lld` 时**不链 cxx_ops.o**。
+#   该文件是"没有 libstdc++ 时的静态试链替身"（malloc/free 实现 operator new/delete）。
+#   接管链接后我们**真的**链了 `libstdc++.so.6` ⇒ 保留它只会把 `_Znwj/_Znaj/_ZdlPv/_ZdaPv`
+#   变成**我方私有静态定义**，而工厂这 4 个是 **libstdc++ 的动态导入**（`.dynsym` 实测）
+#   ⇒ 删掉才对齐。实测：删后行为尺**逐项不变**（782/735/42/5），而动态导入 107→111。
+if [ "${LINK_DRIVER:-lld}" != "lld" ]; then
+    [ -f "$CXXOBJ" ] && OBJS="$OBJS $CXXOBJ"
+else
+    echo "  [lld] 跳过 cxx_ops.o（operator new/delete 改由 libstdc++.so.6 动态提供）"
+fi
 [ -f "$CRTOBJ" ] && OBJS="$OBJS $CRTOBJ"
-for o in "$ROOT"/build/upstream/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
-[ -f "$DIAG_XUNZIP" ] && OBJS="$OBJS $DIAG_XUNZIP"
+# ★ 2026-09-28：上游对象目录可用 UPOBJD 覆盖（编译器对齐实验用 build/gcc_upstream）
+UPOBJD="${UPOBJD:-$ROOT/build/upstream}"
+for o in "$UPOBJD"/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
+# ★★ 2026-09-28：**fail-closed** —— XUnzip 对象缺失时立刻报错并指名。
+#   实测踩到：臂 A 的 XUnzip 编译因 zig 缓存竞态（`CacheCheckFailed`）失败，
+#   旧实现 `[ -f ... ] &&` **静默跳过** ⇒ 链接报一堆 `undefined symbol: TUnzip::*`，
+#   把"某个 .o 根本没编出来"伪装成"链接问题"（与 `-z undefs` 掩盖 `_start` 同族）。
+if [ ! -f "$DIAG_XUNZIP" ]; then
+    echo "★★ XUnzip 对象不存在：$DIAG_XUNZIP" >&2
+    echo "   （期望存在却缺失 ⇒ 就地失败，不靠下游 undefined symbol 兜底）" >&2
+    exit 12
+fi
+OBJS="$OBJS $DIAG_XUNZIP"
 [ -f "$ROOT/build/factory_local.o" ] && OBJS="$OBJS $ROOT/build/factory_local.o"
 [ -n "${DIAG_EXTRA:-}" ] && OBJS="$OBJS $DIAG_EXTRA"
 n=$(printf '%s' "$OBJS" | wc -w)
@@ -145,14 +198,97 @@ fi
 #      `factory_local.o`（提供 `__dso_handle`）**重复定义** ⇒ 正确的开关是 **`-nostartfiles`**
 #      （只砍 crt1/crti/crtbegin/crtend/crtn，**保留 `-lc`**），且**只对需要的链接器加**
 #      ⇒ 由 `EXTRA_LDFLAGS` 从外部传入（A/B 的 GCC 腿就是这样传的），主链行为逐字不变。
-$CC $ARCH $FIDELITY -no-pie \
-    -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
-    -Wl,-z,max-page-size=0x1000 \
-    -Wl,-z,undefs -Wl,--build-id=none \
-    ${DIAG_LDFLAGS:-} \
-    $WOBJS "$LIBZ_W" ${EXTRA_LDFLAGS:-} -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
-rc=$?
-echo "链接 rc=$rc"
+# ★★ 2026-09-27（实证事故）：**链接前必须先删掉目标产物**。
+#   实测踩到：把 XUnzip 源码换成原版后链接因 `duplicate symbol: lasterrorU` 失败，
+#   而脚本把**上一次成功链接的旧产物原样留在原地** —— 下游（投放打包 / 门禁 / 判定）
+#   看到的是一个"看起来全新、其实是上一轮"的 ELF。这与 `check_obj_fresh.py` 要防的
+#   "陈旧对象静默污染"是同一类事故，只是发生在**最终产物**这一层。
+#   ⇒ fail-closed：先删、后链；链接失败则产物**不存在**，不可能被误用。
+rm -f "$OUT"
+if [ "${LINK_DRIVER:-lld}" = "lld" ]; then
+    # ==========================================================================
+    # ★★★ 2026-09-28：**接管链接** —— 直接驱动 `zig ld.lld`，按工厂口径给库。
+    #
+    # 为什么不继续用 `zig cc` 当驱动（取证见 LINKAGE-ALIGNMENT.md）：
+    #   `zig cc` 的链接行把 `libcompiler_rt.a` 放在 libc **之后**，而该归档里的"大对象"
+    #   会被别的符号（__udivsi3 等）拉进来，其中 **mem*/str* 是普通目标文件定义** ⇒ 按 ELF
+    #   规则**盖过 DSO 定义** ⇒ 工厂从 libc 动态导入的 4 个符号（memcpy/memset/memmove/strlen）
+    #   在我方变成 `.text` 里的 STB_LOCAL 静态定义；同时 DT_NEEDED 少两项、`__aeabi_*`
+    #   助手有 69 个（工厂只有 6 个、且尺寸逐项相同）。
+    #
+    # 本分支改用**工厂同期工具链**（Bootlin 2017.05 = GCC 6.3 / glibc 2.24 / binutils 2.27）
+    # 的 sysroot 当链接输入，并且**不链 compiler_rt**。实测收敛：
+    #   · DT_NEEDED 5 → **7**，与工厂**逐项同序**（libz libdl libm libstdc++ libpthread libgcc_s libc）
+    #   · `.symtab` 里 mem*/str* 变 SHN_UNDEF（动态导入），与工厂一致
+    #   · `__aeabi_*` LOCAL 69 → **6**，idiv/uidiv(0B)/idiv0/ldiv0(16B)/idivmod/uidivmod(32B)
+    #     **尺寸与工厂逐项相同**（同一份 lib1funcs.S）
+    #   · `.gnu.version_r` 逐项与工厂一致（GLIBC_2.4/2.7 · GCC_3.5 · GLIBCXX_3.4 …）
+    #   · 行为尺：共有 776→**782**、PASS 727→**735**、**DIVERGE 44→42**
+    #
+    # ★ 顺序照抄 GCC：`… objects … -lgcc … -lc … -lgcc`（libgcc.a 出现两次）。
+    # ★ 不用 `-z undefs`：第一版带着它，`_start` 静默未解析 ⇒ **e_entry=0x0**
+    #   （被 dyn_audit 的 e_entry 判据抓到）。去掉后本配置**无任何未定义符号**。
+    # ==========================================================================
+    sh "$ROOT/tools/fetch_bootlin63.sh" || { echo "★★ bootlin63 不可用（fail-closed）" >&2; exit 3; }
+    TC="$ROOT/cache_tc/bootlin63/arm-buildroot-linux-gnueabihf"
+    SL="$TC/sysroot/lib"
+    SU="$TC/sysroot/usr/lib"
+    LGCC="$(ls "$TC"/../lib/gcc/arm-buildroot-linux-gnueabihf/*/libgcc.a 2>/dev/null | head -1)"
+    if [ -z "$LGCC" ] || [ ! -f "$LGCC" ]; then echo "★★ 缺 libgcc.a（bootlin63 不完整）" >&2; exit 3; fi
+    # ★★ 2026-09-28：**编译器与链接器解耦**。
+    #   编译器对齐实验里 CC = 工厂同期 GCC 6.3，但**链接器仍必须是 zig 自带的 ld.lld**
+    #   （它才是本仓脚本能驱动、且已验证产出形态的那个）。旧实现从 CC 里抠 "zig"，
+    #   一换成 GCC 就直接 exit 3 ⇒ 实验根本跑不起来。现支持 ZIG_BIN 显式指定。
+    ZIGEXE="${ZIG_BIN:-${CC% cc}}"
+    case "$ZIGEXE" in
+      *zig*) ;;
+      *) echo "★★ LINK_DRIVER=lld 需要 zig 的 ld.lld：请设 ZIG_BIN=<zig 路径>（当前 CC=$CC）" >&2; exit 3 ;;
+    esac
+    LLIBS="$(winpath "$LIBZ_W")
+$(winpath "$LGCC")
+$(winpath "$SL/libdl.so.2")
+$(winpath "$SL/libm.so.6")
+$(winpath "$TC/lib/libstdc++.so.6")
+$(winpath "$SL/libpthread.so.0")
+$(winpath "$SL/libgcc_s.so.1")
+$(winpath "$SL/libc.so.6")
+$(winpath "$SU/libc_nonshared.a")
+$(winpath "$SU/libpthread_nonshared.a")
+$(winpath "$LGCC")"
+    "$ZIGEXE" ld.lld --error-limit=0 \
+        -m armelf_linux_eabi \
+        --entry _start \
+        --dynamic-linker /lib/ld-linux-armhf.so.3 \
+        -z stack-size=16777216 \
+        -z now \
+        -z max-page-size=0x1000 \
+        --eh-frame-hdr \
+        --build-id=none \
+        -T "$(winpath "$ROOT/linker/factory.ld")" \
+        "$(winpath "$SU/crt1.o")" $WOBJS $LLIBS \
+        ${EXTRA_LDFLAGS:-} \
+        -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
+    rc=$?
+    echo "链接（ld.lld 接管 / 工厂同期 sysroot）rc=$rc"
+else
+    $CC $ARCH $FIDELITY -no-pie \
+        -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
+        -Wl,-z,max-page-size=0x1000 \
+        -Wl,-z,undefs -Wl,--build-id=none \
+        ${DIAG_LDFLAGS:-} \
+        $WOBJS "$LIBZ_W" ${EXTRA_LDFLAGS:-} -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
+    rc=$?
+    echo "链接（zig cc）rc=$rc"
+fi
+# ★★ fail-closed 必须看**链接退出码**，不能看"文件是否存在"：
+#   实测教训（2026-09-27）—— 沙箱的 safe-delete 守卫会拦下 `rm -f`，
+#   于是"文件不存在"这个判断会被**上一轮的旧产物**骗过（旧文件仍在 ⇒ 判定"有产物"）。
+#   退出码是确定性的：rc != 0 ⇒ 本轮没有产物，直接失败。
+if [ "$rc" != "0" ]; then
+    echo "★★ 链接失败 ⇒ 本轮**没有可用产物**（fail-closed，禁止把旧产物当成新一轮结果）" >&2
+    head -20 "$ROOT/report/link_full_err.txt" >&2 2>/dev/null || true
+    exit 11
+fi
 if [ -f "$OUT" ]; then
     ls -la "$OUT"
     echo "== 动态段 / 初始化链自洽 =="
@@ -237,6 +373,47 @@ if [ -f "$OUT" ] && [ -f "$ROOT/tools/mmio_access_audit.py" ]; then
     if ! $PY "$(winpath "$ROOT/tools/mmio_access_audit.py")" "$(winpath "$OUT")"; then
         echo "★★ 设备访存类级门禁 FAIL —— 本产物**禁止**上机（有偏移比工厂窄，可能总线报错）" >&2
         exit 16
+    fi
+fi
+
+# ★★★ 2026-09-27（本轮实证）：**体量覆盖门禁** —— 补行为尺的**结构性盲区**。
+#   行为尺只在输入**真走进那段代码**时才看得见差异；入口条件不满足时两侧都"正常返回"
+#   ⇒ 工厂 976 B 实现 / 我方 112 B 空壳，照样判 PASS（实测 `UpdateROM`）。
+#   判据：共有函数 `ours_size / factory_size < 0.5` ⇒ SHORT ⇒ 拒绝上机。
+#   已复现的两个真缺陷：`UpdateROM`（112/976）与 `ReadUSBJoy`（520/1196），均已根修。
+if [ -f "$OUT" ] && [ -f "$ROOT/tools/size_coverage_gate.py" ]; then
+    echo "== 体量覆盖门禁（防『空壳/缺体』：行为尺看不见的那一类）=="
+    if ! $PY "$(winpath "$ROOT/tools/size_coverage_gate.py")" --ours "$(winpath "$OUT")" --top 12; then
+        echo "★★ 体量覆盖门禁 FAIL —— 本产物**禁止**上机（有函数体量异常小＝疑似桩/缺体）" >&2
+        exit 17
+    fi
+fi
+
+# ★★★ 2026-09-27（本轮实证）：**编译期 UB 门禁** —— UB 会让优化器**静默删代码**。
+#   实证：`UpdateROM` 里 Ghidra 把一块 3 字节缓冲拆成三个独立 `char`，其中两个
+#   "从未被写" ⇒ 读未初始化 = UB ⇒ clang 判"条件恒真"并删掉 `fread` 之后整段（-864 B）。
+#   而我们的构建一直用 `-w` 屏蔽全部警告 ⇒ 这类 UB **从来不可见**。
+#   判据：高危 UB 类（对象越界 / 数组越界 / 字符串越界）命中数必须为 0。
+#   可用 `CGM_SKIP_UB_GATE=1` 跳过（默认**不跳**，fail-closed）。
+if [ -f "$ROOT/tools/ub_census.py" ] && [ "${CGM_SKIP_UB_GATE:-0}" != "1" ]; then
+    echo "== 编译期 UB 门禁（防『优化器静默删代码』）=="
+    if ! $PY "$(winpath "$ROOT/tools/ub_census.py")"; then
+        echo "★★ 编译期 UB 门禁 FAIL —— 本产物**禁止**上机（UB 会让优化器删代码，行为尺看不见）" >&2
+        exit 18
+    fi
+fi
+
+# ★★★ 2026-09-28（本轮实证）：**单侧未建模门禁** —— 尺子按名字查 `libc_model`；
+#   某符号**只在单侧存在且模型无条目** ⇒ 两侧走不同代码路径 ⇒ **假发散**。
+#   实证两例：`_IO_putc`（模型只建了 `_IO_getc`）、`bcmp`（clang 把 `strcmp(x,"lit")==0`
+#   优化成 `bcmp`，GCC 不做）。
+#   判据：单侧未建模符号必须**全部登记**在 tools/model_asymmetry_ledger.txt（带原因）。
+#   新增未登记者 ⇒ FAIL（exit 19）。
+if [ -f "$OUT" ] && [ -f "$ROOT/tools/model_coverage.py" ]; then
+    echo "== 单侧未建模门禁（防『尺子按名字查不到而判假发散』）=="
+    if ! $PY "$(winpath "$ROOT/tools/model_coverage.py")" --ours "$(winpath "$OUT")"; then
+        echo "★★ 单侧未建模门禁 FAIL —— 出现未登记的单侧未建模符号（潜在假发散），先定性再放行" >&2
+        exit 19
     fi
 fi
 exit $rc

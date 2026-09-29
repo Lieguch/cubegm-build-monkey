@@ -24,6 +24,16 @@
 /* 不启用二进制重定位（避免 libcharset/relocatable 依赖） */
 #define ENABLE_RELOCATABLE 0
 
+/* ★★ 由**工厂二进制取证**反推的 configure 事实（2026-09-27，纪律 26/27）
+ *   判据不是"猜测"，而是**工厂动态导入符号表**（113 个，权威、可复算）：
+ *     · 工厂导入 `nl_langinfo`、**不导入 `getenv`** ⇒ localcharset.c 走 `nl_langinfo(CODESET)` 分支
+ *       ⇒ `HAVE_LANGINFO_CODESET` **必须为 1**。
+ *     · 实测反证：未定义时 `#if HAVE_LANGINFO_CODESET` 判 0 ⇒ 我方 localcharset.o 引用 `getenv`
+ *       （`locale_charset` 一行分歧 `calls_ext F=['nl_langinfo'] O=['getenv','getenv','getenv']`）。
+ *   ★ 纪律 27 提醒：**不许**用"我们自己的产物"当工厂事实来源；此处的来源是 golden/factory.rkgame.bin。
+ */
+#define HAVE_LANGINFO_CODESET 1
+
 /* 由 configure 生成的关键宏（config.h.in 权威值） */
 #define ICONV_CONST /* empty by default */
 

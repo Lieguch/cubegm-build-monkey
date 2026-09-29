@@ -3744,17 +3744,21 @@ int unzCloseCurrentFile (unzFile file);
 
 
 FILETIME timet2filetime(const time_t timer)
-{ struct tm *tm = gmtime(&timer);
-  SYSTEMTIME st;
-  st.wYear = (WORD)(tm->tm_year+1900);
-  st.wMonth = (WORD)(tm->tm_mon+1);
-  st.wDay = (WORD)(tm->tm_mday);
-  st.wHour = (WORD)(tm->tm_hour);
-  st.wMinute = (WORD)(tm->tm_min);
-  st.wSecond = (WORD)(tm->tm_sec);
-  st.wMilliseconds=0;
-  FILETIME ft;
-  SystemTimeToFileTime(&st,&ft);
+/* ★★ 2026-09-28：按**工厂机器行为**对齐（1:1）。
+ *
+ * 工厂实现只有 12 字节（`_Z14timet2filetimel` @0x12284）：
+ *     str r1,[r0] ; str r1,[r0,#4] ; bx lr
+ * 调用点（`TUnzip::Get`，`tools/xref.py` 扫出 3 处 @0x125a8/0x125cc/0x125f0）：
+ *     r0 = &temp(8B sret) ; r1 = timer ; bl ; ldm r7,{r0,r1} ; stm ZIPENTRY+0x10c/0x114/0x11c
+ * ⇒ 工厂把 Windows 时间转换整套桩掉了：**没有** SystemTimeToFileTime /
+ *   DosDateTimeToFileTime，两个字段直接写 timer。
+ *
+ * 我方原实现（上游 2018 变体）是完整转换（312 B + 调 gmtime）⇒ 行为尺判
+ * DIVERGE（三组输入全分歧，`calls_ext F=[] O=['gmtime']`），并使 `.dynsym` 多出 `gmtime`。
+ * 回退：src/upstream/xunzip/unzip.cpp.bak_t2f
+ */
+{ FILETIME ft;
+  ft.dwLowDateTime = ft.dwHighDateTime = (DWORD)timer;
   return ft;
 }
 
