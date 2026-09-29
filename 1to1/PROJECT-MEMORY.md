@@ -3024,3 +3024,76 @@ int blkA[6];   /* local_40, 3c, 38, 34, 30, 2c */
 * `tools/exp_relink.py` —— 用替换过的对象目录重链（**不动 `build/obj/`**），含
   **① overlay 文件名唯一匹配 ② 对象数不变自检**（防"新增对象伪装修复"，
   实测踩到过 `duplicate symbol: popwindows`）**③ safe-delete 拦截容错**。
+
+---
+
+## 0.33 ★★★★ 第 86 轮（2026-09-29）：**沙箱天花板取证** + **修复推入构建通道**（CNB + GitHub CI）
+
+### 0. 方向（复述）
+唯一判据 = **与原厂差异收敛**；本轮推进 §0.19-F.1「抬高沙箱天花板」+ 把 §0.32 的修复送入构建通道。
+**不把真机当下一步的理由**（纪律 37）。
+
+### A. ★★★★ 天花板取证（`report/strict_device/cur.log`，装置实测）
+| 里程碑 | factory | rebuild | control |
+|---|---|---|---|
+| M0 进程启动 / M1 配置读取 / M2 SPI-SFC / M3 driver.so / M4 DRM 显示 / **M5 main_Menu 入口** | ✓ | ✓ | ✓ |
+| **M6 UI 资源包打开** | **✗(打开失败)** | **✗(打开失败)** | **✗(打开失败)** |
+| M6R 资源条目读取 | ✗(无 zip 打开证据) | 同 | 同 |
+| M7 菜单存活 | ✗(被信号终止 exit=139) | ✗(exit=139) | ✗(exit=139) |
+| **两侧里程碑差集** | **空（完全同步）** | | |
+
+* **9 项行为门禁全 PASS**：B1 exit_code(139 vs 139) / B2 events(223/223 可判定前缀一致) /
+  B3 new_files(0) / B4 changed_files(0) / B5 log_sha(`d7c86a6f…` 两侧相同) /
+  B6 frame_hash / B7 shm(1 vs 1) / B8a sfc_cmds(4 vs 4) / B8b sfc_faults(180 vs 180)。
+* **确定性控制**：同一参考二进制跑两遍 223 行**完全一致** ⇒ 整段可判定 ✓
+* ⇒ **天花板 = M6**：装置能走到 `main_Menu` 入口，但 **UI 资源包打开这一步三侧全失败** ⇒
+  **不是我们的缺陷**（factory 同样失败），是**装置/环境**限制。
+
+**已排除的假设**（用证据，不是印象）：
+| 假设 | 实测 | 结论 |
+|---|---|---|
+| 装置缺资源包 | `golden/sdcard_min/` 有 `ui_cn.zip`(4,951,281 B) / `joystick.zip`(332,110 B) / `font.ttf` / `driver.so` / `cores/` | ❌ 不成立 |
+| 资源包名不匹配 | `setting.xml` 是 `language="1"` ⇒ 对应 `ui_cn.zip`（存在）；源码 `mui_LoadSetting.c` 的
+  `language` 分支拼的正是 `"ui_cn.zip"`，另一分支 `"ui_en.zip"` | ❌ 不成立 |
+| M6 判据本身不可靠 | 判据 = stdout 出现 `find <item> in <path>.zip fail`（= 包已打开）；`M6R` 已加固为只查
+  包内**应存在**的 `ui.cfg`/`menu.raw`（工具内已注"旧 M6 无区分度"） | ⚠️ 已知局限，非本次主因 |
+
+**抬天花板的具体动作（可执行，属云开发的活）**：
+1. 装置日志有 **`[skip] 无 gdb-multiarch`** ⇒ **云开发 apt 装 `gdb-multiarch`** 后重跑，
+   抓 SIGSEGV 的 PC / backtrace（现在只有 `-strace` 与事件流，定位不到指令）。
+2. 用 `-d exec`（脚本已有 exec_probe）拿**最后执行的 PC**，与 `exit=139` 对齐。
+
+### B. ★★★★ 修复推入构建通道（用户口径：CNB 托管 + CNB 云开发 + GitHub CI）
+| 通道 | 动作 | 结果 |
+|---|---|---|
+| **CNB 托管**（源） | `python tools/sync_mirror.py --remote cnb` | **`392b514..d81365e  HEAD -> main`** ✓ |
+| **GitHub**（构建 CI） | `GITHUB_TOKEN=… python tools/push_1to1.py` | **`new commit = 259abb43ce51225d203ccc6d356ce226e10796ab`**；**VERIFY 1309/1309 blobs match**（上传 299 / 跳过 1010）✓ |
+| **CI 触发** | 4 个 workflow 全部 `in_progress`，**head_sha 全 = `259abb43ce51`** | `1to1-verify` #232 · `rkgame-rebuild` #1093 · `1to1-qemu-behav` #200 · `toolchain-ab` #9 |
+
+★ **关键确认**：CI **自己从 `src/` 重编**（`link_audit.sh` → `build_upstream.sh` → `link_full.sh`），
+**不使用仓库里的 `.o`** ⇒ §0.32 的两处源码修复**会自动进 CI**，无需推 `build/obj/`。
+★ 上一次绿 = `6f2c5131f3a9`（2026-09-27 02:32）⇒ 本轮是**修复后第一次**上 CI。
+
+### C. ★★★ 修掉 `push_1to1.py` 的**结构性缺陷**：跳过规则写了两处
+* 病灶：`--list-only` 的 `_skip`（155 行）与 `upload_one()` 的 if（278 行）**各写一份**
+  "构建产物不入库"的规则 ⇒ 只改一处就产生"清单说会推 / 实际不推"的**静默漂移**
+  （历史上"漏推/多发"的源头；脚本注释自己警告过）。
+* 修法：提成**唯一函数** `is_build_artifact(rel)`，两处共用 ⇒ 规则只有一份。
+* **同时修掉我自己的污染**：`cp tools/diff_exec.py tools/diff_exec.py.bak_premachine` 之类造出的
+  `tools/*.bak_*` **进了待推清单**（差点把调试垃圾推上仓库）⇒ 判据加入 `.bak_`。
+  实测：清单里 `.bak_` 由 **N>0 → 0**；文件清单 1309（跳过构建产物/备份 154）。
+
+### D. 新纪律 69–70
+> **69.** **同一规则禁止写两处**：如"哪些文件不入库"必须**只有一个函数**。
+>   凡出现"清单口径"与"执行口径"两份实现，就是静默漂移的温床。
+> **70.** 调试/备份文件**一律放 `build/_exp/`**，不进 `tools/`（进 `tools/` 就会被当源码推走）。
+
+### E. 下一步（按优先级，全部设备无关）
+| 优先 | 动作 | 判据 |
+|---|---|---|
+| **P0** | 云开发装 `gdb-multiarch` → 重跑装置抓 SIGSEGV PC | 拿到 M6 处崩溃指令地址 |
+| **P0** | 查本次 CI（`259abb43`）4 个 workflow —— ★ **只在轮内查，不挂定时/自动化任务**（用户口径：自动化损耗资源） | 全绿；任一红即根因修复 |
+| P1 | §0.29-F P0' INLINE-MOVE 判据（DIVERGE 38 → 22 预登记） | 其余 22 个一个不许变 |
+| P1 | §0.19-F.3 `.dynsym` 28 项差异 | 消除假发散 |
+| P2 | §0.29-F P1 ONLY-ONE-SIDE 剩余项 / TRUNC 5 个 | 逐项定性 |
+| P3 | §0.29-F P3 目的 2 两项（evdev / SRAM） | 功能就位 |

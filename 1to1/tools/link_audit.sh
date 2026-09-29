@@ -66,8 +66,21 @@ CGM_GI="$CGM_TC/lib/gcc/arm-buildroot-linux-gnueabihf/6.3.0/include"
 CGM_GIF="$CGM_TC/lib/gcc/arm-buildroot-linux-gnueabihf/6.3.0/include-fixed"
 CGM_GD="$CGM_TC/arm-buildroot-linux-gnueabihf/sysroot/usr/include"
 if [ ! -f "$CGM_GD/stdio.h" ] || [ ! -f "$CGM_GI/stddef.h" ]; then
-    echo "★★ 缺工厂同期真头（$CGM_GD）—— 这是构建事实，不是可选优化。" >&2
-    echo "   先跑：sh tools/fetch_bootlin63.sh" >&2
+    # ★★★ 2026-09-29（§0.34）：**就地抓取**，而不是"让调用方先跑"。
+    #   病灶（CI 实测，commit 259abb43）：`.github/workflows/` 里**没有** fetch 步骤
+    #   （而该目录在本机被代理拦截、无法推送修改）⇒ CI 上 `cache_tc/bootlin63` 永远缺
+    #   ⇒ 本脚本 exit 4 ⇒ 213 个对象未产出 ⇒ XUnzip.o 未产出 ⇒
+    #   `1to1-verify` / `1to1-qemu-behav` / `toolchain-ab` **三个 workflow 连锁红**。
+    #   （09-27 那版绿，是因为当时还没有"工厂同期真头"这条要求。）
+    #   修法：把"先跑 fetch"变成脚本**自己**做 —— `fetch_bootlin63.sh` 幂等
+    #   （`.ok` 存在即秒返回），本地零开销，CI 首次多约 1~3 分钟。**不依赖改 workflow**。
+    #   回退：删掉下面这 3 行（回到"缺失即 exit 4"）。
+    echo "★★ 缺工厂同期真头（$CGM_GD）⇒ 就地抓取（幂等；CI 无 actions/cache）" >&2
+    sh "$ROOT/tools/fetch_bootlin63.sh" >&2 \
+        || { echo "★★ fetch_bootlin63 失败 ⇒ fail-closed（不静默降级到宿主头）" >&2; exit 4; }
+fi
+if [ ! -f "$CGM_GD/stdio.h" ] || [ ! -f "$CGM_GI/stddef.h" ]; then
+    echo "★★ 抓取后**仍**缺真头（$CGM_GD）—— fail-closed，不降级" >&2
     exit 4
 fi
 CGM_HDR="-nostdinc -I$CGM_GI -I$CGM_GIF -I$CGM_GD"
