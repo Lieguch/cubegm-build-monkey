@@ -161,7 +161,16 @@ def recompile(outdir):
     env = dict(os.environ)
     env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(outdir, 'lc')
     env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(outdir, 'gc')
-    r = subprocess.run(cmd, capture_output=True, env=env)
+    # ★ 2026-09-30：编译器**不存在**时必须报"无法判定"，**不得崩栈、也不得判 FAIL**。
+    #   实测：本机没装 `arm-linux-gnueabihf-gcc`（流水线默认 CC），`CreateProcess` 抛
+    #   FileNotFoundError ⇒ 整个门禁崩栈。门禁"跑不起来"与"查出问题"必须区分。
+    try:
+        r = subprocess.run(cmd, capture_output=True, env=env)
+    except FileNotFoundError as e:
+        return None, ('编译器不可执行 ⇒ 无法判定（不得当成 FAIL）：%s（cmd[0]=%s）'
+                      % (e, cmd[0] if cmd else '?'))
+    except Exception as e:
+        return None, '编译过程异常 ⇒ 无法判定（不得当成 FAIL）：%s(%s)' % (type(e).__name__, e)
     if not os.path.exists(o):
         return None, ('编译失败：%s' % r.stderr.decode('utf-8', 'replace')[:400])
     return o, None

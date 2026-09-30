@@ -106,10 +106,96 @@ def file_list():
     return items
 
 
+def detect_catastrophic_shrink(numstat_text, allow_shrink=False):
+    """纯函数：`git diff --cached --numstat` 文本 -> `(bad, warn)`。
+
+    * `bad`  追加型文件（PROJECT-MEMORY.md / .workbuddy/memory/*）**少了行** ⇒ 必须拦。
+    * `warn` 其他文件缩水 > 30% 且原文件 >= 200 行 ⇒ 醒目告警（不拦，但必须可见）。
+
+    ★ 为什么要有它（真实事故，见 PROJECT-MEMORY SS0.38）：
+      1to1/PROJECT-MEMORY.md 在一次同步里被写成**约 35 轮前的旧版本**
+      （+1 / -2424，3211 -> 788 行，SS0.30-SS0.36 全丢），而且**已经推到 CNB 与 GitHub**。
+      旧代码只把差异**打印**成一行（9 个文件混在一起），**没有任何阈值** ⇒ 没人会去数。
+      PROJECT-MEMORY.md 的政策是**只增不删** ⇒ 变短必然是事故，必须 fail-closed。
+    """
+    bad, warn = [], []
+    for ln in (numstat_text or '').split(chr(10)):
+        parts = ln.split(chr(9))
+        if len(parts) != 3:
+            continue
+        try:
+            add_n, del_n = int(parts[0]), int(parts[1])
+        except ValueError:              # 二进制文件是 '-'/'-'
+            continue
+        path = parts[2]
+        base = os.path.basename(path)
+        append_only = (base == 'PROJECT-MEMORY.md') or ('.workbuddy/memory/' in path)
+        # ★ 阈值必须**精化**（否则会把正当编辑判成事故）：
+        #   真实历史对照（同一文件 PROJECT-MEMORY.md）：
+        #     d81365e  +1400/-1   ⇒ 只是**头部指针**那一行被替换 ⇒ **不得拦**
+        #     48153e6  +1/-2424   ⇒ 灾难性回退（3200 行 -> 788 行）⇒ **必须拦**
+        #   判据：`del_n > 10 且 del_n >= add_n`（删的比加的多才算回退）。
+        if append_only and del_n > 10 and del_n >= add_n:
+            bad.append((path, add_n, del_n))
+        elif del_n > 0 and (add_n + del_n) >= 200 and del_n > 0.3 * (add_n + del_n):
+            warn.append((path, add_n, del_n))
+    if allow_shrink:
+        return [], warn
+    return bad, warn
+
+
+# 门禁必须能"分辨"，不只是"能跑"：锚点含**真实事故数字**。
+SHRINK_SELFTEST_CASES = (
+    ('真实事故：PROJECT-MEMORY.md +1/-2424 ⇒ 必须拦',
+     '1' + chr(9) + '2424' + chr(9) + '1to1/PROJECT-MEMORY.md', 1, 0),
+    ('正例：正常追加（+600/-0）⇒ 不得拦',
+     '600' + chr(9) + '0' + chr(9) + '1to1/PROJECT-MEMORY.md', 0, 0),
+    ('★ 真实历史 d81365e +1400/-1（头部指针行被替换）⇒ **不得拦**（防假阳）',
+     '1400' + chr(9) + '1' + chr(9) + '1to1/PROJECT-MEMORY.md', 0, 0),
+    ('反例：小范围替换（+20/-15）⇒ 不算回退，不得拦',
+     '20' + chr(9) + '15' + chr(9) + '1to1/PROJECT-MEMORY.md', 0, 0),
+    ('反例：删得比加得多（+5/-30）⇒ 必须拦',
+     '5' + chr(9) + '30' + chr(9) + '1to1/PROJECT-MEMORY.md', 1, 0),
+    ('反例：事故与正常追加混在同一批 ⇒ 仍必须准确拦 1 条',
+     '1' + chr(9) + '2424' + chr(9) + '1to1/PROJECT-MEMORY.md' + chr(10)
+     + '600' + chr(9) + '0' + chr(9) + '1to1/tools/diff_exec.py', 1, 0),
+    ('正例：其它文件小幅缩水（+50/-5）⇒ 不拦不警',
+     '50' + chr(9) + '5' + chr(9) + '1to1/tools/foo.py', 0, 0),
+    ('正例：其它大文件缩水 40%（+120/-80）⇒ 只告警不拦',
+     '120' + chr(9) + '80' + chr(9) + '1to1/tools/big.py', 0, 1),
+    ('反例：二进制文件（-/-）不得被当文本判',
+     '-' + chr(9) + '-' + chr(9) + '1to1/golden/factory.rkgame.bin', 0, 0),
+    ('正例：记忆日志同样按追加型对待',
+     '0' + chr(9) + '30' + chr(9) + '.workbuddy/memory/2026-09-29.md', 1, 0),
+)
+
+
+def shrink_selftest():
+    chk = []
+    for tag, text, want_bad, want_warn in SHRINK_SELFTEST_CASES:
+        bad, warn = detect_catastrophic_shrink(text)
+        chk.append((tag, (len(bad), len(warn)), (want_bad, want_warn)))
+    bad, _ = detect_catastrophic_shrink('1' + chr(9) + '2424' + chr(9)
+                                       + '1to1/PROJECT-MEMORY.md', allow_shrink=True)
+    chk.append(('正例：--allow-shrink 后不拦（"删东西"必须是有意识动作）', len(bad), 0))
+    bad_n = 0
+    for tag, got, want in chk:
+        ok = (got == want)
+        bad_n += 0 if ok else 1
+        print('   %s  %-62s got=%s' % ('v' if ok else 'x', tag[:62], got))
+    print('   合计 %d 条，失败 %d 条' % (len(chk), bad_n))
+    return 2 if bad_n else 0
+
+
 def main():
+    if '--self-test' in sys.argv[1:]:
+        return shrink_selftest()
     ap = argparse.ArgumentParser()
     ap.add_argument('--remote', choices=sorted(REMOTES), default='cnb')
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--allow-shrink', action='store_true',
+                    help='显式允许「追加型文件变短」（默认 fail-closed；'
+                         'PROJECT-MEMORY.md 政策是只增不删，缩水一般是事故）')
     a = ap.parse_args()
 
     cfg = REMOTES[a.remote]
@@ -198,6 +284,24 @@ def main():
     for p in MODE755:
         if os.path.exists(os.path.join(MIRROR, p)):
             git(['update-index', '--chmod=+x', p], cwd=MIRROR, quiet=True)
+
+    # 2026-09-30 「灾难性缩水」门禁（真实事故换来的，见 PROJECT-MEMORY SS0.38）
+    print('== [4b/5] 灾难性缩水门禁 ==')
+    _rc, _ns = git(['diff', '--cached', '--numstat'], cwd=MIRROR, quiet=True)
+    _bad, _warn = detect_catastrophic_shrink(_ns or '',
+                                            allow_shrink=getattr(a, 'allow_shrink', False))
+    for _p, _an, _dn in _warn:
+        print('  [warn] 缩水告警：%s  +%d / -%d（大于 30%%）—— 请确认是有意删改'
+              % (_p, _an, _dn))
+    if _bad:
+        print('  ** 拒绝推送：追加型文件相对 origin/main 变短了 ——')
+        for _p, _an, _dn in _bad:
+            print('       %s  +%d / -%d' % (_p, _an, _dn))
+        print('     为什么：PROJECT-MEMORY.md 的政策是只增不删，变短必然是事故')
+        print('       （2026-09-30 真实事故：3211 行 -> 788 行，SS0.30-SS0.36 全丢并已推送）。')
+        print('     处置：(1) 先确认本地文件是否被旧副本覆盖（与远端比对行数 / 小节）；')
+        print('           (2) 确属有意删改，才加 --allow-shrink 重跑。')
+        return 13
 
     if not changed:
         print('  无差异，无需推送。')
