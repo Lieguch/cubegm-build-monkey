@@ -582,6 +582,22 @@ jobs:
           python tools/inline_move.py --self-test
           python tools/inline_move_audit.py report/_rows.json --verify-meta
 
+      - name: ★ 「我方第二份副本」等价性门禁（数据宇宙不许有未定性的分叉）
+        id: s46
+        run: |
+          cd 1to1
+          # 为什么（§0.42）：我方 ELF 里同时存在**两套数据宇宙** ——
+          #   工厂 VMA 处的地址垫（`src/data/factory_image.S` 的 GLOBAL 别名，不被读）
+          #   与**我们编译出来的副本**（LOCAL，落在 0x4xxxxx，**我们的代码实际读这一份**）。
+          #   实测规模 1376 个对象两份。⇒ "差异只是地址归属" 还是 "两张不同的表"，
+          #   **必须机械核验**，不许靠印象。
+          # 判据（三态，见 `tools/dup_copy_audit.py` docstring）：
+          #   EQUIV        = 字节完全相同 ⇒ 差异只是地址归属
+          #   ★DIFF        = 无指针字段却不同 ⇒ **真内容差异 ⇒ 本步红**
+          #   NEEDS-REVIEW = 含指针字段（`entities[]`/`types[]`）⇒ 须语义复核，只列不判
+          python tools/dup_copy_audit.py --self-test
+          python tools/dup_copy_audit.py
+
       - name: ★ 目标程序构建事实恢复（DWARF：工具链 / CFLAGS / 源文件树）
         id: s43
         run: |

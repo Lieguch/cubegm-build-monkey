@@ -1,13 +1,12 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ruler=e0d493867226330275afd579c51db609c551a1462794fd5e5d2713e6394de601
+# ruler=9e88368685c133e66b3d8291b55a20656e86a3450391c6193efaa8e31059b022
 # ours=c9aba0eb96e40bf72814c32c55436680d207e2b6994dcbe327133336e5445afe
-# rebaseline: 接入「访存内联等价」判据（与 calls_ext 内联等价对称）；预登记 DIVERGE 36->27，实测一致（9 个: DrawSelectBar/UnDrawSelectBar/UpdateROMProc/__libc_csu_init/mui_load_state/mui_save_state/outputblankxy/run_game/spi_printf）
+# rebaseline: 修 fp_key 的真缺陷：块作用域 static 的两套工具链命名（GCC name.NNNN / clang func.name）归一到规范名 canon_obj_name，并按名字配对；预登记 27->23，实测 27->19（多出 iso2022_jp2_wctomb + mui_LoadConfig/mui_do_file_list/mui_type_file_list，其仅F键全部落在已验证逐字节相同的 asso_values/conversion_lists 上）；并把 fp_key/norm_fp/canon_obj_name 纳入口径指纹
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
-ConvertCode
 DisplayPage_list
 DrawFrame
 FilePreEmu
@@ -18,19 +17,12 @@ TestRun
 TestUSBJoy
 WaitNMI
 _Z17FormatZipMessageUjPcj
-_mxml_entity_cb
-aliases_hash
 get_item_from_line
 get_value_from_items
-iso2022_jp2_wctomb
 locale_charset
 mui_DisplayInputBuffer
 mui_DisplayLine_t
-mui_LoadConfig
-mui_do_file_list
-mui_type_file_list
 mui_video_setting
-mxmlEntityGetValue
 outputxy1
 progress
 stbtt__get_subrs

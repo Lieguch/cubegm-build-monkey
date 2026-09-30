@@ -3683,3 +3683,82 @@ toolchain-ab     #13    success   ← 此前 #9/#10/#11/#12 连续 4 轮 failure
 > **86.** 归一化**不得**把"身份"抹掉：键的地址部分若**就是**身份（裸地址形），
 >   任何折叠（如 `<ADDR>`）都会让反查**凭空命中**。判据真源只允许一处（`tools/inline_move.py`），
 >   尺子与类别表都只许**调用**。**同一分母出现两个值 = 缺陷，必须机械交叉核对。**
+
+---
+
+## 0.42 ★★★★★ 第 94 轮（2026-09-30）：**根因修复「我方第二份副本」的命名歧义** —— DIVERGE 27 → **19**（8 个收敛，逐条取证）
+
+### 0. 方向（复述）
+唯一判据 = **与原厂差异收敛**。本轮**不做 CI 工程**，只推真进度：直接攻"缺口清单"里
+剥离假发散后剩下的**真嫌疑池**（§0.41-F 的 27 个）。
+
+### A. ★★★★★ 根因（逐层取证，每一步都有硬证据）
+1. **取证入口**：`aliases_hash` / `ConvertCode` 的"仅F"键全是 `asso_values.9691+134/138/164`、
+   `+0/+130`；`mxmlEntityGetValue` / `_mxml_entity_cb` 全是 `entities.6989+…`。
+2. **两侧真实访存对拍**（直接跑 `run_func` 打印原始地址）：**偏移逐条相同，只有地址不同** ——
+   我方读 `aliases_hash.asso_values+134`@**0x412c36**，工厂读 `asso_values.9691+134`@**0x3acf76**。
+3. **两侧符号普查**：`asso_values` 我方有 **2 份**（`asso_values.9691`@0x3acef0 **GLOBAL** /
+   `aliases_hash.asso_values`@0x412bb0 **LOCAL**）；工厂只有 **1 份**。全库规模：**684 个基名**
+   在我方有两份，**大小逐一相同**（例 `aliases` 0x3ab114/0x410000；`cjk_variants_indx` 41984 B）。
+4. **逐字节/逐项语义比对**（这是关键判据）：
+   | 对象 | 我方副本 vs 工厂 | 结论 |
+   |---|---|---|
+   | `asso_values` | sha `70160ee0…` **两侧完全相同** | 等价 |
+   | `aliases` / `stringpool_contents` / `conversion_lists` | 逐字节相同 | 等价 |
+   | `entities`（257 项 `{char*,int}`） | 名字 0/257 不同、值 0/257 不同（指针地址不同而已） | **语义等价** |
+   | `types`（3 项，两字段都是指针） | 指向的字符串全同 | **语义等价** |
+   ⇒ **没有一处是真内容差异**。"仅F"是**纯地址归属**问题。
+5. **命名之谜**：`src/upstream/libiconv/aliases.h:52` —— `asso_values` 是 **`aliases_hash()` 函数体内的块作用域 static**。
+   **块作用域 static 的命名两套工具链不同**：工厂 GCC 6.2 用 `name.<NNNN>`；我方 clang/zig 用 `<函数名>.<name>`。
+   ⇒ `fp_key` 的"私有对象**按名字**配对"永远配不上 ⇒ **整类假发散**。
+
+### B. ★★★★★ 根因修复（修在源头，不是改数字）
+| 文件 | 改动 |
+|---|---|
+| `tools/diff_exec.py` | 新增纯函数 **`canon_obj_name()`**（`name.NNNN → name`；`func.name → name`；其余原样）；`Bin.pure_private()` 的"唯一性/ LOCAL"判定改为**在规范名上**做；`fp_key()` **用规范名做集合判定、也用规范名做键**（只改判定不改键 = 等于没修）；**并把 `fp_key`/`norm_fp`/`canon_obj_name` 纳入判据指纹** —— 病灶：改 `fp_key` 会改 DIVERGE 集合，但原指纹不含它 ⇒ 旧账会被**静默沿用** |
+| `tools/dup_copy_audit.py` | **新增**门禁："我方第二份副本"等价性三态（`EQUIV` 字节相同 / `★DIFF` 无指针字段却不同 / `NEEDS-REVIEW` 含指针须语义复核）+ 自证 4 条 |
+| `.github/workflows/1to1-verify.yml` | 新增步骤 **`id: s46`**（判据自证 + 全量审计），`MIN_STEPS` 自动 → 45 |
+
+### C. ★★★★★ 预登记 vs 实测（**我的预登记漏了，如实记录**）
+```
+预登记（改前算）：4 个 ⇒ DIVERGE 应 27 → 23
+实测            ：8 个 ⇒ DIVERGE    27 → 19     （PASS 750 → 758；自洽 758+19+5+0+0=782 ✓）
+```
+**偏差原因（不是凑解释）**：我的预登记只统计了"**名字带 `<owner>.` 装饰**的对象"
+（4 个：`asso_values`/`entities`/`conversion_lists`/`types`），
+**漏了"同一张表也被别的函数读"** —— 三个 `mui_*` 函数的"仅F"键同样是 `asso_values.9691+90…170`。
+⇒ **教训：预登记必须按"键的归属对象"统计，不能按"对象本身"统计。**
+8 个收敛逐条核实为正当：
+* `aliases_hash` `ConvertCode`（`asso_values`）·`iso2022_jp2_wctomb`（`conversion_lists`）
+* `mui_LoadConfig` `mui_do_file_list` `mui_type_file_list`（`asso_values`；**其余读集两侧逐项相同**）
+* `mxmlEntityGetValue` `_mxml_entity_cb`（`entities`）
+★ **新增发散 0 个**；`inline_move_audit --verify-meta` 交叉核对仍通过（9 个）。
+
+### D. 本轮**我自己造的两个错**（都已修，记下来防再犯）
+1. **指针启发式假阳性**：`dup_copy_audit` 第一版用"字段值像指针就比字符串"，对
+   `hkscs1999_2uni_upages` 这类**纯索引表**判出 ★DIFF —— 复核发现**同址逐字节相同**。
+   ⇒ 判据收紧成"**字节完全相同才是 EQUIV**"；含指针字段的表一律 `NEEDS-REVIEW`（不许自动放行）。
+   **假阳性比漏报更坏**：它会让门禁失去信任。
+2. **把"读不满"报成"内容不同"**：`_mxml_key_once @0x3cfab4` 同址、差异字段 0 却判 DIFF，
+   实为**一侧 `read_v` 读不满**（段尾）⇒ 归入 `NEEDS-REVIEW`（"不可判"≠"查出问题"）。
+
+### E. 「两套数据宇宙」仍是**结构性**待办（已登记，未做）
+我方同时携带：工厂 VMA 的**地址垫**（`factory_image.S`）与**自己编译的副本**（0x4xxxxx）。
+本次只修掉了"命名歧义导致的误配对"；**更彻底的做法**是让编译产物**落在工厂 VMA**
+（= 一套宇宙），那才是与"段 VMA 必须与工厂一致"完全自洽的终局。已登记为下一项。
+`tools/dup_copy_audit.py` 当前：**1376 个对象 / EQUIV 1371 / ★DIFF 0 / NEEDS-REVIEW 5**
+（`_ZL8z_errmsg` · `_mxml_key_once` · `all_encodings` · `entities`(已判等价) · `types`(已判等价)）。
+
+### F. 剩余 19 个发散（本轮后的真清单）
+`DisplayPage_list` `DrawFrame` `FilePreEmu` `SeletEmuCore` `TestLibz0` `_Z17FormatZipMessageUjPcj`
+`get_item_from_line` `get_value_from_items` `locale_charset` `mui_DisplayInputBuffer`
+`mui_DisplayLine_t` `mui_video_setting` `outputxy1` `progress` `stbtt__get_subrs`
+`stbtt__tesselate_curve` `strtrim` `wchar_from_loop_reset` `xmp3_FDCT32`
+（另 TRUNC 5：`MP3InitDecoder` `TestRun` `TestUSBJoy` `WaitNMI` `xmp3_AllocateBuffers`）
+
+### G. 新纪律 87–88
+> **87.** **块作用域 static 的符号名两套工具链不同**（GCC `name.NNNN` / clang `<func>.name`）。
+>   凡"按名字配对跨工具链对象"的判据，必须先归一到**规范名**；且**唯一性判定也必须用规范名**
+>   （两个同规范名 ⇒ 不判私有 ⇒ 退回按地址配对，方向保守，不会洗白）。
+> **88.** **预登记要按"键的归属"统计，不能只按"对象"统计** —— 同一张表可以出现在多个函数的
+>   一侧键里（本轮实测：漏了 3 个 `mui_*`）。偏差要**如实记录**，不许事后把预登记改写成实测值。

@@ -89,6 +89,31 @@ _MD.detail = False
 
 
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# ★★ 2026-09-30（§0.42）：**块作用域 static 的规范名**。
+#   同一个对象，两套工具链给出**不同名字**（都是合法的本地符号命名）：
+#     · 工厂 GCC 6.2  ：`name.<NNNN>`        例 `asso_values.9691` / `entities.6989`
+#     · 我方 clang/zig：`<函数名>.<name>`     例 `aliases_hash.asso_values` / `_mxml_entity_cb.entities`
+#   实测取证（`_r94_cmpdata.py` + 指针感知比对）：两边的对象**逐字节/逐项语义等价**，
+#   差别只在"名字"与"它被放在哪个地址"。而 `fp_key` 的私有对象配对是**按名字**的
+#   ⇒ 不归一就永远配不上 ⇒ 整类**假发散**（`aliases_hash`/`ConvertCode`/
+#   `mxmlEntityGetValue`/`_mxml_entity_cb`）。
+#   ★ 归一规则**故意保守**：只吃"整名形如 `X.<纯数字>`"或"整名形如 `X.Y`"两种；
+#     其余一律原样返回。归一会让"唯一性"判定变严（两个不同的 `X.a`/`X.b` 归到同一
+#     规范名 ⇒ 计数 2 ⇒ 不再判私有 ⇒ 退回按地址配对）—— 方向是**保守**的，不会洗白。
+RE_CANON_GCC = re.compile(r'^[A-Za-z_$][\w$]*\.\d+$')
+RE_CANON_CLANG = re.compile(r'^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$')
+
+
+def canon_obj_name(n):
+    """块作用域 static 的**规范名**（两套工具链命名归一）。非上述两种形态 ⇒ 原样返回。"""
+    if RE_CANON_GCC.match(n):
+        return n.rsplit('.', 1)[0]
+    if RE_CANON_CLANG.match(n):
+        return n.split('.', 1)[1]
+    return n
+
+
 class Bin(object):
     def __init__(self, path):
         self.path = path
@@ -184,16 +209,23 @@ class Bin(object):
           ③ 我方即便另持同名私有副本，也按**名字**配对（`_mxml_key` / `m_ui`）。
         ★ 最初我用"名字级优先 LOCAL"的绑定表 ⇒ 把 `handle` 的 GLOBAL 那份也判成私有
           ⇒ 同一地址在两侧配不上 ⇒ 凭空造出 6 个假发散（`FBA_Load`/`Load_Proc2`/…）。
-          第二次我把规则写成"LOCAL 且无同名 GLOBAL"，但工厂的 `handle` **两份都是 LOCAL**
+        第二次我把规则写成"LOCAL 且无同名 GLOBAL"，但工厂的 `handle` **两份都是 LOCAL**
           ⇒ 仍然判成私有 ⇒ 假发散照旧。**"唯一"这一条才是关键。**
+        ★★ 2026-09-30 修（真缺陷，见 §0.42）：三个条件全部改为在**规范名**上判定
+          （`canon_obj_name`）。理由：**块作用域 static 的命名两套工具链不同** ——
+          工厂 GCC 叫 `asso_values.9691`，我方 clang 叫 `aliases_hash.asso_values`，
+          两者是**同一个对象**。原实现在**原始名**上判唯一，于是我方的规范名
+          `asso_values` 永远不在集合里 ⇒ `fp_key` 退回**按地址**配对 ⇒
+          我方读自己的副本（4xxxxx）、工厂读映像里的副本（3axxxx）⇒ **整类假发散**。
         """
         cnt, loc = {}, set()
         for a, sz, n, ty in self.sym_list:
             if ty != 'STT_OBJECT':
                 continue
-            cnt[n] = cnt.get(n, 0) + 1
+            cn = canon_obj_name(n)
+            cnt[cn] = cnt.get(cn, 0) + 1
             if self.sym_bind.get((a, n)) == 'STB_LOCAL':
-                loc.add(n)
+                loc.add(cn)
         return {n for n in loc if cnt.get(n, 0) == 1}
 
     # --- 数据区：含最多数据符号的可写段（两侧因此指向同一批 vaddr）---
@@ -736,11 +768,14 @@ def fp_key(b, t, spec_private):
     hit = b.nearest_sym(a)
     if hit:
         nm, sa = hit
-        if nm in spec_private:
+        cn = canon_obj_name(nm)
+        # ★★ 2026-09-30（§0.42）：**用规范名做集合判定，也用规范名做键**。
+        #   只用规范名判集合、键里仍留原始名 ⇒ 两侧键还是不一样，等于没修。
+        if cn in spec_private:
             # ★ 显示里**必须带上绝对地址**：同名两份时只写 `handle+0` 读者无法判断是哪一份
             #   ⇒ 失去可审计性（本条的实测教训：曾因此把"同址"误读成"异址"）。
-            return (('LN', nm, a - sa, w, rw),
-                    '%s+%d:%d:%s@0x%x' % (nm, a - sa, w, rw, a))
+            return (('LN', cn, a - sa, w, rw),
+                    '%s+%d:%d:%s@0x%x' % (cn, a - sa, w, rw, a))
     return ('A', a, w, rw), '0x%08x:%d:%s' % (a, w, rw)
 
 
@@ -1274,7 +1309,7 @@ def _strip_src(s):
 
 
 def ruler_protocol_fingerprint():
-    """判据口径指纹 = sha256( `compare()` 源码 + `partition_ok()` 源码 + 常量/开关面 )。
+    """判据口径指纹 = sha256( `compare()` + `partition_ok()` + **归因链** 的源码 + 常量/开关面 )。
 
     ★ 为什么是**源码 + 常量取值**而不是手填版本串（纪律 73）：
       手填的版本号会与代码脱节（本项目已 4 次栽在"硬编码与事实脱节"上）。
@@ -1282,11 +1317,14 @@ def ruler_protocol_fingerprint():
       台账随之失效并 fail-closed ⇒ 逼迫一次**显式、留痕**的重新记账。
     ★ 为什么把常量与开关名也纳入：它们同样是判据的一部分
       （改 `ESCALATE_FACTOR` 或关掉 `CGM_REFDEAD_OFF` 都会改分桶，必须让旧账作废）。
+    ★★ 2026-09-30（§0.42）：把**归因链** `fp_key` / `norm_fp` / `canon_obj_name` 也纳入。
+      病灶：改 `fp_key` 的配对规则**会改变 DIVERGE 集合**，但它不在指纹里 ⇒
+      台账的旧账会被**静默沿用**（正是 §0.36 那类"改了尺子却还能对旧账"的洞）。
     """
     import hashlib
     import inspect
     parts = []
-    for fn in (compare, partition_ok):
+    for fn in (compare, partition_ok, fp_key, norm_fp, canon_obj_name):
         try:
             parts.append(_strip_src(inspect.getsource(fn)))
         except Exception as e:                                  # pragma: no cover
@@ -1612,6 +1650,19 @@ def self_test():
                     else:
                         os.environ[k] = v
             c('正例  恢复开关后指纹回到原值', ruler_protocol_fingerprint() == _f1, True)
+    # ★★ 2026-09-30（§0.42）：块作用域 static 的**规范名**归一（真缺陷的回归锚点）。
+    c('规范名 GCC 形  name.NNNN → name', canon_obj_name('asso_values.9691'), 'asso_values')
+    c('规范名 clang 形 func.name → name', canon_obj_name('aliases_hash.asso_values'), 'asso_values')
+    c('规范名 两套工具链**归一到同一个键**（这才是修的东西）',
+      canon_obj_name('asso_values.9691') == canon_obj_name('aliases_hash.asso_values'), True)
+    c('反例 普通名字不得被改（`_mxml_key` / `m_ui` 不受影响）',
+      (canon_obj_name('_mxml_key'), canon_obj_name('m_ui')), ('_mxml_key', 'm_ui'))
+    # ★ 这条是**已知代价**的显式锚点，不是"正例"：不同 TU 的同名块作用域 static 会归到
+    #   同一个规范名。正因如此，"唯一性"必须在**规范名**上判定（两个 ⇒ 不判私有 ⇒
+    #   退回按地址配对）——方向保守，不会洗白。工厂侧 `asso_values` 只有 1 份（规范名计数 1）
+    #   才使它成为"按名字配对"的对象。
+    c('★ 已知代价 不同 TU 的同名块作用域 static 归到同一规范名（故唯一性须在规范名上判）',
+      canon_obj_name('iso8859_1.asso_values') == canon_obj_name('iso8859_2.asso_values'), True)
     return chk
 
 
