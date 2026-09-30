@@ -137,9 +137,11 @@ extern void mui_DisplayLine_t(int param_1,int param_2,int param_3);
 extern void mui_DisplayInputBuffer(); /* K&R: 参数不可信/不可解析 */
 extern gh_u4 stbtt_InitFont(void *param_1,void *param_2,gh_u4 param_3); /* font[124] 与 fontbuffer 均为缓冲指针 */
 extern void mui_InitFont(); /* K&R: 参数不可信/不可解析 */
-extern char * strtrimr(); /* K&R：strtrim 内以 0 参尾调用 */
-extern gh_byte * strtriml(); /* K&R：strtrim 内以 0 参尾调用 */
-extern char * strtrim(); /* 原厂为 strtriml→strtrimr 尾调用，返回指针（调用点用返回值） */
+/* ★ 2026-09-30 修（§0.45）：原注释"K&R：strtrim 内以 0 参尾调用"是**误读**。
+   工厂 `strtrim` = `push{lr}; bl strtriml; pop{lr}; b strtrimr`，r0 全程透传 ⇒ 三者同参。 */
+extern char * strtrimr(char *param_1);
+extern gh_byte * strtriml(gh_byte *param_1);
+extern char * strtrim(char *param_1);
 extern char * get_item_from_line(char *param_1,char *param_2);
 extern int get_items_from_file(char *param_1,char *param_2);
 extern int get_items_from_zipfile(char *param_1,char *param_2); /* param_1 用于 %s；param_2 参与指针算术并传 get_item_from_line */

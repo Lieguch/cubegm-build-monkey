@@ -16,7 +16,7 @@ char * get_item_from_line(char *param_1,char *param_2)
   char *pcVar3;
   char *__dest;
   
-  pcVar1 = (char *)strtrim();
+  pcVar1 = (char *)strtrim(param_1);   /* ★ §0.45：原重建漏传参数 */
   sVar2 = strlen(pcVar1);
   if ((0 < (int)sVar2) && (*pcVar1 != '#')) {
     if (*pcVar1 != '[') {
