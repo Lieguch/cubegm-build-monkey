@@ -76,8 +76,12 @@ def main():
     m = data.count(b"ZRESULT lasterrorU=ZR_OK;")
     data = data.replace(
         b"ZRESULT lasterrorU=ZR_OK;",
-        b"/* 1:1\uff1a\u5b9a\u4e49\u7531\u5de5\u5382\u6570\u636e\u955c\u50cf\u4f9b\u7ed9\uff08symtab \u91cc lasterrorU=4B\uff09*/\n"
-        b"extern ZRESULT lasterrorU;")
+        # \u2605 2026-09-29 修（潜在缺陷）：bytes 字面量里的 Unicode 转义
+        #   在 Python 里**不是合法转义** ⇒ 只被当普通字符，且抛 SyntaxWarning；
+        #   注释里的中文于是变成字面的转义文本。
+        #   改为 str 字面量再 .encode("utf-8") ⇒ 得到真正的 UTF-8 字节，且无告警。
+        "/* 1:1：定义由工厂数据镜像供给（symtab 里 lasterrorU=4B）*/\n".encode("utf-8")
+        + b"extern ZRESULT lasterrorU;")
     print("  lasterrorU 改为 extern %d 处（由工厂镜像供给）" % m)
 
     # ★ 第 2 处已知改动（`zipver_sweep.py` 早已记录，方向明确）：

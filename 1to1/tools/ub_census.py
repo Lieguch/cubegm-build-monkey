@@ -49,43 +49,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def resolve_zig():
-    """返回 (可执行路径, 来源说明)；找不到返回 (None, 试过的候选清单)。"""
-    tried = []
+    """多级解析 zig —— **委托给唯一解析器** `tools/zig_resolve.py`（纪律 69）。
 
-    def _ok(p, why):
-        if p and os.path.isfile(p) and os.access(p, os.X_OK):
-            return p, why
-        if p and os.path.isfile(p):          # Windows 无 X_OK 语义
-            return p, why
-        return None, None
-
-    for var in ('ZIG_BIN', 'ZIG'):
-        p = (os.environ.get(var) or '').strip()
-        tried.append('%s=%s' % (var, p or '(空)'))
-        r, why = _ok(p, var)
-        if r:
-            return r, why
-    cc = (os.environ.get('CC') or '').strip()
-    tried.append('CC=%s' % (cc or '(空)'))
-    if 'zig' in cc:
-        r, why = _ok(cc.split()[0], 'CC 里的 zig')
-        if r:
-            return r, why
-    p = shutil.which('zig')
-    tried.append('PATH 上的 zig')
-    if p:
-        return p, 'PATH'
-    try:
-        import ziglang
-        d = os.path.dirname(ziglang.__file__)
-        for nm in ('zig', 'zig.exe'):
-            r, why = _ok(os.path.join(d, nm), 'python 包 ziglang')
-            if r:
-                return r, why
-        tried.append('python 包 ziglang：目录里无 zig/zig.exe')
-    except Exception as e:
-        tried.append('python 包 ziglang 不可用（%s）' % type(e).__name__)
-    return None, tried
+    ★ 为什么改成薄封装（同类第 3 次在本文件复发）：
+      本文件曾各写一份解析链，第一次把 Windows 的 `zig.exe` 绝对路径**写死**（Linux 上必然
+      FAIL，云开发整轮实验白跑）；修完又在**链尾**多留了一个"本机 Windows 默认路径"兜底
+      （纯冗余）⇒ CI 的「CI 可达性 / 宿主绝对路径门禁」判 FAIL(exit 17)，`1to1-verify` 红。
+      ⇒ **解析规则只允许有一处**；这里只做转发，返回 `(路径|None, 来源|候选清单)`。
+    """
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        'zig_resolve', os.path.join(ROOT, 'tools', 'zig_resolve.py'))
+    _m = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.resolve_zig()
 
 
 ZIG, ZIG_WHY = resolve_zig()

@@ -1213,33 +1213,22 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
 
 # --------------------------------------------------------------------------- #
 def _zig():
-    """多级解析 zig —— 必须同时在 Windows（zig.exe）与 Linux（zig）可用。
-    ★ 2026-09-29：旧实现只试环境变量 + Windows 默认路径 ⇒ 在 Linux/CI 上返回 None
-      （与 ub_census.py 同族缺陷；那一个直接导致云开发实验 link rc=18）。"""
-    import shutil
-    z = os.environ.get('ZIG') or os.environ.get('ZIG_BIN')
-    if z and os.path.exists(z):
-        return z
-    cc = (os.environ.get('CC') or '').strip()
-    if 'zig' in cc and os.path.exists(cc.split()[0]):
-        return cc.split()[0]
-    p = shutil.which('zig')
-    if p:
-        return p
+    """多级解析 zig —— **委托给唯一解析器** `tools/zig_resolve.py`（纪律 69）。
+
+    ★ 为什么改成薄封装：本函数原来各写一份解析链（且链尾还留了 Windows 默认路径兜底），
+      在 Linux/CI 上曾返回 None（与 `ub_census.py` 同族缺陷）。解析规则只允许有一处。
+    """
     try:
-        import ziglang
-        d = os.path.dirname(ziglang.__file__)
-        for nm in ('zig', 'zig.exe'):
-            c = os.path.join(d, nm)
-            if os.path.exists(c):
-                return os.path.abspath(c)
+        import importlib.util as _ilu
+        _sp = _ilu.spec_from_file_location(
+            'zig_resolve', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zig_resolve.py'))
+        _m = _ilu.module_from_spec(_sp)
+        _sp.loader.exec_module(_m)
+        _p, _ = _m.resolve_zig()
+        return _p
     except Exception:
-        pass
-    cand = os.path.join(os.path.dirname(sys.executable), '..', 'Lib', 'site-packages',
-                        'ziglang', 'zig.exe')
-    if os.path.exists(cand):
-        return os.path.abspath(cand)
-    return None
+        return None
+
 
 
 SYN_SRC = '''

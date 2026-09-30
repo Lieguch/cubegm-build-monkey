@@ -19,7 +19,6 @@
 #   · 其余 7 条全是"候选搜索表"或"CC 环境变量优先的本地默认"，缺了它们程序会回退 PATH/仓内文件，
 #     **不会**导致判据静默跳过。
 tools/ghidra_corpus.py	D:/output/rkgame/decompiled/02-ghidra-c/03-per-function	resolver: 仓内 golden/ghidra-perfn.tar.gz 优先；本机路径仅兜底；三者皆无则 fail-closed exit 2
-tools/check_obj_fresh.py	C:/Users/Administrator/.workbuddy/binaries/python/envs/default/	search: zig 定位候选之一（CC 环境变量优先，exists 命中才用）
 tools/scan_livein_args.py	C:/objdump	search: objdump 定位候选（which 之后逐个 exists，最后回退 PATH）
 tools/scan_livein_args.py	C:/Program Files/Git/usr/bin/objdump.exe	search: objdump 定位候选（同上）
 tools/scan_symbol_delta.py	C:\objdump	search: objdump 定位候选（同上）

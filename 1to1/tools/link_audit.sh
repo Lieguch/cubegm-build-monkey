@@ -89,6 +89,32 @@ OPT="${OPT:--Os}"
 # ★ 头集合**排在组件 -I 之后**（这里只有 src/compat 在它前面，是故意的：compat 是我们的垫片）。
 CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat ${CGM_HDR} ${EXTRA_INC:-} $CGM_FID_EXTRA $ARCH $FIDELITY"
 
+# ★★★★★ 2026-09-29：**本脚本是编译口径的唯一来源**（纪律 69「同一规则禁止写两处」）。
+#   别的门禁可以用 `sh tools/link_audit.sh --print-cflags xunzip` **读到同一份口径**。
+#
+#   为什么必须这样（真实代价）：`tools/check_obj_fresh.py` 的判据是"**用同一条流水线的口径**
+#   重编一次再与产物逐符号对拍"。但它自己另抄了一份 flags，且漏掉 `${CGM_HDR}`（`-nostdinc`
+#   + 工厂同期 glibc 2.24 真头）与 `-I src/compat`，还用 `-target arm-linux-gnueabihf.2.29`
+#   ⇒ 编出的对象**本就不可能相同** ⇒ 报 `_ZN6TUnzip3GetEiP8ZIPENTRY 现编 816 / 链接后 808`
+#   ⇒ **假阳性 FAIL**（反证：本脚本编的 `XUnzip.o` 该符号 = 808，与交付 ELF 逐项一致）。
+#   ⇒ 修法：XUnzip 的编译**命令组件在这里定义一次**，真编译与 `--print-cflags` **共用**。
+XUINC="$(winpath "$ROOT/src/upstream/xunzip/posix")"
+XUFLAGS="-std=gnu++98 -fno-exceptions -I$XUINC"
+case "$CC" in
+  *zig*) XUCMODE=""        ;;   # zig cc 按扩展名自动按 C++ 编译 .cpp
+  *)     XUCMODE="-x c++"  ;;   # 真 GCC 需要显式指定语言
+esac
+
+if [ "${1:-}" = "--print-cflags" ]; then
+    # 供别的门禁**读**口径用（不是让人抄）。四个变量都是"命令组件"，
+    # 调用方按 `CC + XUCMODE + XUFLAGS + CFLAGS + <src> -o <out>` 拼即可。
+    echo "CC=$CC"
+    echo "CFLAGS=$CFLAGS"
+    echo "XUCMODE=$XUCMODE"
+    echo "XUFLAGS=$XUFLAGS"
+    exit 0
+fi
+
 mkdir -p "$OBJD" "$(dirname "$REP")"
 rm -f "$OBJD"/*.o 2>/dev/null
 
@@ -143,20 +169,11 @@ XUSRC="$ROOT/src/upstream/xunzip/unzip.cpp"
 #   "必须入库"的例外，等于把陈旧对象钉死在仓库里）。现在：编译失败 ⇒ 删掉目标 ⇒ 中止。
 XUFAIL=0
 if [ -f "$XUSRC" ]; then
-    XUINC=$(winpath "$ROOT/src/upstream/xunzip/posix")
+    # ★ XUINC / XUFLAGS / XUCMODE 已在前面**定义一次**（与 `--print-cflags` 共用）。
     XUTMP="$XUPOBJ.new"
     rm -f "$XUTMP"
-    case "$CC" in
-      *zig*)
-        # zig cc 按扩展名自动按 C++ 编译 .cpp
-        XUXTRA="-std=gnu++98 -fno-exceptions -I$XUINC"
-        $CC $XUXTRA $CFLAGS "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
-        ;;
-      *)
-        XUXTRA="-std=gnu++98 -fno-exceptions -I$(winpath "$ROOT/src/upstream/xunzip/posix")"
-        $CC -x c++ $XUXTRA $CFLAGS "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
-        ;;
-    esac
+    # shellcheck disable=SC2086
+    $CC $XUCMODE $XUFLAGS $CFLAGS "$(winpath "$XUSRC")" -o "$(winpath "$XUTMP")" 2>>"$ROOT/report/_link_bad.txt"
     if [ -s "$XUTMP" ]; then
         mv -f "$XUTMP" "$XUPOBJ"
         echo "XUnzip.o 已重编（$(wc -c < "$XUPOBJ" 2>/dev/null || echo '?') B，源码 hash $(sha256sum "$XUSRC" 2>/dev/null | cut -c1-12)）"

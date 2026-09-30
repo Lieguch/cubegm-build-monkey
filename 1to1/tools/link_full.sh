@@ -243,15 +243,22 @@ if [ "${LINK_DRIVER:-lld}" = "lld" ]; then
     SU="$TC/sysroot/usr/lib"
     LGCC="$(ls "$TC"/../lib/gcc/arm-buildroot-linux-gnueabihf/*/libgcc.a 2>/dev/null | head -1)"
     if [ -z "$LGCC" ] || [ ! -f "$LGCC" ]; then echo "★★ 缺 libgcc.a（bootlin63 不完整）" >&2; exit 3; fi
-    # ★★ 2026-09-28：**编译器与链接器解耦**。
-    #   编译器对齐实验里 CC = 工厂同期 GCC 6.3，但**链接器仍必须是 zig 自带的 ld.lld**
-    #   （它才是本仓脚本能驱动、且已验证产出形态的那个）。旧实现从 CC 里抠 "zig"，
-    #   一换成 GCC 就直接 exit 3 ⇒ 实验根本跑不起来。现支持 ZIG_BIN 显式指定。
-    ZIGEXE="${ZIG_BIN:-${CC% cc}}"
-    case "$ZIGEXE" in
-      *zig*) ;;
-      *) echo "★★ LINK_DRIVER=lld 需要 zig 的 ld.lld：请设 ZIG_BIN=<zig 路径>（当前 CC=$CC）" >&2; exit 3 ;;
-    esac
+    # ★★★★★ 2026-09-29 根修（同类第 4 次；纪律 69「同一规则禁止写两处」）：
+    #   旧实现（2026-09-28）只从 `$CC` 里抠 "zig"：
+    #       ZIGEXE="${ZIG_BIN:-${CC% cc}}"; case "$ZIGEXE" in *zig*) ;; *) exit 3 ;;
+    #   ⇒ 编译器对齐实验把 CC 设成工厂同期 GCC 6.3 时，`ZIG_BIN` 未设 ⇒ **必然 exit 3**
+    #     ⇒ `toolchain-ab` 的 `gcc63-Os` / `gcc63-O2` **两条腿全 BUILD_FAILED**（CI #9/#10/#11 连续红）。
+    #   现在改为调用**唯一解析器** `tools/zig_resolve.py`：
+    #       ZIG_BIN → ZIG → CC 里的 zig（不含 zig 的 CC 被忽略）→ PATH → python 包 ziglang
+    #   与 `ub_census.py` / `diff_exec.py` / `check_obj_fresh.py` **同源**（各写一份必然漂移）。
+    ZIGEXE="$("$PY" "$(winpath "$ROOT/tools/zig_resolve.py")" 2>/dev/null)"
+    if [ -z "$ZIGEXE" ]; then
+        # 让解析器把"试过的候选"打到 stderr（fail-closed 必须指名，不得只说"找不到"）
+        "$PY" "$(winpath "$ROOT/tools/zig_resolve.py")" >/dev/null
+        echo "★★ LINK_DRIVER=lld 需要 zig 的 ld.lld，但解析不到 zig（候选见上方清单）" >&2
+        exit 3
+    fi
+    echo "  链接器（ld.lld）来自 = $ZIGEXE"
     LLIBS="$(winpath "$LIBZ_W")
 $(winpath "$LGCC")
 $(winpath "$SL/libdl.so.2")

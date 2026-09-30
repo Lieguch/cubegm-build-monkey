@@ -35,18 +35,23 @@ UP = os.path.join(ROOT, 'src', 'upstream', 'xunzip')
 SRC = os.path.join(UP, 'unzip.cpp')
 OBJ = os.path.join(UP, 'XUnzip.o')
 ELF = os.path.join(ROOT, 'build', 'rkgame.rebuilt.elf')
-ZIG_DEFAULT = ('C:/Users/Administrator/.workbuddy/binaries/python/envs/default/'
-               'Lib/site-packages/ziglang/zig.exe')
+# ★ 2026-09-29 删：`ZIG_DEFAULT`（本机 Windows 绝对路径）—— 解析规则已收敛到
+#   `tools/zig_resolve.py`，此处不再保留任何宿主路径（CI 的 s08 门禁会点名它）。
 
 
 def resolve_cc():
-    """多级解析编译器 —— 必须能在两种环境都跑：本地 Windows（zig.exe）与 CI Linux（pip 装的 ziglang）。
+    """解析**编译器** —— ① 优先用显式 `$CC`（可能是真 GCC，如工具链 A/B 的 gcc63 腿）；
+    ② 否则回落到**唯一 zig 解析器** `tools/zig_resolve.py`（纪律 69）。
 
     ★ 血泪：第一版把 Windows 绝对路径写死 ⇒ 在 CI 上必然"找不到编译器"⇒ 门禁退化成
       "每次都报无法判定"。所以按下面顺序找，并**把找到的那个打印出来**（否则以后
       又会出现"门禁静默退化成 no-op"这种最难查的失效）。
+    ★ 2026-09-29 收敛：原实现自己写了 ZIG/ZIG_BIN → PATH → python 包 → **本机 Windows 默认路径**
+      整条链（与 `ub_census.py` / `diff_exec.py` / `link_full.sh` 各写一份 ⇒ 必然漂移，
+      且最后那条"本机默认路径"实为宿主绝对路径，已被 CI 的 s08 门禁点过名）。
+      现在只保留 ①（编译器语义，与"找 zig"不是同一个问题），其余**一律转发**给唯一解析器。
     """
-    # ① 显式环境变量（CI 里 cnb_env.sh 会把 CC 设成 "<zig> cc"）
+    # ① 显式环境变量（CI 里 cnb_env.sh 会把 CC 设成 "<zig> cc"，工具链 A/B 会设成真 GCC）
     cc = os.environ.get('CC', '').strip()
     if cc:
         tok = cc.split()[0]
@@ -56,28 +61,24 @@ def resolve_cc():
         w = _sh.which(tok)
         if w:
             return w, 'env CC(which)'
-    # ② ZIG / ZIG_BIN
-    for k in ('ZIG', 'ZIG_BIN'):
-        v = os.environ.get(k, '').strip()
-        if v and os.path.exists(v):
-            return v, 'env ' + k
-    # ③ PATH 上的 zig
-    import shutil as _sh
-    w = _sh.which('zig')
-    if w:
-        return w, 'PATH'
-    # ④ python 包 ziglang 自带的 zig（CI 用 `pip install ziglang` 装）
+    # ② 唯一 zig 解析器（ZIG_BIN → ZIG → CC 里的 zig → PATH → python 包 ziglang）
     try:
-        import ziglang
-        cand = os.path.join(os.path.dirname(ziglang.__file__), 'zig')
-        if os.path.exists(cand):
-            os.chmod(cand, 0o755)
-            return cand, 'python pkg ziglang'
-    except Exception:
-        pass
-    # ⑤ 本地 Windows 默认位置
-    if os.path.exists(ZIG_DEFAULT):
-        return ZIG_DEFAULT, '本地默认路径'
+        import importlib.util as _ilu
+        _sp = _ilu.spec_from_file_location(
+            'zig_resolve', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zig_resolve.py'))
+        _m = _ilu.module_from_spec(_sp)
+        _sp.loader.exec_module(_m)
+        _p, _why = _m.resolve_zig()
+        if _p:
+            # POSIX 下包内二进制可能没有可执行位 —— 解析器内部已尽力 chmod，这里再兜一层
+            if os.name == 'posix' and not os.access(_p, os.X_OK):
+                try:
+                    os.chmod(_p, 0o755)
+                except Exception:
+                    pass
+            return _p, 'zig_resolve:' + str(_why)
+    except Exception as _e:
+        return None, 'zig_resolve 不可用（%s）' % type(_e).__name__
     return None, "未找到"
 
 
@@ -110,24 +111,59 @@ def syms(path):
 ZIPFAM = lambda n: ('unz' in n.lower()) or ('TUnzip' in n) or ('HZIP' in n)
 
 
+def _pipeline_flags():
+    """从 `link_audit.sh --print-cflags xunzip` 读**编译口径**（唯一来源；纪律 69）。
+
+    ★ 为什么必须"读"而不是"抄"：本门禁的判据是"用**同一条流水线的口径**重编一次再对拍"。
+      2026-09-29 实测：原实现自己抄了一份 flags，且漏掉 `${CGM_HDR}`（`-nostdinc` + 工厂同期
+      glibc 2.24 真头）与 `-I src/compat`，还用 `-target arm-linux-gnueabihf.2.29`
+      （流水线用的是 `-target arm-linux-gnueabihf`）⇒ 编出的对象**本就不可能相同** ⇒
+      报 `_ZN6TUnzip3GetEiP8ZIPENTRY 现编 816 / 链接后 808` ⇒ **假阳性 FAIL**。
+      （反证：link_audit 自己编的 `XUnzip.o` 该符号 = 808，与交付 ELF **逐项一致**。）
+    返回 `(cc_argv, flags_argv|None, err|None)`。
+    """
+    script = os.path.join(HERE, 'link_audit.sh')
+    last = None
+    for shx in (['sh'], ['bash'], ['dash']):
+        try:
+            r = subprocess.run(shx + [script, '--print-cflags', 'xunzip'],
+                               capture_output=True, text=True, cwd=ROOT, timeout=600)
+        except FileNotFoundError as e:
+            last = str(e)
+            continue
+        except Exception as e:
+            return None, None, '%s(%s)' % (type(e).__name__, e)
+        if r.returncode != 0:
+            return None, None, ('rc=%d %s' % (r.returncode, (r.stderr or r.stdout or '')[:300])).strip()
+        vals = {'CC': None, 'CFLAGS': None, 'XUCMODE': None, 'XUFLAGS': None}
+        for ln in (r.stdout or '').splitlines():
+            for k in vals:
+                if ln.startswith(k + '='):
+                    vals[k] = ln[len(k) + 1:].strip()
+        if not vals['CC'] or not vals['CFLAGS']:
+            return None, None, 'link_audit --print-cflags 输出不完整：%r' % ((r.stdout or '')[:200],)
+        # 命令组件顺序 = 真编译的顺序：CC + XUCMODE + XUFLAGS + CFLAGS + <src> -o <out>
+        argv = (vals['CC'].split() + (vals['XUCMODE'] or '').split()
+                + (vals['XUFLAGS'] or '').split() + vals['CFLAGS'].split())
+        return argv, None, None
+    return None, None, '找不到 sh/bash/dash 来读流水线口径（%s）' % last
+
+
 def recompile(outdir):
-    """用 link_audit.sh 的口径重编一次 unzip.cpp。"""
-    zig, how = resolve_cc()
-    if not zig:
-        return None, '找不到编译器（试过 CC/ZIG/ZIG_BIN/PATH/ziglang 包/本地默认路径）'
+    """用 **link_audit.sh 的口径**重编一次 unzip.cpp（口径从流水线**读**，不另抄一份）。"""
+    argv, _ignored, err = _pipeline_flags()
+    if err:
+        return None, '读不到流水线编译口径 ⇒ 无法判定（不得当成 FAIL）：%s' % err
+    if not argv:
+        return None, '流水线未给出编译器（$CC 为空）'
     o = os.path.join(outdir, 'XUnzip.fresh.o')
-    cmd = [zig, 'cc', '-target', 'arm-linux-gnueabihf.2.29',
-           '-mfloat-abi=hard', '-mfpu=neon',
-           '-c', '-Os', '-w', '-fno-stack-protector',
-           '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=0',
-           '-std=gnu++98', '-fno-exceptions', '-I', os.path.join(UP, 'posix'),
-           SRC, '-o', o]
+    cmd = list(argv) + [SRC, '-o', o]
     env = dict(os.environ)
     env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(outdir, 'lc')
     env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(outdir, 'gc')
     r = subprocess.run(cmd, capture_output=True, env=env)
     if not os.path.exists(o):
-        return None, r.stderr.decode('utf-8', 'replace')[:400]
+        return None, ('编译失败：%s' % r.stderr.decode('utf-8', 'replace')[:400])
     return o, None
 
 
