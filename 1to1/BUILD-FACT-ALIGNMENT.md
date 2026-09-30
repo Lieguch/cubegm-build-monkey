@@ -273,3 +273,25 @@ equivalent to 0.67 core-hours)` ⇒ **根组织 CPU 配额耗尽**，与配置�
 > **56.** 平台报错要读**完整链路**（`Prepare` 的 stage 日志才有"配额不足"原文；
 >   只看 `status: error` 会误判成配置问题）。
 
+### 六.4 闭环（2026-09-30，第 96 轮）——`mbsinit` **单变量实验已做，结论：对齐**
+**实验**：只改一处 —— `src/upstream/libiconv17/config.h` 的 `#define HAVE_MBSINIT 1` → `0`
+（`loop_wchar.h` 的规则是 `#if !HAVE_MBSINIT → #define mbsinit(ps) 1` ⇒ 0 与"未定义"同效）。
+**三层证据（全部机械可复算）**：
+
+| 层 | 基线 | 实验后 | 判读 |
+|---|---|---|---|
+| 对象 `libiconv_iconv.o` 的 UNDEF | 18 项（含 `mbsinit`） | **17 项（`mbsinit` 消失，`mbrtowc`/`wcrtomb` 保留）** | 单变量成立，无副作用 |
+| 产物 `.dynsym` 仅我方多出 | `getc` `putc` `strdup` **`mbsinit`**（4 项） | **3 项**（与工厂一致） | 与工厂对齐 |
+| 行为尺 | PASS 758 ｜ **DIVERGE 19** | **PASS 759 ｜ DIVERGE 18** | ★ 收敛 `wchar_from_loop_reset`，**新增发散 0** |
+
+**收敛函数的基线证据（关键）**：`wchar_from_loop_reset [strs]` 在基线上的发散原因是
+```
+stop     F=return            O=UC_ERR_FETCH_UNMAPPED
+calls_ext F=['memset','memset'] O=['mbsinit','wcrtomb','abort']
+```
+⇒ 我方因为**真调用了 `mbsinit`** 而走上另一条路径并崩；对齐后与工厂**同路径 ⇒ PASS**。
+**这正是"配置宏不对齐 ⇒ 真实行为差异"的一个实例**，不是判据口径问题。
+
+**落库**：改动走**正规流水线**（`build_upstream.sh` → `link_full.sh`）重出交付产物
+`build/rkgame.rebuilt.elf`（5,513,696 → **5,513,232 B**，sha16 **`3c0dbd96b37654a2`**）；
+六道结构门禁全 0、`verify_layout` 99.5%/违规 0、`prop_equiv` FAIL 0/MISSING 0、`size_coverage` SHORT 0。

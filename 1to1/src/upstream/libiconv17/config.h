@@ -13,7 +13,7 @@
 #define HAVE_ALLOCA 1
 #define HAVE_MBRTOWC 1
 #define HAVE_WCRTOMB 1
-#define HAVE_MBSINIT 1
+#define HAVE_MBSINIT 0
 #define HAVE_MBSRTOWCS 1
 #define HAVE_WCSRTOMBS 1
 #define HAVE_PTHREAD 1

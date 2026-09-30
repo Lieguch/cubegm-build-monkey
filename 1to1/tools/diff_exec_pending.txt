@@ -2,8 +2,8 @@
 # steps=3000
 # escalate=60000
 # ruler=9e88368685c133e66b3d8291b55a20656e86a3450391c6193efaa8e31059b022
-# ours=c9aba0eb96e40bf72814c32c55436680d207e2b6994dcbe327133336e5445afe
-# rebaseline: 修 fp_key 的真缺陷：块作用域 static 的两套工具链命名（GCC name.NNNN / clang func.name）归一到规范名 canon_obj_name，并按名字配对；预登记 27->23，实测 27->19（多出 iso2022_jp2_wctomb + mui_LoadConfig/mui_do_file_list/mui_type_file_list，其仅F键全部落在已验证逐字节相同的 asso_values/conversion_lists 上）；并把 fp_key/norm_fp/canon_obj_name 纳入口径指纹
+# ours=3c0dbd96b37654a2379b09aa58d88ec6f7c1e11d380d83f16467013d161ecfe2
+# rebaseline: mbsinit 配置对齐（libiconv17/config.h HAVE_MBSINIT 1->0，单变量实验证实）：行为尺 DIVERGE 19->18、PASS 758->759；收敛 wchar_from_loop_reset（基线证据 calls_ext O=[mbsinit,wcrtomb,abort] + stop O=UC_ERR_FETCH_UNMAPPED），新增发散 0；产物 sha 变化
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
@@ -28,6 +28,5 @@ progress
 stbtt__get_subrs
 stbtt__tesselate_curve
 strtrim
-wchar_from_loop_reset
 xmp3_AllocateBuffers
 xmp3_FDCT32

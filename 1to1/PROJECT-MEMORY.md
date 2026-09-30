@@ -3817,3 +3817,54 @@ toolchain-ab     #13    success   ← 此前 #9/#10/#11/#12 连续 4 轮 failure
 `tools/fake_impl_audit.py` —— 假实现/假桩专项五合一（空壳函数对拍 · 恒返回常量对拍 · 桩符号落位 ·
 源码占位扫描 · `.dynsym` 名字集合对拍）。**判据要点：任何"看似假"都要与工厂同名对象**对拍**才下结论**
 （本轮 4/6 项实测清白；§0.29 那次的结论也一致）。
+
+---
+
+## 0.44 ★★★★★ 第 96 轮（2026-09-30）：**真修复** —— `HAVE_MBSINIT` 配置对齐，行为尺 **DIVERGE 19 → 18**（交付产物重出）
+
+### 0. 用户口径（原话）
+> 「你的 CI 绿不绿并不代表有成果；所以停止用 CI 绿来掩饰你的进度缓慢，**我需要真修复，不要补丁**。
+>  杜绝为了 CI 而 CI，必须以**推进进度**为基础。」
+
+⇒ 本轮不做任何 CI 工程，只做**一处根因修复**并把它落进交付产物。
+
+### A. 目标选择（不是凭印象挑的）
+§0.43 的审计把 `.dynsym` 差异列成 P1，其中 `mbsinit`（我方多导）+ `islower`（我方少导）待定性。
+**项目自己的台账早有登记**：`tools/model_asymmetry_ledger.txt` 的 `mbsinit` 行写着
+「…**待单变量实验证实后再改**；见 BUILD-FACT-ALIGNMENT.md §六.4」 ⇒ 本轮就是**把那个实验做掉**。
+
+### B. 单变量实验（只改一个宏）
+`src/upstream/libiconv17/config.h`：`#define HAVE_MBSINIT 1` → **`0`**
+（`loop_wchar.h:44-48` 的规则是 `#if !HAVE_MBSINIT → #define mbsinit(ps) 1` ⇒ 0 与"未定义"同效）。
+
+**三层证据：**
+| 层 | 基线 | 实验后 |
+|---|---|---|
+| 对象 `libiconv_iconv.o` UNDEF | 18（含 `mbsinit`） | **17**（`mbsinit` 消失，`mbrtowc`/`wcrtomb` 保留） |
+| 产物 `.dynsym`「仅我方」 | 4（含 `mbsinit`） | **3** —— 与工厂一致 |
+| **行为尺** | PASS 758 ｜ **DIVERGE 19** | **PASS 759 ｜ DIVERGE 18** |
+
+★ **收敛函数 = `wchar_from_loop_reset`**，基线证据完全对得上：
+```
+stop     F=return   O=UC_ERR_FETCH_UNMAPPED
+calls_ext F=['memset','memset']  O=['mbsinit','wcrtomb','abort']
+```
+⇒ 我方因**真调用 `mbsinit`** 走了另一条路径并崩；对齐后与工厂同路径 ⇒ PASS。**新增发散 0。**
+
+### C. 落库（走正规流水线，不是手工拼）
+`build_upstream.sh`（rc=0）→ `link_full.sh`（rc=0）⇒ `build/rkgame.rebuilt.elf`
+**5,513,696 → 5,513,232 B**，sha16 **`3c0dbd96b37654a2`**；
+六道结构门禁全 rc=0、`verify_layout` **99.5%（193/194）/违规 0**、`prop_equiv` **FAIL 0 / MISSING 0**、
+`size_coverage` **SHORT 0**、`inline_move_audit --verify-meta` 交叉核对通过。
+**新基线**：`BASE 3c0dbd96b37654a2 782 759 18 5 0 0`；台账 `--rebaseline` 为 **23 项**（发散 18 + 不可判 5）。
+
+### D. 留痕
+* `tools/model_asymmetry_ledger.txt` 的 `mbsinit` 行**追加"已闭环"证据**（保留原描述，可追溯）。
+* `BUILD-FACT-ALIGNMENT.md` 新增 **§六.4 闭环**（实验三层证据表）。
+* 旧台账备份 `build/_exp/diff_exec_pending.pre-r96.bak`；旧 config 备份 `build/_exp/config.h.pre-mbsinit`。
+
+### E. 这一类修复的**通用形态**（可复用）
+> **构建事实对齐**：库里的一个配置宏（`HAVE_*`）与工厂不同 ⇒ **代码路径不同** ⇒ 行为发散。
+> 判据顺序：① `.dynsym` 导入表差异（**最灵敏的信号**，一个符号一条线索）
+> → ② 该符号在被测 TU 里的 `UNDEF` 是否随之变化（对象级）→ ③ 行为尺是否收敛且**新增发散 0**。
+> 三步都过才落库；缺任一步都只是"看起来对"。

@@ -14,7 +14,7 @@ islower	代码差异；工厂侧某组件调用它（我方对应源码路径不
 getc	构建事实差异；来自 mxml（上游）。改用**真 glibc 2.24 头**后应变为 `_IO_getc`（已建模）；见 BUILD-FACT-ALIGNMENT.md §一
 putc	构建事实差异；同上（mxml）⇒ 应变为 `_IO_putc`（已建模）；见 BUILD-FACT-ALIGNMENT.md §一
 gmtime	代码差异；来自 XUnzip 的 `timet2filetime`（我方 312 B + gmtime vs 工厂 12 B 桩）；待按工厂机器行为对齐；见 BUILD-FACT-ALIGNMENT.md §五
-mbsinit	代码/配置差异；来自 libiconv 的 loop_wchar.h:42-48 —— `#ifndef mbsinit` + `#if !HAVE_MBSINIT` 时把 mbsinit 宏成 1（不调用）。我方 config.h 手写 `HAVE_MBSINIT 1` ⇒ 真调用 ⇒ 导入 mbsinit；工厂不导入 ⇒ 反推其构建未定义 HAVE_MBSINIT。待单变量实验证实后再改；见 BUILD-FACT-ALIGNMENT.md §六.4
+mbsinit	代码/配置差异；来自 libiconv 的 loop_wchar.h:42-48 —— `#ifndef mbsinit` + `#if !HAVE_MBSINIT` 时把 mbsinit 宏成 1（不调用）。我方 config.h 手写 `HAVE_MBSINIT 1` ⇒ 真调用 ⇒ 导入 mbsinit；工厂不导入 ⇒ 反推其构建未定义 HAVE_MBSINIT。待单变量实验证实后再改；见 BUILD-FACT-ALIGNMENT.md §六.4 【2026-09-30 已闭环：单变量实验证实并把 config.h 的 HAVE_MBSINIT 改为 0；对象级 UNDEF 18→17、产物级 .dynsym 仅我方 4→3（mbsinit 消失，与工厂一致）、行为尺 DIVERGE 19→18（收敛 wchar_from_loop_reset，新增发散 0）】
 putchar	构建事实差异；真头 `stdio.h:587` 把 `putc` 定义为**无条件宏** `_IO_putc`，
 	而 `putchar` 是 `bits/stdio.h:79` 的 **extern-inline**（受 __OPTIMIZE_SIZE__ 门控）。
 	工厂**同时**导入 putchar 与 _IO_putc ⇒ 其构建是 **per-TU 优化档**（应用 -Os / 上游 -O2）。
