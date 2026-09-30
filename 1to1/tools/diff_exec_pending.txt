@@ -1,27 +1,23 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ruler=02e9578c21f13ce646d8cdd1f76a380a115d69b96e3315efcc81e12dc46e3857
+# ruler=e0d493867226330275afd579c51db609c551a1462794fd5e5d2713e6394de601
 # ours=c9aba0eb96e40bf72814c32c55436680d207e2b6994dcbe327133336e5445afe
-# rebaseline: 行为尺口径并入 REFDEAD 桶（§0.26/§0.29）+ 台账新增大口径指纹记录（§0.36）：旧台账(2026-09-26)系 v1 口径且未记产物 sha，不可比 ⇒ 整体重新记账。同时纳入 UpdateROM 结构化根修（§0.36）。
+# rebaseline: 接入「访存内联等价」判据（与 calls_ext 内联等价对称）；预登记 DIVERGE 36->27，实测一致（9 个: DrawSelectBar/UnDrawSelectBar/UpdateROMProc/__libc_csu_init/mui_load_state/mui_save_state/outputblankxy/run_game/spi_printf）
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
 ConvertCode
 DisplayPage_list
 DrawFrame
-DrawSelectBar
 FilePreEmu
 MP3InitDecoder
 SeletEmuCore
 TestLibz0
 TestRun
 TestUSBJoy
-UnDrawSelectBar
-UpdateROMProc
 WaitNMI
 _Z17FormatZipMessageUjPcj
-__libc_csu_init
 _mxml_entity_cb
 aliases_hash
 get_item_from_line
@@ -32,16 +28,11 @@ mui_DisplayInputBuffer
 mui_DisplayLine_t
 mui_LoadConfig
 mui_do_file_list
-mui_load_state
-mui_save_state
 mui_type_file_list
 mui_video_setting
 mxmlEntityGetValue
-outputblankxy
 outputxy1
 progress
-run_game
-spi_printf
 stbtt__get_subrs
 stbtt__tesselate_curve
 strtrim

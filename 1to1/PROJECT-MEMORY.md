@@ -3607,3 +3607,79 @@ toolchain-ab     #13    success   ← 此前 #9/#10/#11/#12 连续 4 轮 failure
 ★ 这是自红潮开始以来**第一次 4/4 全绿**，且每一处都是**根因修复**（不是放宽门禁、不是调数字）。
 ★ 所有结论都可回溯到具体产物：交付产物 `build/rkgame.rebuilt.elf` = **`c9aba0eb96e40bf7…`**；
   行为尺基线 `BASE c9aba0eb96e40bf7 782 741 36 5 0 0`。
+
+---
+
+## 0.41 ★★★★★ 第 93 轮（2026-09-30）：**P0' 缺口闭环 —— 「访存内联等价」判据接入尺子**（并纠正一处**过度声明**）
+
+### 0. 方向（复述，防漂移）
+唯一判据 = **与原厂差异收敛**；出口 = 差异类别收敛 + 每类机械门禁。
+★ 本轮**没有**把真机复测当下一步 —— 依据 §0.19 纪律 **37/40**（本地装置未做完时不得请用户上机；
+不得用"从未上机"这类未经证实的负面事实替代诚实自评）。
+
+### A. ★★★★★ 先取证，再改尺子 —— 旧 `INLINE-MOVE` 判据**过度声明**（推翻 §0.29-D 的口径）
+`diverge_cluster` 的 `INLINE-MOVE` 判据是**存在性**的：「某条只在一侧出现的访存键，
+在对侧**别的函数**里也出现过」⇒ 整函数归入"候选假发散"。**两个缺陷（都已取证）**：
+
+| # | 缺陷 | 证据 |
+|---|---|---|
+| 1 | **存在性 ≠ 全量** | 一个函数 30 条一侧键里只有 1 条被解释也判"候选假发散"。实测 `mui_video_setting`：30 条一侧键、**21 条未解释**，原口径仍归 INLINE-MOVE |
+| 2 | **裸地址被折叠成 `<ADDR>`** | `_norm_key` 的 `re.sub(r'0x[0-9a-fA-F]{8}','<ADDR>')` 把**不同地址**变成**同一个键** ⇒ 存在性反查**凭空命中**。实证：`spi_printf` 的 `0x003e1a70`（F 侧独有）"被解释了"，其实对侧没人读它 |
+
+⇒ **结论更正**：§0.29-D 写的「16 个 INLINE-MOVE 是判据缺口、真实待收敛 24」**不成立**。
+用收紧后的判据（逐行纯访存 + **每一条**一侧键都被解释）实测：**真·搬家只有 9 个**。
+
+### B. ★★★★★ 交付：判据抽成**唯一真源**并接入尺子（纪律 69）
+| 文件 | 性质 | 说明 |
+|---|---|---|
+| `tools/inline_move.py` | **新增** | 判据唯一真源（键格式化 + 索引 + 逐函数判决）；`--self-test` **18/18** |
+| `tools/inline_move_audit.py` | **新增** | 离线审计 + **预登记** + `--verify-meta` **交叉核对** |
+| `tools/diff_exec.py` | 改 | `--batch` 尾部**后处理**：用 `all_x` 建索引 ⇒ 判 FULL 的计入 **PASS**；新增判据开关 `CGM_INLINE_MOVE_OFF`（**已并入判据指纹**）；明细**无条件**收集（原来只在 `--dump-rows` 时收 ⇒ 会让 CI 与本地得出两个 DIVERGE 值） |
+| `tools/diverge_cluster.py` | 改 | `_norm_key`/`_fp_str`/索引**全部转发**给真源；类别表**排除已判等价的函数** ⇒ 与尺子**同一条判据**（不许"同一分母两个值"）；自证 22/22 |
+| `.github/workflows/1to1-verify.yml` | 改 | 尺子加 `--dump-rows`；新增步骤 **`id: s45`**：判据自证 + **与尺子报告交叉核对**（不一致 ⇒ fail-closed）；`MIN_STEPS` 由 `id: sNN` 自动推导 ⇒ 不需手改 |
+| `tools/stage_sd_drop.py` | **新增** | 投放包**唯一**打包器（取代 round4/5/7 各抄一份）；行为尺数字**必须**由 `ruler_baseline.py` 按**产物 sha** 反查（修掉 round7 读固定路径 `report/_deliver_diff.txt` 的缺陷） |
+
+### C. ★★★★★ 预登记精确命中（纪律 61）
+```
+改尺子前（现有数据上算）：FULL 9 个 ⇒ **DIVERGE 应 36 → 27**；其余 16 PARTIAL + 11 OTHER 一个不许变
+改尺子后（实测）      ：PASS 741→**750** ｜ DIVERGE 36→**27** ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0
+自洽                   ：750 + 27 + 5 + 0 + 0 = 782 ✓     降级名单与预登记**逐字一致**
+```
+降级的 9 个（真·搬家）：`DrawSelectBar` `UnDrawSelectBar` `UpdateROMProc` `__libc_csu_init`
+`mui_load_state` `mui_save_state` `outputblankxy` `run_game` `spi_printf`
+
+### D. 交叉环境确定性（再次确认）
+本机 `diff_exec --batch --steps 3000` 在**改判据前**对 `c9aba0eb…` 得
+**PASS 741 ｜ DIVERGE 36 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0** —— 与 §0.40 的 CI 数字**逐项一致**。
+
+### E. 台账重新记账（留痕）
+`tools/diff_exec_pending.txt` 经 `--rebaseline` 重写为 **32 项**（发散 27 + 不可判 5）；
+`ruler = e0d493867226330275afd579c51db609c551a1462794fd5e5d2713e6394de601`；
+`ours = c9aba0eb96e40bf7`；原因已写入台账头部。旧台账备份 `build/_exp/diff_exec_pending.pre-r93.bak`。
+★ 按 CI 口径（带 `--ledger`、不带 `--update-ledger`）复跑：**rc=0，新增 0**。
+
+### F. ★★★ 剩余的**真嫌疑池**（本轮把"假发散"剥离后，第一次看清）
+`ONE-SIDE` **13** + `INLINE-MOVE-部分` **3**（有未解释键）+ `CALLS-EXT` 3 + `RET` 3 +
+`MIXED(ca+rd+wr)` 2 + `STOP+MORE` 2 + `MIXED(ca+rd)` 1 = **27**。
+最硬的一批（一侧键**全无落点**）：
+`ConvertCode`(3) · `aliases_hash`(2) · `locale_charset`(1) · `iso2022_jp2_wctomb`(1) ·
+`mui_DisplayLine_t`(1) · `mui_LoadConfig`(8) · `mui_do_file_list`(8) · `mui_type_file_list`(8) ·
+`progress`(2) · `xmp3_FDCT32`(6) · `_mxml_entity_cb` · `mxmlEntityGetValue` · `outputxy1`
+★ 注意 `_mxml_entity_cb` / `mxmlEntityGetValue` 的未解释键集中在 `entities.6989[…]`（mxml 实体表）
+⇒ 两者**同源**，应作为一条线一起查。
+★ 已知**仪器侧**的下界：本判据的"对侧索引"只建在**共有 782 个函数**上；
+我方**私有函数**（`*_isra_*` / `*_constprop_*`，§0.29-C 记 14 个）**不在索引里**
+⇒ 若某条一侧键其实被搬进了私有函数，本判据会**保守地**留在 PARTIAL（**不会洗白**）。
+把索引扩到双方**全部函数**是下一个洞（已登记，未做）。
+
+### G. 交付物（本轮）
+`_sdcard_drop8/`（用新打包器生成，t3 = 当前产物 `c9aba0eb`，基线按 sha 反查）
+—— ★ **按纪律 37/40，这不是"下一步"**；它的作用是让"交付物"与"测量"保持同一版，
+不出现 §0.32 点名的"测量在跑、交付没动"。
+
+### H. 新纪律 85–86
+> **85.** 跨函数的"搬家/等价"判据必须是**全量**的（**每一条**一侧键都要有落点），
+>   不得用"存在一条"归整函数 —— 那是**洗白**。且必须**逐行**都成立（某组输入搬家 ≠ 整函数搬家）。
+> **86.** 归一化**不得**把"身份"抹掉：键的地址部分若**就是**身份（裸地址形），
+>   任何折叠（如 `<ADDR>`）都会让反查**凭空命中**。判据真源只允许一处（`tools/inline_move.py`），
+>   尺子与类别表都只许**调用**。**同一分母出现两个值 = 缺陷，必须机械交叉核对。**

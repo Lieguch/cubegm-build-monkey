@@ -31,6 +31,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import diff_exec as D                                   # noqa: E402
+import inline_move as IM                                # noqa: E402  （判据唯一真源，纪律 69）
 
 TUP = re.compile(r"\((\d+),\s*(\d+),\s*'([RW])'\)")
 HEX = re.compile(r"0x[0-9a-fA-F]+")
@@ -159,8 +160,13 @@ def self_test():
       '仅F=[] 仅O=[]' in sig, False)
 
     # ---- 2026-09-29 新增：`--rows` 离线归类（纯函数锚点，不依赖尺子重跑）----
-    c('归一化 去掉 @地址', _norm_key('m_ui+56:4:R@0x3af29c ×1'), 'm_ui+56:4:R')
-    c('归一化 裸地址降级为 <ADDR>', _norm_key('0x003cfa94:4:R ×1'), '<ADDR>:4:R')
+    # ★★ 2026-09-30 反转：旧锚点写的是「裸地址**降级**为 <ADDR>」，那是**缺陷**。
+    #   折叠 ⇒ 不同地址变成同一个键 ⇒ 存在性反查凭空命中（`spi_printf` 实证）
+    #   ⇒ 现要求**保持精确**；下面的反例锚点把"不许再折叠"钉住。
+    c('归一化 裸地址**保持精确**（不得折叠成 <ADDR>）',
+      _norm_key('0x003cfa94:4:R ×1'), '0x003cfa94:4:R')
+    c('反例 相邻裸地址必须是不同的键', _norm_key('0x003cfa94:4:R') != _norm_key('0x003cfa95:4:R'), True)
+    c('正例 LN 形仍去掉展示用的 @地址', _norm_key('m_ui+56:4:R@0x3af29c ×1'), 'm_ui+56:4:R')
     sf = {('data-reads', 'm_ui+56:4:R'): {'A'}}
     so = {('data-reads', 'm_ui+56:4:R'): {'B'}}
     _d, mv = _dims_and_moves("data-reads 仅F=['m_ui+56:4:R@0x3af29c ×1'] 仅O=[]", sf, so, 'A')
@@ -184,38 +190,14 @@ def self_test():
 def _fp_key(e):
     """`--dump-rows` 指纹条目 → 跨函数可比较的键。
 
-    ★ 两种**真实**形态（2026-09-29 从明细里统计出来的，不要凭印象）：
-        `["LN", 名字, 偏移, 宽度, 读写]`  （16662 条）
-        `["A",  地址, 宽度, 读写]`       （20222 条）
-      第一版把 A 形当成 `[地址, 宽度, 读写]`（没有前导 `'A'`）⇒ `%x` 收到字符串直接 TypeError。
+    ★ 保留原名只为向后兼容；**实现转发**给 `inline_move`（纪律 69）。
     """
-    if isinstance(e, list) and e and e[0] == 'LN':
-        return ('LN', e[1], e[2])
-    if isinstance(e, list) and e and e[0] == 'A':
-        return ('A', e[1])
-    if isinstance(e, list) and len(e) >= 3:
-        return ('A', e[0])
-    return ('?', repr(e))
+    return IM.fp_str(e)
 
 
 def _fp_str(e):
-    """`--dump-rows` 指纹条目 → **与报告差异文本同形**的键串。
-
-    ★ 为什么必须同形（2026-09-29 踩到的坑）：反查索引是从**指纹条目**建的，
-      而"仅F/仅O"的键是从**差异文本**里抠的；两者若不归一成同一形态，
-      反查**永远命中不了** ⇒ 全部落进 `ONLY-ONE-SIDE` ⇒ 把 `INLINE-MOVE` 一整类误判成真差异
-      （实测：误得 ONLY-ONE-SIDE 27 个、INLINE-MOVE 0 个；修好后 INLINE-MOVE 才现形）。
-      形态由 `diff_exec.norm_fp` 的展示决定：
-        · `'LN'` 形（具名对象+偏移）→ `名字+偏移:宽度:读写`
-        · `'A'`  形（裸地址）      → `0x%08x:宽度:读写`
-    """
-    if isinstance(e, list) and e and e[0] == 'LN':
-        return '%s+%d:%d:%s' % (e[1], e[2], e[3], e[4])
-    if isinstance(e, list) and e and e[0] == 'A':
-        return '0x%08x:%d:%s' % (e[1], e[2], e[3])
-    if isinstance(e, list) and len(e) >= 3:
-        return '0x%08x:%d:%s' % (e[0], e[1], e[2])
-    return str(e)
+    """★ 转发给判据真源 `inline_move.fp_str`（纪律 69）。"""
+    return IM.fp_str(e)
 
 
 LIST = re.compile(r"'([^']+)'")
@@ -259,10 +241,14 @@ def _dims_and_moves(body, side_f, side_o, fn):
 
 
 def _norm_key(s):
-    """报告的键形如 `sym+off:2:R@0x3acf76 ×3` ⇒ 去掉地址与计数，留 `sym+off:2:R`。"""
-    s = re.sub(r'@0x[0-9a-fA-F]+', '', s)
-    s = re.sub(r'\s*×\d+', '', s)
-    return re.sub(r'0x[0-9a-fA-F]{8}', '<ADDR>', s)
+    """报告的键形如 `sym+off:2:R@0x3acf76 ×3` ⇒ 去掉地址与计数，留 `sym+off:2:R`。
+
+    ★★ 2026-09-30 修（真缺陷）：原实现**还会**把裸地址 `0x003e1a70:4:R` 折叠成 `<ADDR>:4:R`
+      ⇒ **不同地址变成同一个键** ⇒ 存在性反查凭空命中（实测 `spi_printf` 的 `0x003e1a70`
+      在对侧根本没人读，却"被解释了"）。折叠规则已删，实现转发给判据真源
+      `inline_move.norm_key`（纪律 69）。
+    """
+    return IM.norm_key(s)
 
 
 def cluster_rows(rows_json):
@@ -294,7 +280,20 @@ def cluster_rows(rows_json):
             byfn[r['fn']].append(r.get('diffs') or r.get('note') or '')
 
     cat = defaultdict(list)
+    # ★★ 2026-09-30：判据改用**唯一真源** `inline_move`（与尺子同一条判据，纪律 69）。
+    #   凡是 `FULL`（真·访存搬家）的函数，尺子已把它计入 PASS ⇒ 类别表**必须**同样排除它，
+    #   否则会出现"同一分母两个值"（尺子 27 / 类别表 36）。
+    _byfn_raw = defaultdict(list)
+    for r in rows:
+        if r.get('kind') == 'DIVERGE':
+            _byfn_raw[r['fn']].append(r)
+    _sf, _so = IM.build_index(rows)
+    eq = {fn for fn in _byfn_raw
+          if IM.function_verdict(fn, _byfn_raw[fn], _sf, _so)[0] == 'FULL'}
+
     for fn in sorted(byfn):
+        if fn in eq:
+            continue
         dims, moved, body = set(), [], []
         for b in byfn[fn]:
             body.extend(b if isinstance(b, list) else [str(b)])
@@ -307,9 +306,9 @@ def cluster_rows(rows_json):
         elif dims == {'stop'}:
             c = 'STOP-ONLY'
         elif dims <= {'rd', 'wr'} and moved:
-            c = 'INLINE-MOVE(候选假发散)'
+            c = 'INLINE-MOVE-部分(有未解释键 ⇒ 不得洗白)'
         elif dims <= {'rd', 'wr'}:
-            c = 'ONLY-ONE-SIDE(真差异第一嫌疑池)'
+            c = 'ONE-SIDE(真差异第一嫌疑池)'
         elif dims == {'ca'}:
             c = 'CALLS-EXT'
         elif dims == {'ret'}:
@@ -319,10 +318,10 @@ def cluster_rows(rows_json):
         else:
             c = 'MIXED(%s)' % '+'.join(sorted(dims))
         cat[c].append((fn, moved))
-    return meta, cat
+    return meta, cat, sorted(eq)
 
 
-def report_rows(meta, cat, out=None):
+def report_rows(meta, cat, out=None, eq=()):
     L = ['=' * 96,
          'DIVERGE 机制归类（数据源 = `diff_exec --dump-rows`，**不截断**）',
          '=' * 96,
@@ -332,11 +331,11 @@ def report_rows(meta, cat, out=None):
          % (meta['steps'], meta['escalate_factor'], meta['shared'], meta['judged'], meta['stats'])]
     tot = sum(len(v) for v in cat.values())
     L.append('')
-    L.append('  %-38s %6s %7s' % ('类别', '函数数', '占比'))
-    L.append('  ' + '-' * 54)
+    L.append('  %-44s %6s %7s' % ('类别', '函数数', '占比'))
+    L.append('  ' + '-' * 60)
     for c in sorted(cat, key=lambda x: -len(cat[x])):
-        L.append('  %-38s %6d %6.1f%%' % (c, len(cat[c]), 100.0 * len(cat[c]) / max(tot, 1)))
-    L.append('  %-38s %6d' % ('合计（发散函数）', tot))
+        L.append('  %-44s %6d %6.1f%%' % (c, len(cat[c]), 100.0 * len(cat[c]) / max(tot, 1)))
+    L.append('  %-44s %6d' % ('合计（发散函数）', tot))
     for c in sorted(cat, key=lambda x: -len(cat[x])):
         L.append('')
         L.append('  --- %s（%d 个）---' % (c, len(cat[c])))
@@ -344,9 +343,16 @@ def report_rows(meta, cat, out=None):
             ex = ('  ↔对侧=%s' % (moved[0][1],)) if moved else ''
             L.append('      %-46s%s' % (fn, ex[:74]))
     L.append('')
-    L.append('  ★ 判读纪律：`INLINE-MOVE` 是**候选假发散**（几何上"搬家"，不是少了行为）——')
-    L.append('    修法**不是**改这些函数，而是给尺子加一条与 `calls_ext` 内联等价**对称的访存判据**；')
-    L.append('    上线前必须**先写死预期降级数**并做三态自证（§2.18），不得先改结果。')
+    L.append('  --- 已判「访存内联等价」（工厂把共享子过程内联进调用方；'
+             '其余观测量全一致 ⇒ **尺子已计入 PASS**）（%d 个）---' % len(eq))
+    L.extend('      %s' % n for n in (list(eq)[:40] or ['（无）']))
+    L.append('')
+    L.append('  ★ 判读纪律：')
+    L.append('    · `INLINE-MOVE-部分` = **有未解释的一侧访存键** ⇒ 只解释了一部分，'
+             '**不得**当假发散洗白，必须逐键查。')
+    L.append('    · `ONE-SIDE` = 一侧键在对侧**完全找不到落点** ⇒ 真差异第一嫌疑池。')
+    L.append('    · 判据真源 = `tools/inline_move.py`（与尺子**同一条**判据；'
+             '两处口径不一致 = 缺陷）。')
     txt = '\n'.join(L)
     print(txt)
     if out:
@@ -382,7 +388,7 @@ def main():
             return 11
         with open(a.rows, encoding='utf-8') as fh:
             d = json.load(fh)
-        meta, cat = cluster_rows(d)
+        meta, cat, eq = cluster_rows(d)
         # ★ 明细必须自带"它读的是哪一版产物"，且与当前产物一致 —— 否则归类无意义
         if os.path.exists(D.OURS):
             cur = __import__('hashlib').sha256(open(D.OURS, 'rb').read()).hexdigest()[:16]
@@ -390,7 +396,7 @@ def main():
                 sys.stderr.write('★ 明细 sha %s ≠ 当前产物 sha %s ⇒ 结果不可用\n'
                                  % (meta['ours']['sha256'][:16], cur))
                 return 11
-        report_rows(meta, cat, a.out)
+        report_rows(meta, cat, a.out, eq)
         return 0
 
     for p in (D.FACTORY, D.OURS):

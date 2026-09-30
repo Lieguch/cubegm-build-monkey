@@ -548,6 +548,7 @@ jobs:
           #   ★ 台账是"待核债务"不是"已证明缺陷"：每条都需逐条定性（详见 GAP 17.07）。
           python tools/diff_exec.py --batch --steps 3000 \
             --out report/diff_exec.txt \
+            --dump-rows report/_rows.json \
             --ledger tools/diff_exec_pending.txt
 
       - name: 发散**类别**归约（把 N 条发散聚成若干根因类别）
@@ -564,6 +565,22 @@ jobs:
           python tools/diverge_cluster.py --top 12 --out report/diverge_cluster.txt
           echo '--- 类别归约（前 40 行）---'
           head -40 report/diverge_cluster.txt
+
+      - name: ★ 访存内联等价：判据自证 + 与尺子**交叉核对**（同一分母不许两个值）
+        id: s45
+        run: |
+          cd 1to1
+          # 为什么（§0.29-F P0'）：`calls_ext` 早有"内联等价"判据，**访存**没有 ⇒
+          #   工厂把共享子过程内联进调用方、我们保留成独立函数这种**几何搬家**
+          #   会被算成 DIVERGE ⇒ 整类假发散。
+          # 判据真源 = tools/inline_move.py（尺子只**调用**它，纪律 69）。
+          # 本步骤做两件事，缺一不可：
+          #   ① 判据**自证**（含"只解释 1/3 条一侧键不得判 FULL"的洗白回归锚点）；
+          #   ② **交叉核对**：尺子写进明细 meta 的 `inline_move_equiv` 名单，
+          #      必须与离线判据算出的集合**逐元素相同** —— 否则就是"同一分母两个值"，
+          #      正是本项目反复吃亏的那类缺陷（口径不一致必须可见，不得静默）。
+          python tools/inline_move.py --self-test
+          python tools/inline_move_audit.py report/_rows.json --verify-meta
 
       - name: ★ 目标程序构建事实恢复（DWARF：工具链 / CFLAGS / 源文件树）
         id: s43

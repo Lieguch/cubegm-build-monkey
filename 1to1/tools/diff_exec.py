@@ -864,7 +864,7 @@ RULER_CONSTANT_NAMES = ('ESCALATE_FACTOR',)
 #   · 执行后端开关：只换实现、**不改判据** ⇒ 只记**名字**，不记值
 #     （`CGM_MACHINE_REUSE` 已在 §0.28 用 sha256 逐字节证明与默认路径等价；
 #      记值会让"本地带 reuse、CI 不带"这种无关差异把台账判废）。
-RULER_PROTOCOL_SWITCHES = ('CGM_REFDEAD_OFF',)
+RULER_PROTOCOL_SWITCHES = ('CGM_REFDEAD_OFF', 'CGM_INLINE_MOVE_OFF')
 RULER_BACKEND_SWITCH_NAMES = ('CGM_MACHINE_REUSE', 'CGM_NO_LIBC_MODEL')
 
 # 触到步数上限 ⇒ 以 ESCALATE_FACTOR× 预算**重试一次**。
@@ -1729,8 +1729,11 @@ def main():
                 if v2 != 'TRUNC':
                     v, rows, o = v2, rows2, o2
                     n_esc += 1
-            if a.dump_rows:
-                all_x.extend(o.get('xrows') or [])
+            # ★ 2026-09-30：明细**无条件**收集（原来只在 `--dump-rows` 时收）。
+            #   为什么必须：新加的「访存内联等价」判据靠它建索引；若只有传了 `--dump-rows`
+            #   才算，则 **CI 与本地会得出两个 DIVERGE 值**（正是"同一分母两个值"。
+            #   内存代价实测 ~5 MB，可忽略）。`--dump-rows` 现在只决定**要不要落盘**。
+            all_x.extend(o.get('xrows') or [])
             if o.get('ret_unjudged'):
                 n_voidret += 1
                 if len(voidret_names) < 40:
@@ -1754,9 +1757,43 @@ def main():
             if v == 'DIVERGE':
                 for r in rows:
                     if r[1] == 'DIVERGE' and len(r) > 8 and r[8]:
-                        det.append('  %-44s [%s] %s' % (n, r[0], '; '.join(map(str, r[8]))))
+                        det.append((n, '  %-44s [%s] %s' % (n, r[0], '; '.join(map(str, r[8])))))
             if (i + 1) % 10 == 0:
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
+
+        # ★★★ 2026-09-30 新增：把「**访存**内联等价」接进尺子 —— 与 `calls_ext` 那条
+        #   「内联等价」判据**对称**（§0.29-F P0'）。
+        #   机理：工厂把共享子过程**内联**进调用方、我们保留成独立函数 ⇒ 同一地址的访存
+        #   归到"别的函数"头上 ⇒ 整类**假发散**（§0.29-D 的 INLINE-MOVE）。
+        #   判据真源 = `tools/inline_move.py`（纪律 69，此处只**调用**）。
+        #   ★ **保守**：要求逐行都只含访存维度，且**每一条**一侧键都在对侧别的函数里被解释。
+        #   ★ 预登记（纪律 61，改前先在现有数据上算出）：DIVERGE 36 → **27**（降级 9 个）。
+        #   ★ 可关：`CGM_INLINE_MOVE_OFF=1` 恢复旧口径（已并入判据指纹 ⇒ 关掉即台账失效）。
+        imv_names = []
+        if os.environ.get('CGM_INLINE_MOVE_OFF') != '1':
+            try:
+                import inline_move as _IM
+            except ImportError:                                   # pragma: no cover
+                import importlib.util as _ilu
+                _sp = _ilu.spec_from_file_location(
+                    'inline_move', os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                'inline_move.py'))
+                _IM = _ilu.module_from_spec(_sp)
+                _sp.loader.exec_module(_IM)                       # ★ 导入失败必须炸，不得静默退化
+            _sf, _so = _IM.build_index(all_x)
+            _byfn = {}
+            for _r in all_x:
+                if _r.get('kind') == 'DIVERGE':
+                    _byfn.setdefault(_r['fn'], []).append(_r)
+            for _n in div_names_all:
+                if _IM.function_verdict(_n, _byfn.get(_n, []), _sf, _so)[0] == 'FULL':
+                    imv_names.append(_n)
+            if imv_names:
+                _s = set(imv_names)
+                stats['DIVERGE'] -= len(imv_names)
+                stats['PASS'] += len(imv_names)      # 与 calls_ext 的内联等价同待遇：计入 PASS
+                div_names_all[:] = [x for x in div_names_all if x not in _s]
+                det[:] = [(n, t) for n, t in det if n not in _s]
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
                  '  分母口径：工厂 STT_FUNC ∧ 有名 ∧ st_size>0 = 804（权威，与 ledger/functions.csv 同源）',
                  '  ⚠ 已排除工厂 st_size==0 的无长度别名 %d 个（工具链 CRT/libgcc，非重建范围）：%s'
@@ -1772,6 +1809,9 @@ def main():
                  % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP']),
                  '        （另：INFO「内联等价留痕」%d 个 —— 在 ok/info 行上单独计数，**与上面各类不互斥**，'
                  '不可相加）' % stats['INFO'],
+                 '        （另：**访存**内联等价留痕 %d 个 —— 已计入 PASS，**与上面各类不互斥**，'
+                 '不可相加；关掉用 CGM_INLINE_MOVE_OFF=1）%s'
+                 % (len(imv_names), ('：' + ', '.join(imv_names[:12])) if imv_names else ''),
                  '  ★ 自洽校验：%d + %d + %d + %d + %d = %d ；本轮函数数 = %d ⇒ %s'
                  % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP'],
                     stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['REFDEAD'] + stats['SKIP'],
@@ -1780,7 +1820,11 @@ def main():
                              + stats['SKIP']) == len(names)
                     else '★ 不一致 ⇒ 判据分桶有漏项，本报告不可引用 ★'),
                  '', '  --- DIVERGE 明细（前 80）---']
-        lines.extend(det[:80])
+        lines.extend(t for _, t in det[:80])
+        lines.append('')
+        lines.append('  --- 访存内联等价（工厂把共享子过程内联进调用方，其余观测量全一致；'
+                     '已计入 PASS，**与上面各类不互斥**）（前 40）---')
+        lines.extend('  %s' % n for n in (imv_names[:40] or ['（无）']))
         lines.append('')
         lines.append('  --- INFO：外部调用被内联/等价实现，其余观测量全一致（前 60）---')
         lines.extend(info_names)
@@ -1914,7 +1958,9 @@ def main():
                         shared=len(common), judged=len(names),
                         stats={k: stats[k] for k in
                                ('PASS', 'DIVERGE', 'TRUNC', 'REFDEAD', 'SKIP', 'INFO')},
-                        refdead_off=(os.environ.get('CGM_REFDEAD_OFF') == '1'))
+                        refdead_off=(os.environ.get('CGM_REFDEAD_OFF') == '1'),
+                        inline_move_off=(os.environ.get('CGM_INLINE_MOVE_OFF') == '1'),
+                        inline_move_equiv=sorted(imv_names))
             with open(a.dump_rows, 'w', encoding='utf-8', newline='\n') as fh:
                 json.dump(dict(meta=meta, rows=all_x), fh, ensure_ascii=False)
             print('  ★ 逐组明细已写出：%s（%d 行；含两侧归一化访存/调用指纹）'
