@@ -3596,3 +3596,14 @@ GCC 腿把 **BFD ld 方言**参数喂给**直驱的 `ld.lld`** ⇒ 两条腿全�
 | `tools/_swap_xunzip.py` | 修非法转义 |
 | `src/proprietary/flash/FUN_0000ac44_UpdateROM.c` | §0.36 的 ZIPENTRY 结构化根修 |
 | `PROJECT-MEMORY.md` | §0.36–§0.40（含事故恢复记录） |
+
+### D. ★★★★★ 第 92 轮最终确认：**4/4 workflow 全绿**（`10c23f81f8a42cb54b07494117b45089637ef4ef`）
+```
+rkgame-rebuild   #1100  success
+toolchain-ab     #13    success   ← 此前 #9/#10/#11/#12 连续 4 轮 failure
+1to1-verify      #238   success   ← 此前 #232/#233/#234 连续 failure
+1to1-qemu-behav  #206   success   ← 此前 #200/#201/#202/#203 连续 failure
+```
+★ 这是自红潮开始以来**第一次 4/4 全绿**，且每一处都是**根因修复**（不是放宽门禁、不是调数字）。
+★ 所有结论都可回溯到具体产物：交付产物 `build/rkgame.rebuilt.elf` = **`c9aba0eb96e40bf7…`**；
+  行为尺基线 `BASE c9aba0eb96e40bf7 782 741 36 5 0 0`。
