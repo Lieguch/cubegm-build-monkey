@@ -3762,3 +3762,58 @@ toolchain-ab     #13    success   ← 此前 #9/#10/#11/#12 连续 4 轮 failure
 >   （两个同规范名 ⇒ 不判私有 ⇒ 退回按地址配对，方向保守，不会洗白）。
 > **88.** **预登记要按"键的归属"统计，不能只按"对象"统计** —— 同一张表可以出现在多个函数的
 >   一侧键里（本轮实测：漏了 3 个 `mui_*`）。偏差要**如实记录**，不许事后把预登记改写成实测值。
+
+---
+
+## 0.43 ★★★★★ 第 95 轮（2026-09-30）：**距 1:1 的全量差距评估**（含假实现/假代码/假桩专项）—— 产出 `AUDIT-1TO1.md`（取代第 83 轮版）
+
+> 交付：**`AUDIT-1TO1.md`（全量刷新）** + **`tools/fake_impl_audit.py`（新常驻工具）**。
+> 审计标的 `c9aba0eb96e40bf7…`；**权威基线 `BASE c9aba0eb96e40bf7 782 758 19 5 0 0`**。
+
+### A. 四层结论
+| 层 | 实测 | 状态 |
+|---|---|---|
+| L1 结构层 | **9 道硬门禁全 PASS**；全局符号命中率 **99.5%（193/194）**、违规 0；`prop_equiv` FAIL 0 / **MISSING 0**（WARN 4 全部已定性）；`size_coverage` **SHORT 0** | ✅ 清零 |
+| L2 行为层 | **PASS 758 ｜ DIVERGE 19 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0**（另 9 个判「访存内联等价」） | ⏳ 有明确清单 |
+| L3 真机层 | 修复后**未复测**；`_sdcard_drop8/` 已按当前产物重出 | ⏳ **唯一终局判据** |
+| L4 目的 2 | evdev / SRAM | ⛔ 未动工 |
+
+### B. ★★★★★ 假实现/假代码/假桩专项（六项，全部机械复算）
+| # | 嫌疑 | 判定 | 证据 |
+|---|---|---|---|
+| 1 | 我方空壳函数（`st_size≤4`） | ✔ 忠实 | 9 个，**工厂同名同样是空壳 9/9**，工厂更大者 0 |
+| 2 | 恒返回常量 | ✔ 忠实 | 1 个，**两侧返回值逐字一致** |
+| 3 | 桩符号进产物（zstub / libz.so.1 / cxx_ops） | ✔ 未进 | 产物 `.dynsym`：`compress`/`uncompress`/`_Znwj`/`_ZdlPv`/`_Znaj`/`_ZdaPv`/`malloc`/`free` **全 `SHN_UNDEF`** |
+| 4 | `.fimg_text` 2.82 MB 原厂机器码 | ✔ 地址垫，不执行 | `R--` 段、0 个 `STT_FUNC`；§0.30 删除实验证内容可全零 |
+| 5 | **★ 死代码树 `src/upstream/libiconv/`** | ⚠ **仓库级陷阱（不在产物内）** | **251 文件 / 其中 104 个头只有一行 `/* Empty stub: charset converter not implemented */`**；**全仓库构建/CI 零引用**（构建用 `libiconv17/`）。charset 转换函数**两侧各 268、零缺失零多余** ⇒ 不影响产物，但是"像实现实为空桩"的诱饵 |
+| 6 | 自有源码占位 | ✔ 仅 1 处注释 | `src/diag/cgm_diag.c:481` 有 `/* 占位 */`，但**产物里没有任何 `cgm_diag_*` 符号**（诊断构建独立） |
+
+### C. ★★★★★ 新查出：`.dynsym` 导入表差异（§0.19-F.3 点名、**从第 81 轮起一直没做**）
+```
+工厂 113 项 ｜ 我方 109 项 ｜ 共有 105
+仅工厂 8：_IO_getc _IO_putc __strdup islower  (+4 弱符号 _ITM_*/_Jv_RegisterClasses/__gmon_start__)
+仅我方 4：getc     putc     strdup    mbsinit
+```
+* `_IO_getc↔getc` / `_IO_putc↔putc` / `__strdup↔strdup` = **glibc 等价别名**（设备两套都在）⇒ 非功能差异。
+* `islower`：我方源码确实调用（`FUN_00016ebc_strupr.c:23`），但 clang 经 `__ctype_b_loc` 内联 ⇒ **编译器层差异**。
+* ★ **`mbsinit`（我方多导）= 待定的真差距**：工厂导 `mbrtowc`/`wcrtomb` 却**不导 `mbsinit`**；
+  而 `loop_wchar.h` 的规则是 `#if !HAVE_MBSINIT → #define mbsinit(ps) 1`
+  ⇒ **工厂那版构建的 `HAVE_MBSINIT` 显然为 0**，我方 `libiconv17/config.h:16` 却是 `1`。
+  **候选修法**：对齐该宏（单变量实验，纪律 56）。**已登记为 P1。**
+
+### D. 缺口清单（照单可推进）
+| 优先级 | 缺口 | 下一步 |
+|---|---|---|
+| P1 | 19 个 DIVERGE（**ONE-SIDE 13** 优先） | 逐个"工厂有/我方无"取证 |
+| P1 | **`mbsinit`/`HAVE_MBSINIT` 不对齐** | 单变量实验：对齐宏 → 重编 → 行为尺对拍 |
+| P1 | **两套数据宇宙**（684 基名；`dup_copy_audit`：1376 对象 / EQUIV 1371 / **★DIFF 0** / NEEDS-REVIEW 5） | 生成"对象→工厂 VMA"放置表，让编译产物落在工厂 VMA |
+| P2 | `all_encodings` / `_ZL8z_errmsg` 语义复核 | 指针感知逐项比对（`entities`/`types` 已判等价） |
+| P2 | 死代码树 `src/upstream/libiconv/` | 标注 `DEAD-TREE` 或移入 `build/_exp/` |
+| P2 | TRUNC 5 | 沙箱天花板（factory 同样失败） |
+| P3 | 目的 2 两项 | evdev / SRAM |
+| 终局 | 真机 drop-in | `_sdcard_drop8/` 已备（★ 纪律 37/40） |
+
+### E. 新增工具
+`tools/fake_impl_audit.py` —— 假实现/假桩专项五合一（空壳函数对拍 · 恒返回常量对拍 · 桩符号落位 ·
+源码占位扫描 · `.dynsym` 名字集合对拍）。**判据要点：任何"看似假"都要与工厂同名对象**对拍**才下结论**
+（本轮 4/6 项实测清白；§0.29 那次的结论也一致）。
