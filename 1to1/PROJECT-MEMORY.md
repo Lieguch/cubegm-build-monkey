@@ -3868,3 +3868,67 @@ calls_ext F=['memset','memset']  O=['mbsinit','wcrtomb','abort']
 > 判据顺序：① `.dynsym` 导入表差异（**最灵敏的信号**，一个符号一条线索）
 > → ② 该符号在被测 TU 里的 `UNDEF` 是否随之变化（对象级）→ ③ 行为尺是否收敛且**新增发散 0**。
 > 三步都过才落库；缺任一步都只是"看起来对"。
+
+---
+
+## 0.45 ★★★★ 第 97 轮（2026-09-30）：**源码级真修复 `strtrim` 参数透传** + **陈旧上游对象（第二项对齐）** + 一条**不粉饰的负结果**
+
+### A. ★★★★★ 先补记 §0.44 的**第二项对齐**：陈旧上游对象（当时未落库）
+第 96 轮我把 `build_upstream.sh` + `link_full.sh` 按正规流水线重跑了一遍。除 `mbsinit` 外，
+它**顺带**修掉了另一处此前没注意到的问题：**`build/upstream/*.o` 是陈旧对象**。
+| 项 | 陈旧对象（旧 mxml） | 用当前脚本重编后 | 工厂 |
+|---|---|---|---|
+| mxml 的字符 IO | `getc` / `putc` / `strdup` | **`_IO_getc` / `_IO_putc` / `__strdup`** | 同（`_IO_*`/`__strdup`） |
+| 产物 `.dynsym`「仅我方」 | 3 项 | **0 项** | —— |
+| 产物 `.dynsym`「仅工厂」 | 8 项 | **5 项**（4 个无害弱符号 + `islower`） | —— |
+
+⇒ **`.dynsym` 的"我方多余导入"已清零**。★ 教训（与 §0.30-D 同类）：
+**"构建产物 ≠ 当前构建脚本的产物"是静默的** —— 本地测量会得出与 CI（每次全量重编）不同的结论。
+`check_obj_fresh.py` 目前**只覆盖 XUnzip.o**；把"上游对象新鲜度"也纳入机械门禁是**下一步**（已登记）。
+
+### B. ★★★★ 本轮真修复：`strtrim` 丢参数（源码级，工厂机器码为证）
+**证据（工厂 `strtrim` 逐条机器码，16 B）**：
+```asm
+0x1f20c  push {r4, lr}
+0x1f210  bl   strtriml        ; r0 = param_1
+0x1f214  pop  {r4, lr}
+0x1f218  b    strtrimr        ; 仍是同一个 r0（strtriml 以 mov r5,r0 … pop{…,pc} **返回原 r0**）
+```
+⇒ **`strtrim(param_1) = strtrimr(strtriml(param_1))`，参数全程透传。**
+而旧重建写成：
+```c
+char * strtrim(void) { strtriml(); return (char *)strtrimr(); }   /* 参数被丢弃 */
+pcVar1 = (char *)strtrim();                                        /* get_item_from_line 同样丢参 */
+```
+`src/compat/proto.h` 里"K&R：strtrim 内以 0 参尾调用"是**误读**（把 `bl` 当成了 0 参 K&R 调用）。
+**修法（还原语义，不是打补丁）**：`strtrim(char *param_1)` 并把 `param_1` 传给两个被调函数；
+`get_item_from_line` 改为 `strtrim(param_1)`；`proto.h` 改成如实原型。
+
+### C. ★★★★★ 诚实结论：**这一处修复没有移动行为尺数字**（不粉饰）
+```
+修复前：PASS 759 ｜ DIVERGE 18          修复后：PASS 759 ｜ DIVERGE 18（收敛 0、新增 0）
+```
+**为什么没动（硬证据，不是推断）** —— 直接跑两侧 `strtrim` 看真实序列：
+| 组 | 工厂 | 我方 | 判读 |
+|---|---|---|---|
+| `strs`（有效串） | `return`，`ret=0x7d000100` | `return`，`ret=0x7d000100` | **两侧已完全一致** |
+| `zero`/`misc`（NULL 输入） | `UC_ERR_READ_UNMAPPED` @0x1f1cc，14 条指令 | `UC_ERR_READ_UNMAPPED` @0x4e8f84，26 条指令 | **双方都在 `strtriml` 里空指针崩**，只是"崩得深浅"不同 |
+
+⇒ 残余差异是"**双方都崩、崩在不同深度**"时累计的 `calls_ext` 计数（工厂 2 次、我方 4 次），
+**不是**参数丢失造成的。修复本身**忠实于工厂规格**（r0 透传），保留；但它不是这一格的解药。
+**这一格的真问题**应另行定性：它属于"两侧同类别早死 ⇒ 部分观测不可比"的家族（现有 `REFDEAD`
+只处理**单侧**早死）。**已登记为待定性项，不当作已解决。**
+
+### D. 本轮产物与门禁
+产物 `build/rkgame.rebuilt.elf` = **`4dad7fd13081620f`**（5,513,232 B）；
+六道结构门禁全 rc=0、`verify_layout` 99.5%/违规 0、`size_coverage` **SHORT 0**、
+`dup_copy_audit` **EQUIV 1371 / ★DIFF 0 / NEEDS-REVIEW 5**；
+**新基线** `BASE 4dad7fd13081620f 782 759 18 5 0 0`；台账 rebaseline 23 项（`build/_exp/diff_exec_pending.pre-r97.bak`）。
+推送：CNB `4f60957` / GitHub `39d23e91a710`。
+
+### E. 新纪律 89–90
+> **89.** **"构建产物陈旧"是静默的**：只要不是用**当前脚本全量重编**，本地测的就不是 CI 的产物。
+>   凡结论涉及"我方产物如何"，先确认对象**由当前脚本产生**（`build/upstream` 与 `build/obj` 都要）。
+>   上游对象的机械新鲜度门禁**还没做**（现只有 XUnzip.o）—— 已登记。
+> **90.** **"修对了"≠"数字动了"。** 两件事必须分开报：① 该改动是否忠实于工厂规格（机器码/语义为证）；
+>   ② 行为尺是否收敛。本轮 `strtrim` ① 成立、② 不成立，**如实分开写**，不得用①去暗示②。
