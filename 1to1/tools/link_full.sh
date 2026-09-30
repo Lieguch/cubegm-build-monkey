@@ -41,7 +41,7 @@ if ! "$PY" -c 'import elftools' 2>/dev/null; then
     for _c in "$HOME/.workbuddy/binaries/python/envs/default/Scripts/python.exe" \
               "$HOME/.workbuddy/binaries/python/envs/default/bin/python" python3; do
         if command -v "$_c" >/dev/null 2>&1 && "$_c" -c 'import elftools' 2>/dev/null; then
-            PY="$_c"; echo "  [env] PY 兜底为 $_c（含 pyelftools）"; break
+            PY="$_c"; echo "  [env] PY 兜底为 $_c（含 pyelftools）" >&2; break
         fi
     done
 fi
@@ -76,6 +76,21 @@ GLIBC_VER="${GLIBC_VER:-2.7}"
 #                  版本需求逐项同工厂；DIVERGE 44→42。
 #   zigcc        ：旧行为（`zig cc` 当驱动 + compiler_rt），保留用于 A/B 与回退。
 LINK_DRIVER="${LINK_DRIVER:-lld}"
+
+# ★★★★★ 2026-09-30：**把「链接驱动」暴露给调用方**（纪律 69：口径只允许有一处）。
+#   为什么必须有（CI `toolchain-ab` #12 实测）：`toolchain_ab.sh` 原本按**编译器**（`$cc`）
+#   决定附加链接参数 —— GCC 腿给 `-nostartfiles -Wl,--unresolved-symbols=ignore-all`
+#   （**BFD ld 方言**）。但**链接器**是由**本脚本**按 `LINK_DRIVER` 独立决定的（默认 `lld`）
+#   ⇒ GCC 腿把 BFD 参数喂给直驱的 `ld.lld`：
+#        `ld.lld: error: unknown argument '-nostartfiles'`
+#        `ld.lld: error: unknown argument '-Wl,--unresolved-symbols=ignore-all'`
+#        `ld.lld: error: unable to find library -lm / -lpthread / -ldl`
+#     ⇒ 两条腿 BUILD_FAILED。**根因 = 参数跟着"编译器"走，而实际决定链接的是"链接器"。**
+#   ⇒ 现在调用方可以 `sh tools/link_full.sh --print-ldenv` **读取**真正的驱动，再据此给参数。
+if [ "${1:-}" = "--print-ldenv" ]; then
+    echo "LINK_DRIVER=$LINK_DRIVER"
+    exit 0
+fi
 
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 

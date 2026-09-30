@@ -160,13 +160,23 @@ build_leg() {
     #   BFD ld 会 `warning: -z undefs ignored` 并**真的忽略**它 ⇒ 未定义符号会变成硬错误。
     #   BFD 的对应写法是 `-Wl,--unresolved-symbols=ignore-all`。
     #   ⇒ 两个都带上：谁认得哪个就用哪个，两个链接器行为一致。
-    case "$cc" in
-      *zig*) ld_extra="" ;;
+    # 2026-09-30 根修：参数必须跟着**链接器**走（不是编译器）。
+    #   `link_full.sh` 才是决定链接驱动的地方 ⇒ 从它**读取**（--print-ldenv）。
+    _ldrv="$(LINK_DRIVER="${LINK_DRIVER:-lld}" sh "$ROOT/tools/link_full.sh" --print-ldenv 2>/dev/null \
+             | sed -n 's/^LINK_DRIVER=//p' | head -1)"
+    [ -n "$_ldrv" ] || _ldrv="${LINK_DRIVER:-lld}"
+    say "  链接驱动（从 link_full.sh 读取）= $_ldrv"
+    case "$_ldrv" in
+      # 直驱 ld.lld：库由 link_full.sh 的 LLIBS **显式给全**（含 libz/libdl/libm/
+      # libstdc++/libpthread/libgcc_s/libc）⇒ 这里**不需要**任何库参数；
+      # 也**不能**给 BFD 方言（-nostartfiles / -Wl,--unresolved-symbols）。
+      lld) ld_extra="" ;;
       #   `-nostartfiles`（**只砍 crt1/crti/crtbegin/crtend/crtn，保留 `-lc`**）：BFD ld 会按
     #   sysroot 自动链 crti.o/crtbegin.o，与我们的 crt_init.o(`_init`/`_fini`) 和
     #   factory_local.o(`__dso_handle`) 重复定义 ⇒ 必须砍 startfiles。
     #   ⚠ 千万别用 `-nostdlib`：它连 `-lc` 一起砍，zig 腿会因为 `undefined symbol: printf/...` 全崩（实测）。
-    *)     ld_extra="-lm -lpthread -ldl -nostartfiles -Wl,--unresolved-symbols=ignore-all" ;;
+      # 非 lld 驱动（BFD ld / GCC 驱动）：补库 + 砍 startfiles + 忽略未定义（方言按 BFD）。
+      *)     ld_extra="-lm -lpthread -ldl -nostartfiles -Wl,--unresolved-symbols=ignore-all" ;;
     esac
     CC="$cc" SYSROOT="$sr" PY="$PY" EXTRA_LDFLAGS="$ld_extra" \
         sh tools/link_full.sh "build/ab/$lab.elf" > "report/_ab_build_$lab.txt" 2>&1

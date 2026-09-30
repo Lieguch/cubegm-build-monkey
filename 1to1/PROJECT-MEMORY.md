@@ -3496,3 +3496,54 @@ link rc=0 ；产物 sha = c9aba0eb96e40bf7…
 >   "只打印差异、不给阈值"等于没有门禁（本条事故就是这么溜过去的）。
 > **83.** **门禁"跑不起来"与"查出问题"必须分开报告**：环境缺依赖 ⇒
 >   报"**无法判定**"（rc 正常、纳入不可判），**不得**崩栈、**不得**判 FAIL。
+
+---
+
+## 0.39 ★★★★ 第 92 轮（2026-09-30）：`toolchain-ab` 的**第二个被掩盖的根因** —— 附加链接参数**跟着编译器走、而链接器是另一处决定的**
+
+### A. 现象（CI `toolchain-ab` #12 @ `6ad90f85`，原文）
+```
+ld.lld: error: unknown argument '-nostartfiles'
+ld.lld: error: unknown argument '-Wl,--unresolved-symbols=ignore-all'
+ld.lld: error: unable to find library -lm / -lpthread / -ldl
+⇒ gcc63-Os / gcc63-O2 BUILD_FAILED ；zig-Os/zig-O2 正常
+```
+★ 这是**同一个 CI 关口下第 3 个被前一个缺陷掩盖的根因**（链：缺真头 → XUnzip 断言 → zig 解析 → 本条）。
+`zig_resolve.py`（§0.37）已让 GCC 腿**不再 exit 3**，于是链路推进到这一步。
+
+### B. 根因：参数按**编译器**选，链接器按**另一处**选
+`tools/toolchain_ab.sh` 原实现：
+```sh
+case "$cc" in
+  *zig*) ld_extra="" ;;
+  *)     ld_extra="-lm -lpthread -ldl -nostartfiles -Wl,--unresolved-symbols=ignore-all" ;;
+esac
+CC="$cc" ... EXTRA_LDFLAGS="$ld_extra" sh tools/link_full.sh …
+```
+但**真正的链接器**由 `link_full.sh` 按 `LINK_DRIVER`（默认 **lld**）决定 ⇒
+GCC 腿把 **BFD ld 方言**参数喂给**直驱的 `ld.lld`** ⇒ 两条腿全红。
+（`-lm -lpthread -ldl` 也不行：直驱 `ld.lld` 不按库名搜索 sysroot 目录。）
+
+### C. 根本解法：参数**跟着链接器走**（纪律 69/78 —— 口径只允许一处）
+* `link_full.sh` 新增 `--print-ldenv`（打印 `LINK_DRIVER=…`），并把内部诊断行改到 **stderr**
+  （保证 `--print-*` 输出**只有一行**，可被 `$(...)` 安全消费）。
+* `toolchain_ab.sh` 改为**读取**：`_ldrv=$(… sh tools/link_full.sh --print-ldenv | sed -n 's/^LINK_DRIVER=//p')`，
+  再：
+  * `lld`  ⇒ `ld_extra=""`（库由 `link_full.sh` 的 `LLIBS` **显式给全**：libz/libdl/libm/
+    libstdc++/libpthread/libgcc_s/libc + `libc_nonshared.a`/`libpthread_nonshared.a`/`libgcc.a`）；
+  * 其他 ⇒ 保留 BFD 方言那组（补库 + `-nostartfiles` + `--unresolved-symbols=ignore-all`）。
+* ★ **副产品（方法学收益）**：四条腿现在**共用同一链接器与同一套链接参数**
+  ⇒ 差异只剩"对象由谁编的" ⇒ 这正是**单变量**要求（§0.36 纪律 56）。
+
+### D. 本地取证口径（诚实标注）
+* `bootlin63` 的 GCC 是 **ARM 可执行文件** ⇒ **本机 Windows 无法执行**（`Exec format error`）
+  ⇒ 该腿的**编译**只能由 CI（Linux）执行，本地无法端到端复现。
+* 但**链接分支与 `$CC` 无关**（该分支只用 `$ZIGEXE`/`LLIBS`/`WOBJS`/`EXTRA_LDFLAGS`/`-T`）
+  ⇒ 修法按构造成立；且"lld 分支 + `EXTRA_LDFLAGS=''`"正是主链路径
+  （§0.36 已实测产出 `c9aba0eb96e40bf7`）。
+* 判据：CI `toolchain-ab` 下一次运行必须 **4 条腿都有产物**，且 `zig-Os` 仍 = `PASS 741 / DIVERGE 36`。
+
+### E. 新纪律 84
+> **84.** **凡"附加参数/方言/开关"必须从"真正做那件事的组件"导出**，不得从**旁证**（编译器、平台名、
+>   目录名）推断。本轮代价：把 BFD 参数喂给 ld.lld，`toolchain-ab` 连续红。
+>   落地形态：由**owner 脚本**提供 `--print-<x>env`，调用方**读取**（`--print-*` 输出必须**只有一行**）。
