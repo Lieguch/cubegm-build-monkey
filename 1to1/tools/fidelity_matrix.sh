@@ -46,6 +46,21 @@
 # ============================================================================
 set -u
 
+# ★★★ 2026-10-01：**非 Linux 硬拒绝**。
+#   用户口径：不在本机搭环境。本脚本是 **Linux 专属**：
+#     · GCC 臂是 x86-64 Linux ELF ⇒ Windows 上 `Exec format error`（**无法产生数据**）；
+#     · 它会向项目里落 **567 MB 工具链** + 数万个 `.o`（就是"搭环境"）；
+#     · 本机跑只会得到"只有 clang 一个臂"的**残缺判决**，却很容易被误当成结论。
+#   ⇒ 在这里 fail-loud（exit 4），统一在 **CI / CNB 云开发（Linux）** 跑。
+#   与 `tools/compiler_align_exp.sh` 的同类判据一致。
+if [ "$(uname -s 2>/dev/null)" != "Linux" ]; then
+    echo "★★ 本脚本是 Linux 专属实验（GCC 臂为 x86-64 Linux ELF，且会落 567MB 工具链）——" >&2
+    echo "   政策上**不允许在本机搭环境**。请在 CI / CNB 云开发（Linux）上跑。" >&2
+    echo "   （仅想验证管线结构可用：设 FID_ALLOW_NONLINUX=1，但结果**不**能当判决。）" >&2
+    [ "${FID_ALLOW_NONLINUX:-0}" = "1" ] || exit 4
+    echo "   ⚠ FID_ALLOW_NONLINUX=1：继续，但本次结果只能当官能验证，**不得**写入判决报告。" >&2
+fi
+
 # ★ 解释器可覆盖：本机 `python3` 是**基座**解释器（无 pyelftools/capstone），venv 才有。
 #   硬编 python3 会把本机路径封死 ⇒ 只能上 CI 跑 ⇒ 绕圈。
 #   用法：PY=<venv>/python sh tools/fidelity_matrix.sh
