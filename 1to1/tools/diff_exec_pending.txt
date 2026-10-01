@@ -1,9 +1,9 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ruler=9e88368685c133e66b3d8291b55a20656e86a3450391c6193efaa8e31059b022
+# ruler=e4f3695f997a1388756d7dbed2075c22a351334339c992c58bd50b132c97a88b
 # ours=4dad7fd13081620f05a5a7c9776fee3d4393f57ee806169a89949ced6d3aae60
-# rebaseline: strtrim 参数透传修复（源码级：工厂机器码 push{lr};bl strtriml;pop{lr};b strtrimr ⇒ r0 全程透传；旧重建写成 char*strtrim(void) 丢参）+ 陈旧上游对象重编（mxml 等：.dynsym 仅我方 3->0）。行为尺 18->18（无回归、无新增），产物 sha 变化
+# rebaseline: 判据口径变更（第98轮）：撤销按 min(insns) 的 DEADEQ 桶（实测无效，18->81）；新增死亡现场探针与 trace_diffs 单源化（指纹随 compare() 源码变化）。数字不变：PASS 759/DIVERGE 18/TRUNC 5/REFDEAD 0/SKIP 0（与权威基线逐字一致），产物 sha 不变 4dad7fd13081620f
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕

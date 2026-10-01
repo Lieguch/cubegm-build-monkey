@@ -44,6 +44,7 @@ RE_OURS = re.compile(r'被测产物[：:]\s*(\S+)\s*\(sha256\s+([0-9a-fA-F]{4,64
 #   `REFDEAD(参照侧早死)`，插在 TRUNC 与 SKIP 之间。旧正则要求 `TRUNC n ｜ SKIP` **紧邻**，
 #   于是**新版报告一律匹配不上** ⇒ 本工具静默回落到昨天的旧 stdout 捕获（数字 44，已过期）。
 #   ⇒ 正则改为「REFDEAD 段可选」，并把它的值一并取出。
+# ★ 2026-10-01：第 6 桶 DEADEQ 曾上线后被实测推翻并撤销（见 §0.46）⇒ 正则回到 5 桶。
 RE_SUM = re.compile(
     r'汇总：PASS\s+(\d+)\s*｜\s*DIVERGE\s+(\d+)'
     r'\s*｜\s*TRUNC[^0-9]*(\d+)'
@@ -156,6 +157,9 @@ def self_test():
     c('REFDEAD 非零也解析', int(RE_SUM.search(
         new.replace('REFDEAD(参照侧早死) 0', 'REFDEAD(参照侧早死) 34')).group(4)), 34)
     c('缺 REFDEAD ⇒ None（不得当 0）', RE_SUM.search(old).group(4), None)
+    # ★ 2026-10-01：撤销 DEADEQ 后，正则必须**恰好 5 个捕获组**
+    #   （防止有人再加一桶却忘了同步这里 ⇒ 静默读不到 ⇒ "不可判"被读成 0）。
+    c('正则恰好 5 个捕获组（第 6 桶已撤销，不得残留）', RE_SUM.groups, 5)
     c('两臂 sha16 正则取到的是 sha 段',
       RE_OURS.search('  被测产物：build\\rkgame.rebuilt.elf (sha256 b21a3f12cdb2a84e)').group(2),
       'b21a3f12cdb2a84e')

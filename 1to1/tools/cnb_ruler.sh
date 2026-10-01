@@ -10,7 +10,8 @@
 # ## 一次会话跑两件事
 #   ① **默认路径**：产出权威报告 + **不截断明细**（`--dump-rows`，归类唯一合法数据源）；
 #   ② **`CGM_MACHINE_REUSE=1`**：验证"执行环境复用"改造是否**逐字等价**
-#      （期望 共有 782 ｜ PASS 737 ｜ DIVERGE 40 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0）。
+#      （口径随判据演进；现值以 `tools/ruler_baseline.py` 的 BASE 行为准，
+#        格式：BASE <sha16> <共有> <PASS> <DIVERGE> <TRUNC> <SKIP> <REFDEAD> <报告>）。
 #
 # ## 两个必须遵守的通道纪律（前几轮实测踩出来的）
 #   * **单连接**做"上传 + 运行"（拆成两次 SSH 会因回收丢 /tmp）；

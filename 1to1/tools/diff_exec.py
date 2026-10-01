@@ -70,6 +70,8 @@ import libc_model                                                    # noqa: E40
 
 try:
     from unicorn import (UC_ARCH_ARM, UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE,
+                         UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
+                         UC_HOOK_MEM_FETCH_UNMAPPED,
                          UC_MODE_ARM, UC_MODE_THUMB, Uc, UcError)
     import unicorn.arm_const as ac
     from capstone import CS_ARCH_ARM, CS_MODE_ARM, Cs
@@ -447,8 +449,16 @@ def _machine_for(b, mode):
 
 
 def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None,
-             mode=None, _retry=True):
+             mode=None, _retry=True, stop_at=None):
     """执行 fname(args)。mode=None 时自动判 ARM/Thumb（先 ARM，遇 INSN_INVALID 再试 Thumb）。
+
+    ★ 2026-10-01 新增 `stop_at`（**共同视野前缀**用，见 `compare()` 的两侧早死判据）：
+      把模拟**硬截断**在 N 条指令处。为什么必须能截断：当两侧都因内存未映射早死、但**深度不同**时，
+      较深一侧多出来的观测（`calls_ext`/访存/终值）发生在较浅一侧**根本不存在**的视野里
+      ⇒ 直接比全量等于拿"多跑的一段"当差异。正确做法是把两侧都截到 `min(insns)` 再比。
+      ★ 截断运行里 `stopped` 会是 `'return'`（`emu_start` 因 count 用尽正常返回，**不抛异常**），
+      所以**终值/停止原因不可信** —— 调用方必须显式声明"不许用终值判据"（`allow_terminal=False`）。
+      本参数**只提供能力，不改变任何既有行为**（默认 None ⇒ 与从前逐位一致）。
 
     ★ ARM/Thumb 自动判定（第 59 轮实测）：我们的产物里有个别函数是 **Thumb**，
       在 ARM 模式下执行会以 `UC_ERR_INSN_INVALID` 停下 ⇒ 与工厂的差异全是**假发散**。
@@ -527,7 +537,9 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     sp = spans
     d = b.dregion
     ctx = {'insns': 0, 'calls': [], 'w': [], 'r': [],
-           'unmodelled': [], 'modelled': []}
+           'unmodelled': [], 'modelled': [],
+           # ★ 未映射访问现场（第 98 轮）：`(access, address, size)`；None = 没发生
+           'fault': None}
     # ★★ 外部调用**语义模型**（GAP 17.16）：原先所有外部调用一律 `r0 = 0`，
     #   对**指针返回型**函数等于"返回 NULL" ⇒ 调用方一解引用就 UC_ERR_READ_UNMAPPED
     #   ⇒ 4 个函数（strupr/get_from_line/myStrrstr/GetFilenameExt）被**仪器**判成发散。
@@ -540,6 +552,8 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     _use_model = os.environ.get('CGM_NO_LIBC_MODEL') != '1'
 
     _dbg = os.environ.get('CGM_DBG_REGS') == '1'
+    # ★ 预算：`stop_at` 是"共同视野前缀"的硬截断（见本函数头注释），只可能**收窄**预算
+    budget = steps if stop_at is None else max(1, min(int(stop_at), steps))
 
     def code_hook(m, address, size_, user):
         ctx['insns'] += 1
@@ -574,7 +588,7 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
                 m.reg_write(ac.UC_ARM_REG_R0, 0)
             m.reg_write(ac.UC_ARM_REG_PC, m.reg_read(ac.UC_ARM_REG_LR))
             return
-        if ctx['insns'] > steps:
+        if ctx['insns'] > budget:
             m.emu_stop()
 
     def mem_hook(m, access, address, size_, value, user):
@@ -591,9 +605,20 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
             if len(ctx['r']) < MAX_TRACE:
                 ctx['r'].append((address, size_, 'R'))
 
+    def fhook(m, access, address, size_, value, user):
+        # ★ 只记**第一个**现场（后续钩子不会再被调用，因为我们要让模拟停下）
+        if ctx['fault'] is None:
+            ctx['fault'] = (access, address, size_)
+        return False          # False ⇒ 保持原行为：停下并抛 UcError
+
     h1 = mu.hook_add(UC_HOOK_CODE, code_hook)
     h2 = mu.hook_add(UC_HOOK_MEM_WRITE, mem_hook)
     h3 = mu.hook_add(UC_HOOK_MEM_READ, mem_hook)
+    # ★ 不许静默退化：装不上就直接抛（第 98 轮实测：上一版把 AttributeError
+    #   吞掉 ⇒ 探针恒为 None 却毫无提示 = **假绿**）。
+    mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED, fhook)
+    mu.hook_add(UC_HOOK_MEM_WRITE_UNMAPPED, fhook)
+    mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, fhook)
 
     mu.reg_write(ac.UC_ARM_REG_SP, STACK_BASE + STACK_SIZE - 0x100)
     mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
@@ -606,15 +631,18 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
                             addr & 1, *[mu.reg_read(ac.UC_ARM_REG_R0 + i) for i in range(4)]))
     stopped = 'return'
     try:
-        mu.emu_start(addr, SENTINEL, count=steps)
+        mu.emu_start(addr, SENTINEL, count=budget)
     except UcError as e:
         stopped = 'uc-error: %s @0x%x' % (e, mu.reg_read(ac.UC_ARM_REG_PC))
     r0 = mu.reg_read(ac.UC_ARM_REG_R0)
+    # ★ 截断运行若把预算用尽，`stopped` 仍是 'return'（无异常）⇒ 必须显式标记，
+    #   否则调用方会把"被砍断"误读成"跑完了"（那是把仪器限制当成程序行为）。
+    prefix_hit = (stop_at is not None and ctx['insns'] >= budget)
     # ★ Thumb 重试：ARM 模式在头几条指令就 INSN_INVALID ⇒ 改用 Thumb
     if (_retry and mode == UC_MODE_ARM and stopped != 'return'
             and 'INSN_INVALID' in stopped and ctx['insns'] <= 8):
         r = run_func(b, fname, args, steps, stub_ret, spans, syms_for_final,
-                     mode=UC_MODE_THUMB, _retry=False)
+                     mode=UC_MODE_THUMB, _retry=False, stop_at=stop_at)
         r['mode'] = 'thumb'
         return r
     # ★ 地址类返回值：把 ret 指向的内容一并带上（两侧各自的映像里比内容，而不是比地址）
@@ -647,10 +675,14 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     return {'error': None, 'stopped': stopped, 'insns': ctx['insns'], 'ret': r0 & 0xFFFFFFFF,
             'ret_content': ret_content, 'mode': 'arm',
             'capped': ctx['insns'] >= steps,
+            # ★ 被 `stop_at` 砍断（不是被 `steps` 预算砍断）—— 见本函数头注释
+            'prefix_hit': prefix_hit,
             'calls_ext': ctx['calls'], 'writes': ctx['w'], 'reads': ctx['r'], 'final': final,
             # ★ 未建模/已建模的外部调用（报告里单列；未建模**不得**被静默当成一致）
             'unmodelled': sorted(set(ctx['unmodelled'])),
-            'modelled': sorted(set(ctx['modelled']))}
+            'modelled': sorted(set(ctx['modelled'])),
+            # ★ 未映射访问现场：(access, address, size) 或 None（第 98 轮）
+            'fault': ctx['fault']}
 
 
 CORPUS = [
@@ -1099,6 +1131,102 @@ def ledger_update(old, diverging, undecidable):
     return sorted(keep), removed, kept_undec
 
 
+def _fault_str(f):
+    """未映射访问现场 → 人读字符串。
+
+    ★ 为什么单独成函数（纪律 69）：报告、明细、此处都要用同一种展示，
+      各写一份必然漂移。`access` 是 Unicorn 的整数取值
+      （`UC_MEM_READ=16` / `UC_MEM_WRITE=17` / `UC_MEM_FETCH=18`）。
+    """
+    if not f:
+        return '无'
+    acc, addr, size = f
+    kind = {16: 'R', 17: 'W', 18: 'X'}.get(acc, str(acc))
+    return '%s@0x%x sz=%d' % (kind, addr, size)
+
+
+def trace_diffs(rf, ro, bf, bo, fname, spec_private, fspans, void_fns=None,
+                allow_terminal=True, cap_f=False, cap_o=False, cap_asym=False):
+    """两条轨迹的**观测差异** —— 唯一真源（全量路径与「共同视野前缀」路径共用）。
+
+    ★ 为什么必须抽出来（2026-10-01）：两侧**同类早死**时要把共同视野前缀拿来比，
+      若在那里再写一份比对逻辑 ⇒ 必然与全量路径漂移交（纪律 69：同一规则禁止写两处）。
+    ★ `allow_terminal=False`：轨迹被**硬截断**时，`ret`/`stopped` **没有观测力**
+      （截断处不是程序的终点）⇒ 不作判据。其余（调用/访存/终值内容）仍可比，
+      因为两侧被截到**同一条指令数**，视野相同。
+    返回 `(diffs, note, ret_unjudged, fps)`；`fps` 供 `--dump-rows` 留痕。
+    """
+    diffs, note, ret_unjudged = [], '', False
+    sf, so = norm_stop(rf['stopped']), norm_stop(ro['stopped'])
+    if allow_terminal:
+        if sf != so:
+            diffs.append('stop F=%s O=%s%s' % (sf, so, ' (cap-asym)' if cap_asym else ''))
+        # ★ ret 只在**两侧都正常返回**且**都没被截断**时才是判据
+        if sf == 'return' and so == 'return' and (not cap_f) and (not cap_o) and rf['ret'] != ro['ret']:
+            # ★ 地址类返回值（指向各自映像里的字符串/表）：比**内容**而不是比地址。
+            #   实测：`_Z11zlibVersionv` 返回各自的版本串地址（0x2dc7dc vs 0x4da2a3），
+            #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
+            if rf['ret_content'] and rf['ret_content'] == ro['ret_content']:
+                pass
+            elif is_void_fn(void_fns, fname):
+                # ★ void 函数的 r0 **不是输出**（实测 AudioProcess：工厂残留 0xf4240、
+                #   我们残留 0x0，其余观测量全一致）⇒ 不作判据（GAP 17.12）
+                # ★ 2026-09-27 修：查表必须走 `is_void_fn`（含 Itanium demangle），
+                #   否则所有 C++ mangled 函数都漏判 ⇒ 假发散（见 itanium_base 注释）。
+                ret_unjudged = True
+            else:
+                diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
+    cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
+    wk_f, wsh_f = norm_fp(bf, coalesce_writes(rf['writes']), spec_private, fspans)
+    wk_o, wsh_o = norm_fp(bo, coalesce_writes(ro['writes']), spec_private, fspans)
+    if wk_f != wk_o:
+        diffs.append('data-writes %s' % _fp_diff(wk_f, wsh_f, wk_o, wsh_o))
+    rk_f, rsh_f = norm_fp(bf, rf['reads'], spec_private, fspans)
+    rk_o, rsh_o = norm_fp(bo, ro['reads'], spec_private, fspans)
+    rw_only, rw_why = (False, [])
+    if rk_f != rk_o:
+        rw_only, rw_why = read_width_only(rk_f, rk_o)
+        if os.environ.get('CGM_DBG_RW') == '1':
+            # ★ 调试钩子（2026-09-28）：宽度降级为什么没生效？打印**原始键**。
+            sys.stderr.write('  [rw] %s rw_only=%s\n      F=%s\n      O=%s\n'
+                             % (fname, rw_only, rk_f, rk_o))
+        if not rw_only:
+            diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
+    common = set(rf['final']) & set(ro['final'])
+    fd = [k for k in sorted(common) if rf['final'][k] != ro['final'][k]]
+    if fd:
+        diffs.append('data-final 不同 %d 项 %s' % (len(fd), fd[:6]))
+    # ★ 外部调用判据放在最后：区分「内联等价」「机制等价」与「真的少调/多调/顺序变」
+    if rw_only and not diffs:
+        # 仅"访存粒度"不同（同址、同对象、仅宽度）⇒ 降级为 INFO 并**列名留痕**
+        note = '粒度等价（仅访存宽度不同、同址同对象）: %s' % '; '.join(rw_why)
+    if cf != co:
+        only_missing = [x for x in cf if x not in co]
+        only_extra = [x for x in co if x not in cf]
+        plain = [d for d in diffs if not d.startswith('calls_ext')]
+        if (not plain) and norm_mech(cf) == norm_mech(co):
+            # ★ 同一操作的两种实现路径（CALL_MECH）：**必须**其余观测量全一致才降级，
+            #   且 note 里同时打印两侧原始名 ⇒ 读者可自行复核，不是"抹掉差异"。
+            note = ('机制等价（同一操作、不同实现路径）: F=%s O=%s'
+                    % (sorted(set(cf))[:6], sorted(set(co))[:6]))
+        elif (not plain) and only_missing and (not only_extra):
+            # 其余观测量**全部一致** + 只是少调了工厂的某些调用 ⇒ 内联/等价实现
+            note = '内联等价: 仅工厂侧调用 %s' % (only_missing[:6],)
+        else:
+            raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
+            diffs.append('calls_ext F=%s O=%s%s' % (cf[:10], co[:10], raw))
+    # ★ 仪器可见性（GAP 17.16）：未建模的外部调用在两侧**不同**时，说明有一条路径
+    #   我们其实"没真跑" ⇒ 必须留痕（不作为发散，但也不许静默）。它只影响 note。
+    um_f, um_o = set(rf.get('unmodelled') or ()), set(ro.get('unmodelled') or ())
+    if um_f != um_o:
+        note = (note + ' ;; ' if note else '') + \
+            '仪器：未建模外部调用不同 F=%s O=%s' % (sorted(um_f)[:5], sorted(um_o)[:5])
+    fps = dict(wr_f=[list(x) for x in sorted(wk_f)], wr_o=[list(x) for x in sorted(wk_o)],
+               rd_f=[list(x) for x in sorted(rk_f)], rd_o=[list(x) for x in sorted(rk_o)],
+               ca_f=list(cf), ca_o=list(co))
+    return diffs, note, ret_unjudged, fps
+
+
 def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     rows, verdict = [], 'PASS'
     # ★★★ 2026-09-29 新增：**逐组机器可读明细**（`--dump-rows`）。
@@ -1162,76 +1290,46 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
                          'F 侧的外部调用/访存指纹无观测力，不得据此判我们发散（§2.3）' % sf))
             _x('refdead', sf, so)
             continue
-        if sf != so:
-            diffs.append('stop F=%s O=%s%s' % (sf, so, ' (cap-asym)' if cap_asym else ''))
-        # ★ ret 只在**两侧都正常返回**且**都没被截断**时才是判据
-        if sf == 'return' and so == 'return' and (not cap_f) and (not cap_o) and rf['ret'] != ro['ret']:
-            # ★ 地址类返回值（指向各自映像里的字符串/表）：比**内容**而不是比地址。
-            #   实测：`_Z11zlibVersionv` 返回各自的版本串地址（0x2dc7dc vs 0x4da2a3），
-            #   内容相同 ⇒ 语义等价；只比数值会误判成发散。
-            if rf['ret_content'] and rf['ret_content'] == ro['ret_content']:
-                pass
-            elif is_void_fn(void_fns, fname):
-                # ★ void 函数的 r0 **不是输出**（实测 AudioProcess：工厂残留 0xf4240、
-                #   我们残留 0x0，其余观测量全一致）⇒ 不作判据（GAP 17.12）
-                # ★ 2026-09-27 修：查表必须走 `is_void_fn`（含 Itanium demangle），
-                #   否则所有 C++ mangled 函数都漏判 ⇒ 假发散（见 itanium_base 注释）。
-                ret_unjudged = True
-            else:
-                diffs.append('ret F=0x%x O=0x%x' % (rf['ret'], ro['ret']))
-        cf, co = norm_calls(rf['calls_ext']), norm_calls(ro['calls_ext'])
-        wk_f, wsh_f = norm_fp(bf, coalesce_writes(rf['writes']), spec_private, fspans)
-        wk_o, wsh_o = norm_fp(bo, coalesce_writes(ro['writes']), spec_private, fspans)
-        if wk_f != wk_o:
-            diffs.append('data-writes %s' % _fp_diff(wk_f, wsh_f, wk_o, wsh_o))
-        rk_f, rsh_f = norm_fp(bf, rf['reads'], spec_private, fspans)
-        rk_o, rsh_o = norm_fp(bo, ro['reads'], spec_private, fspans)
-        rw_only, rw_why = (False, [])
-        if rk_f != rk_o:
-            rw_only, rw_why = read_width_only(rk_f, rk_o)
-            if os.environ.get('CGM_DBG_RW') == '1':
-                # ★ 调试钩子（2026-09-28）：宽度降级为什么没生效？打印**原始键**。
-                sys.stderr.write('  [rw] %s rw_only=%s\n      F=%s\n      O=%s\n'
-                                 % (fname, rw_only, rk_f, rk_o))
-            if not rw_only:
-                diffs.append('data-reads %s' % _fp_diff(rk_f, rsh_f, rk_o, rsh_o))
-        common = set(rf['final']) & set(ro['final'])
-        fd = [k for k in sorted(common) if rf['final'][k] != ro['final'][k]]
-        if fd:
-            diffs.append('data-final 不同 %d 项 %s' % (len(fd), fd[:6]))
-        # ★ 外部调用判据放在最后：区分「内联等价」「机制等价」与「真的少调/多调/顺序变」
-        note = ''
-        if rw_only and not diffs:
-            # 仅"访存粒度"不同（同址、同对象、仅宽度）⇒ 降级为 INFO 并**列名留痕**
-            note = '粒度等价（仅访存宽度不同、同址同对象）: %s' % '; '.join(rw_why)
-        if cf != co:
-            only_missing = [x for x in cf if x not in co]
-            only_extra = [x for x in co if x not in cf]
-            plain = [d for d in diffs if not d.startswith('calls_ext')]
-            if (not plain) and norm_mech(cf) == norm_mech(co):
-                # ★ 同一操作的两种实现路径（CALL_MECH）：**必须**其余观测量全一致才降级，
-                #   且 note 里同时打印两侧原始名 ⇒ 读者可自行复核，不是"抹掉差异"。
-                note = ('机制等价（同一操作、不同实现路径）: F=%s O=%s'
-                        % (sorted(set(cf))[:6], sorted(set(co))[:6]))
-            elif (not plain) and only_missing and (not only_extra):
-                # 其余观测量**全部一致** + 只是少调了工厂的某些调用 ⇒ 内联/等价实现
-                note = '内联等价: 仅工厂侧调用 %s' % (only_missing[:6],)
-            else:
-                raw = '' if (rf['calls_ext'] == ro['calls_ext']) else ' (原始名不同)'
-                diffs.append('calls_ext F=%s O=%s%s' % (cf[:10], co[:10], raw))
-        # ★ 仪器可见性（GAP 17.16）：未建模的外部调用在两侧**不同**时，说明有一条路径
-        #   我们其实"没真跑" ⇒ 必须留痕（不作为发散，但也不许静默）。它只影响 note。
-        um_f, um_o = set(rf.get('unmodelled') or ()), set(ro.get('unmodelled') or ())
-        if um_f != um_o:
-            note = (note + ' ;; ' if note else '') + \
-                '仪器：未建模外部调用不同 F=%s O=%s' % (sorted(um_f)[:5], sorted(um_o)[:5])
+        # ★★★ 2026-10-01：「两侧同类早死 ⇒ 本组不可比」这个假设**已被实测推翻**，不要重犯。
+        #   我曾按 `min(insns)` 把两侧截断到同一指令数再比，结果（单变量 A/B，同一产物）：
+        #       旧口径 PASS 759 ｜ DIVERGE **18**        新口径 PASS 623 ｜ DIVERGE **81**
+        #   ⇒ 凭空造 63 个发散。**根因**：`insns` 是“已执行指令数”，两套编译产物的
+        #     **指令密度不同** ⇒ 同指令数 ≠ 同程序点，按它对齐是**无效刻度**。
+        #   ⇒ 本组**照旧按全量轨迹比对**；早死带来的深度差**不是**豁免理由。
+        #   ★ 唯一有效的“是不是同一个死亡点”的判据 = **死亡现场**（未映射访问的 地址/宽度/读写），
+        #     由 `run_func` 的 `fault` 字段提供（实测：`strtrim` F READ@0x0 vs O READ@0xffffffff ⇒ 真差异；
+        #     `outputxy1` 两侧均 READ@0x0 ⇒ 同一个逻辑死亡点）。
+        # ★ 观测差异的比对**只有一处实现**（`trace_diffs`）。
+        diffs2, note, _ru, _fps = trace_diffs(
+            rf, ro, bf, bo, fname, spec_private, fspans, void_fns,
+            allow_terminal=True, cap_f=cap_f, cap_o=cap_o, cap_asym=cap_asym)
+        diffs.extend(diffs2)
+        # ★★★ 2026-10-01：死亡现场（未映射访问的 地址/宽度/读写）**只作证据，不作判据**。
+        #   实测：把“现场不同”直接当成差异 ⇒ DIVERGE 18 → **91**。
+        #   根因：死亡地址是**绝对地址**，而两套映像的**数据布局不同**（我方 0x4xxxxx）
+        #   ⇒ 与 `insns` 同理：**绝对地址也不是可比刻度**。只能用来把已有的差异说得更清楚。
+        fs_f, fs_o = rf.get('fault'), ro.get('fault')
+        fs_txt = ('死亡现场 F=%s O=%s' % (_fault_str(fs_f), _fault_str(fs_o))
+                  if (fs_f and fs_o) else '')
+        # ★ 实测教训：这段**绝不能** `diffs.append` —— `inline_move.dims_are_mem_only()`
+        #   是解析 `diffs` 文本判维度的，塞进中文说明会让整组"夹着别的维度"，
+        #   于是 5 个已判"访存内联等价"的函数退回 DIVERGE（18→23）。
+        #   ⇒ `diffs` = **判据承载体**，只放判据词汇；证据/说明一律进 `note`。
+        if fs_txt:
+            note = (note + ' ;; ' if note else '') + fs_txt
+        if sf in _EARLY and so in _EARLY and rf['insns'] != ro['insns']:
+            note = (note + ' ;; ' if note else '') + (
+                '深度差(F=%d O=%d 条指令)仅是指令密度差，**不构成证据**'
+                % (rf['insns'], ro['insns']))
+        if _ru:
+            ret_unjudged = True
         if diffs:
             verdict = 'DIVERGE'
         _x('DIVERGE' if diffs else ('info' if note else 'ok'), sf, so,
-           diffs=list(diffs), note=note,
-           wr_f=[list(x) for x in sorted(wk_f)], wr_o=[list(x) for x in sorted(wk_o)],
-           rd_f=[list(x) for x in sorted(rk_f)], rd_o=[list(x) for x in sorted(rk_o)],
-           ca_f=list(cf), ca_o=list(co))
+           diffs=list(diffs), note=note, wr_f=_fps['wr_f'], wr_o=_fps['wr_o'],
+           rd_f=_fps['rd_f'], rd_o=_fps['rd_o'], ca_f=_fps['ca_f'], ca_o=_fps['ca_o'],
+           # ★ 死亡现场（机器可读；**不是判据**，见 compare() 注释）
+           fault_f=list(fs_f) if fs_f else None, fault_o=list(fs_o) if fs_o else None)
         rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
                      rf['ret'], ro['ret'], rf['insns'], ro['insns'], sf, so, diffs, note))
     # 若**没有任何一组**能给出判定（全是 trunc）⇒ 该函数整体不可判
@@ -1240,6 +1338,9 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     # 若**没有任何一组**能给出判定（全是"参照侧早死"）⇒ 该函数整体不可判（REFDEAD）
     elif rows and all(r[1] == 'refdead' for r in rows):
         verdict = 'REFDEAD'
+    # 若**没有任何一组**能给出判定（全是"两侧同类早死且共同视野前缀一致"）⇒ 整体不可判（DEADEQ）
+    elif rows and all(r[1] == 'deadeq' for r in rows):
+        verdict = 'DEADEQ'
     if out is not None:
         out['ret_unjudged'] = 1 if ret_unjudged else 0
         out['xrows'] = xr
@@ -1291,6 +1392,8 @@ def partition_ok(stats, n_funcs):
       现在：不一致 ⇒ fail-closed（退出码 1），且本函数有正/反例锚点自证。
     ★ 2026-09-29：新增第 5 桶 REFDEAD（参照侧库存早死 ⇒ 本组不可判，机械实现 §2.3）——
       它**必须**计入等式，否则新桶会被静默漏计（正是本函数存在的理由）。
+    ★ 2026-10-01：第 6 桶 DEADEQ 曾按“两侧早死 ⇒ 共同视野前缀”上线，**已被实测推翻并撤销**
+      （按 `min(insns)` 对齐在跨编译产物时无效，见 §0.46）。**不要再试这个方向。**
     """
     return (stats.get('PASS', 0) + stats.get('DIVERGE', 0)
             + stats.get('TRUNC', 0) + stats.get('SKIP', 0)
@@ -1605,6 +1708,13 @@ def self_test():
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0}, 761), False)
             c('正例  REFDEAD 计入后自洽：661+75+5+0+20 == 761',
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 20}, 761), True)
+            # ★ 2026-10-01 新增锚点：DEADEQ 桶**必须**计入等式（否则“不可判”被静默漏计）
+            # ★ 2026-10-01：DEADEQ 桶已撤销（实测无效）。
+            #   **但保留一条锚点**：分桶等式**只认列出的桶** ⇒ 多给一个桶就是不自洽
+            #   （防止有人悄悄再加一桶却忘记接线）。
+            c('反例  多出一个未接线的桶（DEADEQ=12）⇒ 必须判为不自洽',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0,
+                            'REFDEAD': 0, 'DEADEQ': 12}, 753), False)
 
         # ---- ★ 2026-09-29 新增：台账**口径指纹**（防"尺子换了却被读成 ★新增发散"）----
         if 1:
@@ -1808,7 +1918,11 @@ def main():
             if v == 'DIVERGE':
                 for r in rows:
                     if r[1] == 'DIVERGE' and len(r) > 8 and r[8]:
-                        det.append((n, '  %-44s [%s] %s' % (n, r[0], '; '.join(map(str, r[8])))))
+                        # ★ 证据（死亡现场等）走 note ⇒ 附在明细里，**不进 diffs**（判据字段必须纯净）
+                        _ev = (r[9] if len(r) > 9 and r[9] else '')
+                        det.append((n, '  %-44s [%s] %s%s'
+                                    % (n, r[0], '; '.join(map(str, r[8])),
+                                       ('  || 证据: ' + _ev[:120]) if _ev else '')))
             if (i + 1) % 10 == 0:
                 sys.stderr.write('   ... %d/%d\n' % (i + 1, len(names)))
 
