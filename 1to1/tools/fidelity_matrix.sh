@@ -170,7 +170,12 @@ echo "  源文件数 = $(ls -1 "$ROOT"/src/proprietary/*/*.c 2>/dev/null | wc -l
 # 1) clang 基线
 mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 if [ -n "$ZIGBIN" ] && [ -x "$ZIGBIN" ]; then
-    r=$(compile_all build/fid/clang "$COMMON_CLANG" "$ZIGBIN cc -target arm-linux-gnueabihf")
+    # ★★ 2026-10-01 修（CI #8 实测）：编译器必须**分词**传入。
+    #   原写 `"$ZIGBIN cc -target arm-linux-gnueabihf"` 是**一个**字符串 ⇒
+    #   `compile_all` 里的 `"$@"` 会去执行一个名叫
+    #   "zig cc -target arm-linux-gnueabihf" 的文件 ⇒ `not found`。
+    #   实测后果：**clang 臂 ok=0 / bad=213**（而 GCC 臂 212/213）。
+    r=$(compile_all build/fid/clang "$COMMON_CLANG" "$ZIGBIN" cc -target arm-linux-gnueabihf)
     echo "  clang     : ok=${r% *} bad=${r#* }  [$("$ZIGBIN" cc --version 2>&1 | head -1)]"
     [ "${r% *}" = "0" ] && { echo '    --- clang 前 5 条错误 ---'; grep -aE 'error|Error|not found' report/_fid_err_clang.txt | head -5; }
     echo "clang ok=${r% *} bad=${r#* }  $("$ZIGBIN" cc --version 2>&1 | head -1)" >> "$RESULTS"
@@ -236,18 +241,46 @@ for cand in clang bootlin63 bootlin54 linaro49; do
 done
 echo
 echo "  活跃候选：$ACTIVE"
+# ★★ 2026-10-01 修（**静默失效链**，CI #8 实测）：
+#   原实现是"原地求交集"：对每个对象，只要**任一**活跃候选没有同名对象就 `rm` 掉它。
+#   而 clang 臂当时因分词缺陷编出 **0** 个对象 ⇒ 它把 bootlin63/bootlin54 的对象
+#   **全部删光** ⇒ `同子集对象 0` ⇒ 对拍无输入。**一个坏臂静默摧毁了两个好臂**。
+#   ⇒ ① 空臂**先剔除**并显式报出（它本身就是必须报告的失败）；
+#      ② 交集改为**先算后删**，不在遍历中修改集合。
+EMPTY=""
+NEWACTIVE=""
 for cand in $ACTIVE; do
-    for o in build/fid/$cand/*.o; do
+    n=$(ls -1 "build/fid/$cand"/*.o 2>/dev/null | wc -l)
+    if [ "$n" -eq 0 ]; then EMPTY="$EMPTY $cand"; else NEWACTIVE="$NEWACTIVE $cand"; fi
+done
+if [ -n "$EMPTY" ]; then
+    echo "  ★ 编出 0 个对象的候选（**已剔除**，不参与交集）：$EMPTY"
+fi
+ACTIVE="$NEWACTIVE"
+first=$(echo $ACTIVE | awk '{print $1}')
+if [ -n "$first" ]; then
+    for o in build/fid/$first/*.o; do
         [ -f "$o" ] || continue
-        b=$(basename "$o")
+        b=$(basename "$o"); keep=1
         for other in $ACTIVE; do
-            [ "$other" = "$cand" ] && continue
-            [ -f "build/fid/$other/$b" ] || { rm -f "$o"; break; }
+            [ "$other" = "$first" ] && continue
+            [ -f "build/fid/$other/$b" ] || { keep=0; break; }
+        done
+        [ "$keep" = "1" ] || rm -f "$o"
+    done
+    for cand in $ACTIVE; do
+        [ "$cand" = "$first" ] && continue
+        for o in build/fid/$cand/*.o; do
+            [ -f "$o" ] || continue
+            [ -f "build/fid/$first/$(basename "$o")" ] || rm -f "$o"
         done
     done
-done
+fi
+ZEROACT=""
 for cand in $ACTIVE; do
-    printf '    %-10s 同子集对象 %s\n' "$cand" "$(ls -1 build/fid/$cand/*.o 2>/dev/null | wc -l)"
+    n=$(ls -1 build/fid/$cand/*.o 2>/dev/null | wc -l)
+    [ "$n" -eq 0 ] && ZEROACT="$ZEROACT $cand"
+    printf '    %-10s 同子集对象 %s\n' "$cand" "$n"
 done
 
 SETS=""
@@ -257,8 +290,16 @@ if [ -z "$SETS" ]; then echo "★★ 无任何候选产出对象 —— 仪器�
 echo
 echo "======================= 对拍 ======================="
 # shellcheck disable=SC2086
-"$PY" tools/fidelity_compare.py $SETS | tee report/fidelity_matrix.txt
+# ★★ 2026-10-01 修（CI #8 实测）：原写 `... | tee f; rc=$?` —— `$?` 是 **tee** 的退出码，
+#   **永远为 0** ⇒ 脚本部约"无可比 ⇒ exit 11"形同虚设 ⇒ CI 在**空结果**上判绿。
+#   现在：直接写文件、**立刻**取 rc、再打印；并把"任一活跃候选对象为 0"也判为失败。
+"$PY" tools/fidelity_compare.py $SETS > report/fidelity_matrix.txt
 rc=$?
+cat report/fidelity_matrix.txt
+if [ -n "$EMPTY$ZEROACT" ]; then
+    echo "★★ 有候选编出 / 交集后为 0 个对象（$EMPTY$ZEROACT）⇒ 本轮判决**不完整**，不得当作结论" >&2
+    rc=11
+fi
 
 {
   echo
