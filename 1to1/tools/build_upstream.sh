@@ -35,7 +35,18 @@ FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 #   实测证据（mxml 单变量，见 BUILD-FACT-ALIGNMENT.md）：工厂 = **真 glibc 2.24 头 + -O2**。
 #     · 真头：`putc`→`_IO_putc`、`getc`→`_IO_getc`
 #     · ≥-O1（即非 -Os，因 -Os 定义 __OPTIMIZE_SIZE__ 关掉 extern-inline）：`strdup`→`__strdup`
-UPOPT="${UPOPT:--O2}"
+UPOPT="${UPOPT:--Os}"
+# ★★★ 2026-10-01（第 104 轮）**优化档根因修复**：`-O2` -> `-Os`。
+#   依据 = `tools/upstream_opt_matrix.py` 的机械扫描（编译器固定为 zig cc = 我们实际用的那一个，
+#   唯一变量是档位）。判据 M1 =「与工厂**体积逐字节相同**的共有函数个数」（巧合概率极低）：
+#     stb  ：-O2 → 3   ｜ **-Os → 19**  ｜ M2 体积比中位 1.120 → 0.994
+#     mxml ：-O2 → 3   ｜ **-Os → 23**  ｜ M2 1.200 → **1.000**
+#     mp3  ：-O2 → 1   ｜ **-Os → 6**   ｜ M2 1.216 → 0.950
+#   合计 M1 7 → **48**（7 倍）。报告：`report/upstream_opt_matrix.txt`。
+#   ★ 与 §0.47「换编译器判负」不矛盾：那个实验的样本混入了"我们重建的 C"的误差，
+#     本扫描的样本是**未被重建的上游源码** ⇒ 唯一变量是编译档。
+#   ★ `report/dwarf_recon.txt` 里的 `-O2` 只来自 8 个 glibc/CRT CU，**不代表**上游库 ——
+#     这正是把"上游库档位"当成已知事实所犯的错。
 # ★ 2026-09-28：头集合改为**尾置**（`EXTRA_INC_TRAIL`）——必须在组件自己的 `-I` 之后，
 #   否则会盖住组件 vendored 的头（实测：盖住 libiconv 的 iconv.h ⇒ converters.h 编译失败）。
 CFLAGS="-c $UPOPT -w -fno-strict-aliasing $ARCH $FIDELITY"

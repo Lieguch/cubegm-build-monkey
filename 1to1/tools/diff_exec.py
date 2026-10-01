@@ -1036,6 +1036,55 @@ def itanium_base(name):
     return last or name
 
 
+_VOID_SRC_CACHE = None
+
+
+def void_fns_from_sources(root=None):
+    """从**上游库源码**机械提取 `void` 返回的函数名（唯一真源的第二个来源）。
+
+    ★ 为什么需要第二个来源（本轮实测）：
+      `void_fns_from_corpus()` 只从 **Ghidra 语料**取名，而上游单头库（stb/mxml/mp3/
+      libiconv …）**根本不在语料里** ⇒ 它们的 `static void` 函数不在表里
+      ⇒ `r0` 残留被当成返回值 ⇒ 假发散。
+      实测：`stbtt__csctx_rccurve_to`（源码 `static void`）在 `-Os` 下报
+      `ret F=0x7d000100 O=0x1`，而它在 `-O2` 下被内联 ⇒ 残留恰好相同 ⇒ 一直没暴露。
+
+    ★ 方向保守：**只扫 `src/upstream/**`**（原版源码，签名可信）。
+      `src/proprietary/**` 是 Ghidra 重建，签名本身可能是推测 ——
+      把"其实有返回值"的函数误判成 void 会**掩盖真差异**。
+      本项目口径：宁可多发散，不可漏发散。
+
+    正则覆盖 `static void f(` / `void f(` / `inline void f(` / `STBTT_DEF void f(`。
+    """
+    import glob as _g
+    import re as _re
+
+    global _VOID_SRC_CACHE
+    if _VOID_SRC_CACHE is not None and root is None:
+        return _VOID_SRC_CACHE
+    base = root or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'upstream')
+    pat = _re.compile(
+        r'^[ \t]*(?:static[ \t]+|inline[ \t]+|STBTT_DEF[ \t]+|STBTT_DEF\s+|extern[ \t]+)*'
+        r'void[ \t]+([A-Za-z_]\w*)[ \t]*\(', _re.M)
+    out = set()
+    for f in (_g.glob(os.path.join(base, '**', '*.h'), recursive=True)
+              + _g.glob(os.path.join(base, '**', '*.c'), recursive=True)):
+        try:
+            txt = open(f, encoding='utf-8', errors='replace').read()
+        except OSError:
+            continue
+        out.update(pat.findall(txt))
+    if root is None:
+        _VOID_SRC_CACHE = out
+    return out
+
+
+def void_fns_all():
+    """void 表的**唯一真源** = Ghidra 语料 ∪ 上游源码签名。"""
+    vf, _ = void_fns_from_corpus()
+    return set(vf) | void_fns_from_sources()
+
+
 def is_void_fn(void_fns, fname):
     """→ 该函数是否为 void（**同时按原名与 demangle 后的基础名查**）。"""
     if not void_fns:
@@ -1458,6 +1507,14 @@ def ruler_protocol_fingerprint():
     for nm in RULER_PROTOCOL_SWITCHES:
         parts.append('%s=%r' % (nm, os.environ.get(nm, '<未设>')))
     parts.append('backend-switches=' + ','.join(RULER_BACKEND_SWITCH_NAMES))
+    # ★ 2026-10-01：void 表是**判据的一部分**（它决定 ret 是否参与比对）⇒ 必须进指纹，
+    #   否则"改了 void 名单"会**静默改变 DIVERGE 集合**而旧台账被沿用。
+    try:
+        import hashlib as _h2
+        parts.append('void-src=' + _h2.sha256(
+            '\n'.join(sorted(void_fns_from_sources())).encode('utf-8')).hexdigest()[:16])
+    except Exception:                                          # pragma: no cover
+        parts.append('void-src=<unavailable>')
     return hashlib.sha256('\n'.join(parts).encode('utf-8')).hexdigest()
 
 
@@ -1612,6 +1669,17 @@ def self_test():
                 c('正例  void 集合从语料解析出来（AudioProcess 在其中）',
                   'AudioProcess' in vf, True)
                 c('正例  void 集合非平凡（>50 个）', len(vf) > 50, True)
+                # ★ 2026-10-01 新增：**上游源码**这条来源（实测缺口：csctx_rccurve_to）
+                _vs = void_fns_from_sources()
+                c('正例  上游源码 `static void stbtt__csctx_rccurve_to` 必须进 void 表',
+                  'stbtt__csctx_rccurve_to' in _vs, True)
+                c('正例  上游源码 void 表非平凡（实测 102 个 ⇒ 门槛 80）', len(_vs) > 80, True)
+                c('反例  本表**只**含上游源码（不得混入 Ghidra 重建的 FUN_xxx）',
+                  any(n.startswith('FUN_') for n in _vs), False)
+                _vall = void_fns_all()
+                c('正例  双源并集 ⊇ 语料表', set(vf) <= _vall, True)
+                c('正例  双源并集 ⊇ 上游源码表', _vs <= _vall, True)
+                c('正例  双源并集非平凡（实测 240 个 ⇒ 门槛 200）', len(_vall) > 200, True)
                 # ★★ 2026-09-27 新增：Itanium demangle 查表（修 C++ 函数漏判 void）
                 c('正例  _Z20inflate_blocks_reset… → 基础名',
                   itanium_base('_Z20inflate_blocks_resetP20inflate_blocks_stateP10z_stream_sPm'),
@@ -1888,7 +1956,7 @@ def main():
         return 0
 
     if a.fn:
-        vf, _vmsg = void_fns_from_corpus()
+        vf = void_fns_all()          # ★ 双源：语料 ∪ 上游源码签名（第 105 轮）
         o = {}
         v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps, void_fns=vf, out=o)
         print('  %s ⇒ %s' % (a.fn, v))
@@ -1910,7 +1978,8 @@ def main():
                'ours': {'path': os.path.relpath(ours, ROOT), 'sha256': _sha[ours]}}
         names = common[:a.limit] if a.limit else common
         esc_steps = a.steps * ESCALATE_FACTOR
-        void_fns, vmsg = void_fns_from_corpus()
+        void_fns = void_fns_all()    # ★ 双源（第 105 轮）
+        vmsg = 'void 表 = Ghidra 语料 ∪ 上游源码签名'
         stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0, 'REFDEAD': 0}
         n_esc = 0                      # 靠放大预算才判出来的函数数
         n_voidret = 0                  # r0 因"返回类型 void"而未作判据的函数数

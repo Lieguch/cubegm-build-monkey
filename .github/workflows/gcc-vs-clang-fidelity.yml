@@ -18,6 +18,9 @@ on:
       - '1to1/tools/fidelity_matrix.sh'      # ★ 第 65 轮重做的判决实验
       - '1to1/tools/dwarf_recon.py'          # ★ 构建事实恢复（工具链/CFLAGS 的唯一真源）
       - '1to1/tools/fidelity_compare.py'
+      - '1to1/tools/upstream_opt_matrix.py'               # ★ 上游库优化档门禁（第 106 轮）
+      - '1to1/tools/upstream_cc_compare.py'
+      - '1to1/ledger/size_short_exempt.tsv'
       - '.github/workflows/gcc-vs-clang-fidelity.yml'
 
 permissions:
@@ -79,6 +82,13 @@ jobs:
           sh tools/fidelity_matrix.sh 2>&1 | tee report/fidelity_matrix_stdout.txt
           exit ${PIPESTATUS[0]}
 
+      - name: 上游库优化档门禁（断言 build_upstream.sh 的 UPOPT == 各组件实测最佳档）
+        run: |
+          cd 1to1
+          mkdir -p report
+          python3 tools/upstream_opt_matrix.py --gate --out report/upstream_opt_matrix.txt 2>&1 | tee report/upstream_opt_matrix_stdout.txt
+          exit ${PIPESTATUS[0]}
+
       - name: 上传报告
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,4 +101,6 @@ jobs:
             1to1/report/_fid_matrix_results.txt
             1to1/report/_fid_err_*.txt
             1to1/report/gcc_fidelity.txt
+            1to1/report/upstream_opt_matrix.txt
+            1to1/report/upstream_opt_matrix_stdout.txt
           if-no-files-found: warn

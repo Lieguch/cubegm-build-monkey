@@ -105,6 +105,32 @@ def own_syms():
     return out, nread
 
 
+EXEMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'ledger', 'size_short_exempt.tsv')
+
+
+def load_exempt(path=None):
+    """→ {函数名: 证据串}。**带证据的个案豁免**（不是放宽阈值）。
+
+    格式：`函数名<TAB>我方size<TAB>工厂size<TAB>证据`
+    ★ 每行**必须**有证据（行为尺状态 + 反汇编/语义结论）——空证据行直接判错，
+      避免把本机制用成"想让谁绿就写谁"。
+    """
+    p = path or EXEMPT_PATH
+    if not os.path.exists(p):
+        return {}
+    out = {}
+    for ln in open(p, encoding='utf-8', errors='replace'):
+        ln = ln.rstrip('\n')
+        if not ln.strip() or ln.lstrip().startswith('#'):
+            continue
+        parts = ln.split('\t')
+        if len(parts) < 4 or not parts[3].strip():
+            raise SystemExit('★ 豁免清单缺证据列：%r（本机制只接受**带证据**的豁免）' % ln[:80])
+        out[parts[0].strip()] = parts[3].strip()
+    return out
+
+
 def verdict_of(our_sz, fac_sz, thresh):
     if fac_sz <= 0:
         return 'NA'
@@ -125,11 +151,16 @@ def run(ours, thresh, top):
     own_c = [n for n in common if n in OWN]
     foreign = [n for n in common if n not in OWN]
     short = []
+    exempt = load_exempt()
+    exempt_hit = []
     ok = 0
     for n in own_c:
         r = verdict_of(O[n][1], F[n][1], thresh)
         if r == 'SHORT':
-            short.append((O[n][1] / float(F[n][1]), n, O[n][1], F[n][1]))
+            if n in exempt:
+                exempt_hit.append((O[n][1] / float(F[n][1]), n, O[n][1], F[n][1]))
+            else:
+                short.append((O[n][1] / float(F[n][1]), n, O[n][1], F[n][1]))
         elif r == 'OK':
             ok += 1
     short.sort()
@@ -144,6 +175,16 @@ def run(ours, thresh, top):
     print('  INFO  %d   非我方对象实现 ⇒ 不计入 SHORT（清单如下，可核对）' % len(foreign))
     for n in foreign:
         print('      · %-30s 我方 %-6d 工厂 %-6d' % (n, O[n][1], F[n][1]))
+    if exempt_hit:
+        print('  EXEMPT %d  已定性豁免（**带证据**，不改阈值；见 ledger/size_short_exempt.tsv）'
+              % len(exempt_hit))
+        for r, n, o, f in sorted(exempt_hit):
+            print('      · %-30s 我方 %-6d 工厂 %-6d 比值 %.3f' % (n, o, f, r))
+            print('          证据：%s' % exempt[n])
+        unused = sorted(set(exempt) - set(x[1] for x in exempt_hit))
+        if unused:
+            print('      （清单里 %d 条本轮未命中：%s —— 命中不了就该删，别留在清单里凑数）'
+                  % (len(unused), ', '.join(unused[:6])))
     print()
     print('  --- SHORT 明细（按比值升序，前 %d）---' % top)
     print('  %-8s %-9s %-9s %s' % ('比值', '我方', '工厂', '函数'))
@@ -173,7 +214,11 @@ def self_test():
     c('工厂 size=0 ⇒ 不可判', verdict_of(10, 0, 0.5), 'NA')
     c('.part 后缀识别', bool(PART_RE.search('mxml_fd_read.part.1')), True)
     c('普通名不误判', bool(PART_RE.search('UpdateROM')), False)
-    print('self-test: %d 条，失败 %d' % (8, len(fails)))
+    _e = load_exempt()
+    c('正例  豁免清单里 mxmlEntityGetName 有非空证据',
+      bool(_e.get('mxmlEntityGetName')), True)
+    c('反例  不存在的名字不在豁免清单', 'NoSuchFn_xyz' in _e, False)
+    print('self-test: %d 条，失败 %d' % (10, len(fails)))
     for f in fails:
         print('   ✗', f)
     return 1 if fails else 0
