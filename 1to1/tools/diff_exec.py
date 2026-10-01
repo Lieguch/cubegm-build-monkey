@@ -440,6 +440,21 @@ def _machine_for(b, mode):
     mu.mem_map(STACK_BASE, STACK_SIZE, 7)
     mu.mem_map(SCRATCH, SCRATCH_SIZE, 7)
     mu.mem_map(SENTINEL & ~0xFFF, 0x1000, 7)
+    # ★★★ 2026-10-01（第 102 轮）：**观测力扩展**（opt-in，`CGM_MAP_WILD=1`）。
+    #   病灶（实测）：这批 UI/状态函数会踩"野指针落点"而 READ/WRITE_UNMAPPED 早死，
+    #   于是两侧"死得深浅不同"⇒ 观测窗口不可比 ⇒ 分不清"真差异"与"调度顺序"。
+    #   实测落点：`0x0 / 0x40 / 0x78`（NULL 页区）、`0x7e040000`（= STACK_BASE+STACK_SIZE，
+    #   **写越过栈顶**）。把这两处也映射成 RW，两侧**同处理** ⇒ 差异仍是代码造成的。
+    #   ★ 默认**关**（`CGM_MAP_WILD` 未设 ⇒ 与从前逐位一致）；开它只是"看得更远"，
+    #     不改判据、不改默认口径、不进判据指纹。
+    #   ★ 只扩两小块（64KB + 256KB）：`_gaps` 的补零成本才可忽略（大块会让每次运行退化成 GB 级写入）。
+    if os.environ.get('CGM_MAP_WILD') == '1':
+        for _lo, _sz, _why in ((0x0, 0x10000, 'NULL 页区'),
+                               (STACK_BASE + STACK_SIZE, 0x40000, '栈上方')):
+            try:
+                mu.mem_map(_lo, _sz, 7)
+            except Exception as _e:                                # noqa: BLE001
+                sys.stderr.write('  [map-wild] 跳过 0x%x(%s)：%s\n' % (_lo, _why, _e))
     model = libc_model.Model()
     model.map_regions(mu)
     if reuse:
