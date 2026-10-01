@@ -1141,7 +1141,13 @@ def _fault_str(f):
     if not f:
         return '无'
     acc, addr, size = f
-    kind = {16: 'R', 17: 'W', 18: 'X'}.get(acc, str(acc))
+    # ★ 2026-10-01 修：**UNMAPPED 事件用的是自己的访问码**，不是 UC_MEM_READ/WRITE/FETCH。
+    #   Unicorn 约定：READ=16 / WRITE=17 / FETCH=18，而
+    #                 READ_UNMAPPED=19 / WRITE_UNMAPPED=20 / FETCH_UNMAPPED=21。
+    #   本函数原来只映射了 16/17/18 ⇒ 每次现场都被打成裸数字 "19@"（报告里真实出现过），
+    #   读者看不出是"读未映射"还是"写未映射" ⇒ 证据力打折。
+    kind = {16: 'R', 17: 'W', 18: 'X',
+            19: 'R!', 20: 'W!', 21: 'X!'}.get(acc, str(acc))
     return '%s@0x%x sz=%d' % (kind, addr, size)
 
 
@@ -1796,6 +1802,11 @@ def main():
     ap.add_argument('--reason', default=None,
                     help='--rebaseline 的原因（写进台账头部，留痕；强烈建议填写）')
     ap.add_argument('--self-test', action='store_true')
+    # ★ 2026-10-01 新增：**只跑指定语料组**（只读测量，用于把"NULL 组上的指令顺序伪影"
+    #   与"真语义差异"分开）。默认 = 全部三组，**默认口径与判据指纹都不受影响**。
+    #   ★ 安全约束：子集运行**禁止**碰棘轮台账（否则会用缩小后的分母重写台账 ⇒ 静默变弱）。
+    ap.add_argument('--groups', default=None,
+                    help='只跑指定语料组（逗号分隔，如 strs）；只读测量，不得与 --ledger 同用')
     ap.add_argument('--ours', help='被测产物（默认 build/rkgame.rebuilt.elf）；'
                                    '用于单变量 A/B：同一把尺子量不同工具链/不同 flags 的产物')
     ap.add_argument('--factory', help='对照产物（默认 golden/factory.rkgame.bin）')
@@ -1814,6 +1825,22 @@ def main():
 
     fac = a.factory or FACTORY
     ours = a.ours or OURS
+    # ★ 语料子集（只读测量）：`--groups strs` 之类。默认 = 全部三组，口径不变。
+    cps = list(CORPUS)
+    if a.groups:
+        want = {g.strip() for g in a.groups.split(',') if g.strip()}
+        known = {c[0] for c in CORPUS}
+        unknown = want - known
+        if unknown:
+            sys.stderr.write('★★ --groups 含未知语料组 %s（已知：%s）\n'
+                             % (sorted(unknown), sorted(known)))
+            return 9
+        cps = [c for c in CORPUS if c[0] in want]
+        if a.ledger or a.update_ledger:
+            sys.stderr.write('★★ 子集运行（--groups %s）**禁止**与台账同用：\n'
+                             '   用缩小后的分母重写棘轮台账会让台账**静默变弱**。\n' % a.groups)
+            return 9
+        sys.stderr.write('★ 只读测量：语料子集 = %s（**不写台账**）\n' % [c[0] for c in cps])
     for p in (fac, ours):
         if not os.path.exists(p):
             sys.stderr.write('缺 %s\n' % p)
@@ -1848,7 +1875,7 @@ def main():
     if a.fn:
         vf, _vmsg = void_fns_from_corpus()
         o = {}
-        v, rows = compare(BF, BO, a.fn, a.steps, void_fns=vf, out=o)
+        v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps, void_fns=vf, out=o)
         print('  %s ⇒ %s' % (a.fn, v))
         if o.get('ret_unjudged'):
             print('     [ret] 该函数返回类型为 void ⇒ r0 是残留值，**未作判据**（GAP 17.12）')
@@ -1882,11 +1909,11 @@ def main():
         all_x = []          # ★ `--dump-rows` 用：逐组机器可读明细（**不截断**）
         for i, n in enumerate(names):
             o = {}
-            v, rows = compare(BF, BO, n, a.steps, void_fns=void_fns, out=o)
+            v, rows = compare(BF, BO, n, a.steps, corpus=cps, void_fns=void_fns, out=o)
             if v == 'TRUNC':
                 # ★ 放大重试：只对"确实截断"的函数付费，避免把分歧藏进"不可判"
                 o2 = {}
-                v2, rows2 = compare(BF, BO, n, esc_steps, void_fns=void_fns, out=o2)
+                v2, rows2 = compare(BF, BO, n, esc_steps, corpus=cps, void_fns=void_fns, out=o2)
                 if v2 != 'TRUNC':
                     v, rows, o = v2, rows2, o2
                     n_esc += 1
