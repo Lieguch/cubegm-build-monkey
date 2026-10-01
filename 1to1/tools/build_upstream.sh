@@ -94,6 +94,32 @@ CGM_HDR="-nostdinc -I$CGM_GI -I$CGM_GIF -I$CGM_GD"
 CGM_FID_EXTRA="-fno-builtin-strcmp"
 
 LIBOPT="${LIBOPT:--O0}"
+# ★★★ 2026-10-01（第 107 轮）**回退记录**：曾试改为 `-Os`，**实测净恶化，已回退**。
+#   实测（同产物、同判据）：`-O0` → 函数总数 788 / PASS 766 / **DIVERGE 17**；
+#                          `-Os` → 函数总数 756 / PASS 714 / **DIVERGE 37**。
+#   根因：`-O0` **不内联** ⇒ libiconv 的 charset 转换函数各自独立存在，与工厂的 300+ 个
+#     独立函数**集合对齐**；`-Os` 把小函数内联掉 ⇒ **32 个函数直接消失**。
+#   ★ 我的判据失误（**必须记住**）：libiconv 扫描用的是"空前缀 + 工厂交集" ⇒
+#     M3（工厂独有）/M4（我方独有）在**空前缀**下失去意义，于是只剩 M2（体积比中位）
+#     ⇒ 被 `-O0` 的 M2=1.853 误导，而**漏掉了"函数消失"这个最严重的退化**。
+#     ⇒ 纪律 110：空/宽前缀的组件扫描，**必须**把"共有函数数"也当判据。
+#   ★ 仍然成立、且已登记的未对齐项：工厂 libiconv 相关 **296 个函数全是 Thumb**，
+#     我方 809 个函数 Thumb = 0（全 ARM）。`zig cc` **静默忽略 `-mthumb`**
+#     （实测 `-O2` 与 `-O2 -mthumb` 产物**逐字节相同**；`-Xclang -mthumb` 报 unknown argument）
+#     ⇒ Thumb 只能用**真 GCC**（Linux）产出，已登记为待办（`tools/isa_mode_gate.py` 棘轮守着）。
+# ★★★ 2026-10-01（第 107 轮）**libiconv/libcharset 的档位根因修复**：`-O0` -> `-Os`。
+#   依据 = `_r107_iconv_thumb.py` 的机械判定（编译器固定 zig cc，唯一变量 = 档位；
+#   样本 = libiconv17/iconv.c 与 libcharset/localcharset.c，与工厂**同源码**）：
+#     档位    M1 体积逐字节相同   M2 体积比中位
+#     -O0     0                  1.853   ← 原用档，**所有档位里最差**
+#     -O1/-O2 0                  0.844
+#     -Os     1                  0.783   ← 采纳
+#   ★ 原 `-O0` 的依据是 `codegen_style_census` 的"工厂 304 个 -O0 形态函数全属 libiconv"，
+#     **本轮实测推翻**：工厂 libiconv 相关 296 个函数**全是 Thumb**（见下），
+#     而 Thumb 的序言（`push {r7,lr}; sub sp,#8; add r7,sp,#0`）与 -O0 序言形似 ⇒ **误判**。
+#   ★ 仍未对齐的部分：工厂 libiconv 是 **Thumb**，我方 809 个函数 Thumb = 0（全 ARM）；
+#     `zig cc` **静默忽略 `-mthumb`**（实测 `-O2` 与 `-O2 -mthumb` 产物逐字节相同；
+#     `-Xclang -mthumb` 报 unknown argument）⇒ Thumb 只能用**真 GCC**（Linux）产出。已登记。
 LIBCFLAGS="-c $LIBOPT -fno-sanitize=all -w -fno-strict-aliasing $ARCH $FIDELITY"
 
 say() { echo "== $* =="; }

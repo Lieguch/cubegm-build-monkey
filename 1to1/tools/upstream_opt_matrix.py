@@ -69,6 +69,14 @@ def comps(root):
          ['-I' + os.path.join(root, 'src/upstream/stb')], []),
         ('mxml', 'mxml', mxml, mxml_inc, []),
         ('mp3', '', mp3, mp3_inc, []),
+        # ★ 2026-10-01（第 107 轮）补入：当前用 `LIBCFLAGS=-O0` 的两个组件。
+        #   其 `-O0` 的依据只是 `codegen_style_census`（"工厂 304 个 -O0 形态函数全属 libiconv"），
+        #   **从未**用档位扫描验证过 —— 而 `locale_charset` 正在未决清单里。
+        ('libiconv17', '', [os.path.join(root, 'src/upstream/libiconv17/iconv.c')],
+         ['-I' + os.path.join(root, 'src/upstream/libiconv17')], []),
+        ('libcharset', '', [os.path.join(root, 'src/upstream/libcharset/localcharset.c')],
+         ['-I' + os.path.join(root, 'src/upstream/libiconv17'),
+          '-I' + os.path.join(root, 'src/upstream/libcharset')], []),
     ]
 
 
@@ -144,7 +152,8 @@ def main():
         P('-' * 100)
         P('组件 %s（前缀 %r，%d 个源文件；工厂同名函数 %d 个）' % (name, prefix, len(srcs), len(F)))
         P('-' * 100)
-        P('  %-14s %-8s %-6s %-8s %-14s %-10s' % ('档位', '我方函数', '共有', 'M1 体积全同', 'M2 体积比中位', 'M3 工厂独有'))
+        P('  %-14s %-8s %-8s %-8s %-14s %-10s'
+          % ('档位', '我方函数', '★共有', 'M1 体积全同', 'M2 体积比中位', 'M3 工厂独有'))
         rows = []
         for tag, flags in OPTS:
             d = os.path.join(OUTD, name, tag)
@@ -177,16 +186,27 @@ def main():
             rows.append((tag, ok, len(O), len(common), exact, med, len(missing)))
             P('  %-14s %-8d %-6d %-8d %-14.3f %-10d' % (tag, len(O), len(common), exact, med, len(missing)))
         if rows:
-            best = max(rows, key=lambda r: (r[4], -abs(r[5] - 1.0)))
-            verdicts[name] = (best[0], best[4], best[5])
-            P('  ⇒ 最佳档位：**%s**（M1=%d，M2=%.3f）' % (best[0], best[4], best[5]))
+            # ★★★ 2026-10-01（第 107 轮，纪律 110）：**判据次序修正**。
+            #   病灶：libiconv 用"空前缀 + 工厂交集"时，M3（工厂独有）/M4（我方独有）
+            #   因没有前缀而失去意义 ⇒ 只剩 M2（体积比中位）可看 ⇒ 被 `-O0` 的 M2=1.853
+            #   误导，把档位改成 `-Os`，结果**32 个函数直接消失**（788→756）、DIVERGE 17→37。
+            #   ⇒ 首要判据必须是**共有函数数**（函数集合完整性），其次才是 M1、M2。
+            best = max(rows, key=lambda r: (r[3], r[4], -abs(r[5] - 1.0)))
+            verdicts[name] = (best[0], best[4], best[5], best[3])
+            P('  ⇒ 最佳档位：**%s**（共有 %d ｜ M1=%d ｜ M2=%.3f）'
+              % (best[0], best[3], best[4], best[5]))
+            _mc = max(r[3] for r in rows)
+            for r in rows:
+                if r[3] < _mc:
+                    P('     ⚠ %s 的共有函数数 %d < 最大值 %d ⇒ **函数消失**，按纪律 110 直接淘汰'
+                      % (r[0], r[3], _mc))
         P('')
 
     P('=' * 100)
     P('汇总（每个组件的建议档位）')
     P('=' * 100)
-    for k, (tag, m1, m2) in verdicts.items():
-        P('  %-8s → %-14s M1=%-3d M2=%.3f' % (k, tag, m1, m2))
+    for k, v in verdicts.items():
+        P('  %-11s → %-14s 共有=%-4d M1=%-3d M2=%.3f' % (k, v[0], v[3], v[1], v[2]))
     P('')
     P('★ 判读：M1「体积逐字节相同」是最硬的证据（巧合概率极低）；M2 作交叉确认。')
     P('★ 口径：本扫描只用 clang 腿（= 我们的实际编译器）⇒ 结论**可直接采纳**；')
@@ -206,7 +226,7 @@ def main():
             if m:
                 cur = m.group(1)
                 break
-        want = {k: v[0] for k, v in verdicts.items()}
+        want = {k: v[0] for k, v in verdicts.items()}      # v[0] = 最佳档位 tag
         P('')
         P('--- 门禁：build_upstream.sh 的 UPOPT 是否为各组件的最佳档 ---')
         P('    当前 UPOPT = %s' % cur)
