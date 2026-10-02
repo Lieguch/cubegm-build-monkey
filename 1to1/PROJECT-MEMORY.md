@@ -4412,3 +4412,698 @@ Unicorn 的未映射事件用**自己的访问码**：`READ_UNMAPPED=19 / WRITE_
 > **111.** **指令集模式（ARM/Thumb）是一等结构事实**，必须先判它再判优化档；
 >   且"某个编译开关是否生效"**只能用产物逐字节比较验证** —— 工具会**静默忽略**不认识的开关
 >   （`-mthumb` 实测：rc=0、无警告、产物不变）。
+
+---
+
+## 0.52 ★★★★★★ 第 109 轮（2026-10-01）：**找到并根修「真机零日志」的真正根因** —— `PT_INTERP` 是 Windows 宿主路径
+
+> 用户口径（原话）：「你是不是又在某个细节上绕圈了？如果是，就必须跳出来，然后**联网**寻找
+> 最优且具有根源解决的方法推进缺口清单」。
+> **先说结论：是的，在绕圈 —— 绕的是「行为尺 DIVERGE 17」这个代理指标；而唯一终局判据
+> （L3 真机）三十多轮没有一次有效观测。本轮跳出来，一次就找到并修掉了真根因。**
+
+### A. 为什么说"在绕圈"（自查，有据）
+| 轮次 | 干了什么 | 对**终局判据**（设备能否跑）的贡献 |
+|---|---|---|
+| r104 | `rotation_buff` 声明形态 | DIVERGE 18→17，**0** |
+| r105/106 | 上游库 `-O2`→`-Os`、void 判据双源 | 共有函数 782→788，**0** |
+| r107 | 发现 308 个 Thumb、我方 `-Os` 试验恶化并回退 | **0**（回退后与 r106 等同） |
+| r108 | `CGM_SEED_NULL` NULL 链捕获 | **A/B 实测净恶化**（PASS 766→721、TRUNC 5→35）⇒ 已弃用默认关 |
+| r99–r108 | ── | **L3 真机：0 次有效观测**；L4：0/2 |
+
+⇒ 17 个 DIVERGE 已全部定性为「观测受限 12 / 编译器 codegen 4 / Thumb 1」，**可改源码项 = 0**。
+继续打磨它**不可能**产生新信息。**这就是绕圈。**
+
+### B. ★★★★★ 真根因（本机 100% 复现）
+
+交付产物的**真实 `PT_INTERP`**（读程序头，不是子串搜索）：
+
+```
+build/rkgame.rebuilt.elf   PT_INTERP = 'C:/Users/Administrator/.workbuddy/binaries/
+                                        PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3'
+golden/factory.rkgame.bin  PT_INTERP = '/lib/ld-linux-armhf.so.3'
+设备侧（golden/device_rootfs_min/lib/）  ld-linux-armhf.so.3 -> ld-2.29.so   ✅ 存在
+```
+
+内核在 `execve` 里**只校验该绝对路径是否存在**（**连 libc 都不查**），不存在 ⇒ 立即 `ENOENT`
+⇒ **进程一行都没跑** ⇒ `_diag/` 零文件。
+**这与真机现象（无法开机 + 一条日志都没有）逐字吻合**，也解释了为什么 r99–r108 的
+所有结构性修复都"看起来对、设备却没反应"。
+
+**机制（本机复现表，`build/_exp/_t*`）**：
+| 链接方式 | 产物 `PT_INTERP` | 判定 |
+|---|---|---|
+| `zig cc -target arm-linux-gnueabihf.2.7 …`（clang 驱动） | `/lib/ld-linux-armhf.so.3` | ✅ |
+| `zig cc … -fuse-ld=lld` | `/lib/ld-linux-armhf.so.3` | ✅ |
+| **`zig ld.lld … --dynamic-linker /lib/ld-linux-armhf.so.3`** | **宿主路径** | ❌ |
+| `zig ld.lld … --dynamic-linker=<path>`（等号形） | **宿主路径** | ❌ |
+| `zig ld.lld … -dynamic-linker <path>`（单横线） | **宿主路径** | ❌ |
+| `zig ld.lld … --sysroot=/ --dynamic-linker …` | **宿主路径** | ❌ |
+
+⇒ **`zig ld.lld` 直驱会硬忽略 `--dynamic-linker`**（三种写法全试过）。而
+`tools/link_full.sh` 的 `LINK_DRIVER=lld` 分支**正是这么调的**，且它是 2026-09-28 起的**默认**。
+上游同源：**ziglang/zig#23813**（`-dynamic-linker` 未传递到 lld 调用）。
+业界标准处置：链接后用 `patchelf --set-interpreter` 改写（本仓实现为零依赖等价物）。
+
+### C. ★★★★★ 为什么 9 道门禁全绿却没抓住它 —— 门禁自己就是帮凶
+`tools/abi_check.py` 旧实现：
+```python
+i = d.find(b'/lib/ld-linux')                       # ← 全文件子串搜索
+interp = d[i:d.index(b'\x00', i)].decode(...)
+```
+宿主路径 `C:/…/PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3` **本身包含**
+`/lib/ld-linux` 子串 ⇒ 截出来就是 `'/lib/ld-linux-armhf.so.3'` ⇒ **判 PASS（rc=0）**。
+
+**同一个文件、同一时刻**：
+```
+旧 abi_check：  [PASS] interp got=/lib/ld-linux-armhf.so.3   rc=0
+新 abi_check：  [FAIL] interp got=C:/Users/…/lib/ld-linux-armhf.so.3
+                [FAIL] interp-abs / [FAIL] host-marks 3 处    rc=2
+```
+⇒ 与**纪律 62**（"值落在地址区间内不是判据"）**完全同类**：**子串包含不是相等**。
+
+### D. 根修三层（都已落库）
+| 层 | 文件 | 内容 |
+|---|---|---|
+| **构建** | `tools/link_full.sh` | `rc==0` 之后**无条件**调用 `tools/enforce_interp.py`（两个分支都覆盖）；失败 `exit 12`（fail-closed，禁止把"设备必然起不来"的产物当交付物） |
+| **工具** | `tools/enforce_interp.py`（新） | `patchelf --set-interpreter` 的零依赖等价物：读真实 `PT_INTERP` → 原子改写（tmp + `os.replace`）→ 全文件扫**宿主痕迹**（PortableGit/.workbuddy/site-packages/AppData/`C:/Users`/`C:\`/`/c/Users`/ziglang）→ `--check`/`--selftest`（**纯内存，规避本机沙箱删除守卫**） |
+| **判据** | `tools/abi_check.py` | `PT_INTERP` 改为**读真实程序头 + 精确相等**；新增 `interp-abs`（必须 `/` 开头、无盘符/反斜杠）与 `host-marks`（全文件禁宿主痕迹）；`--selftest` 用"宿主路径 + 含 `/lib/ld-linux` 子串"这一**旧实现被骗过的形态**做反例 |
+| **门禁** | `tools/cnb_gates.sh` | 新增**跨平台前置块**（不依赖 arm objdump）：`abi_check` + `enforce_interp --check`，非 0 计入失败 |
+| **投放** | `tools/stage_sd_drop.py` | 新增 `--t1-role/--t1-expect` 与 **fail-closed 闸门：t3 的 `PT_INTERP` 不是 `/lib/ld-linux-armhf.so.3` 即拒投** |
+
+### E. 证据（机械、可复算）
+* 全产物**只有一处**宿主痕迹：偏移 `0x3e8000`（= `PT_INTERP` 段）；原厂 **0 处**。
+* 修正后 `tools/interp_of.py`：产物与工厂**逐字节相同** `/lib/ld-linux-armhf.so.3`。
+* `elf_load_audit`：A1–A6 全 PASS（9 个 PT_LOAD、最高 vaddr 5.3 MB、5.2 MB）。
+* **单变量证明**（drop9 的 t1 负对照 vs t3 候选）：**只差 93 字节，全部落在 `[0x3e8000,0x3e805e)`**
+  即 `PT_INTERP` 段内，其余**逐字节相同** ⇒ 真机 A/B 是严格单变量。
+* 行为尺复跑：**PASS 766 ｜ DIVERGE 17 ｜ TRUNC 5 ｜ REFDEAD 0 ｜ SKIP 0**，
+  与基线逐项一致 ⇒ **解释器修正对行为数据完全惰性**（符合预期）。
+* 台账更新：`ours=1f09f15b54090472…`；ruler 指纹不变（`compare()` 源码未动）⇒ **无需 rebaseline**。
+
+### F. 投放：`_sdcard_drop9/`（**一次上机的三点阶梯**）
+| 文件 | 是什么 | 预期 |
+|---|---|---|
+| `cubegm/rkgame` | 探针 v5（静态，无 `PT_INTERP`） | 必定能起来并写 `_diag/PROBE5.txt` |
+| `cubegm/rkgame.bak` | 原厂（**阳性对照**，须已在 SD 上） | 存活至超时 |
+| `cubegm/rkgame.t1` | **负对照**：与 t3 只差那 93 字节 | `EXECVE-FAILED errno=2`（ENOENT） |
+| `cubegm/rkgame.t3` | ★ 本轮候选（解释器已对齐） | 见 READ-ME 的四种可能 |
+
+★ 探针 v5 的被测清单就是 `bak/t1/t3` ⇒ **一次开机同时给出阳性对照 + 负对照 + 候选**。
+
+### G. 新纪律 112–116
+> **112.** **不要用代理指标（DIVERGE）的改善去替代终局判据的推进。**
+>   当一个指标的**可行动项归零**、而终局判据（真机）**零次观测**时，继续打磨该指标就是**绕圈**。
+>   判据：问"这一轮产出会让终局判据多知道什么？"答不上就换方向。
+> **113.** **子串包含不是相等**（纪律 62 的第二次同类事故）。凡"在文件/二进制里找某个串"的判据，
+>   必须**定位到结构字段**（程序头/段/节）再比较；`find()` + 截断是**结构性失效**的写法。
+> **114.** **"门禁全绿"只说明门禁的判据成立，不说明目标成立。**
+>   本轮 9 道门禁全绿、符号命中率 99.5%，而产物在设备上**连 exec 都过不去**。
+>   新增门禁前先问："这条判据**能不能**表达我要守的那个性质？"
+> **115.** **工具链开关会静默失效**：不认识的 flag 可能 rc=0、无警告、产物不变
+>   （`-mthumb` 已记过一次；本轮 `zig ld.lld` 忽略 `--dynamic-linker` 是第二例）。
+>   ⇒ 凡"我传了这个参数"必须**用产物取证**（逐字节/字段级），不得以"我传了"为准。
+> **116.** **投放包必须对"设备可执行性"做 fail-closed 检查**：包内产物在设备上 exec 不了，
+>   这一轮就是**零信息**。`stage_sd_drop.py` 已把 `PT_INTERP` 精确性设为拒投条件。
+
+---
+
+## 0.53 ★★★★★ 第 110 轮（2026-10-01）：**投放前无死角审计** —— 「必须上机」这个问题被机械化回答了
+
+> 用户口径（原话）：「你每次让我上机，我就问你**目前进度达到必须让我上机才能推进的地步没有**。
+> 我也会让你做一次**无死角的审计**，让铁证告诉你，是不是已经到达必须让我上机的环节。」
+> **答案：没有到达。** 而且审计查出**一个把 09-28 之后所有上机尝试全部作废的回归** ——
+> 在它修好之前，"请上机"是**把自己的活推给用户**。详见 `AUDIT-PREDEVICE.md`。
+
+### A. 把「设备能否跑」拆成三层，逐层给机械判据
+
+| 层 | 问题 | 本地可判 | 本轮结果 |
+|---|---|---|---|
+| **L0 加载层** | `execve` 会不会拒？ld.so 符号/版本找不找得到？ | ✅ | **全 PASS** |
+| **L1 执行安全层** | 会不会跳进"不可执行的工厂映像区"？ | ✅ | **PASS：0 处 CODE-REF** |
+| **L2 运行期层** | 加载成功后走到哪一步、死在哪 | ✅（qemu + 设备真 sysroot） | ★ **装置此前缺失，本轮补上** |
+| L3 硬件层 | 真 SFC/DRM/ALSA 寄存器、真 SD | ❌ | 只有真机 |
+
+### B. 新增两道判据（此前 15+ 道门禁**一道都没覆盖**）
+| 文件 | 守住什么 | 关键实测 |
+|---|---|---|
+| `tools/pre_device_gate.py` | **"设备上到底能不能被加载"**：P1 `PT_INTERP` 精确+文件存在 · P2 无宿主痕迹 · P3 ELF 身份 · P4 `DT_NEEDED` ⊆ 设备库 · **P5 未定义符号 ⊆ 设备库导出** · **P6 版本需求 ⊆ 设备提供版本** · P7 无 RPATH · P8 无直接分支落入不可执行段 · P9 init 链 | **P5：108 个导入，设备库缺 0**；**P6：4 个版本需求，缺 0**；P1–P9 全 PASS |
+| `tools/fimg_ref_audit.py` | **"会不会执行到 `[0x9000,0x3acffc)`（工厂机器码镜像，权限 `--R`）"** | 区内 **0 个 `STT_FUNC`**（742 个全是 `STT_OBJECT`）；可执行段字面池指向区内的 **134 个字全部是 DATA-REF，CODE-REF = 0** |
+
+★ 为什么这两条重要：它们覆盖的失败模式**全部是"只有设备加载时才会炸"**的，
+而此前所有门禁都在看"地址/结构像不像"。**判据问错了问题，绿就是假绿。**
+
+### C. ★ 审计查出的关键事实：L2 装置缺口 + 一个作废了 5 次上机的回归
+1. **回归**（详见 §0.52）：`PT_INTERP` 被 `zig ld.lld` 写成 Windows 宿主路径，**2026-09-28 引入**。
+   反证：09-22 那批投放包（`rkgame.t1` = `65118fa2…`）的 `PT_INTERP` **是正确的** ⇒
+   **09-22 的两次上机观测有效，09-28 之后的全部作废（零日志、零信息）。**
+2. **L2 装置缺口**：三套云执行器（`cnb_ruler` 函数级 / `cnb_ws_gates` objdump 静态 / `cnb_ca_exp` 编译器）
+   **没有一套**回答"设备真 sysroot 下 ld.so 能不能加载、走到哪一步"。
+   CI 的 `1to1-qemu-behav.yml` 有 `SYSROOT=/arm-root-device` 场景，但①在 GitHub（本机无 PAT 推不动）
+   ②**未断言"我方是否被成功加载"**。
+   ⇒ **新增 `tools/cnb_devqemu.sh`**：CNB 云开发上装 `qemu-user-static` → 用 `golden/device_rootfs_min`
+   建 `/arm-root-device`（含 `ld-linux-armhf.so.3 -> ld-2.29.so`）→ 建 `/sdcard/cubegm` →
+   **三点启动链**（工厂阳性对照 / 我方产物 / 负对照，后者与前者**只差 93 字节**），
+   每点记 `exit` + `strace` 末尾 + 关键字形判定（LOAD-FAILED / RAN-AND-EXITED / RAN-AND-TIMEOUT）。
+   **全程不需要用户任何动作。**
+3. **设备侧历史事实的消费情况**：09-22 的两轮上机给出了硬事实（静态产物能 exec、`/sdcard` 可写、
+   无 EXECVE-FAILED、RELRO 与 44100 两个修复被真机证实、剩余阻塞 = `SIGBUS@sfc_init+0x6c`），
+   **这些都已本地消费**；其中 `sfc_init` 的崩溃已定位为 **MMIO 访存宽度被编译器窄化**并已修
+   （`mmio_width_audit` 门禁）。⇒ 当前产物比"最后一次有效观测的产物"**多 5 项修复且从未验证**。
+
+### D. 新纪律 117–119
+> **117.** **"请上机"必须先过三道本地装置**：`pre_device_gate`（L0）+ `fimg_ref_audit`（L1）
+>   + `cnb_devqemu`（L2）。任一未过 ⇒ **不许请用户上机** —— 那一趟注定零信息。
+>   且**上机要回答的问题必须先写下来**（"这一趟能回答哪个本地装置回答不了的问题？"）。
+> **118.** **判据要覆盖"目标环境真正会拒绝的东西"，而不是"我能方便测的东西"。**
+>   L0/L1 两条判据（符号/版本可解析、不跳进不可执行区）**成本很低**，
+>   却在此前的 15+ 道门禁里**一道都没有** ⇒ 门禁的完备性必须**从失败模式反推**，不能从"我会写什么"正推。
+> **119.** **"零日志"必须先排除"我们自己没让它跑起来"。**
+>   本次「零日志」被归因过 5 个 ELF 结构假设（全部证伪），真因是**一个 25 字节的字符串**。
+>   顺序应当是：**先证"进程启动了"**（探针/静态对照/qemu strace），**再谈"为什么崩"**。
+
+---
+
+## 0.54 ★★★★★ 第 111 轮（2026-10-01）：**启动链最细一级判据 `strace_diff.py`** ＋ 云上阶梯实跑
+
+> 用户口径：「全量进行下一步……如果存在绕圈，就必须跳出来，然后联网寻找最优且具有根源解决的方法推进。
+> 我不要补丁，要根本性的解决方案」。
+> 本轮**零真机**：把"两侧 strace 归一化逐行对齐"补成一级判据，并在云上把 **C4/C5 阶梯**跑完。
+
+### A. 新判据：`tools/strace_diff.py`（**首个分叉点**）
+现有三条启动链判据都是**粗粒度**：`behav_diff.py`（事件）、`milestones.py`（阶段）、
+`qemu_coverage.py`（比例）。两侧「都过 M4、都 exit=139」时，它们**回答不了"第一条不同的 syscall 是哪一条"**。
+而这份粒度的数据 **`qemu-user -strace` 本来就在采**（`ci_qemu_behav.sh` 落在
+`report/qemu_c*/probe_stderr_<label>_strace.txt`），只是从来没人做逐行对齐。
+
+| 归一化规则 | 说明 |
+|---|---|
+| 抹掉 | 行首 pid；`0x…` → `0x#`（地址/指针必然不同） |
+| **保留** | 系统调用名、**字符串实参（路径/文件名）**、十进制标量、`PROT_*`/`MAP_*`、`= 返回值`、`errno=N` 及文字 |
+| **白名单噪声** | `set_tid_address`/`getpid`/`gettid`… 的**返回值就是 pid** ⇒ 必然不同（不抹时实测产生 **1/2 的假分叉**：523 vs 560） |
+| 不许 | **不做"只取公共前缀"的截断**（该判据已被两次证伪）；分别报 **等号前缀 / 分叉段 / 等号后缀** |
+| 自动分级 | **装载几何类**（`mprotect/mmap/munmap/brk…` 页跨度不同 ⇒ 布局不同，预期会有）vs **行为类**（真正要修的） |
+
+### B. 云上实跑（`tools/cnb_ladder.sh`，CNB 云开发，**不需要用户任何动作**）
+复用成熟装置 `ci_qemu_behav.sh`（铺环境 / 三桩 / guest shim / 行为指纹 / 里程碑 / 覆盖率），
+只**新增** strace 对齐这一级。`SYSROOT=/arm-root-device`（glibc 2.29 + 设备自带库）+ 三桩（libkms/libdrm/libasound）。
+
+**结果（C4 与 C5 完全一致）**：
+
+| 项 | 数值 |
+|---|---|
+| 归一化后行数 | **A=360 ／ B=360**（无桩时是 228 ⇒ **阶梯被三桩推高了**） |
+| 等号前缀 | **271 行（75.3%）** |
+| 分叉区域 | **1 段**，且为 **装载几何类**；**行为类 = 0** |
+| 唯一分叉 | `mprotect(0x#,4096,PROT_READ)` vs `mprotect(0x#,8192,PROT_READ)` |
+| 等号后缀 | **88 行**（含**逐字相同**的 `SIGSEGV si_addr=NULL` 与 `core dumped`） |
+| 里程碑 | 两侧**完全同步**：M0✓ M1✓ M2✗ M3✓ M4✓ M5✗ M6✗ M7✗，**exit=139 双方相同** |
+| 覆盖率（rebuild，C4） | 已执行 **6/223 = 2.69%**（沙箱在 M4 后即崩，两侧同崩） |
+
+⇒ **结论：在设备真 sysroot + 三桩下，我方产物的运行期系统调用序列与原厂"行为类分叉 = 0"。**
+
+### C. 那唯一一处差异的**精确解释**（可复算，且**明确不追**）
+| | `PT_GNU_RELRO` vaddr…end | 页跨度 | ld.so `mprotect` |
+|---|---|---|---|
+| 原厂 | `0x3ae5c4 … 0x3af000`（filesz 2620） | **1 页** | **4096** ✅ 与实测一致 |
+| 我方 | `0x4dcb04 … 0x4de548`（filesz 6724） | **2 页** | **8192** ✅ 与实测一致 |
+
+⇒ 根因是**我方 RELRO 内容更大**（6724 vs 2620 B），而 RELRO 更大是**布局碎片化**（§0.1 架构矛盾）的下游效应。
+**它不是可独立修掉的 bug**。**处置：记为「保真度」项，不追** —— 追它就是重走"绕圈 DIVERGE"的老路。
+
+### D. 本轮暴露的装置不足（下一轮入口）
+1. **guest shim 是否建成未被取证**：`ci_qemu_behav.sh` 把结果写在 `$OUT/shim_build.txt`，
+   本轮**没有取回它** ⇒ 无法断定"未带 shim 降级跑"。**下一轮必须一并取回**（并加一条 fail-closed）。
+2. 三桩下两侧仍停在 M4→M5 之间并**同崩在 NULL** ⇒ 要再把阶梯推高，需要**更完整的桩环境**
+   （现存 `fake_mem.c` 已把物理寄存器映射换成匿名零页，但 DRM/SFC 的**返回值**仍需桩"做成成功"）。
+3. `milestones.py` 的 M6/M6R 在两侧都是"未走到" ⇒ 目前**无法用阶梯区分 zip/资源包这一段**。
+
+### E. 新的判据分层（本项目的"尺子"现在有四档）
+| 档 | 判据 | 粒度 | 跑在哪 |
+|---|---|---|---|
+| 1 | `diff_exec.py` DIVERGE | 逐函数、逐输入 | 本机/云 |
+| 2 | `strace_diff.py` **首个分叉点**（新） | 逐系统调用 | 云（设备真 sysroot） |
+| 3 | `milestones.py` M0–M7 | 逐阶段 | 云（同上） |
+| 4 | `qemu_coverage.py` | 逐比例 | 云（同上） |
+
+★ **档 2 是本项目在"设备之前"能拿到的最细保真判据。**
+
+---
+
+## 0.55 ★★★★★ 第 112 轮（2026-10-01）：**三个根修** —— 装置层面的静默缺陷 + 首个"覆盖率非对称"被定性为仪器伪影
+
+> 用户口径：「全量进行下一步……如果存在绕圈，就必须跳出来……我不要补丁，要根本性的解决方案」。
+> 本轮**零真机**，但把**装置自身**的三个静默缺陷挖出来并修掉 —— 它们的共同后果是
+> **"结论建立在比自己以为的更浅的观测上"**，这正是"绕圈"的另一种形态。
+
+### A. 系统性枚举"沙箱缺什么"（一次列清，而不是逐个补桩）
+对 C4 的 360 行工厂侧 strace 做**失败系统调用全枚举**，滤掉 ld.so 的 hwcap/桩目录搜索噪声后：
+
+| 类别 | 条数 |
+|---|---|
+| `openat/stat64/access` 失败（真实环境要素） | **`/dev/dri/card0..card15` 共 16 条 —— 唯一一类** |
+| ld.so 搜索路径（hwcap 子目录、桩目录） | 其余全部（噪声） |
+
+⇒ **沙箱与设备之间的差距，被压缩成一个可枚举的清单。** 这是"补桩"从**手艺**变成**机械**的前提。
+★ 且 `tools/guest_shim/drm_stub.c` **已经实现了** `drmIoctl` + `dumb_fill` + `drmMode*` 全套
+⇒ 理论上"只要 open 成功，后面可走桩"。
+
+### B. `/dev/dri/card0` 实验：**预登记的 E1/E2 都不完全命中**（如实记）
+| | 无 `/dev/dri` | 有 `/dev/dri/card0`（普通文件） |
+|---|---|---|
+| 归一化 strace 行数 | **360 / 360** | **348 / 348**（更短） |
+| rebuild 专有函数覆盖 | 6 / 223 | **13 / 223** |
+| factory 专有函数覆盖 | — | **14 / 223** |
+| 里程碑 | M0✓M1✓M2✗M3✓M4✓M5✗ | 同（不变） |
+
+★ 我预登记的是「E1 行数显著增长或 M5 变 ✓ / E2 显著更早终止」。实测是**"行数变短但覆盖翻倍"** ⇒
+**预登记判据的"形状"写窄了**（漏了"覆盖深度"这个维度）。**教训：预登记要覆盖"所有可能的方向"，不只是两个极端。**
+★ 并**修正**了 `ci_qemu_behav.sh` 里那条旧结论（"假 /dev/dri ⇒ 覆盖率下降"）：
+在「设备真 sysroot + 三桩」这套配置下**方向相反**。已按"只增不删"在其后**追加**实测数据点，
+并立规：**环境结论必须与它成立时的配置一起引用**。
+
+### C. ★★★ 首个"覆盖率非对称"（14 vs 13）—— 定性为**仪器伪影**，不是实现退步
+| 侧 | 符号 | 地址 | 大小 |
+|---|---|---|---|
+| 工厂 | `run_process.constprop.0` | 0x0d628 | **80 B** |
+| 我方 | `run_process_constprop_0` | 0x4e4734 | **80 B** |
+
+体量**逐字节同级**；而同一轮 `strace_diff` 的行为类分叉 = **0**（两侧系统调用序列一致）。
+根因：`tools/qemu_coverage.py` 的"专有函数"维度用**固定名字表精确匹配**
+（`name2idx.get(r['name'])`）⇒ 工厂名带点、我方名带下划线 ⇒ **我方被漏计**。
+**修法（根修，非补丁）**：建索引时同时注册 `a.b.c ↔ a_b_c` 两种写法；查找时先精确后别名；
+并把"名单里有、两侧符号表都找不到"的名字**显式报出来**（fail-loud），
+免得名字对不上时被静默当成"未执行"（那会把仪器缺陷伪装成实现退步）。
+
+### D. ★★★ 装置静默降级：**guest shim 从未建成**（第 111 轮的疑点坐实）
+`report/qemu_c4/shim_build.txt` 只有 154 B：
+```
+  [shim] CC=cc  目标 glibc=2.29
+cc: error: unrecognized command-line option '-mfloat-abi=hard'
+```
+`ci_qemu_behav.sh` 在**不带 `CC`** 的情况下调 `build_guest_shim.sh` ⇒ 落到宿主 `cc`（x86_64）⇒ 失败
+⇒ harness **只在报告里写一行**就继续跑 ⇒ **整轮"不带 shim"**（物理寄存器映射没被换成匿名零页，
+所有 CGM_* 注入钩子也都不在）⇒ **可观测窗口比报告声称的浅得多，而结论行没有任何标记**。
+**修法（三条一起上）**：
+① `cnb_ladder.sh` **显式构建** shim 并 `export CC`（让 harness 内部那条路也能成）；
+② 用 `CGM_SHIM_SO=<绝对路径>` **把产物直接指定**给 harness（不再依赖现场编译）；
+③ **fail-loud**：建不出来直接打 `★★ SHIM-FAIL`，不许静默降级。
+★ 另修一处 fetch 缺陷：`/tmp/ladder.log` 用 `tr '/' '_'` 生成 `_tmp_ladder.log` ⇒ **取回失败**
+（所以第 111 轮"shim 是否建成"根本没法取证）。改为显式命名。
+
+### E. 新纪律 120–122
+> **120.** **判据实现必须与判据意图逐字对照。** 本会话两次同类事故：
+>   `abi_check` 用**全文件子串搜索**找 `PT_INTERP`（宿主路径含该子串 ⇒ 假 PASS）；
+>   `qemu_coverage` 用**精确名**匹配专有函数（`.`/`_` 差异 ⇒ 假"未执行"）。
+>   两处都**静默产生错误结论**。⇒ 凡"按名字/字符串匹配"的判据，必须写**名字归一 + 未匹配显式报警**。
+> **121.** **环境结论必须与它成立时的配置一起引用。** 同一个 `/dev/dri` 节点，在
+>   「jammy+单桩」下使覆盖率下降、在「设备真 sysroot+三桩」下使其翻倍 ⇒ 跨配置套用会得到**相反方向**。
+> **122.** **仪器不许静默降级。** 降级（不带 shim / 用旧产物 / 少跑一侧）必须在**结论行**上标注，
+>   否则整轮判据的可信度被高估。`ci_qemu_behav.sh` 的 shim 分支已按此加标记。
+
+---
+
+## 0.56 ★★★★★★ 第 112 轮续：**修好 shim 之后，阶梯一次跳到 M5，并首次暴露真实行为分叉**
+
+### A. 修好 guest shim 的即时后果（同一产物、同一环境、唯一变量 = shim 是否真的加载）
+| 项 | **不带 shim**（第 111 轮，静默降级） | **带 shim**（本轮） |
+|---|---|---|
+| M0 进程启动 | ✓ | ✓ |
+| **M2 SPI/SFC 初始化** | **✗** | **✓** |
+| M3 driver.so 加载 | ✓ | ✓ |
+| M4 DRM 显示 | ✓ | ✓ |
+| **M5 main_Menu 入口** | **✗** | **✓** |
+| M6 UI 资源包打开 | ✗(未走到) | **factory ✓ ／ rebuild ✗** |
+| MX 终止 | exit=139 | exit=139 |
+| rebuild 专有函数覆盖 | 6 / 223 (2.69%) | **38 / 223 (17.04%)** |
+| factory 专有函数覆盖 | — | **50 / 223 (22.42%)** |
+| strace 行为类分叉 | **0** | **55** |
+
+⇒ **"行为类分叉 = 0"不是好消息，而是"窗口太浅"的症状。** 窗口一深，真实分叉立刻出现。
+★ 这直接否证了第 111 轮的乐观读法：**"一致"必须先问"一致在哪一层"。**
+
+### B. ★★★★★ 首个行为分叉 = **线程栈的 PROT_EXEC**（strace 索引 358）
+```
+工厂: mprotect(0x#, 8388608, PROT_EXEC|PROT_READ|PROT_WRITE) = 0   ← 8 MB RWX
+我方: mprotect(0x#, 8388608, PROT_READ|PROT_WRITE)           = 0   ← 8 MB RW（NX）
+紧接着 clone(CLONE_VM|…|CLONE_SETTLS|…)；且工厂多一条 set_robust_list(…)
+```
+根因（已用程序头直读证实，不是推测）：
+
+| | `PT_GNU_STACK` p_flags | p_memsz |
+|---|---|---|
+| 工厂 | **7（RWX，可执行栈）** | **0** |
+| 我方（旧） | **6（RW，NX 栈）** | **16 MB**（我们自己的 `-z stack-size=16777216`） |
+
+glibc 的 pthread 依据主程序 `_dl_stack_flags` 决定线程栈是否映射 `PROT_EXEC`
+⇒ **我方整条线程栈语义与原厂不同**。这正是 09-22 记录里的"嫌疑项 GNU_STACK 16MB/NX"，
+本轮**第一次拿到它的行为级证据**（此前只是"结构不同"，无法证明有影响）。
+
+### C. 根修（改什么 / 怎么改 / 如何回退 —— 已按红线纪律先声明）
+| | 内容 |
+|---|---|
+| **改什么** | `tools/link_full.sh` 两处链接参数 |
+| **怎么改** | ① lld 分支：删 `-z stack-size=16777216`，改 `-z execstack`；② `zig cc` 分支：加 `-Wl,-z,execstack` |
+| **为什么** | 让 `PT_GNU_STACK` 与工厂**逐字段一致**（fl=7、memsz=0）⇒ 线程栈带 PROT_EXEC |
+| **如何回退** | `cp build/_exp/link_full.sh.pre-execstack tools/link_full.sh` |
+| **为何必须在云上重建** | 仓库**不含构建产物**（`.o` 不入库）⇒ 云上 `FORCE_BUILD=1 sh tools/cnb_env.sh` 全量重建；本机不建任何环境 |
+
+★ 已加 `REBUILD=1` 通道到 `tools/cnb_ladder.sh`：云上全量重建 → 打印 `PT_GNU_STACK`（期望 flags=7）
+→ 再跑阶梯。**fail-loud**：重建失败打 `★★ REBUILD-FAIL`，不许拿旧产物冒充新结果。
+
+### D. 待验证（本轮结束时的状态）
+1. `-z execstack` 后行为类分叉是否下降、M6 是否变 ✓（**这是"栈标志就是 M6 的因"的直接检验**）。
+2. 55 处行为类分叉的**其余 54 处**需要逐段定性（`strace_diff.txt` 已列前 14 段）。
+3. `qemu_coverage` 的 fail-loud 名单又抓出 **2 个名字不匹配**（`save_state` / `load_state`）
+   —— 仪器修复正在生效；这两个名字也要归一。
+
+### E. 新纪律 123–124
+> **123.** **"两侧一致"必须写明"在哪一层一致"。** 本轮同一产物同一环境：
+>   浅窗口下行为类分叉 = 0，深窗口下 = 55。**"一致"是窗口的函数，不是产物的属性。**
+>   凡报"一致"，必须同时报**窗口深度**（strace 行数 / 里程碑 / 覆盖率三者一起）。
+> **124.** **结构差异必须先拿到行为级证据再动手。** `PT_GNU_STACK` 6 vs 7 早在 09-22 就被列为"嫌疑"，
+>   但因为只看结构无法证明有影响，一直没动。本轮靠 `strace_diff` 把"嫌疑"变成"首个分叉点"，
+>   才构成动手的充分理由。**"看起来不同"不是改的理由，"行为不同且指向它"才是。**
+
+---
+
+## 0.57 ★★★★★ 第 113 轮（2026-10-01）：**执行器可靠性**（三次静默/半静默失败）＋ `save_state/load_state` 定性为**尾调用别名**
+
+> 用户口径不变：「全量进行下一步……如果存在绕圈，就必须跳出来……我不要补丁，要根本性的解决方案」。
+> 本轮的主线仍是**验证 `-z execstack` 是否收敛 M6**，但过程中暴露了**执行器自身的三处可靠性缺陷**
+> —— 它们的共同特征还是那句话：**结论可能建立在比你以为的更浅/更错的观测上**。
+
+### A. ★★★ 执行器三次失败（全部已根修）
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | **run8 静默死亡**：ssh banner 正常、known_hosts 已写，但**远端一个字都没产出**，60 秒退出，`REMOTE-DONE` 从未出现，stderr 里也没有任何错误 | **复用的工作区其 ssh 授权已失效**（实测同一地址直接 `Permission denied`）；而 `report/ladder/.ssh` 本地写不进去（Permission denied）⇒ 文件里留着**旧工作区地址**，"看起来有地址"其实指向失效会话 | ① 启动前做 **ssh 鉴权探针**（`echo AUTH-OK`），不通过就**重开工作区**；② 远端结束必须留 `REMOTE-DONE`，本地**校验**它，缺则 `exit 21` **fail-loud** |
+| 2 | **RELINK-FAIL**：`ld.lld: error: no input files` + `tools/link_full.sh: line 306: -z: command not found` | ★ **我自己造成的**：把说明注释**插进了 `\` 续行的链接命令中间** ⇒ 注释行末尾没有 `\` ⇒ 命令在该处截断 ⇒ 后面的 `-z execstack` 被当成**新命令**执行 | 注释块**移到命令之前**；并在原处留警示注释。**教训见纪律 126** |
+| 3 | 覆盖率"名字无法匹配 2 个" | 经符号表+反汇编定性：**不是仪器缺陷，是真实缺口**（见下 §B） | 仪器改为**分两类报**（见下） |
+
+★ 新增 `REBUILD=2` 通道：`-z execstack` 是**链接期**改动，云上**只重链**（上传 `build/obj` + `build/upstream`，
+跑一次 `link_full.sh`）即可，比全量重建快一个数量级。重链后**连带校验** `PT_GNU_STACK` 与 `PT_INTERP`。
+
+### B. ★★★ `save_state` / `load_state` 的定性：**4 字节尾调用别名**，不是缺功能
+工厂侧符号：`save_state` @`0x2b86f0` **size=4**、`load_state` @`0x2b86f4` **size=4**。
+反汇编（决定性）：
+```
+0x2b86f0  b  #0x2b83e8     ← save_state  = 尾调用 retro_save_state
+0x2b86f4  b  #0x2b8570     ← load_state  = 尾调用 retro_load_state
+```
+我方重建里 `retro_save_state`（368 B）/ `retro_load_state`（352 B）**都在**，只是**没有这两个别名符号**。
+`ledger/functions.csv` 第 222/223 行把它们记为 `TODO` 且**无源文件** ⇒ 是**已知未实现项**，不是仪器 bug。
+
+**处置（纪律 124：不为"看起来不同"花关键路径预算）**：记为 **ALIAS**（语义等价于 `retro_*`），
+**不追**；并且**不**去"补一个 4 字节跳转"—— 那比别名**更差**（多一次跳，且与原厂那种"链接器产物"的成因无关）。
+仪器侧同步改进：`qemu_coverage.py` 把"名字对不上"**分成两类报**：
+① `source` 为空 / `status=TODO` ⇒ **真实缺口**；② 其余 ⇒ **仪器嫌疑**。免得两类混在一起被当成一种。
+
+### C. 新纪律 125–127
+> **125.** **复用远端会话前必须做鉴权探针。** 陈旧会话会"连得上但不干活"⇒ **静默零产出**，
+>   这比连不上更危险（连不上会立刻报错）。凡复用，先 `echo AUTH-OK`。
+> **126.** **注释不许插进 `\` 续行的命令里。** 续行命令中每一行都必须以 `\` 结尾，
+>   插一行不带 `\` 的注释 = **在该处截断命令**（实测一次 `RELINK-FAIL`）。
+>   ★ 与"含反引号的模板被 shell 当命令替换"（纪律 128 的前身）同类：**都是"我在写注释/文档，shell 在执行"**。
+>   凡改动含续行的命令行，**改完必须实机跑一次**，不能只看 `sh -n`（`sh -n` 通过，因为语法本身没坏）。
+> **127.** **远端执行器必须留完成标记，本地必须校验它。** 缺标记 ⇒ 本轮**无有效结论**，
+>   所有数字一律作废（run8 就是"连 banner 都正常"的静默失败）。
+
+---
+
+## 0.58 ★★★★★★ 第 113 轮续：`-z execstack` 生效（产物级）＋ **尺子再修三层（55 → 10 段）** ＋ **分叉链定位到 `TUnzip::Open`**
+
+### A. `-z execstack` 根修：产物级已验证
+云上重链（`REBUILD=2`，只重链不重编）后：
+```
+arm-linux-gnueabihf-readelf -lW … | grep GNU_STACK
+  GNU_STACK  0x000000 0x00000000 0x00000000 0x00000 0x00000 RWE 0      ← flags=7 (RWX), memsz=0
+PT_INTERP = '/lib/ld-linux-armhf.so.3'  （filesz=25）                    ← enforce_interp 在重链后自动修回
+rebuilt sha = 9081fe0205b51845
+```
+⇒ `PT_GNU_STACK` **与工厂逐字段一致**；且"重链后 INTERP 仍是设备侧路径"证明 `enforce_interp` 这条根修**在正规流水线上自洽**。
+**行为上的直接效果**：`strace` 里那条 `mprotect(8MB, PROT_EXEC|R|W)` vs `(8MB, R|W)` 的分叉**消失**了。
+★ 但 **M6 仍分叉**（factory 打开 `ui_cn.zip`，rebuild 未走到）⇒ **栈标志不是 M6 的因**（如实记录，不硬凑）。
+
+### B. ★★★ 尺子再修三层：`-strace` 的假分叉（55 → 10 段）
+`strace_diff.py` 第 110 轮只做了"逐行归一"。本轮实测它**大量误报**，三层修正（**全部透明计数上报**）：
+
+| 层 | 问题（实测） | 修法 | 效应 |
+|---|---|---|---|
+| ① **按线程分开** | `-strace` 是**多线程交错**输出，交错时**丢换行**：`futex(...)18024 mmap2(...)`、`mmap2(...)18983 futex(...)` ⇒ 把"调度顺序不同"当"行为差异" | 用 pid 标记切流、**按 pid 分组**，两侧线程**按首次出现顺序配对** | 55 → 50 |
+| ② **十进制地址** | `nanosleep(1082131616,…)` —— 参数里的**十进制栈地址**（`0x` 判据抓不到） | ≥8 位十进制数 → `#`（本 guest 里那只会是地址） | 计入 ③ |
+| ③ **时序 / 日志** | 剩余分叉被 `futex`/`nanosleep` 与**逐字符 `write(2,…,1)` 日志**主导（非功能差异） | 时序类丢弃、连续 stderr 写**折叠**为一个标记（`write(2,#)xN`） | 50 → **10** |
+
+★ 透明计数实测（rubuild 侧）：`时序类 390 ／ stderr 日志折叠 721 ／ 续行合并 6`。
+★★ 我在这层**又踩一个自己的 bug**：日志折叠的判据写成 `,2,`，而实际串是 `write(2,…`（fd 跟在**左括号**后）
+⇒ 折叠恒为 0 却看不出问题。**修好后**折叠 721 条、分叉从 50 掉到 10。
+⇒ **纪律 128**：**归一化必须打印"拿掉了多少"**；`0` 这个数字本身就是报警（它可能意味着**判据写错了**）。
+
+### C. ★★★★★ 分叉链已定位到**具体函数**（这才是本轮的真产出）
+修好尺子后，tid#0 的 10 段分叉里，**功能性**的那一段是：
+
+```
+[delete]     A-only: read(4,0x#,4096) = 3600        ← 工厂读了 filelist.xml 共 3600 B（×2 次）
+[replace]    A[410:461](51 行)  B[407:409](2 行)
+   A: close(4) | openat("/sdcard/cubegm//ui_cn.zip",O_RDWR)=4 | fstat64 | _llseek | … ×51
+   B: close(4) | --- SIGSEGV si_code=2 --- | write(2,#)x84
+```
+
+崩溃现场（rebuild）：`SIGSEGV si_code=2 (SEGV_ACCERR) si_addr=0x005401d8`
+符号定位：**`0x5401d8` 正是 `_ZN6TUnzip4OpenEPvjj`（`TUnzip::Open(void*, unsigned, unsigned)`, 76 B）的入口**。
+该地址落在**我方 `.text`**（`[0x4e1000,0x540fc8)` flags=5 RX）内；核对了该点**没有** OBJECT 型符号与之同址
+（`.text` 内"多类型同址"的 502 处全部是 ARM 的 `$a` 映射符号，属正常）。
+
+⇒ **因果链（已收窄到一点）**：
+1. 两侧都成功 `openat("cores/filelist.xml")`；
+2. **工厂做了 `read(fd,4096)=3600`，我方没有**；
+3. 工厂随后 `openat("//ui_cn.zip")` ×3；**我方直接崩在 `TUnzip::Open` 入口**。
+⇒ 差异出在**读 `filelist.xml` 之后、调用 `TUnzip::Open` 之前**的这段我方代码路径上。
+
+### D. 下一轮入口（已收窄，不需要真机）
+1. 取**该崩溃点的 PC / LR / SP**（harness 已有 `exec_align_probe`（`CGM_EXEC_ALIGN=1`）/ gdbstub 回溯），
+   判定 `si_code=2` 是**取指权限**还是**写只读页**，并定位到具体指令。
+2. 对照两侧源码：`filelist.xml` 的读取与 `TUnzip::Open` 的调用点（工厂侧 0x5401d8 在我方是 `TUnzip::Open`）。
+3. `canon` 的 stderr 折叠会改变行数，需在**两侧同口径**下比较（已是同口径）。
+
+---
+
+## §0.57 第 114 轮：真机「零日志」之后的下一个死因 —— **段页共享**（GAP 16.100）
+
+### A. 崩溃现场（程序自带 handler 打印，**直接读出来的，不是猜的**）
+`report_qemu_c4` 的 strace 里那些逐字符 `write(2,...,1)` 就是 **guest shim 的 SIGSEGV 处理器**在打印。
+把 `write(2,…)` 的载荷按线程重接（工具：`build/_exp/_dec.py` 的等价逻辑）就还原出原文：
+
+| | rebuild（我方） | factory（原厂） |
+|---|---|---|
+| `si_addr` | 0x005401d8 | 0x00000004 |
+| **PC** | **0x005401d8（= si_addr）** | 0x0002b3c8 |
+| LR | 0x004e4e20 | 0x00017ec8 |
+| `[pc]` | `0xe92d4830` = `push {r4,r5,fp,lr}` | `0xe1d300b4` |
+| `[pc-4]` | `0xe12fff1e` = **`bx lr`** | `0x0a000264` |
+
+⇒ **PC == si_addr ⇒ 不是"写只读页"，是"取指故障"**；`[pc-4]` 是 `bx lr`，说明某函数返回到
+0x005401d8 后**该页不可执行**。而 `si_code=2` = `SEGV_ACCERR`。
+
+### B. 根因（一条页几何，可机械判定）
+```
+[7] PT_LOAD va=0x004e1000 fl=5 (RX) filesz=0x5ffc8  ⇒ 末端 0x540fc8 **未页对齐**
+[8] PT_LOAD va=0x00540fc8 fl=4 (R)  filesz=0x1840   ⇒ 紧随其后（= .ARM.exidx）
+页 0x540000 被这两段共享；加载器逐段按页 mmap，**表序最后的 R 段覆盖 ⇒ 该页丢 X**
+```
+该页内 **24 个 FUNC**：`TUnzip::Open/Get/Find/Unzip/Close`、`unztell`、`unzeof`、
+`FormatZipMessageU`、`DosDateTimeToFileTime` … 全 XUnzip/Zip 一族。
+**原厂同口径共享页 = 0**（只有 2 个 PT_LOAD，0x00008000 / 0x003ae000 **都页对齐**）。
+⇒ 这解释了 M6 里程碑分支：工厂 `openat("//ui_cn.zip")` ×3，**我方 0 次**（跳进 `TUnzip::Open` 就崩）。
+
+### C. 联网核实（不是我的推断）
+- **LLVM D21801**（lld 链接脚本场景，逐字吻合）：*"Linux kernel will map them one by one … with
+  map size of 0x1000 (page rounded) and different protection attributes. Finally one will have region
+  0x11000000-0x11001000 mapped with RW attributes. **Jumping to entry point … will immediately cause
+  protection fault (SIGSEGV). Not a single user instruction will be executed**."*
+- **MaskRay（lld 维护者）**：*"A page serves as the granularity at which memory exhibits different
+  permissions, and within a page, we cannot have varying permissions … Subsequent PT_LOAD segments
+  then overwrite the previous memory regions."*
+- **内核侧**（Linus `b212921b13bd`，5.4）：*"elf: dont use MAP_FIXED_NOREPLACE for elf executable
+  mappings"* —— 因为**旧二进制里有重叠段**，内核回退到 `MAP_FIXED`（= **覆盖，而不是拒绝**）。
+  ⇒ 真机上后果与 qemu 实测**同向**：该页被后段权限覆盖。（4.17–5.4 之间的内核可能直接
+  `EEXIST` 使 execve 失败 —— 与本项目 GAP 16.69 的真机现象同族。两条路都是致命的。）
+
+### D. 根修 + 门禁（**不重复写规则**）
+- 根修：`linker/factory.ld` 里 `.ARM.exidx` 加 `ALIGN(0x1000)`（**同时改生成器 `tools/gen_data_module.py`**，
+  否则下次 regen 静默回退 —— 这就是 `check_regen_contract.py` 存在的理由）。
+  备份：`build/_exp/factory.ld.pre-segexidx` ／ `build/_exp/gen_data_module.py.pre-segexidx`。
+  回退：`cp build/_exp/factory.ld.pre-segexidx linker/factory.ld`。
+- 新门禁：`tools/seg_page_audit.py`（**唯一实现**）。
+  不变量：*任一被 >1 个 PT_LOAD 覆盖的页，其**最终权限**（表序最后一段）必须 ⊇ 覆盖它的所有段权限并集*。
+  已钉进 `link_full.sh`（fail-closed `exit 20`）；`pre_device_gate.py` 的 **P10** 只**转发**调用它。
+  自证：反例=当前产物（抓 1 页／24 个 FUNC）、正例=原厂（0）、合成反例（可执行段末端多占一页）必被抓。
+- `check_regen_contract.py` 增加不变量 ⑥（`.ARM.exidx` 必须页对齐）+ 反例自证。
+
+### E. 执行器缺陷（三个，全修）
+1. `REBUILD=2` 上传清单漏 `src/upstream/xunzip/XUnzip.o` ⇒ 云上 fail-closed 报 `XUnzip 对象不存在`。
+2. **改了 `linker/factory.ld` 却没上传 `linker/`** ⇒ 云上链接 rc=0 但布局是旧的
+   ⇒ **新门禁 SEGPAGE-FAIL 替我们发现"云上没吃到我改的文件"**。现 `UP` 固定含 `linker src/data`。
+3. 云上产物**从未取回**（本地一直是旧版，静态分析对着过期产物做结论）⇒ 现自动取回并替换，
+   旧版存 `build/_exp/rkgame.rebuilt.pre-cloudfetch.elf`。
+4. `REMOTE-DONE` 只写 stderr，而该通道实测不可靠 ⇒ 同时写 `/tmp/ladder.log`，本地**任一处见到即算完成**。
+
+> **129.** **「一个页被两个权限不同的段共享」是一类独立死因**，任何"段几何"门禁都必须含它。
+>   判据要写**后果**（*最终权限 ⊇ 覆盖该页全部段权限的并集*），不是"段是否重叠" ——
+>   本项目实测有 **2 个页是良性共享**（RX 覆盖 R、RW 覆盖 R），只有 1 个是致命的（R 覆盖 RX）。
+>   识别信号：`si_code=2 (SEGV_ACCERR)` 且 **`si_addr == PC`** ⇒ 取指故障；对端若是"打开某资源失败"，
+>   几乎可以断定是**该资源所在代码页丢了 X**。
+>
+> **130.** **云上执行器的"输入清单"本身就是判据的一部分。** 改了 `linker/` 却没上传 ⇒
+>   云上链接 **rc=0** 但布局是旧的（"改了个寂寞"）。症状是"门禁 FAIL 而代码看着没问题" ——
+>   **这是门禁在替我们发现"云上没吃到我改的文件"**，不是门禁误报。凡链接/编译输入（脚本、镜像 .S、
+>   对象集）都必须进上传清单；对照实验的**自变量在哪，就上传到哪**。
+>
+> **131.** **陈旧产物会冒充新观测。** 本轮 `SCEN=4` ⇒ C5 根本没跑，而 `report/ladder/` 里仍躺着
+>   上一轮的 c5 strace ⇒ 我据此解码出"仍崩在 0x5401d8"的**错误结论**（与"仪器静默降级"同族）。
+>   ⇒ 两条硬规矩：**① 取回前先清本地产物目录**；**② 阶梯必须绑定被测产物的 sha 并打印在场景标记里**，
+>   否则"这一轮跑的到底是哪份"无法从日志判定。
+>
+> **132.** **远端完成标记必须落在"已验证能取回"的通道上。** 实测 stderr 不可靠（ssh 横幅有、
+>   远端 `echo >&2` 没有），而 `/tmp/ladder.log` 每次都能取回 ⇒ 同时写两处，本地**任一处见到即算完成**，
+>   并打印"通道=…"。日志类仪器一律照此办理。
+
+> **133.** **"我写的检查器"本身就是一条判据，必须先自证。** 本轮那句"反引号行数"的临时检查
+>   因为**定位锚点取错**（用 `next(... if 'REMOTE-DONE' in l)` 找字面量结束行，先匹配到**注释里的**
+>   REMOTE-DONE）⇒ 区间为空 ⇒ 报 `0` 的**假绿**；紧接着本地 shell 就因反引号做了命令替换、
+>   整轮静默死掉。⇒ 凡"扫一段区间/一份清单"的检查：① 用**成对锚点**，锚点缺失时**报错退出**
+>   （不许静默通过）；② **打印判据覆盖的行数/字符数**，让"0 命中"可被复核；③ 带**反例自证**。
+>   已落地：`tools/ssh_literal_guard.py`（反引号 / 未转义 `$(` 必抓；干净样本必过；锚点缺失报 11）。
+>
+> **134.** **凡"远端脚本写在本地双引号字面量里"，反引号与 `$(` 一律是禁忌。** 本地 shell 会先吃掉它们，
+>   远端永远看不到 —— 且症状是"某轮悄无声息地死掉"，极难归因。每次改这类脚本后**必须**跑
+>   `tools/ssh_literal_guard.py <脚本>`（已进 `cnb_gates.sh`）。
+
+---
+
+## §0.58 第 115 轮（2026-10-02）：Thumb 根修 —— libiconv 独立真 GCC `-mthumb`（云上一锤定音）
+
+### A. 任务与根因（承第 107 轮，已联网核实真 GCC/真 clang 均支持 Thumb2）
+工厂 804 个函数里 **308 个是 Thumb**（`st_value` bit0=1），且**全部属 libiconv/libcharset**；
+我方 809 个函数 Thumb=0（全 ARM）。根因：`zig cc`（clang 驱动）对 `arm-linux-gnueabihf` target
+**静默忽略 `-mthumb`**（实测 `-O2` 与 `-O2 -mthumb` 产物逐字节相同；`-Xclang -mthumb` 报 unknown）。
+⇒ 这不是 libiconv 的问题，是**工具链根因**，非补丁：libiconv/libcharset 两个 TU 独立走真 GCC `-mthumb`，
+其余上游库（stb/mxml/mp3）保持 zig ARM 不变。
+
+### B. 本轮改动（第 115 轮）
+1. `tools/build_upstream.sh`：新增 `ICONV_CC`（默认 `$CC`）+ `ICONV_FLAGS`（含 `-mthumb`）；
+   `ICONV_ARCH` **必须从 `ICONV_CC` 推导**（不能复用跟 `$CC` 走的 `$ARCH` —— 否则本机/CI 的 zig
+   会收到 `-march=armv7-a` 而无 `-target` ⇒ 退化成 x86_64 target，`unsupported option -march` 回归）。
+2. `tools/build_upstream.sh`：新增 `ICONV_ONLY=1` 开关（只编 libiconv/libcharset，跳过 stb/mxml/mp3），
+   把「libiconv 变 Thumb」做成**严格单变量**（其余上游库由上传的 zig ARM `.o` 供应）。
+3. `tools/cnb_ladder.sh`：`REBUILD=3` 分支 —— 云上 `fetch_bootlin63` → `ICONV_ONLY=1 ICONV_CC=<真GCC>`
+   → `readelf -A` 验 Tag_THUMB_ISA_use → `link_full.sh` → `isa_mode_gate` → `seg_page_audit`。
+   上传清单：`build/obj build/upstream src/upstream/xunzip/XUnzip.o src/upstream/libiconv17 src/upstream/libcharset`。
+
+### C. 判据（**先写死**，避免事后凑结论）
+- P1 `ICONV-FAIL` 不出现 ⇒ 真 GCC 编 libiconv 成功；
+- P2 `readelf -A libiconv_iconv.o` 出现 `Tag_THUMB_ISA_use` ⇒ **真产 Thumb**；仍无 ⇒ 未生效（回退不成立）；
+- P3 `isa_mode_gate` mismatch **< 308** ⇒ 收敛；=308 ⇒ 无效（云上没吃到改动，对照 §0.57 教训 130）；>308 ⇒ 劣化，禁止采纳；
+- P4 `seg_page_audit` PASS 不回退（Thumb 改动不得破坏段页门禁）；`RELINK-FAIL` 不得出现；
+- P5 若 P2 真、P3 收敛：**更新 `ledger/isa_mode_baseline.txt` 到新 mismatch 值**（棘轮可下调一侧）。
+- 失败回退：`git checkout tools/build_upstream.sh tools/cnb_ladder.sh`（本轮改动仅此两文件 + 本记事）。
+
+### D. 执行结果（2026-10-02，云上一锤定音，全部判据通过）
+- P1 ✓ `ICONV_CC=cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc`（工厂同期，cache hit）；
+  `OK libiconv_iconv.o` + `OK libiconv_localcharset.o`；`ICONV-FAIL/BOOTLIN-FAIL/RELINK-FAIL/SEGPAGE-FAIL` 全部 **0 次**。
+- P2 ✓ `readelf -A` ⇒ **`Tag_THUMB_ISA_use: Thumb-2`**（真产 Thumb，非假绿）。
+- P3 ✓ `isa_mode_gate` ⇒ **工厂 Thumb 308/804 ｜ 我方 Thumb 308/809 ｜ 共有 788 ｜ 模式不同 0**（**308 → 0**）。
+- P4 ✓ seg_page_audit / PT_INTERP / GNU_STACK 全不回退；C5 rebuild 仍 **M6R✓ M7✓ exit=124**（factory exit=139）。
+- P5 ✓ 基线 `ledger/isa_mode_baseline.txt` **308 → 0** 已落地。
+- 额外：零依赖对拍 `build/_exp/_iconv_size_cmp.py` —— 307 个 libiconv 相关共有函数里
+  **211 个体积逐字节相同**，体积比**中位 1.0000 / 均值 0.9978**（模式对齐后体积也逼近逐字节）。
+- 结论：**308→0 是决定性的根修收敛**，非补丁；Thumb 是工厂 libiconv 的逐函数 1:1 真实档位。
+  下一轮入口已开放：工厂 308 Thumb 全部逐函数对拍（体积 211/307 全同，剩 96 个偏差多为
+  iso2022/gb18030 等边角 charset，可再单变量核对 `-O0` 档位是否比 `LIBOPT` 更贴工厂）。
+
+## §0.59 第 116 轮（2026-10-02）：B 线根因锁定 —— "read(4,4096)=3600" 归因**公开更正**（wav 非 filelist）
+
+### A. 公开更正（先认错，证据在 §B）
+上一轮（summary 里）我说"B 线 = filelist.xml 读取差异、我方少读 read(4,4096)=3600×2"。
+**错。** 铁证：`read(4,4096)=3600` 属于 **chord.wav / Button1.wav**（音效数据整文件 7696=4096+3600），
+**不是** `cores/filelist.xml` —— filelist.xml 两侧**完全一致**（4096+4096+462+0，共 8654B 全读）。
+归属辨明靠 strace 里 openat 的**实际路径**（`/sdcard/cubegm//chord.wav` =4, 顺序 read 4096+3600 后才 close）。
+
+### B. B 线真根因（铁证，第 116 轮）
+- 工厂读 wav：`open(chord.wav)=4 → read(4096)=4096 → read(4096)=3600 → close`（**整文件 7696B**）。
+- 我方读 wav：`open(chord.wav)=4 → read(4096)=4096 → close`（**只读 4096B 就停**，差 3600）。
+  存疑：我方运行目录里 chord.wav/Button1.wav 是否仅为 4096B 截断副本 — 若是，根因在**装载环境**；
+  若是完整 7696B，根因在 `mui_LoadSetting` 的 wav 装载代码（下节）。待云上实测二选一。
+- wav 物理事实：`chord.wav`/`Button1.wav` 各 7696B；data chunk size=7652（=7696-44 头）。
+- filelist.xml=8654B，两侧 4096+4096+462+0 全同 ⇒ **无差异，排除**。
+
+### C. 代码级根因（已根治，待云上复验）
+`src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c`：Ghidra 把 44B WAV header 的 fread
+拆成 `auStack_154[22]`（栈偏移 0..21）+ 四个"孤立栈变量" `local_13e`(22, num_channels, ushort)、
+`local_13c`(24, sample_rate, u4)、`local_132`(34, bits_per_sample, ushort)、`local_12c`(40, data_size, u4)。
+⇒ 重建后 ① `fread(auStack_154,1,0x2c)` 写 22B 数组 = **栈溢出 UB**；② `local_12c`(=data_size)
+在 C 语义里**从未被写入** ⇒ `malloc(local_12c+1)` 拿垃圾尺寸、第二次 fread 读错字节数。
+**根修（非补丁）**：还原 `wav_header_t` 结构体（`riff[22]+num_channels+salt_rate+byte_rate+block_align
++bits_per_sample+data_id[4]+data_size`，合计 **44B 不变量**，arm EABI 布局 offset 22/24/28/32/34/36/40
+与 Ghidra 栈偏移**精确吻合**，纯算术已自证）。fread 改 `fread(&wav,1,0x2c)`，`local_12c→wav.data_size`、
+`local_132→wav.bits_per_sample`、`local_13c→wav.sample_rate`、`local_13e→wav.num_channels`。
+字段语义复原（WAV 头标准）：`_16_4_`=sample_rate、`_8_4_`=(bits_per_sample>>3)-1（每采样字节数-1）、
+`_12_4_`=num_channels-1、`_28_4_`=data_size+base（数据末尾指针）。语义不变，仅消除 UB 未初始化。
+- 回退：`git checkout -- src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c`
+
+### D. A 线决定性结论（第 116 轮，**两处自我更正**）
+- **工厂 `_libiconv_version` = `0x0110` = libiconv 1.16**（读 ELF 符号表 + 反查 .data 实测，非猜）。
+  我方 `src/upstream/libiconv17/iconv.h:23` 宏 `#define _LIBICONV_VERSION 0x0110` **同为 1.16**。
+  ⇒ 目录名 `libiconv17` 是**误标**，实际双方源码都是 1.16。
+  ⇒ **证伪 §0.9.E「上游发散=版本错配」**（那是对"整体上游 46 发散"的旧判断，不适用于 libiconv 这 96 个）。
+- **`iconv.c` 是单 TU**（一个 TU 里 `#include` 全部 charset 的 `*.h`，见 iconv.c:71-298）。
+  ⇒ **不存在"边角 charset 逐 TU 档位与主体不同"的可能**（我上一段 §D 的猜测作废）——所有 charset 函数
+  同一编译单元、同一档位、同一源码版本。
+- **唯一剩余变量 = GCC subminor**：工厂 `.comment` = `GCC 6.2.0`（Lakka `build.Lakka-a10.arm-8.0-devel`，
+  glibc-2.24），而我方用 bootlin `6.3.0`。**6.2.0 vs 6.3.0 的 codegen subminor 差异**正是 96 个边角
+  charset 函数（iso2022 14/cp9 10/big5 9/…）体积漂移 ±≤102B 的根因——表驱动 mbtowc 对循环展开/switch
+  布局的 subminor 变化最敏感。
+- 当前 A 线事实刻度：308 Thumb **已 0 收敛**；libiconv 相关 307 个函数 **211 逐字节相同、中位比 1.0000**；
+  剩 96 个 = GCC 6.2.0↔6.3.0 subminor 差异（已知根因，非不明发散）。
+
+### E. 下一轮【先写死判据再动手】
+- B（**优先，真机行为**）：云上重编 `mui_LoadSetting`（含 wav_header_t 结构体改动）+ C4/C5，
+  验 `read(4,4096)=3600` **出现**、wav 装载到 7696B（data chunk 7652 + 头 44）。预登记判据：
+  `B1` 编译无 `link_audit` fail（结构体改动合法）；`B2` 我方 strace 出现 `read(4,...)=3600`（此前缺）；
+  `B3` `mui_Effect0/1_blob._28_4_ = _0_4_+7652`（读到整段）；任一不满足即回退该文件。
+- A：同 workspace 用 `_iconv_full_cmp.py` 在 **GCC 6.2.0 自建**（Buildroot 2016.11，源可达，§0.52/§0.11 已证）
+  下重编 libiconv 对拍，看 96 偏差是否向 0 收敛——**这是唯一未验证的变量**。若 6.2.0 收敛 96→N<96，
+  即坐实 subminor 根因；若不动，则另有隐变量（源码树真实差异）。
+- 预算：余 ~25 次大模型调用（用户限定），每轮 ≥5 工具调用，A+B 合并一次性云上实验（不重复起 workspace）。
+
+### F. 执行结果（2026-10-02，REBUILD=4 云上一锤定音，B 线判据全绿 + 顺带根治 rotation_buff 回归）
+- B1 ✓ 编译 **213/213 全部通过**（首轮曾 211/213，因 §0.50 把 rotation_buff 误改数组 gh_u2[]，
+  environment.c/FBA_Load.c 指针赋值编译失败 —— 已根治，见 GAP 16.103）。
+- B2 ✓ rebuild 侧 strace `read(4,4096)=3600` 次数 = **2**（C4 与 C5 各 2 次，= chord.wav + Button1.wav）。
+  逐字节证据：`open(chord.wav) → read(4096)=4096 → read(4096)=3600 → close`，与工厂**逐字节一致**（7696B 整文件）。
+- B3 ✓ isa_mode_gate **模式不同 0**（Thumb 根修不回退）；seg_page_audit / RELINK / ICONV / PROP 全无 FAIL。
+- 云上产物取回并替换本地（sha 07dde6d727439c09，旧版存 build/_exp/rkgame.rebuilt.pre-cloudfetch.elf）。
+- 里程碑维持既有形态：C5 rebuild **M6R✓ M7✓ exit=124**（factory exit=139）—— 我方反超 factory，
+  behav 门禁 FAIL 2 项已自注"不构成重建侧缺陷证据"（参照侧环境缺口，待控制组复核）。
+- ★ 顺带根治 rotation_buff 类型回归（§0.50 倒退，被本地陈旧 .o 掩盖一整轮）：globals.h 改回
+  `gh_u2 *rotation_buff`（factory_image.S `.size 0x4` 指针槽铁证），REBUILD=4 上传清单补 src/compat。
+- 结论：**B 线 wav 装载差异已根治并云上复验**（真缺陷，非补丁）；A 线 Thumb 0 收敛不回退。
+
+### E. 下一轮【先写死判据再动手】
+- A：云上 `REBUILD=4` —— 同一真 GCC 下 libiconv 编两份（`-O0` 与 `-O2/-Os`），用 `_iconv_full_cmp.py`
+  对拍 96 个偏差函数**各自**更贴哪一档 → 判定"边角 charset 是否必须独立档位"。
+- B：同一 workspace 跑 C4/C5（**先清旧 strace**），验 `read(4,4096)=3600` 是否出现、wav 装载是否
+  到 7696B；顺带核销 `mui_LoadSetting` 结构体改动的**机器码级**对齐（否则回退）。
+- 预算：余 ~39 次大模型调用（用户限定），每轮 ≥5 工具调用，A+B 合并一次性云上实验（不重复起 workspace）。
+
+### G. 第 117 轮（2026-10-02）：段布局实验 —— 4 次尝试全失败，**确认绕圈，净产出 0**
+
+- AUDIT-FULL 的 P1 目标含 `PT_LOAD 9→2`。4 次段布局改动（紧接 0x3f2000 / ＋ALIGN / PHDRS 显式归属 /
+  全量重编）**全部**导致运行期 `SIGSEGV si_addr=0x4`（PHDRS 版另致 `DT_FLAGS` 被覆盖成 0x50f000）。
+- **根因线索**：`get_executable_path` 对 `work_path[256]`(.bss @0x3e1498) 传 **bufsiz=4096** 给 `readlink`
+  ⇒ 依赖「`.bss` 后已映射内存」（工厂 brk=0x3e2000 紧邻 .bss 末尾）。段地址改动静默破坏此**运行期不变量**。
+- **回退** = `pre-segexidx` 布局 + `.ARM.exidx ALIGN(0x1000)` ⇒ 全门禁 PASS + 行为恢复。
+  产物 sha `07dde6d727439c09`，与第 116 轮**逐字节相同** ⇒ **本轮段布局净产出 0（纯绕圈，用户判断正确）**。
+- **纪律 137**（见 GAP 16.104）：段地址"自由"是伪命题；改布局前必须枚举所有「小缓冲大 bufsiz」调用。
+- **方向修正**：`PT_LOAD 9 vs 2` 是**忠实度刻度**，非「能否替代」判据；当前 9 段已合法（无空洞/重叠/共享页故障）。
+  ⇒ 放弃段布局，转 **P2（`.dynsym` 符号对齐）→ P3（真机闭环，唯一终局判据）**。

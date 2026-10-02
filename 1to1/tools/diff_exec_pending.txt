@@ -2,8 +2,7 @@
 # steps=3000
 # escalate=60000
 # ruler=2d4474aa9767ec26ec66e460eea79d6b2cf06a983c253bff2cc123c7033bf90e
-# ours=41f35e31845c6a256bd3128154697edc036fd2292603df093af4804edcf81f82
-# rebaseline: 两项根因修复：(1) 上游库优化档 UPOPT -O2 -> -Os（依据 tools/upstream_opt_matrix.py 机械扫描：stb/mxml/mp3 在 -Os 下与工厂体积逐字节相同的函数数 3/3/1 -> 19/23/6，M2 中位 1.120/1.200/1.216 -> 0.994/1.000/0.950）；(2) void 判据双源化（Ghidra 语料 ∪ 上游源码签名，修 stbtt__csctx_rccurve_to 类假发散）并纳入口径指纹。共有函数 782->788，PASS 760->766，DIVERGE 17->17（无恶化）
+# ours=1f09f15b540904724100f8c6407ff59ce04d2ef5557bbab63b98b2a8df297a47
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕

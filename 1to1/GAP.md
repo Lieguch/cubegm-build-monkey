@@ -6100,3 +6100,218 @@ typedef void *__restrict __timezone_ptr_t;
 > 但**手册描述当前版本**，旧工具链要用 `--help`/`-dumpspecs` 问工具自己。
 > **23. 只在一条腿上验证过的改动，不许进主链。** 本轮 `-nostdlib` 在主链打红 `1to1-verify`，
 > 而它在 GCC 腿上"看起来是对的" ⇒ **主链改动必须用主链自己的门禁验证**。
+
+---
+
+## 16.75 ★★★★★★ 真机「零日志」的真根因 —— `PT_INTERP` 是 Windows 宿主路径（第 109 轮，2026-10-01）
+
+**现象**（长期未解）：产物覆盖 SD 卡的 `cubegm/rkgame` 后，设备**无法开机**，
+且 `cubegm/_diag/` **一条文件都不产生** —— 说明**我们自己的代码一行都没跑**。
+
+**取证（本机可复算）**
+```
+python tools/interp_of.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin
+  build/rkgame.rebuilt.elf  PT_INTERP = 'C:/Users/Administrator/.workbuddy/binaries/
+                                        PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3'
+  golden/factory.rkgame.bin PT_INTERP = '/lib/ld-linux-armhf.so.3'
+ls golden/device_rootfs_min/lib/  →  ld-linux-armhf.so.3 -> ld-2.29.so   （设备侧存在）
+```
+全产物含宿主痕迹 **3 处，全部在 `PT_INTERP` 段**（偏移 `0x3e8000`）；原厂 0 处。
+
+**机制**：内核 `execve` **只校验 `PT_INTERP` 指向的绝对路径是否存在**（连 libc 都不查），
+不存在 ⇒ 立即 `ENOENT` ⇒ 进程根本不启动 ⇒ 零日志。**与现象逐字吻合。**
+
+**来源（本机复现表）**
+| 链接方式 | 产物 `PT_INTERP` |
+|---|---|
+| `zig cc …`（clang 驱动） | `/lib/ld-linux-armhf.so.3` ✅ |
+| `zig ld.lld … --dynamic-linker <p>` / `=<p>` / `-dynamic-linker <p>` / `+ --sysroot=/` | **宿主路径** ❌ |
+
+⇒ **`zig ld.lld` 直驱硬忽略 `--dynamic-linker`**；而 `tools/link_full.sh` 的 `LINK_DRIVER=lld`
+分支（2026-09-28 起为**默认**）正是这么调的。上游同源：**ziglang/zig#23813**。
+
+**为什么 9 道门禁全绿也没抓住**：`abi_check.py` 旧实现是 `d.find(b'/lib/ld-linux')` **全文件子串搜索**
+⇒ 宿主路径**本身含该子串** ⇒ 截出 `'/lib/ld-linux-armhf.so.3'` ⇒ 判 PASS。
+（与纪律 62「值落在地址区间内不是判据」同类：**子串包含不是相等**。）
+
+**根修**（详见 `PROJECT-MEMORY.md` §0.52）
+`enforce_interp.py`（新，patchelf 等价）+ `link_full.sh` 链接后强制对齐（fail-closed `exit 12`）
++ `abi_check.py` 改读真实程序头并精确比较（新增 `interp-abs` / `host-marks`，带反例自证）
++ `cnb_gates.sh` 跨平台前置块 + `stage_sd_drop.py` 拒投闸门。
+
+**单变量证据**：drop9 的负对照 `t1` 与候选 `t3` **只差 93 字节，全部落在 `[0x3e8000,0x3e805e)`**
+（即 `PT_INTERP` 段内），其余逐字节相同。
+
+**行为尺**：修正后复跑 **766 / 17 / 5 / 0 / 0**，与基线逐项一致 ⇒ 解释器修正**对行为数据完全惰性**。
+
+**待验证**：真机（`_sdcard_drop9/`，一次上机给出阳性对照 + 负对照 + 候选三点阶梯）。
+
+## 16.100 「段页共享」：`.text` 尾页被紧随的 R 段覆盖 ⇒ 页内 24 个函数取指故障
+
+**现象**：云上 qemu（设备真 sysroot + guest shim + 三桩）里，工厂打开 `//ui_cn.zip` ×3，
+我方**从未打开**，直接崩；程序自带 handler 打出
+`pc=0x005401d8 lr=0x004e4e20`，`[pc]=0xe92d4830`（`push {r4,r5,fp,lr}`）、`[pc-4]=0xe12fff1e`（`bx lr`），
+`si_addr == PC == 0x005401d8`，`si_code=2`（`SEGV_ACCERR`）。
+⇒ **取指故障**（不是写只读页）。0x5401d8 = `_ZN6TUnzip4OpenEPvjj`（`TUnzip::Open`）入口。
+
+**根因**（一条页几何）：
+```
+[7] PT_LOAD va=0x004e1000 fl=5(RX) filesz=0x5ffc8  ⇒ 末端 0x540fc8 **未页对齐**
+[8] PT_LOAD va=0x00540fc8 fl=4(R)  filesz=0x1840   ⇒ 紧随其后（= .ARM.exidx）
+页 0x540000 被两段共享；加载器按段逐页 mmap，**表序最后的 R 段覆盖 ⇒ 该页丢 X**
+```
+页内 **24 个 FUNC**：`TUnzip::Open/Get/Find/Unzip/Close`、`unztell`、`unzeof`、
+`unzGetLocalExtrafield`、`unzGetGlobalComment`、`FormatZipMessageU`、`DosDateTimeToFileTime`、`timet2filetime` …
+**原厂共享页 0 个**（只有 2 个 PT_LOAD：0x00008000 / 0x003ae000，**都页对齐**、末端也页对齐）。
+
+**联网核实（与实测逐字吻合）**：
+- LLVM D21801：*"… map size of 0x1000 (page rounded) and different protection attributes.
+  Finally one will have region … mapped with RW attributes. Jumping to entry point … will immediately
+  cause protection fault (SIGSEGV). **Not a single user instruction will be executed**."*
+- MaskRay（lld 维护者）：*"A page serves as the granularity at which memory exhibits different
+  permissions … Subsequent PT_LOAD segments then overwrite the previous memory regions."*
+- 内核：`b212921b13bd`「elf: dont use MAP_FIXED_NOREPLACE for elf executable mappings」——
+  因旧二进制存在重叠段，内核回退 `MAP_FIXED`（**覆盖**而非拒绝）⇒ 真机后果与 qemu 同向；
+  4.17–5.4 之间可能直接 `EEXIST` 使 `execve` 失败（与真机"零日志"同族）。两条路都致命。
+
+**修法**：`linker/factory.ld` 的 `.ARM.exidx` 加 `ALIGN(0x1000)`；**同步改生成器 `tools/gen_data_module.py`**
+（否则 regen 静默回退）。
+**门禁**：`tools/seg_page_audit.py`（不变量：任一被 >1 段覆盖的页，其最终权限 ⊇ 覆盖它的所有段权限并集）。
+已钉进 `link_full.sh`（`exit 20`）；`pre_device_gate.py` 的 **P10** 只转发调用它；
+`check_regen_contract.py` 新增不变量 ⑥。
+**本机 30 秒复现实验**：`zig ld.lld` 认 `ALIGN(0x1000)`（`.ARM.exidx` 0x1024 → 0x2000），
+且不带 ALIGN 的形态**逐字复现同一个共享页** ⇒ 修法与判据都自洽。
+
+## 16.101 ★★★★★ 「指令集模式（ARM/Thumb）」—— 一类**逐函数 1:1 判据**，且根因是工具链（非补丁）
+
+**现象**：`isa_mode_gate.py`（第 107 轮建立）报工厂 804 个函数里 **308 个 Thumb**（`st_value` bit0=1），
+且**全部属 libiconv/libcharset**；我方 809 个函数 Thumb=0（全 ARM）⇒ 308 个共有函数指令集模式不同。
+
+**根因（第 107 轮已锁定、第 115 轮联网核实）**：`zig cc`（clang 驱动）对 `arm-linux-gnueabihf` target
+**静默忽略 `-mthumb`**。实测 `-O2` 与 `-O2 -mthumb` 产物**逐字节相同**；`-Xclang -mthumb` 报 unknown argument。
+⇒ 不是 libiconv 源码问题，是**工具链对 target 的限制**（LLVM 对 ARM 的 Thumb 支持在真 clang/GCC 下完整，
+LLVM D33448 / HowToCrossCompileBuiltinsOnArm.rst / llvm-dev 可证）。
+
+**根修（非补丁）**：libiconv/libcharset 两个 TU **独立用真 GCC**（Bootlin 2017.05 工厂同期）编 `-mthumb`，
+其余上游库（stb/mxml/mp3）保持 zig ARM。落点：
+- `tools/build_upstream.sh`：新增 `ICONV_CC` / `ICONV_FLAGS` / `ICONV_ARCH`（从 `ICONV_CC` 推导，不复用 `$ARCH`）、`ICONV_ONLY=1` 开关；
+- `tools/cnb_ladder.sh`：`REBUILD=3` 分支（云上 `fetch_bootlin63` → `ICONV_ONLY=1 ICONV_CC=<真GCC>` → `readelf -A` 验 Thumb → `link_full.sh` → `isa_mode_gate` → `seg_page_audit`）。
+
+**收敛证据（云上一锤定音，2026-10-02）**：
+- `readelf -A libiconv_iconv.o` ⇒ **`Tag_THUMB_ISA_use: Thumb-2`**（真产 Thumb，非假绿）；
+- `isa_mode_gate` ⇒ **工厂 Thumb 308/804 ｜ 我方 Thumb 308/809 ｜ 共有 788 ｜ 模式不同 0**（308 → 0）；
+- 体积对拍（零依赖脚本 `_iconv_size_cmp.py`）：307 个 libiconv 相关共有函数里 **211 个逐字节相同**，
+  体积比**中位 1.0000 / 均值 0.9978**（`-mthumb` + 真 GCC 不只是模式对齐，体积也逼近逐字节）；
+- 段页门禁 / PT_INTERP / GNU_STACK **均不回退**；C5 里程碑仍 M6R✓ M7✓ exit=124；
+- 基线 `ledger/isa_mode_baseline.txt` 308 → 0（棘轮可下调一侧落地）。
+
+**附带发现（第 116 轮**公开更正**，此前第 114 轮归属判错）**：
+- ★ C5/C4 里 factory 独有 `read(4,4096)=3600`（两次）—— 第 114 轮曾误判为 `filelist.xml` 读取差异。
+  **第 116 轮用 strace openat 实际路径证伪**：这两次 `read(4,4096)=3600` 属于 **`chord.wav` / `Button1.wav`**
+  （各 7696 B = 4096+3600 整文件装载），**不是** `filelist.xml`（8654 B，两侧 `4096+4096+462+0` 全同、无差异）。
+  真根因见 §16.102。
+- `_llseek(4,0,4951281,...)` = EOCD 定位（zip 尾部中央目录），两侧皆正常，非分叉。
+
+> **135.** **「指令集模式」属逐函数 1:1 判据，且只能由真工具链产出。** `zig cc` 对 `arm-linux-gnueabihf`
+>   静默忽略 `-mthumb`（无警告、产物逐字节相同）⇒ 任何"用 zig 编 ARM target 再比 Thumb"的实验都注定
+>   测不出差。根修是**工具链分层**：让需要 Thumb 的 TU 走真 GCC，其余保持 zig —— 不是给 zig 打补丁。
+>   判据三件套缺一不可：`readelf -A` 验 `Tag_THUMB_ISA_use`（防"声称 Thumb 实际没产"）+ `isa_mode_gate`
+>   计数（防"产了但没收敛"）+ 体积对拍（防"模式对但档位错"）。
+
+## 16.102 ★★★★★ B 线根因：`read(4,4096)=3600` 真归属 = wav 音效装载（**非 filelist.xml**）＋ A 线 libiconv 版本一致（证伪"版本错配"）
+
+### 16.102.a 公开更正（第 114 轮判错，第 116 轮证伪）
+第 114 轮曾断言 `read(4,4096)=3600` 是 `filelist.xml` 读取差异。**错**。铁证（strace openat 实际路径）：
+- 工厂：`open(/sdcard/cubegm//chord.wav)=4 → read(4096)=4096 → read(4096)=3600 → close`（7696B 整文件）；
+  `open(/sdcard/cubegm//Button1.wav)=4 → read(4096)=4096 → read(4096)=3600 → close`（同样 7696B）。
+- 我方：`open(chord.wav)=4 → read(4096)=4096 → close`（**只读 4096B 就停**，缺第二次 3600）。
+- `filelist.xml` = 8654 B，两侧 `read(4096)=4096 → read(4096)=4096 → read(4096)=462 → read(4096)=0` **全同** ⇒ 无差异。
+- 物理事实：`chord.wav`/`Button1.wav` 各 7696 B；WAV data chunk size = 7652（=7696-44 头）。
+
+### 16.102.b 真根因（代码级）
+`src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c`：Ghidra 把 44B WAV header 的一次 `fread` 拆成
+`auStack_154[22]`（栈偏移 0..21）+ 四个"孤立栈变量" `local_13e`(22,num_channels,ushort)、
+`local_13c`(24,sample_rate,u4)、`local_132`(34,bits_per_sample,ushort)、`local_12c`(40,data_size,u4)。
+重建后 ① `fread(auStack_154,1,0x2c)` 写 22B 数组 = **栈溢出 UB**；② `local_12c`(=data_size) 在 C 语义
+从未被写 ⇒ `malloc(local_12c+1)` 拿垃圾尺寸、第二次 `fread` 读错字节数 ⇒ wav 数据只装载 4096B 就 close。
+
+### 16.102.c 根修（非补丁）—— wav_header_t 结构体还原
+还原 44B 结构体（`riff[22]+num_channels(22)+sample_rate(24)+byte_rate(28)+block_align(32)+
+bits_per_sample(34)+data_id[4](36)+data_size(40)`）。arm EABI 布局 offset `22/24/28/32/34/36/40` 与
+Ghidra 栈偏移**逐一吻合**（纯算术自证，sizeof=44B）。`fread(&wav,1,0x2c)`；字段
+`local_12c→wav.data_size`、`local_132→wav.bits_per_sample`、`local_13c→wav.sample_rate`、
+`local_13e→wav.num_channels`。语义复原（WAV 标准）：`_16_4_`=sample_rate、
+`_8_4_`=(bits_per_sample>>3)-1（每采样字节数-1）、`_12_4_`=num_channels-1、`_28_4_`=data_size+base。
+改后自检：括号平衡 29/29、旧变量名零残留（仅注释）、`gh_ushort/gh_u1/gh_u4` 均在 ghidra_compat.h 定义。
+
+### 16.102.d 判据（先写死，云上 REBUILD=4 复验）
+- B1 `PROP-FAIL` 不出现 ⇒ 结构体改动编译通过；
+- B2 rebuild 侧 strace `read(4,4096)=3600` **出现**（修复前=0；期望=2，chord.wav+Button1.wav）；
+- B3 `isa_mode_gate` 不回退（保持 0）、`seg_page_audit` PASS、`RELINK-FAIL`/`ICONV-FAIL` 不出现；
+- 失败回退：`git checkout -- src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c`。
+
+### 16.102.e A 线决定性结论（libiconv 96 个偏差 → 根因 = GCC subminor，非版本/非档位）
+- **工厂 `_libiconv_version` = `0x0110` = libiconv 1.16**（读 ELF 符号表 + 反查 .data 实测）；
+  我方 `src/upstream/libiconv17/iconv.h:23` `#define _LIBICONV_VERSION 0x0110` **同为 1.16**
+  ⇒ 目录名 `libiconv17` 是**误标**，双方源码版本一致。
+  ⇒ **证伪 §0.9.E「上游发散=版本错配」**（那是整体上游 46 发散的旧判断，不适用这 96 个）。
+- `iconv.c` 是**单 TU**（一个 TU `#include` 全部 charset `*.h`）⇒ **不存在"边角 charset 逐 TU 档位不同"**。
+- 唯一剩余变量 = **GCC 6.2.0（工厂 Lakka）↔ 6.3.0（我方 bootlin）的 subminor codegen 差异**：
+  96 偏差散落 iso2022 14/cp9 10/big5 9/gb18030 4/…、方向混合 47 大/49 小、最大 ±102B ——
+  表驱动 mbtowc 对循环展开/switch 布局的 subminor 变化最敏感。属可豁免习语（§7.4），非行为差异。
+
+## 16.103 ★★★★★ `rotation_buff` 类型回归：§0.50 误改成数组 `gh_u2[]` —— 被本地陈旧 .o 掩盖一整轮（REBUILD=4 全量重编暴露）
+
+**现象（第 116 轮 REBUILD=4 首次全量重编 proprietary 时暴露）**：
+云上 `link_audit.sh` 报 `编译: 总计 213，成功 211，失败 2`，两个失败：
+- `FUN_002b4f98_environment.c:45` 与 `FUN_002b6c14_FBA_Load.c:90` 均报
+  `error: array type 'gh_u2[]' is not assignable`；
+- 连锁 ⇒ `link_full.sh` 报 `undefined symbol: FBA_Load` / `environment` ⇒ RELINK-FAIL ⇒ 本轮无产物
+  （fail-closed 正确：`build/rkgame.rebuilt.elf` 被删，isa_mode_gate/seg_page_audit 报 FileNotFound 而非假绿）。
+
+**根因（§0.50 的倒退，不是本轮引入）**：
+§0.50（2026-10-01）把 `rotation_buff` 从 `void *` 改成 `gh_u2 rotation_buff[]`（数组），依据是
+DrawFrame 里 `puVar4 = rotation_buff; *puVar4 = ...` 把它"当缓冲首地址"。但这个判断**漏看了写侧**：
+`environment()` 里 `rotation_buff = malloc(0x96000)`、`FBA_Load()` 里 `rotation_buff = (void *)0`——
+这是**指针赋值**，数组不可赋值。工厂 `factory_image.S` `.size rotation_buff, 0x4` = **4 字节指针槽**
+（先写后读：environment 分配、DrawFrame 使用）。真语义 = `gh_u2 *rotation_buff`（指向半字缓冲的指针）。
+
+**为什么一整轮没暴露**：本地 `build/obj/*.o` 是 §0.50 改类型**之前**编译的陈旧产物（Oct 1 12:39），
+REBUILD=2/3 上传陈旧 .o 只重链/只重编 libiconv，从不全量重编 proprietary ⇒ 编译回归被陈旧对象静默掩盖。
+与 GAP 16.56（"源码对了、陈旧 .o 错了"）**同族**，方向相反：这次是"源码错了、陈旧 .o 反而能用"——
+但两者根源一致：**只要不全量重编，编译期回归就不可见**。
+
+**根修（非补丁）**：`src/compat/globals.h` 把 `gh_u2 rotation_buff[]` 改回 `gh_u2 *rotation_buff`。
+同时把 `src/compat` 加进 `tools/cnb_ladder.sh` 的 REBUILD=4 上传清单（否则云上用 git 旧版头，改了个寂寞）。
+回退：`git checkout -- src/compat/globals.h`。
+
+> **136.** **"类型声明"与"编译产物"必须同源校验。** 改 globals.h 的符号类型后，若不**全量重编**所有
+>   引用点，本地陈旧 .o 会静默掩盖编译期回归（`array not assignable` 这类硬错误要到下次全量重编才爆）。
+>   ⇒ 任何"符号类型/ABI"级改动，判据必须含**一次全量重编**（`REBUILD=4` 或 `FORCE_BUILD=1`），
+>   不许只重链/只重编上游来"验"——那验不到 proprietary 的编译期。
+
+## 16.104 段布局实验（第 117 轮）：`PT_LOAD` 9→2 的 4 次尝试全失败 —— 确认「绕圈」，回到合法现状
+
+**动机**：AUDIT-FULL 的 P1 目标含 `PT_LOAD 9→2`（与工厂 2 段形态一致）。
+
+**4 次尝试（全部导致运行期 SIGSEGV `si_addr=0x4`，崩在 libc 加载后、`_start` 前）**：
+1. 自有段紧接 `0x3f2000`（消除 0xE000 空洞）→ link OK，但 seg_page FAIL(1 页/0 FUNC) + SIGSEGV；
+2. ＋R→R-X 切换处 `ALIGN(0x1000)` → 仍 SIGSEGV；
+3. `PHDRS` 显式段归属 → `PT_LOAD 4` + seg_page PASS，但 **`DT_FLAGS` 被覆盖成 `0x50f000`** → SIGSEGV；
+4. 回退 + `REBUILD=4` 全量重编 → 仍 SIGSEGV（说明非"地址常量旧"，是布局本身）。
+
+**根因线索**：`get_executable_path` 对 **256 B** 的 `work_path`(@0x3e1498, `.bss`) 传 **bufsiz=4096**
+给 `readlink` ⇒ 依赖「`.bss` 之后有已映射内存」（工厂 `brk=0x3e2000` 紧邻 `.bss` 末尾 0x3e1ad3）。
+段地址改动静默破坏这条**运行期不变量**（`gen_data_module.py` 早有 BSS_PAD 血泪记录）。
+
+**回退**：`linker/factory.ld` 恢复 `0x400000` 布局 + `.ARM.exidx ALIGN(0x1000)` ⇒
+全门禁 PASS + C5 `M6R✓ M7✓ exit=124` + B 线 wav=2。产物 sha `07dde6d727439c09`
+—— 与第 116 轮产物**逐字节相同** ⇒ **本轮段布局净产出 = 0**。
+
+**结论**：`PT_LOAD 9 vs 2` 是**忠实度刻度**，非"能否替代"判据；当前 9 段**已合法**
+（无空洞 / 无重叠 / 无共享页故障）。段布局方向确认绕圈 ⇒ 彻底放弃，转 P2/P3。
+
+> **137.** **「段地址自由」是伪命题。** 只要代码里有「对小缓冲传大 bufsiz」的调用
+>   （如 `readlink(..., work_path[256], 4096)`），自有段地址就**不能自由移动** ——
+>   它必须保持「`.bss` 之后有已映射内存」这一进程镜像性质。改段布局前必须先枚举所有此类调用；
+>   否则改动在 link 期"全绿"（门禁只验 ELF 静态属性），却在运行期 `_start` 前静默崩。

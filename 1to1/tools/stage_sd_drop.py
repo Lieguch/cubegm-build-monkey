@@ -52,51 +52,65 @@ README_TMPL = """ 真机测试 第 {round} 轮 —— 交付版产物验证
 =================================================================
 生成时间: {gen}
 
+【本轮为什么重投（一句话说清，不绕）】
+  ★ 上一包的 `cubegm/rkgame.t3` 里 **PT_INTERP 指向的是 Windows 宿主路径**：
+        C:/Users/<user>/.workbuddy/binaries/PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3
+    内核在 execve 里**只校验该绝对路径是否存在**（连 libc 都不查），不存在就立即返回 ENOENT
+    ⇒ 进程根本不会启动 ⇒ 这正是我们一直看到的「开机失败 + `_diag/` 一条日志都没有」。
+    根因已复现：`zig ld.lld` 直驱链接**硬忽略** `--dynamic-linker`（三种写法全试过，全部无效）。
+  ★ 因此 **drop{prev} 的 t3 结果无论是什么都不可信**；本轮已强制对齐并重投。
+
 【本包要回答的唯一问题（判决先写死，避免事后凑结论）】
 
-  `cubegm/rkgame.t3`（= 本轮交付产物）在真机上**还崩不崩、崩在哪**。
+  `cubegm/rkgame.t3`（= **解释器已对齐**的交付产物）这次能不能被内核 exec 起来、
+  起来之后**还崩不崩、崩在哪**。
 
-  与 drop{prev} 的差别只有一处：`rkgame.t3` 换成了**当前交付产物**。
-  它比 drop{prev} 的候选多了两次**根因修复**（§0.32：Ghidra 把结构体拆成独立局部变量
-  ⇒ 死存储被 `-Os` 删 / 读未初始化 = UB ⇒ 成功路径被搬走；§0.36 同族）。
-  ★ 本包**不对"设备上有没有跑过旧包"作任何断言**（纪律 40：不得用未经证实的负面事实
-    替代对自身进度的诚实评估）。本包只说清：**投什么、判什么、怎么回退**。
+【本包设计的是一次「三点阶梯」实验 —— 一次上机给出完整因果链】
+
+  | 被测 | 是什么 | 预期 |
+  |---|---|---|
+  | `rkgame.bak` | 原厂（阳性对照，须已在 SD 上） | **存活至超时**（正常启动） |
+  | `rkgame.t1`  | {t1_role} | 见下方判断标准 |
+  | `rkgame.t3`  | ★ 本轮候选（**解释器已对齐**） | 见下方判断标准 |
+
+  ★ t1 与 t3 **唯一的差别就是 PT_INTERP 那 {t1_span} 字节**（其余逐字节相同）
+    ⇒ 探针一次跑完三者，等于在**真机上**做了一次单变量 A/B。
 
 【你要做的 4 步】
 
-  1) 确认 SD 卡上 cubegm/rkgame.bak 存在（= 原厂备份，应为 3,921,108 字节）。
-     ★ 它是"阳性对照"。若不存在，请先把原厂 rkgame 复制成 rkgame.bak 再继续。
+  1) 确认 SD 卡上 `cubegm/rkgame.bak` 存在（= 原厂备份，应为 3,921,108 字节）。
+     ★ 它是"阳性对照"。**若不存在**：先把 SD 上现存的 `cubegm/rkgame` 复制成 `rkgame.bak`
+       再继续（**在任何覆盖之前先做这一步**）。
 
-  2) 把本包 cubegm/ 里这 4 个东西拷到 SD 卡：
-        rkgame        ({probe_size})   ← 探针 v5，**必须覆盖**
-        rkgame.t1     ({t1_size})   ← 已知答案对照：旧版产物，**预期仍是 SIGBUS**
-        rkgame.t3     ({t3_size})   ← ★ 本轮候选（当前交付版）
-        _diag/        整个目录（合并覆盖，cfg.ini 一定要覆盖）
+  2) 把本包 `cubegm/` 里这 4 个东西拷到 SD 卡：
+        rkgame        ({probe_size})   ← 探针 v5，**必须覆盖**（它是被开机执行的那个）
+        rkgame.t1     ({t1_size})      ← {t1_role}
+        rkgame.t3     ({t3_size})      ← ★ 本轮候选
+        _diag/        整个目录（合并覆盖，`cfg.ini` 一定要覆盖）
 
-  3) 插卡开机，**等满 90 秒**。
+  3) 插卡开机，**等满 90 秒**（黑屏也等满；崩溃现场在崩的那一刻就已写进 SD）。
 
-  4) 关机拔卡，把 cubegm/_diag/PROBE5.txt 发我（以及同目录下本轮新出现的
-     p5_*.txt / out.txt，若有）。
+  4) 关机拔卡，把 `cubegm/_diag/PROBE5.txt` 整个发我。
 
 【回退到原厂（随时可做）】
 
-  把 cubegm/rkgame.bak 复制一份改名成 cubegm/rkgame 即可。
+  把 `cubegm/rkgame.bak` 复制一份改名成 `cubegm/rkgame` 即可。
 
 【本轮判断标准（★ 先写死）】
 
-  · 阳性对照 `rkgame.bak` 必须仍"存活至超时"。否则**整轮作废**，先修探针。
-  · `rkgame.t1` 预期仍是 SIGBUS@0x501b84 —— 它是"仪器能看出崩溃"的**已知答案对照**。
-    若 t1 不再崩，说明自变量没生效，先核 sha256 再谈别的。
-  · **`rkgame.t3`（本轮关键）三种可能，各有明确含义：**
-      (a) 存活至超时        ⇒ ★ 启动链上的根因修复成立 ⇒ 进入五项验收
-      (b) 崩在**别的** PC    ⇒ 修复生效，进入下一个故障点（探针会给出 PC/LR/SP + 栈候选）
-      (c) 仍崩在 sfc_init 邻域 ⇒ 修复没生效 ⇒ 先比对设备上文件的 sha256 与本清单是否一致
+  · 阳性对照 `rkgame.bak` 必须仍"存活至超时"。否则**整轮作废**，先查探针。
+  · `rkgame.t1`：{t1_expect}
+  · **`rkgame.t3`（本轮关键）四种可能，各有明确含义：**
+      (a) 存活至超时              ⇒ ★ 启动链打通，进入功能验收
+      (b) 崩在**别的** PC          ⇒ 已越过 exec 关口，进入下一个故障点（探针会给 PC/LR/SP）
+      (c) 出现 `EXECVE-FAILED errno=2` ⇒ 解释器/依赖仍不可达（探针那行就是定位）
+      (d) 探针**自己也写不出**      ⇒ 与文件内容无关（内核/SD 挂载层）
 
 【本包文件的 sha256（投放前请核对，尤其 t3）】
 
-  cubegm/rkgame.t3  {t3_size} 字节
+  cubegm/rkgame.t3  {t3_size} 字节  PT_INTERP={t3_interp}
     {t3_sha}
-  cubegm/rkgame.t1  {t1_size} 字节
+  cubegm/rkgame.t1  {t1_size} 字节  PT_INTERP={t1_interp}
     {t1_sha}
 
 【诚实声明（没有验证的）】
@@ -108,6 +122,37 @@ README_TMPL = """ 真机测试 第 {round} 轮 —— 交付版产物验证
     当前产物该计数见投放前门禁报告，非 0 就不该投。
 =================================================================
 """
+
+
+def _interp_of(path):
+    """返回该 ELF 的**真实 PT_INTERP 字符串**（读程序头，不做全文件子串搜索）。"""
+    import struct
+    d = open(path, 'rb').read()
+    e_phoff = struct.unpack_from('<I', d, 28)[0]
+    phent = struct.unpack_from('<H', d, 42)[0]
+    phnum = struct.unpack_from('<H', d, 44)[0]
+    for i in range(phnum):
+        o = e_phoff + i * phent
+        t, off, va, pa, fsz = struct.unpack_from('<5I', d, o)
+        if t == 3:
+            raw = d[off:off + fsz]
+            z = raw.find(0)
+            return (raw[:z] if z >= 0 else raw).decode('latin-1')
+    return ''
+
+
+def _interp_gate(path, must_ok, label):
+    """★ 第 109 轮的教训：投放包里"设备 exec 不了"的产物等于零信息。
+
+    `must_ok=True` 时必须精确等于 `/lib/ld-linux-armhf.so.3`，否则 **拒投**。
+    """
+    got = _interp_of(path)
+    want = '/lib/ld-linux-armhf.so.3'
+    if must_ok and got != want:
+        print('!! %s 的 PT_INTERP = %r ≠ %r ⇒ 设备上内核 execve 必 ENOENT ⇒ 拒绝投放'
+              % (label, got, want))
+        return None
+    return got
 
 
 def sha256(path):
@@ -139,6 +184,10 @@ def main():
     ap.add_argument('--t1', required=True)
     ap.add_argument('--t3', required=True)
     ap.add_argument('--out', required=True)
+    ap.add_argument('--t1-role', default='已知答案对照（旧版产物）',
+                    help='README 里对 t1 的一句话说明')
+    ap.add_argument('--t1-expect', default='预期仍崩 —— 它是"仪器能看出崩溃"的对照',
+                    help='README 判断标准里对 t1 的预期')
     a = ap.parse_args()
 
     items = [(a.probe, 'cubegm/rkgame'),
@@ -150,6 +199,31 @@ def main():
         for m in missing:
             print('   ', m)
         return 3
+
+    # ★★ 第 109 轮教训（fail-closed）：投放包里"设备 exec 不了"的产物等于零信息。
+    #    真机 execve 只认 PT_INTERP 的**绝对路径**；不是设备侧路径 ⇒ ENOENT ⇒ 进程不启动 ⇒ 零日志。
+    t3_interp = _interp_gate(a.t3, True, 't3（本轮候选）')
+    if t3_interp is None:
+        return 5
+    t1_interp = _interp_gate(a.t1, False, 't1（对照）')
+    t1_span = 0
+    try:
+        import struct as _st
+        for p in (a.t1, a.t3):
+            d = open(p, 'rb').read()
+            e_phoff = _st.unpack_from('<I', d, 28)[0]
+            phent = _st.unpack_from('<H', d, 42)[0]
+            phnum = _st.unpack_from('<H', d, 44)[0]
+            for i in range(phnum):
+                o = e_phoff + i * phent
+                t, off, va, pa, fsz = _st.unpack_from('<5I', d, o)
+                if t == 3:
+                    t1_span = fsz
+                    break
+            if t1_span:
+                break
+    except Exception:
+        t1_span = 0
 
     base, why = authoritative_baseline(a.t3)
     if base is None:
@@ -202,9 +276,12 @@ def main():
               '- `cubegm/rkgame.bak` —— 原厂 rkgame，**3,921,108 B**',
               '  探针会先 execve 它。**它必须成功**，否则其余结论一概不可信。', '',
               '## 本包与 drop%d 的差别' % (a.prev if a.prev else a.round - 1),
-              '- `cubegm/rkgame.t3` = **本轮交付产物**（含 §0.32/§0.36 真缺体修复）',
-              '- `cubegm/rkgame.t1` = 已知答案对照（旧版，预期 SIGBUS@0x501b84）',
-              '- 探针 = probe5', '',
+              '- `cubegm/rkgame.t3` = **本轮候选**（PT_INTERP=%s，设备可 exec）' % t3_interp,
+              '- `cubegm/rkgame.t1` = **%s**（PT_INTERP=%s）' % (a.t1_role, t1_interp or '(无)'),
+              '- 探针 = probe5（静态，无 PT_INTERP）',
+              '- ★ 本包新增 fail-closed 闸门：t3 的 PT_INTERP 不是 `/lib/ld-linux-armhf.so.3` 即**拒投**',
+              '  （第 109 轮根因：`zig ld.lld` 直驱会写入 Windows 宿主路径 ⇒ 设备 execve 必 ENOENT ⇒ 零日志）',
+              '',
               '## 权威行为尺基线（按 t3 的 sha 反查）', '', '```', base, '```']
     with io.open(os.path.join(out, 'DEPLOY-MANIFEST.txt'), 'w',
                  encoding='utf-8', newline='\n') as fh:
@@ -216,7 +293,10 @@ def main():
     readme = README_TMPL.format(round=a.round, prev=(a.prev or a.round - 1), gen=stamp,
                                 probe_size='~%d KB' % round(pr[1] / 1024.0),
                                 t3_size=t3[1], t3_sha=t3[2],
-                                t1_size=t1[1], t1_sha=t1[2], ruler=ruler_line)
+                                t1_size=t1[1], t1_sha=t1[2], ruler=ruler_line,
+                                t1_role=a.t1_role, t1_expect=a.t1_expect,
+                                t1_span=t1_span or 0,
+                                t3_interp=t3_interp, t1_interp=t1_interp or '(无)')
     with io.open(os.path.join(out, 'READ-ME-FIRST.txt'), 'w',
                  encoding='utf-8', newline='\n') as fh:
         fh.write(readme)

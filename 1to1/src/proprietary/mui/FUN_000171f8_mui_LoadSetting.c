@@ -8,6 +8,32 @@
 #include "globals.h"
 #include "proto.h"
 
+/* ★★ B 线根修（第 116 轮）：Ghidra 把 44 字节 WAV header 拆成
+ *   auStack_154[22] + local_13e/13c/132/12c 四个"独立栈变量"。
+ *   重建后 fread(...,0x2c=44,...) 写一个 22 字节数组 = 缓冲区溢出 UB，
+ *   且 local_12c(=WAV Subchunk2Size = data_size) 在 C 语义里从未被初始化
+ *   ⇒ malloc 拿到垃圾尺寸 + 第二次 fread 读不到正确字节数。
+ *   实证（strace 差分，第 115 轮）：工厂 read wav = 4096+3600=7696（全文件），
+ *   我方只 read(4096) 就 close ⇒ 音效数据只装了不到 1/2。
+ *   ★ 这是"read(4,4096)=3600"差异的真实归属（chord.wav / Button1.wav），
+ *     与 cores/filelist.xml 无关（filelist.xml 两侧一致 4096+4096+462+0）。
+ *   还原结构体后栈占用仍 44 字节，ABI 不变；字段偏移与 Ghidra 栈偏移一一对应：
+ *     riff[22]@0, num_channels@22(=local_13e), sample_rate@24(=local_13c),
+ *     byte_rate@28, block_align@32, bits_per_sample@34(=local_132),
+ *     data_id@36("data"), data_size@40(=local_12c).
+ *   回退：git checkout -- src/proprietary/mui/FUN_000171f8_mui_LoadSetting.c
+ */
+typedef struct {
+    gh_u1     riff[22];
+    gh_ushort num_channels;
+    gh_u4     sample_rate;
+    gh_u4     byte_rate;
+    gh_ushort block_align;
+    gh_ushort bits_per_sample;
+    gh_u1     data_id[4];
+    gh_u4     data_size;
+} wav_header_t;
+
 void mui_LoadSetting(void)
 
 {
@@ -25,11 +51,7 @@ void mui_LoadSetting(void)
   char *__src;
   gh_u4 *puVar12;
   int iVar13;
-  gh_u1 auStack_154 [22];
-  gh_ushort local_13e;
-  gh_u4 local_13c;
-  gh_ushort local_132;
-  size_t local_12c;
+  wav_header_t wav;
   char acStack_128 [260];
   
   uVar1 = (gh_u4)GetWorkPath();
@@ -94,18 +116,18 @@ void mui_LoadSetting(void)
             sprintf(acStack_128,"%s/%s",uVar1,uVar6);
             pFVar2 = fopen(acStack_128,"rb");
             if (pFVar2 != (FILE *)0x0) {
-              fread(auStack_154,1,0x2c,pFVar2);
-              sVar7 = local_12c;
-              (mui_Effect0_blob)._0_4_ = (gh_u4)malloc(local_12c + 1);
+              fread(&wav,1,0x2c,pFVar2);
+              sVar7 = wav.data_size;
+              (mui_Effect0_blob)._0_4_ = (gh_u4)malloc(wav.data_size + 1);
               fread((void *)(mui_Effect0_blob)._0_4_,sVar7,1,pFVar2);
               fclose(pFVar2);
               (mui_Effect0_blob)._32_4_ = 0;
-              (mui_Effect0_blob)._8_4_ = (local_132 >> 3) - 1;
-              (mui_Effect0_blob)._12_4_ = local_13e - 1;
+              (mui_Effect0_blob)._8_4_ = (wav.bits_per_sample >> 3) - 1;
+              (mui_Effect0_blob)._12_4_ = wav.num_channels - 1;
               (mui_Effect0_blob)._4_4_ = 0;
-              (mui_Effect0_blob)._28_4_ = local_12c + (mui_Effect0_blob)._0_4_;
+              (mui_Effect0_blob)._28_4_ = wav.data_size + (mui_Effect0_blob)._0_4_;
               (mui_Effect0_blob)._20_4_ = 0;
-              (mui_Effect0_blob)._16_4_ = local_13c;
+              (mui_Effect0_blob)._16_4_ = wav.sample_rate;
               (mui_Effect0_blob)._24_4_ = (mui_Effect0_blob)._0_4_;
             }
           }
@@ -116,18 +138,18 @@ void mui_LoadSetting(void)
             sprintf(acStack_128,"%s/%s",uVar1,uVar6);
             pFVar2 = fopen(acStack_128,"rb");
             if (pFVar2 != (FILE *)0x0) {
-              fread(auStack_154,1,0x2c,pFVar2);
-              sVar7 = local_12c;
-              (mui_Effect1_blob)._0_4_ = (gh_u4)malloc(local_12c + 1);
+              fread(&wav,1,0x2c,pFVar2);
+              sVar7 = wav.data_size;
+              (mui_Effect1_blob)._0_4_ = (gh_u4)malloc(wav.data_size + 1);
               fread((void *)(mui_Effect1_blob)._0_4_,sVar7,1,pFVar2);
               fclose(pFVar2);
               (mui_Effect1_blob)._32_4_ = 0;
-              (mui_Effect1_blob)._8_4_ = (local_132 >> 3) - 1;
-              (mui_Effect1_blob)._12_4_ = local_13e - 1;
+              (mui_Effect1_blob)._8_4_ = (wav.bits_per_sample >> 3) - 1;
+              (mui_Effect1_blob)._12_4_ = wav.num_channels - 1;
               (mui_Effect1_blob)._4_4_ = 0;
-              (mui_Effect1_blob)._28_4_ = local_12c + (mui_Effect1_blob)._0_4_;
+              (mui_Effect1_blob)._28_4_ = wav.data_size + (mui_Effect1_blob)._0_4_;
               (mui_Effect1_blob)._20_4_ = 0;
-              (mui_Effect1_blob)._16_4_ = local_13c;
+              (mui_Effect1_blob)._16_4_ = wav.sample_rate;
               (mui_Effect1_blob)._24_4_ = (mui_Effect1_blob)._0_4_;
             }
           }

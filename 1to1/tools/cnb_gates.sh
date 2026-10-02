@@ -51,12 +51,33 @@ python3 -c "import elftools" 2>/dev/null || {
 }
 say "  pyelftools=$(python3 -c 'import elftools;print("OK")' 2>&1 | tail -1) capstone=$(python3 -c 'import capstone;print("OK")' 2>&1 | tail -1) unicorn=$(python3 -c 'import unicorn;print("OK")' 2>&1 | tail -1)"
 
+# ---- 跨平台门禁：ABI / PT_INTERP（★ 第 109 轮新增，不依赖 arm objdump）----
+#  为什么必须是独立一块：下面 ALL 里的门禁**全都依赖 arm-linux-gnueabihf-objdump**，
+#  而这两条只读 ELF 头 —— 装在 Windows/CNB 都能跑，没理由等 objdump。
+#  ★ 它们守住的是"设备能不能 exec 起来"这一层：真机 `execve` 只认 PT_INTERP 的绝对路径。
+say ""
+say "== 跨平台门禁：ABI / PT_INTERP =="
+fail=0
+for spec in "tools/abi_check.py build/rkgame.rebuilt.elf" \
+            "tools/enforce_interp.py --check build/rkgame.rebuilt.elf" \
+            "tools/seg_page_audit.py build/rkgame.rebuilt.elf" \
+            "tools/seg_page_audit.py --selftest build/rkgame.rebuilt.elf golden/factory.rkgame.bin" \
+            "tools/ssh_literal_guard.py tools/cnb_ladder.sh" \
+            "tools/ssh_literal_guard.py --selftest" \
+            "tools/pre_device_gate.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin golden/device_rootfs_min" \
+            "tools/fimg_ref_audit.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin"; do
+    say "########## $spec ##########"
+    python3 $spec >>"$OUT" 2>&1
+    rc=$?
+    say "  [$spec] rc=$rc"
+    [ "$rc" = "0" ] || fail=$((fail + 1))
+done
+
 # ---- 门禁清单（每个：名字 → 需要的额外参数）----
 ALL="scan_symbol_delta scan_cxx_abi scan_livein_args scan_kr_argcount scan_dead_loop ci_p2a_stb"
 WANT="${*:-$ALL}"
 say ""
 say "== 跑门禁 =="
-fail=0
 for t in $WANT; do
     [ -f "tools/$t.py" ] || { say "  -- $t 不存在，跳过"; continue; }
     # ★★ 参数**逐字对齐 CI**（`.github/workflows/1to1-verify.yml`）。

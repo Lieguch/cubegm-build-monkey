@@ -122,7 +122,35 @@ LIBOPT="${LIBOPT:--O0}"
 #     `-Xclang -mthumb` 报 unknown argument）⇒ Thumb 只能用**真 GCC**（Linux）产出。已登记。
 LIBCFLAGS="-c $LIBOPT -fno-sanitize=all -w -fno-strict-aliasing $ARCH $FIDELITY"
 
+# ★★★ 第 115 轮（2026-10-02）Thumb 根修：libiconv/libcharset **独立用真 GCC 编 Thumb**。
+#   工厂构建事实（第 107 轮已证）：libiconv 296 个函数全是 Thumb，`.comment`=GCC 6.x，
+#   即工厂用 `arm-linux-gnueabihf-gcc -O0 -mthumb` **单独**编这两个 TU；应用层才是 ARM。
+#   `zig cc` **静默忽略 -mthumb**（实测 -O2 与 -O2 -mthumb 产物逐字节相同）——
+#   这是 zig(clang 驱动)对本 target 的限制，不是 libiconv 的问题。
+#   联网核实（第 115 轮）：LLVM D33448 / HowToCrossCompileBuiltinsOnArm.rst / llvm-dev ——
+#   在**真 clang/gcc** 下 `-mthumb` 或 `thumbv7-linux-gnueabihf` 完整支持 Thumb2。
+#   ⇒ 根修 = libiconv 走独立的 ICONV_CC（默认=$CC，保本机 zig 仍可编 ARM 对象）；
+#     云上设 ICONV_CC=<真 GCC> 即产出 Thumb。收敛验证交 `tools/isa_mode_gate.py`
+#     （期望 mismatch 从基线 308 大幅下降）。这是**工具链根因**，非补丁。
+ICONV_CC="${ICONV_CC:-$CC}"
+# ★ ICONV_CC 可能 ≠ $CC（云上用真 GCC，本机/CI 仍是 zig）⇒ 目标/架构参数必须跟着 ICONV_CC 走，
+#   不能复用上面只跟 $CC 分支的 $ARCH —— 否则本机/CI 的 zig 会收到 `-march=armv7-a` 而无
+#   `-target` ⇒ 默认 x86_64 target 直接报 "unsupported option -march"（回归）。
+case "$ICONV_CC" in
+  *zig*) ICONV_ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
+  *)     ICONV_ARCH="-march=armv7-a -mfloat-abi=hard -mfpu=neon -fno-pic" ;;
+esac
+# -mthumb：zig cc（clang 驱动）对该 target 静默忽略 ⇒ 回到旧 ARM 行为（不回归）；
+#          真 GCC 产出 Thumb2 ⇒ 根修生效。收敛验证交 `tools/isa_mode_gate.py`。
+ICONV_FLAGS="-c $LIBOPT -mthumb -fno-sanitize=all -w -fno-strict-aliasing $ICONV_ARCH $FIDELITY"
+
 say() { echo "== $* =="; }
+
+# ★★★ ICONV_ONLY=1：只编 libiconv/libcharset（第 115 轮 Thumb 根修实验专用），跳过
+#   stb/mxml/mp3 —— 它们已由上传的 `build/upstream/*.o`（zig ARM）供应，不重编，
+#   从而把「libiconv 变 Thumb」做成严格单变量（其余上游库保持 zig ARM 不变）。
+#   默认 0 = 全量（原行为逐字不变）。
+if [ "${ICONV_ONLY:-0}" != "1" ]; then
 
 # ---------- 1) stb_truetype ----------
 say "stb_truetype v1.26"
@@ -169,11 +197,13 @@ for f in "$PD"/real/*.c; do
 done
 echo "  mp3: OK $mp3_ok / FAIL $mp3_bad"
 
+fi   # end ICONV_ONLY
+
 # ---------- 4) GNU libiconv 1.17（真源码，非桩） ----------
 say "GNU libiconv 1.17"
 LD="$ROOT/src/upstream/libiconv17"
 if [ -f "$LD/iconv.c" ]; then
-    if $CC $LIBCFLAGS -I"$(winpath "$LD")" "$(winpath "$LD/iconv.c")" ${EXTRA_INC_TRAIL:-$CGM_HDR} -o "$(winpath "$OUT/libiconv_iconv.o")" 2>"$OUT/_err_libiconv.txt"; then
+    if $ICONV_CC $ICONV_FLAGS -I"$(winpath "$LD")" "$(winpath "$LD/iconv.c")" ${EXTRA_INC_TRAIL:-$CGM_HDR} -o "$(winpath "$OUT/libiconv_iconv.o")" 2>"$OUT/_err_libiconv.txt"; then
         echo "  OK libiconv_iconv.o"
     else
         echo "  FAIL libiconv"; head -3 "$OUT/_err_libiconv.txt"
@@ -185,7 +215,7 @@ fi
 # ---------- 5) libiconv 附属：libcharset/localcharset.c（locale_charset） ----------
 LC="$ROOT/src/upstream/libcharset"
 if [ -f "$LC/localcharset.c" ]; then
-    if $CC $LIBCFLAGS -I"$(winpath "$LD")" -I"$(winpath "$LC")" "$(winpath "$LC/localcharset.c")" ${EXTRA_INC_TRAIL:-$CGM_HDR} -o "$(winpath "$OUT/libiconv_localcharset.o")" 2>"$OUT/_err_localcharset.txt"; then
+    if $ICONV_CC $ICONV_FLAGS -I"$(winpath "$LD")" -I"$(winpath "$LC")" "$(winpath "$LC/localcharset.c")" ${EXTRA_INC_TRAIL:-$CGM_HDR} -o "$(winpath "$OUT/libiconv_localcharset.o")" 2>"$OUT/_err_localcharset.txt"; then
         echo "  OK libiconv_localcharset.o"
     else
         echo "  FAIL localcharset"; head -3 "$OUT/_err_localcharset.txt"

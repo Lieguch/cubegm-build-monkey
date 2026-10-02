@@ -285,11 +285,26 @@ $(winpath "$SL/libc.so.6")
 $(winpath "$SU/libc_nonshared.a")
 $(winpath "$SU/libpthread_nonshared.a")
 $(winpath "$LGCC")"
+    # ★★★★★ 2026-10-01（第 112 轮）**根修：栈标志必须与工厂一致**
+    #   取证（云上 qemu + guest shim + 三桩，阶梯首次推到 M5 之后）：
+    #     两侧**首个行为分叉**（strace 索引 358）就是线程栈的映射属性：
+    #       工厂 mprotect(0x#, 8388608, PROT_EXEC|PROT_READ|PROT_WRITE)   ← RWX
+    #       我方 mprotect(0x#, 8388608, PROT_READ|PROT_WRITE)             ← RW（NX）
+    #     紧接着工厂多一条 set_robust_list(...)。
+    #   ⇒ 直接原因：PT_GNU_STACK 的程序头标志。实测两者：
+    #       工厂 fl=7（RWX）、memsz=0 ；我方 fl=6（RW）、memsz=16 MB。
+    #     glibc 的 pthread 按主程序的 _dl_stack_flags 决定线程栈是否带 PROT_EXEC
+    #     ⇒ 我方少了 PROT_EXEC，整条线程栈语义与原厂不同。
+    #   ⇒ 改法：-z execstack（对齐工厂的 fl=7）；同时**去掉** -z stack-size=16777216
+    #     （工厂该字段是 0；16 MB 是我们自己加的，linux 内核只用 RLIMIT_STACK）。
+    #   ⇒ 回退：cp build/_exp/link_full.sh.pre-execstack tools/link_full.sh
+    #   ★★ 注意：**这些注释行必须放在命令之前** —— 曾经误插进下面这条 `\` 续行命令中间，
+    #      导致注释行没有 `\` ⇒ 命令在该处截断 ⇒ `-z: command not found`（实测一次 RELINK-FAIL）。
     "$ZIGEXE" ld.lld --error-limit=0 \
         -m armelf_linux_eabi \
         --entry _start \
         --dynamic-linker /lib/ld-linux-armhf.so.3 \
-        -z stack-size=16777216 \
+        -z execstack \
         -z now \
         -z max-page-size=0x1000 \
         --eh-frame-hdr \
@@ -304,6 +319,7 @@ else
     $CC $ARCH $FIDELITY -no-pie \
         -Wl,-T,"$(winpath "$ROOT/linker/factory.ld")" \
         -Wl,-z,max-page-size=0x1000 \
+        -Wl,-z,execstack \
         -Wl,-z,undefs -Wl,--build-id=none \
         ${DIAG_LDFLAGS:-} \
         $WOBJS "$LIBZ_W" ${EXTRA_LDFLAGS:-} -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
@@ -318,6 +334,23 @@ if [ "$rc" != "0" ]; then
     echo "★★ 链接失败 ⇒ 本轮**没有可用产物**（fail-closed，禁止把旧产物当成新一轮结果）" >&2
     head -20 "$ROOT/report/link_full_err.txt" >&2 2>/dev/null || true
     exit 11
+fi
+# ★★★★★ 2026-10-01（第 109 轮）**根修：PT_INTERP 强制对齐**
+#   实测根因：`zig ld.lld` 直驱链接**硬忽略** `--dynamic-linker`（空格/等号/单横线三种写法全试过，
+#   全部无效；上游同源 ziglang/zig#23813 是同类），转而写入宿主默认路径
+#       'C:/Users/<user>/.workbuddy/binaries/PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3'
+#   而设备上只有 `/lib/ld-linux-armhf.so.3`（与工厂逐字节相同）。
+#   内核在 execve 里**只校验 PT_INTERP 指向的绝对路径是否存在**（连 libc 都不查），
+#   不存在 ⇒ 立即 ENOENT ⇒ 进程根本不启动 ⇒ **诊断目录零文件** —— 与真机现象逐字吻合。
+#   ⇒ 在**唯一链接入口**上无条件强制对齐（等价 patchelf --set-interpreter），两个分支都覆盖；
+#     对齐失败即 fail-closed（否则会把"设备必然起不来"的产物当成交付物）。
+#   ★ 配套：`abi_check.py` 已从"全文件子串搜索"改为"读真实 PT_INTERP 段 + 精确相等"
+#     （旧实现被宿主路径里的 `/lib/ld-linux` 子串骗过，判了 PASS ⇒ 此缺陷藏了很久）。
+ENFORCE_RC=0
+$PY "$(winpath "$ROOT/tools/enforce_interp.py")" "$(winpath "$OUT")" || ENFORCE_RC=$?
+if [ "$ENFORCE_RC" != "0" ]; then
+    echo "★★ PT_INTERP 强制对齐失败（rc=$ENFORCE_RC）⇒ 产物在设备上必然无法 exec，本轮判失败" >&2
+    exit 12
 fi
 if [ -f "$OUT" ]; then
     ls -la "$OUT"
@@ -360,6 +393,23 @@ if [ -f "$OUT" ]; then
     if ! $PY "$(winpath "$ROOT/tools/relro_audit.py")" "$(winpath "$OUT")"; then
         echo "★★ RELRO 门禁 FAIL —— 本产物**禁止**上机（.data 会在运行期变成只读）" >&2
         exit 13
+    fi
+fi
+
+# ★★★★★ 2026-10-02（GAP 16.100）：**「段页共享」门禁** —— 同样钉进链接脚本。
+#   为什么必须钉在这：`abi_check`/`dyn_audit`/`verify_layout`/`elf_load_audit`/`relro_audit`
+#   **全都看不到它** —— 它们看的是 ELF 头、动态段、符号归属、段几何（重叠/跨洞/体积）、RELRO。
+#   而本缺陷的形状是：**每个段自身都合法**，只是相邻两段**共享了一个页**，且后映射的段权限更窄。
+#   实测后果（云上 qemu + 设备真 sysroot + guest shim + 三桩）：
+#     我方 `.text` 末端 0x540fc8 未页对齐 ⇒ 紧随的 `.ARM.exidx`（R 段）与 `.text` 尾页
+#     0x540000 共享 ⇒ 该页丢 X ⇒ **pc == si_addr == 0x5401d8**（`_ZN6TUnzip4OpenEPvjj` 入口），
+#     `[pc-4] = 0xe12fff1e`（`bx lr`）⇒ 取指故障 ⇒ `ui_cn.zip` 从未被打开（M6 分叉的直接原因）。
+#   页内 24 个 FUNC 全不可达；原厂同口径共享页 = 0。
+if [ -f "$OUT" ]; then
+    echo "== 段页共享门禁（防『一个页被两个权限不同的段覆盖 ⇒ 丢 X』）=="
+    if ! $PY "$(winpath "$ROOT/tools/seg_page_audit.py")" "$(winpath "$OUT")"; then
+        echo "★★ 段页共享门禁 FAIL —— 本产物**禁止**上机（页内函数调用即取指故障）" >&2
+        exit 20
     fi
 fi
 

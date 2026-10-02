@@ -4642,9 +4642,10 @@ extern gh_blob_t OutRect;  /* retyped: Ghidra _N_M_ 字段访问 */
 /* @0x003cf98c undefined1[256] */ extern unsigned char user_joy_key_trubo[256];
 /* @0x003cfa8c undefined4 */ extern unsigned int rgb_565_buffer;
 /* @0x003cfa90 undefined4 */ extern unsigned int use_rgb_8888;
-/* @0x003cfa94 undefined4 */ extern gh_u2 rotation_buff[];  /* ★ 2026-10-01 修（§0.50）：原声明 `void * rotation_buff` 是**误判** ——
-     工厂机器码把它当**缓冲首地址**（DrawFrame 源码 `puVar4 = rotation_buff; puVar4 + param_3; *puVar4 = ...`）。
-     声明成指针 ⇒ 我方多一次 load（读它的值 0）且语义退化；声明成数组 ⇒ 退化为地址常量，与工厂一致。 */
+/* @0x003cfa94 undefined4 */ extern gh_u2 *rotation_buff;  /* ★ 2026-10-02 修（§0.59 / GAP 16.103）：§0.50 误改成数组 `gh_u2[]` 是**倒退** ——
+     工厂 environment()/FBA_Load() 里 `rotation_buff = malloc(0x96000)` / `= (void*)0` 是**写槽**（指针赋值），
+     数组不可赋值 ⇒ 云上全量重编 environment.c/FBA_Load.c 编译失败（`array type 'gh_u2[]' is not assignable`）。
+     factory_image.S `.size rotation_buff, 0x4` = 4 字节**指针槽**（先写后读），故为 `gh_u2 *`，非数组。 */
 /* @0x003cfa98 undefined4 */ extern unsigned int rotation;
 /* @0x003cfa9c undefined4 */ extern unsigned int skipCounter;
 /* @0x003cfaa0 undefined4 */ extern unsigned int FrameCount0;

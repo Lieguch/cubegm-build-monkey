@@ -448,9 +448,64 @@ def _machine_for(b, mode):
     #   ★ 默认**关**（`CGM_MAP_WILD` 未设 ⇒ 与从前逐位一致）；开它只是"看得更远"，
     #     不改判据、不改默认口径、不进判据指纹。
     #   ★ 只扩两小块（64KB + 256KB）：`_gaps` 的补零成本才可忽略（大块会让每次运行退化成 GB 级写入）。
+    # ★★★ 2026-10-01（第 108 轮）：**NULL 链捕获**（opt-in，`CGM_SEED_NULL=1`）。
+    #   实测：17 个 DIVERGE 里 12 个是"双方都崩、深度不同"，而未映射访问 **53/64 落在 0x0**。
+    #   这些是 NULL 解引用，且来源全局（`m_ui+…` 等运行时状态）"无人写" ⇒ 无法用小规模预热补齐。
+    #   做法：把 NULL 页与一个安全区**填成互指的指针图** ⇒ 任意深度解引用都不崩。
+    #   ★ 两侧内存内容**完全相同** ⇒ 仍可比；差异只会往更深处显现，不会被抹掉。
+    #   ★ 只改执行后端（与 CGM_MAP_WILD 同类）⇒ **不进判据口径指纹**；默认关。
+    if os.environ.get('CGM_SEED_NULL') == '1':
+        _SAFE = 0x60000000
+        _SAFE_SZ = 0x00100000
+        # ★★★ 实测（第 108 轮）：**Unicorn 拒绝 `mem_map(0x0, …)`**（`UC_ERR_MAP`，Invalid
+        #   memory mapping）⇒ 想"先映射 NULL 页再填值"这条路走不通。
+        #   ★ 顺带查出既有缺陷：`CGM_MAP_WILD` 里的"(0x0, 0x10000, 'NULL 页区')"**一直失败**
+        #     （被它自己的 `except Exception` 吞掉）⇒ 只有"栈上方"真正生效 —— 这正是上一轮
+        #     `CGM_MAP_WILD` 只救活 1 个（栈溢出的 `mui_video_setting`）的原因。
+        #   ⇒ 改用**动态映射钩子**：第一次访问未映射的低地址/野地址时，**当场映射该页并填充**，
+        #     再让 Unicorn 跳过本次访问（返回 True）。两侧同一套规则 ⇒ 仍可比。
+        for _lo, _sz, _why in ((_SAFE, _SAFE_SZ, '安全区'),):
+            try:
+                mu.mem_map(_lo, _sz, 7)
+            except Exception as _e:                                # noqa: BLE001
+                sys.stderr.write('  [seed-null] 跳过 0x%x(%s)：%s\n' % (_lo, _why, _e))
+        _sp = bytearray()
+        for off in range(0, _SAFE_SZ, 4):
+            _sp += (_SAFE + (off & 0xFFFF0)).to_bytes(4, 'little')
+        try:
+            mu.mem_write(_SAFE, bytes(_sp))
+        except Exception as _e:                                    # noqa: BLE001
+            sys.stderr.write('  [seed-null] 写安全区失败：%s\n' % _e)
+        _seeded_pages = set()
+
+        def _seed_hook(_mu, _access, _addr, _size, _val, _user):
+            # 只接管"低地址野指针"（NULL / -1 附近），其余未映射访问照旧崩 ——
+            # 否则会把**所有**崩溃都吞掉，观测就失去意义。
+            if _addr < 0x10000 or _addr >= 0xFFFF0000:
+                _pg = _addr & ~0xFFF
+                if _pg not in _seeded_pages:
+                    try:
+                        _mu.mem_map(_pg, 0x1000, 7)
+                        _buf = bytearray()
+                        for _o in range(0, 0x1000, 4):
+                            _buf += (_SAFE + (_o & 0xFF0)).to_bytes(4, 'little')
+                        _mu.mem_write(_pg, bytes(_buf))
+                        _seeded_pages.add(_pg)
+                    except Exception:                              # noqa: BLE001
+                        return False
+                return True                                        # 跳过本次访问
+            return False
+        # ★ `ac` 是 `unicorn.arm_const`（只有寄存器常量），hook 常量在 `unicorn` 顶层
+        #   ⇒ 必须用已 import 的名字，不能写 `ac.UC_HOOK_*`（AttributeError）。
+        for _hk in (UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED):
+            mu.hook_add(_hk, _seed_hook)
+
     if os.environ.get('CGM_MAP_WILD') == '1':
-        for _lo, _sz, _why in ((0x0, 0x10000, 'NULL 页区'),
-                               (STACK_BASE + STACK_SIZE, 0x40000, '栈上方')):
+        # ★★ 2026-10-01（第 108 轮）**修正**：原表里有 `(0x0, 0x10000, 'NULL 页区')` ——
+        #   实测 **Unicorn 拒绝 `mem_map(0x0, …)`**（`UC_ERR_MAP`）⇒ 该项**从来不生效**
+        #   （被下面的 `except Exception` 吞掉）⇒ 这正是"开了 MAP_WILD 只救活 1 个"的原因。
+        #   NULL 页改由 `CGM_SEED_NULL` 的**动态映射钩子**接管（见上），此处只留"栈上方"。
+        for _lo, _sz, _why in ((STACK_BASE + STACK_SIZE, 0x40000, '栈上方'),):
             try:
                 mu.mem_map(_lo, _sz, 7)
             except Exception as _e:                                # noqa: BLE001

@@ -16,6 +16,9 @@
   地雷 3（历史记录）：`--missing` 若误用**分类后的 MISSING**而不是**全量 UNDEF**，
     别名会从 934 塌缩到 17 ⇒ 大量工厂地址失去供应。
   地雷 4：Windows 上 `open(..., 'w')` 把 .S/.ld 写成 CRLF，与仓库的 LF 不一致。
+  地雷 5（GAP 16.100）：起「新权限类」的输出段（`.ARM.exidx` = R 段）**未页对齐** ⇒ 它与
+    `.text` 的尾页共享同一页 ⇒ 加载器后映射的 R 段**覆盖掉 X** ⇒ 跳到该页内任何函数都是
+    **取指故障**（实测 `pc == si_addr == 0x5401d8` = `TUnzip::Open` 入口，页内 24 个 FUNC）。
 
 本门禁不重跑 regen（regen 需要工厂 ELF，CI 里没有），而是**断言已提交产物的不变量**。
 配套（更强，但只能本地跑）：跑完 `regen_data.sh` 后与提交版本 diff 应为 0 —— 本次已实测通过。
@@ -61,6 +64,14 @@ def check(text_ld, text_img, ld_cr, img_cr, local_cr):
     if not re.search(r'^\s*\.data\s+ALIGN\(0x1000\)', text_ld, re.M):
         bad.append('GAP 16.71 回退：.data 未页对齐（RELRO 会侵入 .data ⇒ 写全局变量 SIGSEGV）')
 
+    # ②b GAP 16.100：起「新权限类」的输出段必须页对齐
+    #   否则一个页被两个权限不同的 PT_LOAD 共享 ⇒ 后映射的段覆盖权限 ⇒
+    #   若被覆盖掉的是 X（`.text` 尾页 + 紧随的 `.ARM.exidx` R 段），
+    #   跳到该页内任何函数都是**取指故障**（实测 si_addr == PC，页内 24 个 FUNC 全部不可达）。
+    if not re.search(r'^\s*\.ARM\.exidx\s+ALIGN\(0x1000\)', text_ld, re.M):
+        bad.append('GAP 16.100 回退：.ARM.exidx 未页对齐'
+                   '（会与 .text 尾页共享 ⇒ 该页丢 X ⇒ 跳进去即取指故障）')
+
     # ③ 别名数棘轮（防「用 MISSING 重生成导致别名塌缩」）
     n_img = len(re.findall(r'^\s*\.set\s+[A-Za-z_]', text_img, re.M))
     info.append('factory_image.S 别名 %d 个（下限 %d）' % (n_img, ALIAS_MIN_IMAGE))
@@ -104,7 +115,7 @@ def run():
             print('  ★ %s' % x)
         print('\n  结论：FAIL（%d 项）—— regen 会静默回退这些修复，先修生成器' % len(bad))
     else:
-        print('  结论：PASS（16.69 / 16.71 / 别名棘轮 / LF / 关键段 全部成立）')
+        print('  结论：PASS（16.69 / 16.71 / 16.100 / 别名棘轮 / LF / 关键段 全部成立）')
     return 0 if ok else 2
 
 
@@ -117,7 +128,9 @@ def self_test():
                '  .data.rel.ro ALIGN(4) : { *(.data.rel.ro) }\n'
                '  .got ALIGN(4) : { *(.got) }\n'
                '  .dynamic ALIGN(4) : { *(.dynamic) }\n'
-               '  .data ALIGN(0x1000) : { *(.data) }\n}\n')
+               '  .data ALIGN(0x1000) : { *(.data) }\n'
+               '  .text ALIGN(0x1000) : { *(.text) }\n'
+               '  .ARM.exidx ALIGN(0x1000) : { *(.ARM.exidx) }\n}\n')
     good_img = '\n'.join('\t.set SYM_%d, __f_data_base + 0x%x' % (i, i) for i in range(ALIAS_MIN_IMAGE))
     ok = True
 
@@ -138,6 +151,9 @@ def self_test():
 
     bad_ld3 = good_ld.replace('.data ALIGN(0x1000)', '.data ALIGN(4)')
     chk('反例  .data 不页对齐 → 被点出', check(bad_ld3, good_img, 0, 0, 0)[0], False)
+
+    bad_ld4 = good_ld.replace('.ARM.exidx ALIGN(0x1000)', '.ARM.exidx')
+    chk('反例  .ARM.exidx 不页对齐 → 被点出', check(bad_ld4, good_img, 0, 0, 0)[0], False)
 
     chk('反例  .S 含 CR → 被点出', check(good_ld, good_img, 0, 3, 0)[0], False)
 

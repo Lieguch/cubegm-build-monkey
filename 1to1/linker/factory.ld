@@ -63,7 +63,7 @@ SECTIONS
   .data ALIGN(0x1000) : { *(.data) *(.data.*) }
   .bss  ALIGN(0x1000) : { *(.bss) *(.bss.*) *(COMMON) }
   .text ALIGN(0x1000) : { *(.init) *(.text) *(.text.*) *(.fini) }
-  .ARM.exidx : { *(.ARM.exidx) *(.ARM.exidx.*) }
+  .ARM.exidx ALIGN(0x1000) : { *(.ARM.exidx) *(.ARM.exidx.*) }
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }
 }
 

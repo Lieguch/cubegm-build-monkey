@@ -183,14 +183,45 @@ def main():
     if a.ledger and os.path.exists(a.ledger):
         import csv
         rows = list(csv.DictReader(open(a.ledger, encoding='utf-8')))
+        # ★★★ 2026-10-01（第 112 轮）根修：**编译器克隆名的点号/下划线归一**
+        #   取证：工厂侧符号是 `run_process.constprop.0`（80 B），我方重建侧同体量函数叫
+        #   `run_process_constprop_0`（80 B，C 标识符不能带点）。旧实现用**精确名**建索引，
+        #   于是"专有函数"维度把工厂算进 14/223、我方只算 13/223 —— **差的那 1 个是仪器造的**，
+        #   而当时两侧 strace 除装载几何外**完全一致**（`strace_diff.py` 行为类分叉 = 0）。
+        #   ⇒ 归一化：`a.b.c` ↔ `a_b_c` 视为同一函数；两侧索引都注册两种写法。
+        #   ★ 并且把"名单里有、但两侧符号表都找不到"的名字**显式报出来**（fail-loud），
+        #     免得名字对不上时被静默当成"未执行"（那会把仪器缺陷伪装成实现退步）。
+        def norm_alias(n):
+            return n.replace('.', '_')
         name2idx = {}
         for i, (va, sz, nm) in enumerate(syms):
             name2idx.setdefault(nm, i)
+            name2idx.setdefault(norm_alias(nm), i)
+        # ★★★ 2026-10-01（第 113 轮）：把"名字对不上"分成两类 ——**不许混为一谈**：
+        #   ① 仪器问题：名单名与本侧符号表**只差点号/下划线**（已由 norm_alias 兜住）；
+        #   ② **真实缺口**：名单里 `source` 为空 / `status=TODO` ⇒ 我们**本来就没实现**它。
+        #   实测样本：`save_state` / `load_state`（ledger/functions.csv 第 222/223 行，`TODO` 且无源文件）。
+        #   反汇编取证：工厂侧它们是 **4 字节尾调用别名** ——
+        #       save_state @0x2b86f0 = `b #0x2b83e8`（→ retro_save_state）
+        #       load_state @0x2b86f4 = `b #0x2b8570`（→ retro_load_state）
+        #   ⇒ 正确的处置是**记为 ALIAS**，而不是"补一个 4 字节跳转"（那比别名更差：多一次跳）。
+        unmatched_alias = []
+        unmatched_gap = []
         for r in rows:
             sz = int(r['size'])
             prov_tot += 1
             prov_tot_bytes += sz
             i = name2idx.get(r['name'])
+            if i is None:
+                i = name2idx.get(norm_alias(r['name']))
+            if i is None:
+                src = (r.get('source') or '').strip()
+                st = (r.get('status') or '').strip()
+                tag = '%s[%s%s]' % (r['name'], st or '-', ',无源' if not src else '')
+                if (not src) or st.upper() == 'TODO':
+                    unmatched_gap.append(tag)
+                else:
+                    unmatched_alias.append(tag)
             if i is not None and i in hit:
                 prov_cov += 1
                 prov_cov_bytes += sz
@@ -201,8 +232,12 @@ def main():
                  % (prov_cov, prov_tot, 100.0 * prov_cov / max(1, prov_tot),
                     prov_cov_bytes, prov_tot_bytes,
                     100.0 * prov_cov_bytes / max(1, prov_tot_bytes)))
+        if unmatched:
+            L.append('   ★ 名字无法匹配 %d 个（**仪器问题，不是"未执行"**）：%s'
+                     % (len(unmatched), ', '.join(unmatched[:6])))
         entered = sorted(((int(r['size']), r['name'], r.get('module', '')) for r in rows
-                          if name2idx.get(r['name']) in hit), reverse=True)
+                          if name2idx.get(r['name']) in hit
+                          or name2idx.get(norm_alias(r['name'])) in hit), reverse=True)
         L.append('   已执行函数明细（%d 个）：' % len(entered))
         for sz, nm, mod in entered:
             L.append('      %-42s %7d B  %s' % (nm[:42], sz, mod))
