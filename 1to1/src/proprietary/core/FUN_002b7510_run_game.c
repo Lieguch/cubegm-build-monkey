@@ -29,7 +29,7 @@ gh_u4 run_game(char *param_1)
   
   ZIP_BUF = (void *)0x0;
   ZIP_BUF_SIZE = 0;
-  pcVar1 = (char *)GetFilenameExt();
+  pcVar1 = (char *)GetFilenameExt(param_1);
   strcpy(acStack_160,pcVar1);
   strupr(acStack_160);
   RARCH_LOG("run_game %s,%s\n",param_1,acStack_160);

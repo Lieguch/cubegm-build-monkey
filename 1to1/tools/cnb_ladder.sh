@@ -26,6 +26,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUTDIR="$ROOT/report/ladder"
 mkdir -p "$OUTDIR"
 SCEN="${SCEN:-45}"
+# ★★ 第 118 轮：**取回防陈旧（nonce 握手）**。事故：本地字面量里的裸 `$p`（sed 的 `$p`）被本地
+#   展开 ⇒ `set -u` 报 unbound ⇒ SSH 命令**在开头就死**，而「取回」把同一工作区里**上一轮**的
+#   /tmp/ladder.log 当作本轮结果（日志里还是 REBUILD=4 的横幅）⇒ 差点据此下结论。
+#   ⇒ 每轮生成 nonce，远端必须回写；取回后校验，缺 ⇒ exit 22（fail-loud，绝不交出陈旧观测）。
+NONCE="$(date -u +%s 2>/dev/null || echo 0)-$$"
 
 echo "== 1) 开/复用 CNB 云开发工作区 =="
 SN="${WS_SN:-}"; A="${WS_SSH:-}"
@@ -104,17 +109,26 @@ UP=""
 #   故不传 build/obj（传了也会被清掉重编）。build/upstream 传本地 zig 版 stb/mxml/mp3，
 #   libiconv/libcharset 由云上真 GCC -mthumb 重编覆盖。
 [ "$REBUILD" = "4" ] && UP="src/proprietary src/compat build/upstream src/upstream/xunzip/XUnzip.o src/upstream/libiconv17 src/upstream/libcharset"
+# ★ 第 118 轮：REBUILD=5 = **工具链对齐判决**（toolchain_ab.sh）。它**自己**从源码全量重建
+#   每条腿（rm -rf build/obj build/upstream），故必须给出**完整源码树**（src/）+ linker（链接脚本）。
+#   golden 只给 diff_exec/prop_equiv 需要的两个文件，避免上传整棵 device_rootfs。
+[ "$REBUILD" = "5" ] && UP="src linker golden/factory.funcs.json golden/factory.rkgame.bin"
 # ★★ 第 114 轮：**链接输入必须每次都上传**，否则云上会用仓库里的旧版，改了个寂寞。
 #   实测：改了 `linker/factory.ld`（GAP 16.76 段页对齐）却只上传 `tools/`，
 #   云上链接 rc=0 但布局仍是旧的 ⇒ 新门禁立刻 SEGPAGE-FAIL（**门禁替我们发现"云上没吃到我改的文件"**）。
 #   `linker/`（链接脚本）+ `src/data`（工厂镜像 .S/.bin，`factory_local.o` 的输入）都在这条路径上。
 UP="$UP linker src/data"
+# ★ 第 119 轮：bootlin 工具链 63MB 从 CNB→法国 OVH 直连仅 ~18KB/s（IPv6 路由劣化，57 分钟级假死）。
+#   本机下载同 URL 全速（>1MB/s）⇒ 若本机已缓存 tarball，随 tar 上传，远端 fetch_bootlin63.sh
+#   见 tarball 已满尺寸（NOW==Content-Length）即跳过下载、只做 bzip2 -t + 解压。
+TC_TAR=""
+[ -f cache_tc/bootlin63.tar.bz2 ] && TC_TAR="cache_tc/bootlin63.tar.bz2"
 # ★★ 第 114 轮：**取回前先清旧文件**。实测教训：本轮 `SCEN=4` ⇒ C5 根本没跑，
 #   而 `report/ladder/` 里仍躺着上一轮的 c5 strace ⇒ 我据此解码出"仍崩在 0x5401d8"
 #   这个**错误结论**（陈旧文件冒充新观测，与"仪器静默降级"同族）。
 rm -f "$OUTDIR"/report_qemu_*.txt "$OUTDIR"/ladder.log "$OUTDIR"/_stderr.txt 2>/dev/null || true
 tar czf - tools golden/device_rootfs_min golden/sdcard_min golden/factory.rkgame.bin \
-      build/rkgame.rebuilt.elf $UP 2>/dev/null \
+      build/rkgame.rebuilt.elf $UP $TC_TAR 2>/dev/null \
 | timeout 5400 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
       -o BatchMode=yes -o ConnectTimeout=25 \
       -o ServerAliveInterval=30 -o ServerAliveCountMax=40 "$A" \
@@ -122,6 +136,7 @@ tar czf - tools golden/device_rootfs_min golden/sdcard_min golden/factory.rkgame
        for d in /workspace/1to1 /workspace; do [ -d \"\$d/tools\" ] && PROJ=\$d && break; done
        PROJ=\${PROJ:-}; L=/tmp/ladder.log
        { echo \"PROJ=\$PROJ\"; date -u; } > \$L
+       echo \"RUN-NONCE=$NONCE\" >> \$L
        [ -n \"\$PROJ\" ] || { echo 'PROJ 未找到'; exit 9; }
        cd \"\$PROJ\" || exit 9
        mkdir -p build report build/_exp
@@ -229,6 +244,17 @@ tar czf - tools golden/device_rootfs_min golden/sdcard_min golden/factory.rkgame
            python3 tools/isa_mode_gate.py --ours build/rkgame.rebuilt.elf --factory golden/factory.rkgame.bin >>\$L 2>&1 || true
            echo '--- seg_page_audit（段页门禁不得破坏）---' >> \$L
            python3 tools/seg_page_audit.py build/rkgame.rebuilt.elf >>\$L 2>&1 || echo '  ** SEGPAGE-FAIL' >> \$L
+         elif [ "$REBUILD" = "5" ]; then
+           echo '=== ★ 工具链对齐判决（第 118 轮）：把「产物生成口径」换回工厂同款 ===' >> \$L
+           echo '  工厂真值 = GCC 6.2.0 / glibc 2.24 / binutils 2.27 / gold 1.12 / -O2（DWARF 恢复）' >> \$L
+           echo '  我方现状 = zig cc (clang 21) / glibc 2.7 头 / -Os' >> \$L
+           echo "  腿 = ${TC_AB_LEGS:-zig-Os,zig-O2,gcc63-O2}" >> \$L
+           AB_LEGS="${TC_AB_LEGS:-zig-Os,zig-O2,gcc63-O2}" PY=python3 sh tools/toolchain_ab.sh >>\$L 2>&1
+           echo "  toolchain_ab rc=\$?（0=全部腿量到；3=不可判；11=仪器不可用）" >> \$L
+           echo '--- 判决表（判据见 TOOLCHAIN-ALIGN-2026-10-02.md，跑前已写死）---' >> \$L
+           grep -a -A 9999 '判决表' report/toolchain_ab.txt >> \$L 2>&1 || true
+           echo '--- 原始记录 report/_ab_results.txt ---' >> \$L
+           cat report/_ab_results.txt >> \$L 2>&1 || true
          else
            echo '=== 云上全量重建（FORCE_BUILD=1 sh tools/cnb_env.sh）===' >> \$L
            FORCE_BUILD=1 PY=python3 sh tools/cnb_env.sh >>\$L 2>&1 || echo '  ** REBUILD-FAIL' >> \$L
@@ -321,6 +347,24 @@ FETCH="$ROOT/tools/cnb_ws_fetch.sh"
 # ★ 第 112 轮修正：`/tmp/ladder.log` 原先用 `tr '/' '_'` 生成 `_tmp_ladder.log` ⇒ **取回失败**
 #   （本轮才发现：上一轮的诊断日志根本没落地，导致"shim 是否建成"无法取证）。改为显式命名。
 sh "$FETCH" "$A" /tmp/ladder.log "$OUTDIR/ladder.log" 2>/dev/null || true
+# ★★ 第 118 轮：陈旧取回 fail-loud（nonce 必须匹配本轮）
+if ! grep -q "RUN-NONCE=$NONCE" "$OUTDIR/ladder.log" 2>/dev/null; then
+    echo "!! STALE-FETCH：取回的 ladder.log 不含本轮 nonce（$NONCE）⇒ 它是上一轮的残留，本轮无有效结果" >&2
+    echo "   远端日志头 5 行（可据此判断实际跑的是哪一轮）：" >&2
+    head -5 "$OUTDIR/ladder.log" 2>/dev/null >&2 || true
+    exit 22
+fi
+# ★ 第 118 轮：REBUILD=5 的判决表与原始记录必须取回（否则"跑了但拿不到数"= 白跑）
+# ★ 第 119 轮补：再取 _ab_diff_*.txt —— 簇 A 判据 C2（calls_ext 收敛）必须读**逐函数** DIVERGE 明细，
+#   汇总表只有 PASS/DIVERGE 计数，没有 FilePreEmu/SeletEmuCore 的 calls_ext ⇒ 缺它 = 跑了拿不到判据。
+if [ "$REBUILD" = "5" ]; then
+    for f in report/toolchain_ab.txt report/_ab_results.txt \
+             report/_ab_diff_zig-Os.txt report/_ab_diff_zig-O2.txt \
+             report/_ab_diff_gcc63-Os.txt report/_ab_diff_gcc63-O2.txt; do
+        b=$(echo "$f" | tr '/' '_'); L="$OUTDIR/$b"
+        sh "$FETCH" "$A" "/workspace/1to1/$f" "$L" 2>/dev/null || true
+    done
+fi
 for f in report/qemu_c4/strace_diff.txt report/qemu_c4/milestones.txt \
          report/qemu_c4/coverage_factory.txt report/qemu_c4/coverage_rebuild.txt \
          report/qemu_c4/shim_build.txt \

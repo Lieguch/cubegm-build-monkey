@@ -2777,9 +2777,6 @@ __f_bss_pad_base:
 	.globl user_joy_key_mask
 	.set user_joy_key_mask, __f_data_base + 0x1154
 	.size user_joy_key_mask, 0x100
-	.globl default_core_list
-	.set default_core_list, __f_data_base + 0x1254
-	.size default_core_list, 0x1a90
 	.globl DAT_003b0274
 	.set DAT_003b0274, __f_data_base + 0x1274
 	.size DAT_003b0274, 0x0

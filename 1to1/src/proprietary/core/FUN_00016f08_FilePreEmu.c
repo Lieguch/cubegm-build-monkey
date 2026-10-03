@@ -22,16 +22,17 @@ gh_u4 FilePreEmu(char *param_1)
   gh_u1 auStack_154 [292];
   int local_30;
   
-  pcVar1 = (char *)GetFilenameExt();
-  strcpy((char *)&FilenameExt,pcVar1);
-  strupr(&FilenameExt);
+  pcVar1 = (char *)GetFilenameExt(param_1);
+  strcpy((char *)(ze + 184),pcVar1);
+  strupr(ze + 184);
   Filetype = 0;
-  GetCoreIndex((char *)&FilenameExt);
+  GetCoreIndex((char *)(ze + 184));
   RARCH_LOG("Filetype %d\n",Filetype);
   uVar5 = Filetype;
   if (Filetype < 0x10000) {
     __stream = fopen(param_1,"rb");
     if (__stream != (FILE *)0x0) {
+    RARCH_LOG("FilePreEmu: open file SUCCESS\n");
       fseek(__stream,0,2);
       ZIP_BUF_SIZE = ftell(__stream);
       fseek(__stream,0,0);
@@ -45,9 +46,10 @@ gh_u4 FilePreEmu(char *param_1)
         fread(ZIP_BUF,1,uVar5,__stream);
       }
       fclose(__stream);
+      RARCH_LOG("FilePreEmu: return 1\n");
       return 1;
     }
-    RARCH_LOG("%s open fail\r\n",param_1);
+    RARCH_LOG("FilePreEmu: file open FAIL\n");
     uVar2 = 0;
   }
   else {
@@ -55,22 +57,25 @@ gh_u4 FilePreEmu(char *param_1)
     if (pcVar1 == (char *)0x0) {
       memset(&local_158,0,0x130);
       iVar3 = OpenZipU(param_1,0,2);
-      if (iVar3 == 0) {
-        RARCH_LOG("open %s fail!\n",param_1);
-        uVar2 = 0;
-      }
-      else {
+    if (iVar3 == 0) {
+    RARCH_LOG("FilePreEmu: OpenZipU FAIL\n");
+      RARCH_LOG("open %s fail!\n",param_1);
+      uVar2 = 0;
+    }
+    else {
+    RARCH_LOG("FilePreEmu: OpenZipU OK\n");
         GetZipItemA(iVar3,0xffffffff,&local_158);
         RARCH_LOG("zipcount %d\n",*(int *)(void *)local_158);
         if (local_158 < 2) {
           iVar4 = GetZipItemA(iVar3,0,&local_158);
+          RARCH_LOG("FilePreEmu: GetZipItemA0 result=%d\n",iVar4);
           if (iVar4 == 0) {
             strupr(auStack_154);
             pcVar1 = (char *)GetFilenameExt(auStack_154);
-            strcpy((char *)&FilenameExt,pcVar1);
-            strupr(&FilenameExt);
-            RARCH_LOG("FilenameExt %s\n",&FilenameExt);
-            GetCoreIndex((char *)&FilenameExt);
+            strcpy((char *)(ze + 184),pcVar1);
+            strupr(ze + 184);
+            RARCH_LOG("FilenameExt %s\n",(char *)(ze + 184));
+            GetCoreIndex((char *)(ze + 184));
             RARCH_LOG("Filetype %d\n",Filetype);
             ZIP_BUF_SIZE = local_30;
             ZIP_BUF = malloc(local_30 + 0x10);
@@ -91,6 +96,7 @@ gh_u4 FilePreEmu(char *param_1)
           Filetype = Filetype | 1;
         }
         CloseZipU(iVar3);
+        RARCH_LOG("FilePreEmu: return 1\n");
         uVar2 = 1;
       }
     }

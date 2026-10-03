@@ -40,7 +40,7 @@ TB="cache_tc/bootlin63.tar.bz2"
 #   ⇒ 下一次直接复用**损坏缓存**、确定性再失败。本次云开发上就是这个现象。
 EXP=""
 if command -v curl >/dev/null 2>&1; then
-    EXP=$(curl -fsIL --connect-timeout 20 "$URL" 2>/dev/null | tr -d '\r' \
+    EXP=$(curl -4 -fsIL --connect-timeout 20 "$URL" 2>/dev/null | tr -d '\r' \
           | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
 fi
 if [ -n "${EXP:-}" ]; then
@@ -51,7 +51,7 @@ fi
 
 _dl() {
     if command -v curl >/dev/null 2>&1; then
-        curl -fL --retry 5 --retry-delay 3 -C - --connect-timeout 20 -o "$TB" "$URL"
+        curl -4 -fL --retry 5 --retry-delay 3 -C - --connect-timeout 20 -o "$TB" "$URL"
     elif command -v wget >/dev/null 2>&1; then
         wget -c --tries=5 -O "$TB" "$URL"
     else

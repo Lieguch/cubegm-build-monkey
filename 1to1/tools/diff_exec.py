@@ -603,6 +603,14 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     mu.mem_write(SCRATCH, b'\x00' * SCRATCH_SIZE)
     mu.mem_write(SCRATCH + 0x100, b'A\x00')
     mu.mem_write(SCRATCH + 0x200, b'core\x00')
+    # ★★ 2026-10-03（第121 轮，判据见 PSEUDOSYM-CORPUS.md）：`core` 组专用入参。
+    #   'NES' 是default_core_list（@0x3b0254, stride 0x44）的**第10 项**
+    #   ⇒ GetCoreIndex 应做**恰好 11 次 strcmp** 后命中并返回 10。
+    #   为什么需要它：`misc` 组 r0=0x1 指向未映射，两侧在进 GetCoreIndex **之前**
+    #   就分岔 ⇒ strcmp 永远不可判（纪律：不可判 ≠ 未收敛）。
+    #   为什么选 NES（而不是 BKP/CONF）：BKP 只需 1 次信号太弱；CONF 要 33 次，
+    #   贴近 100 上限、易引入别的变量；NES 居中且已大写 ⇒ 不引入大小写维度。
+    mu.mem_write(SCRATCH + 0x300, b'NES\x00')
 
     sp = spans
     d = b.dregion
@@ -758,6 +766,10 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
 CORPUS = [
     ('zero', [0, 0, 0, 0]),
     ('strs', [SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH, 0]),
+    # ★ 2026-10-03（第 121 轮）：`core` 组= 让 GetCoreIndex 的 strcmp 循环**可判**。
+    #   r0 = &"NES"（default_core_list 第 10 项）⇒ 期望 11 次 strcmp、返回 10。
+    #   判据与设计依据见 PSEUDOSYM-CORPUS.md（**先写死判据、后改代码**）。
+    ('core', [SCRATCH + 0x300, SCRATCH + 0x300, SCRATCH, 0]),
     ('misc', [1, 2, 4, 0x1000]),
 ]
 

@@ -6315,3 +6315,101 @@ REBUILD=2/3 上传陈旧 .o 只重链/只重编 libiconv，从不全量重编 pr
 >   （如 `readlink(..., work_path[256], 4096)`），自有段地址就**不能自由移动** ——
 >   它必须保持「`.bss` 之后有已映射内存」这一进程镜像性质。改段布局前必须先枚举所有此类调用；
 >   否则改动在 link 期"全绿"（门禁只验 ELF 静态属性），却在运行期 `_start` 前静默崩。
+
+## 16.105 ★★★★★ 第 118 轮：残余发散的**共因** = 编译口径（四项全不同）—— 逐函数追是打地鼠，根治是「换回工厂同款口径」
+
+### 16.105.a 结论（铁证链）
+工厂 DWARF `DW_AT_producer`（`report/dwarf_recon.txt:19`）与我方 `tools/link_audit.sh` 逐项对照：
+
+| 维度 | 工厂 | 我方 | 证据 |
+|---|---|---|---|
+| 编译器 | **GCC 6.2.0**（LibreELEC `armv7a-libreelec-linux-gnueabi`，comp_dir `/home/vmuser/Lakka/build.Lakka-a10.arm-8.0-devel/`） | **`zig cc` = clang 21** | `link_audit.sh:23` + `cnb_env.sh:118` |
+| glibc 头 | **2.24** | **2.7** | `toolchain_ab.sh` 头部「腿」注释（项目自述） |
+| 优化档 | **`-O2`** | **`-Os`** | `link_audit.sh:52` `OPT="${OPT:--Os}"` |
+| 机器码开关 | `-std=gnu11 -fgnu89-inline -fmerge-all-constants -frounding-math -ftls-model=initial-exec -mtls-dialect=gnu -mtune=cortex-a8 -march=armv7-a -mfpu=neon` | 只有 `-fno-stack-protector -U_FORTIFY_SOURCE` | `link_audit.sh:36` `FIDELITY` |
+
+⇒ INLINE-MOVE 访存几何 / 体量比 p95 / libiconv 96 边角 charset / `.dynsym` 的 `__strdup`·`islower`
+**共用一个根因**。**逐函数修 = 打地鼠**（17 个 DIVERGE 已全部定性、可改源码项 = 0，正说明源码侧无缺口）。
+
+### 16.105.b 为什么 `-Os` 是错的（项目自己的历史）
+`toolchain_ab.sh` 头部已写明：`-Os` 是**当年按「体积比」这个代理指标**选定的；
+而工厂 DWARF 写的是 `-O2`。纪律 112（不得用代理指标替代终局判据）在此**被违反了一整片**。
+
+### 16.105.c 判决实验（判据先写死，见 `TOOLCHAIN-ALIGN-2026-10-02.md`）
+`REBUILD=5` → 云上 `tools/toolchain_ab.sh`，腿 = `zig-Os` / `zig-O2` / `gcc63-O2`；
+判决尺 = `diff_exec --batch --steps 3000` 的 DIVERGE 数。
+**反证条件**：`gcc63-O2` 的 DIVERGE ≥ `zig-Os` ⇒ 编译器不是根因，判据作废、重新定位。
+
+### 16.105.d 真 GCC 6.2.0 可达性（本轮真实探测，非记忆）
+`ftp.gnu.org/gnu/gcc/gcc-6.2.0/gcc-6.2.0.tar.bz2` **206** · `binutils-2.27.tar.bz2` **206** ·
+`glibc-2.24.tar.xz` **206** · `buildroot.org` **000（被拦）** ·
+`releases.linaro.org` 6.2-2016.11 **000/404（不可达，与 §0.10 一致）**。
+⇒ 自建路线可行且**只能走 ftp.gnu.org 源**（不是 Buildroot 整包）。
+
+### 16.105.e 清单实时核销（本轮实测，修正 §0.19-F 陈旧项）
+- §0.19-F.2 `UpdateROM`：**已闭合**（zig 实测 -O1 988B=1.012x / -Os 940B=0.963x，对工厂 976B）；
+  `tools/prop_equiv_baseline.txt` 的 `UpdateROM` 行**已按基线纪律第 1 条删除**。
+- §0.19-F.2 `ReadUSBJoy`：**已闭合**（1088/1072 vs 工厂 1196）。
+- §0.30-F 真嫌疑池抽查：`ConvertCode` 0.902 / `outputxy1` 1.054，与工厂 Ghidra 反编译**逐行同构** ⇒ 非缺体。
+
+## 16.106 ★★★★★ 第 118 轮事故：本地字面量裸 `$p` ⇒ SSH 命令当场死 + **陈旧日志冒充本轮结果**（已三层根治）
+
+### 16.106.a 事故（我自己的脚本 bug，如实记录）
+新增 REBUILD=5 分支时写了 `sed -n '/判决表/,$p' report/toolchain_ab.txt`。
+该行位于 `cnb_ladder.sh` 的**本地双引号字面量**内（该字面量整段交给 `ssh` 执行），
+于是 **`$p` 被本地 shell 展开** ⇒ 脚本 `set -u` ⇒ 报
+```
+tools/cnb_ladder.sh: line 122: p: unbound variable
+   ssh 管道 rc=1
+```
+⇒ SSH 命令**在开头就死**，`REBUILD=5` 分支**从未执行**。
+
+### 16.106.b 二次伤害：**取回把上一轮的日志当本轮观测**
+ssh 死在开头 ⇒ 远端 `/tmp/ladder.log` **未被本轮重写**；而本地「取回」照常去抓它
+⇒ 抓到的是**同一复用工作区里上一轮（REBUILD=4）的日志**（横幅写着「B线复验」）。
+若不做校验，就会拿**陈旧观测**当本轮判决结果 —— 与 §「陈旧文件冒充新观测」同族。
+
+### 16.106.c 三层根治（不是补丁）
+1. **修 `$p`**：改用 `grep -a -A 9999 '判决表'`（彻底避开 `$`）。
+2. **门禁收紧（根因层）**：`tools/ssh_literal_guard.py` 原来只把「未转义 `$VAR`」记为
+   `[info]`（文档里写着"碰巧能用"）—— **只在本地确有该变量时才成立**。现改为：
+   · 字面量内**未转义**的 `$VAR` / `${VAR}`，**只有白名单**（`REBUILD`/`SCEN`/`OUTDIR`/
+     `CGM_FIX_DEV_DRI`/`TC_AB_LEGS`/`NONCE`，均为**有意**本地插值）才放行，其余一律 **FAIL**；
+   · 正则补上 **`${VAR}` 形态**（旧版只匹配 `$VAR`，是一条真洞）；
+   · `--selftest` 增两条回归样本：**裸 `$p`**、**未转义 `${X}`** → 必须 FAIL。
+   自证 6/6 全 OK；对 `cnb_ladder.sh` 实跑 PASS；**把 `$p` 注入副本 → 被抓 FAIL**。
+3. **取回防陈旧（观测层）**：`cnb_ladder.sh` 每轮生成 `NONCE`，远端必须回写
+   `RUN-NONCE=<nonce>`；取回后校验，**缺 ⇒ exit 22 fail-loud**，绝不交出陈旧观测。
+
+## 16.107 ★★★★★ 第 118 轮判决：`gcc63-O2` DIVERGE **26 > 18**（`zig-Os`）⇒ 「编译口径是共因」**证伪**（照预登记反证条件执行）
+
+### 16.107.a 实测（云上 `REBUILD=5`，3 腿，nonce `1790927846-920` 校验通过，3/3 量到）
+| 腿 | PASS | DIVERGE | TRUNC | REFDEAD | 构建 |
+|---|---|---|---|---|---|
+| `zig-Os` | **765** | **18** | 5 | 0 | OK |
+| `zig-O2` | 761 | **22** | 5 | 0 | OK |
+| `gcc63-O2` | 727 | **26** | 6 | **34** | **rc=17 size_coverage_gate FAIL** |
+
+### 16.107.b 判据核销（判据跑前写死在 `TOOLCHAIN-ALIGN-2026-10-02.md` §三，未改一字）
+- **M1 不成立**（26 > 18）；**M2 单调性**第一步即断（18 < 22）；
+- **反证条件命中** ⇒ **「编译口径不对」不是根因**，路径退出；
+- **同时推翻 16.105.b**「`-Os` 是按体积比选错、应改 `-O2`」：`-O2` 实测 **更差**（18→22）。
+
+### 16.107.c 与既有结论的关系（不重造轮子）
+§0.40-B 的 CI `toolchain-ab#13` 四腿表已测过同样四腿（`zig-Os 36` < `gcc63 37/48`），
+并**已写明**「`gcc63-*` 的 `REFDEAD=34` 是 §0.26/§0.29 就点名的**观测性缺口**，
+DIVERGE 差异**混着观测性差异**，不能读成生成质量」。本轮在**当前源码**上独立复现同一方向，
+把该假设**正式证伪**，并**钉死了当前源码的残余清单**。
+
+### 16.107.d ★ 新增可用的方法：**把 GCC 当 UB 探测器**（不是当产物编译器）
+`gcc63-O2` 腿触发 `size_coverage_gate` FAIL：
+`GetWorkPath 0.429（12 vs 28）` · `stbtt__cff_get_index 0.476（160 vs 336）`
+⇒ **GCC 删掉了 clang 留着的代码** ⇒ 说明**仍有未修的 UB 点**（§0.20 的 UB 类没清干净）。
+★ 用法：拿 `gcc63` 腿的编译结果跑体量覆盖门禁，**只读它的"UB 报警"，不采用它的产物**。
+这是 `tools/ub_census.py` 之外的**独立第二意见**，且**设备无关**。
+
+### 16.107.e 残余清单（当前源码，可执行答案）
+`DIVERGE 18 / REFDEAD 0 / TRUNC 5`，18 个聚 8 簇；**最高优先 = 簇 A**：
+`FilePreEmu` / `SeletEmuCore` —— 工厂侧 `strcmp ×8` + 6 处表读（stride 0x44），我方 `strlen/strcpy` 且早死。
+★ **注意**：工厂 Ghidra 源码里**也没有 strcmp**（只有 `strstr/strupr/GetCoreIndex`）
+⇒ 那 8 次来自**被内联的遍历子过程**；属「我方该循环未进入」的真嫌疑，**需单独立案取证**（本轮不下结论）。

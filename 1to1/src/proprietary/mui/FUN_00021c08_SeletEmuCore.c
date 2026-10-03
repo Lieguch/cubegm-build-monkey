@@ -34,7 +34,7 @@ int SeletEmuCore(gh_byte *param_1)
   gh_u4 local_12c;
   char acStack_128 [260];
   
-  iVar1 = FilePreEmu();
+  iVar1 = FilePreEmu(param_1);
   iVar3 = DAT_003af2a0;
   iVar8 = (int)DAT_003af29c;
   __ptr = malloc(0x6ebe0);

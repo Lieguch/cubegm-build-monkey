@@ -88,7 +88,7 @@ extern void mui_DisplayThumbnail(); /* K&R: 参数不可信/不可解析 */
 extern long buttontoi(char *param_1);
 extern int code_convert_constprop_22(); /* K&R: 参数不可信/不可解析 */
 extern gh_byte * strupr(); /* K&R：调用点 0 参 */
-extern gh_u4 FilePreEmu(); /* K&R: 参数不可信/不可解析 */
+extern gh_u4 FilePreEmu(char *param_1); /* 工厂汇编铁证：SeletEmuCore/mui_run_game 均 mov rN,r0 后未覆盖 r0 ⇒ 1 参 */
 extern gh_u1 * GetWorkPath(void); /* 对齐 Ghidra 定义 FUN_000171dc */
 extern void mui_LoadSetting(); /* K&R: 参数不可信/不可解析 */
 extern gh_u4 mui_LoadUIResource(gh_u4 **param_1,char *param_2);
@@ -207,7 +207,7 @@ extern void UIDebug(void *param_1,int param_2,gh_u4 param_3,gh_uint param_4);
 extern void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4);
 extern void rgb8888_to_rgb565(gh_ushort *param_1,int param_2,int param_3);
 extern int GetCoreIndex(char *param_1);
-extern char * GetFilenameExt(); /* K&R: 0/1 参调用点并存，返回类型按定义 char* */
+extern char * GetFilenameExt(char *param_1); /* 工厂汇编铁证：4 处调用均 mov r0,... 后 bl ⇒ 恒 1 参 */
 extern void extract_basepath(char *param_1,char *param_2,int param_3);
 extern void init_user_joy_key_mask(void *param_1,gh_u4 param_2);
 extern void TurboKeyProcess(); /* K&R: 参数不可信/不可解析 */
