@@ -14,8 +14,16 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: build_guest_shim.sh <out.so>}"
-CC="${CC:-cc}"
+CC="${CC:-}"
 SRC="$ROOT/tools/guest_shim/fake_mem.c"
+
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh。
+#   历程：第 137 轮把 `CC="${CC:-cc}"`（硬编宿主 cc）改成四段探测；
+#   第 138 轮发现同一段探测已在 **6 个脚本里各写一份** ⇒ 违反「同一规则禁止写两处」，
+#   且其中一个副本的 sed 分隔符与 alternation 冲突（自证抓出 5/5 腿全空）。
+#   ⇒ 收敛到 cgm_cc_probe.sh 一处；本文件只保留 source 调用。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 
 # ★ Windows 开发机：zig.exe 是**原生 Windows 程序**，不认 `/d/...` 这类 MSYS 路径
 #   （技能库第 24 条：入参与 -o 都要 cygpath -w；-m 只用于 bash 通配）。

@@ -27,16 +27,14 @@ OUT="${1:?usage: build_libkms_stub.sh <outdir>}"
 mkdir -p "$OUT"
 
 # 交叉编译器选择：① 显式 CC_ARM ② 系统 arm gcc（CI 已 apt 安装）③ zig（本机/CI 都有）
-if [ -n "${CC_ARM:-}" ]; then
-    CC="$CC_ARM"
-elif command -v arm-linux-gnueabihf-gcc >/dev/null 2>&1; then
-    CC="arm-linux-gnueabihf-gcc"
-elif command -v zig >/dev/null 2>&1; then
-    CC="zig cc -target arm-linux-gnueabihf"
-else
-    echo "!! 找不到 ARM 交叉编译器（CC_ARM / arm-linux-gnueabihf-gcc / zig）" >&2
-    exit 1
-fi
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh。
+#   本文件此前自带一份探测（用 CC_ARM），与 build_guest_shim/build_upstream 的那份
+#   **同规则两处写**，且缺 `arm-buildroot-linux-gnueabihf-gcc` 分支
+#   ⇒ CI（装 arm-gcc）与云开发（只有 ziglang）各只能命中一半。
+#   cgm_cc_probe.sh 已把「① CC ② CC_ARM ③ arm-gcc ④ arm-buildroot-gcc ⑤ gcc
+#   ⑥ zig ⑦ python 包 ziglang」收敛到一处，本文件只保留 source。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 
 SRC="$OUT/_libkms_stub.c"
 printf '/* 空 TU：只求产出合法 ARM 共享对象（无符号、无代码） */\n' > "$SRC"

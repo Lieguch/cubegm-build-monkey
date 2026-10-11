@@ -48,4 +48,37 @@ python3: can't open file '/workspace/1to1/tools/push_1to1.py': [Errno 2] No such
 
 ## 实测结果
 
-（待回填）
+| 判据 | 实测 | 判定 |
+|---|---|---|
+| **F1** 清单逐行等价 | `881/653` → `883/654`，差异**恰为 2 个新增文件**（`FILELIST-TOOLCHAIN.md`+`tools/filelist.py`），其余**逐行相同**（882 行 diff 仅 3 处） | ✅ 规则零漂移 |
+| **F2** 不含真token | 形状匹配 `gh[pousr]_[A-Za-z0-9]{20,}\|github_pat_…` **0 命中** | ✅ |
+| **F3** `filelist.py` 入清单 | 清单内命中=1 | ✅ |
+| **F4** 云端可取清单 | 云端 `python3 tools/filelist.py --list-only` → `FILELIST 1419/8`；`git pull` 显示 `create mode 100644 1to1/tools/push_1to1.py` | ✅ |
+| **F5** `sync_mirror` 不依赖缺失文件 | 改为 `import filelist`；云端 `filelist.py`+`push_1to1.py` **均已入库** | ✅ **循环依赖解除** |
+
+### ★★ 连带发现并根治：token 自检的**假阳性**（比原病灶更严重）
+
+原规则 `if b'ghp_' in content: skip` 是**裸子串**匹配 ⇒
+**任何"需要写出检测串"的文件都会被自己误杀**。实测误杀 **6 个**：
+
+| 被误杀的文件 | 后果 |
+|---|---|
+| `tools/push_1to1.py` | 双重排除（另有 `EXCLUDE`） |
+| `tools/filelist.py` | **本轮修复失效**（它上不了云 ⇒ 循环依赖没解除） |
+| `STATUS.md` | **该文件至今从未进过仓库** |
+| `FILELIST-TOOLCHAIN.md` / `cache_tc/bootlin54.tar.bz2` / `__pycache__/push_1to1.*.pyc` | 同类 |
+
+**根治**：改为**token 形状**匹配（Classic `gh[pousr]_`+≥20位base62；Fine-grained `github_pat_`+≥20）。
+实测 **0 误杀 0 漏放**。
+
+>★★ **纪律 145（新）**：**自检规则不得用裸子串匹配自己**。
+> 任何形如"内容里不能出现 X"的规则，必须匹配 **X 的语法形状**而非 X 本身，
+> 否则实现该规则的工具/文档会被自动排除，形成"**越修越修不进去**"的死锁。
+
+### 净产出
+
+1. `tools/filelist.py`（新，无token，入库）—— 清单唯一真源
+2. `tools/push_1to1.py` **首次入库**（此前被 `EXCLUDE` 永久排除）
+3. `tools/sync_mirror.py` 改 `import filelist` ⇒ 云端可跑
+4. token 自检改形状匹配 ⇒ `STATUS.md` 等6 个文件恢复入库资格
+5. CNB `lieguch/cubeGM` main = **`1116af3`**

@@ -25,7 +25,17 @@
 # ============================================================
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CC="${CC:-arm-linux-gnueabihf-gcc}"
+# ★ 2026-10-04（第 138 轮）改为引用**唯一权威探测** tools/cgm_cc_probe.sh。
+#   原为 `CC="${CC:-arm-linux-gnueabihf-gcc}"`（**硬编**）：三个环境各自只装其中一种
+#   （云开发只有 ziglang / CI 只有 arm-gcc / 本机只有 zig.exe）
+#   ⇒ 硬编任何一种都会在其余两个失败。实测已连续三轮踩坑：
+#     build_guest_shim.sh 静默降级、build_upstream.sh 的 XUnzip 自举失败、
+#     而本脚本报 `arm-linux-gnueabihf-gcc: command not found` 且无产物。
+#   收敛到一处的收益：以后新增构建脚本只需 source 它，不会再复制第 5 份探测代码。
+if [ -z "${CC:-}" ] && [ -z "${CC_ARM:-}" ]; then
+    . "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+        || { echo "!! 编译器探测失败（见上方说明）" >&2; exit 13; }
+fi
 PY="${PY:-python}"
 OPT="${OPT:--Os}"
 OUT="${1:-$ROOT/build/rkgame.diag}"

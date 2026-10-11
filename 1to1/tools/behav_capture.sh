@@ -207,10 +207,26 @@ fi
 
 STDERRLN=$(wc -l < "$RUNDIR/stderr.txt" 2>/dev/null | tr -d ' '); STDERRLN=${STDERRLN:-0}
 
-# --- 帧缓冲采样（尽力而为）---
+# --- 帧缓冲采样：读 **DRM 桩在 PageFlip 处算出的真实像素哈希** -------------------
+# ★ 2026-10-04（第 137 轮）根修：此前这里读的是**宿主** `/dev/fb0`
+#   —— qemu-user 环境里根本没有该设备 ⇒ 恒为 "none" ⇒ 「按键有没有改变画面」
+#   在物理上无法回答（T11 的判据缺失就是从这来的）。
+#   现在桩在真实硬件的**帧提交点**（drmModePageFlip）对帧缓冲实体逐字节哈希，
+#   并打到 stderr ⇒ 这里直接取。仍是 `none` 表示**确实没观测到帧提交**
+#   （比"没设备所以读不到"诚实得多，也把"桩没生效"显式暴露出来）。
 FBHASH="none"
-if [ -r /dev/fb0 ]; then
-    FBHASH=$(dd if=/dev/fb0 bs=4096 count=64 2>/dev/null | sha256sum | cut -c1-16)
+FBFRAMES="0"
+_fbline=$(LC_ALL=C grep -a -o '\[drmstub\] frame#[0-9]* hash=[0-9a-f]* dim=[0-9x]*' \
+          "$RUNDIR/stderr.txt" 2>/dev/null | tail -1)
+if [ -n "$_fbline" ]; then
+    FBHASH=$(printf '%s' "$_fbline" | sed -n 's/.* hash=\([0-9a-f]*\).*/\1/p')
+    FBFRAMES=$(LC_ALL=C grep -a -c '\[drmstub\] frame#' "$RUNDIR/stderr.txt" 2>/dev/null || true)
+    case "$FBFRAMES" in ''|*[!0-9]*) FBFRAMES=0 ;; esac
+    # 桩"无实体"时输出 "frame# --"（无 hash=/dim= 字段），本就被上面的 grep 正则排除；
+    # 只有 hash= 后为空（''）才是"没算到哈希" ⇒ 降级 none。
+    # ★ 曾误写 `????????`：8 个 ? 在 shell case 里是**通配符**（每个 ? 匹配 1 个任意字符），
+    #   恰好把合法的 8 位 hex 哈希（如 e96c9dc5）吞掉 ⇒ B6/B6R 恒 none（长期 FAIL 的真凶之一）。
+    case "$FBHASH" in ''|--) FBHASH="none"; FBFRAMES=0 ;; esac
 fi
 
 # --- shm 心跳 ---
@@ -277,6 +293,7 @@ TMO=false
     printf '  "sfc_faults": %s,\n' "$SFC_FAULTS"
     printf '  "sfc_cmds": %s,\n' "$SFC_CMDS"
     printf '  "frame_hash": "%s",\n' "$FBHASH"
+    printf '  "frame_commits": %s,\n' "$FBFRAMES"
     printf '  "events": [\n'
     LC_ALL=C awk '{gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \
         n="$EVENTS" "$RUNDIR/events.txt"

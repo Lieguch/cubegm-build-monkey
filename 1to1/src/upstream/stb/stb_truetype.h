@@ -1947,7 +1947,23 @@ static void stbtt__csctx_rmove_to(stbtt__csctx *ctx, float dx, float dy)
    stbtt__csctx_v(ctx, STBTT_vmove, (int)ctx->x, (int)ctx->y, 0, 0, 0, 0);
 }
 
-static void stbtt__csctx_rline_to(stbtt__csctx *ctx, float dx, float dy)
+/* ★★★ 2026-10-04（第 129 轮）T01/T02 根修：对这两个 static 加 noinline。
+ * 根因（云开发单变量实测，clean vs patched 两腿独立目录、sha256 互异）：
+ *   zig cc -Os 会把这两个**裸 static**（无 inline 标记）内联掉 ⇒ 产物 .symtab 里
+ *   连 LOCAL 符号都没有。工厂 GCC 6.x 未内联，保留独立实体（bl 调用）：
+ *     stbtt__csctx_rline_to @0x13b50 size=84（21 条 NEON）
+ *     stbtt__cuberoot        @0x16470 size=72（调 pow@plt）
+ * 实测效果：符号集 84→86、共有 78→80、工厂独有 3→1（仅剩 rasterize_sorted_edges
+ * 的 .isra.16 分片名，基函数 stbtt_Rasterize 已在产物）；M1 逐字节相同 18→18
+ * （不劣化）；两个目标函数 size **84/72 与工厂逐字节一致**。
+ * 代价（语义等价，非缺陷）：run_charstring 3048→2704 / GetGlyphSDF 4268→4144
+ *   —— 内联体被拆成独立函数，指令数 762→676（−86 = rline_to 84B + 调用）、
+ *   bl 目标 50→49，纯粹是同一段代码从"内联"变成"独立符号"。
+ * 为何不用 -fno-inline-functions：全局开关使符号数 84→130（+46），与工厂 81 严重偏离；
+ *   -fno-inline 亦全关内联（clang 官方文档），代价过大。局部 noinline 是唯一精准解。
+ * 回退：git checkout src/upstream/stb/stb_truetype.h（或删除这两处属性）。
+ */
+static __attribute__((noinline)) void stbtt__csctx_rline_to(stbtt__csctx *ctx, float dx, float dy)
 {
    ctx->x += dx;
    ctx->y += dy;
@@ -3294,7 +3310,25 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
 }
 
 // directly AA rasterize edges w/o supersampling
-static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e, int n, int vsubsample, int off_x, int off_y, void *userdata)
+/* ★★★ 2026-10-04（第 133 轮）T07：精准抑制内联，理由与 stbtt__csctx_rline_to /
+ *   stbtt__cuberoot（第 129 轮）完全同源，但**只改定义处**（3313 行），不动 2940 行前向声明。
+ *
+ * 取证（云开发单变量对照，两腿独立目录、sha256 互异 e09b52ca… vs 8b5ffc8d…）：
+ *   腿 cur（仅前两处 noinline）: 工厂独有符号 = 1（本函数缺失）；stbtt_Rasterize = 3440 B
+ *   腿 nin（本处再加 noinline） : 工厂独有符号 = **0**（工厂 stb 符号 100% 覆盖）
+ *                                stbtt__rasterize_sorted_edges = 2184 B（工厂 2412）
+ *                                stbtt_Rasterize = **1328 B**（工厂 1244，从 3440 降下来）
+ *   不劣化证据：M1 体积逐字节相同 20 → 20；M2 体积比中位 0.987 → 0.987（完全不变）。
+ *   仅 1 个函数尺寸变化（stbtt_Rasterize 3440→1328）= 把内联体拆成独立函数的**必然体积转移**。
+ *
+ * 为何不用 -fno-inline-functions（全局开关）：第 129 轮已实测会让 stb 符号数
+ *   从 84 暴涨到 130（+46），严重偏离工厂的 81 ⇒ 否决。
+ * 为何不加 GCC 的 .isra.16 后缀：那是 GCC 对该函数做的克隆分片命名，不是独立实体；
+ *   工厂 .symtab 里基名 `stbtt__rasterize_sorted_edges` **本身就是一个 STT_FUNC 实体**
+ *   （size 2412），故只需让它不被内联。
+ * 回退：git checkout src/upstream/stb/stb_truetype.h（或删掉本行属性）。
+ */
+static __attribute__((noinline)) void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e, int n, int vsubsample, int off_x, int off_y, void *userdata)
 {
    stbtt__hheap hh = { 0, 0, 0 };
    stbtt__active_edge *active = NULL;
@@ -4532,7 +4566,9 @@ static int stbtt__compute_crossings_x(float x, float y, int nverts, stbtt_vertex
    return winding;
 }
 
-static float stbtt__cuberoot( float x )
+/* ★ 2026-10-04（第 129 轮）T02：noinline 理由与依据见上方 stbtt__csctx_rline_to 的注释块。
+ * 实测 size=72，与工厂 stbtt__cuberoot@0x16470 的 72 逐字节一致。 */
+static __attribute__((noinline)) float stbtt__cuberoot( float x )
 {
    if (x<0)
       return -(float) STBTT_pow(-x,1.0f/3.0f);

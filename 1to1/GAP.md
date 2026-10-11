@@ -6413,3 +6413,220 @@ DIVERGE 差异**混着观测性差异**，不能读成生成质量」。本轮�
 `FilePreEmu` / `SeletEmuCore` —— 工厂侧 `strcmp ×8` + 6 处表读（stride 0x44），我方 `strlen/strcpy` 且早死。
 ★ **注意**：工厂 Ghidra 源码里**也没有 strcmp**（只有 `strstr/strupr/GetCoreIndex`）
 ⇒ 那 8 次来自**被内联的遍历子过程**；属「我方该循环未进入」的真嫌疑，**需单独立案取证**（本轮不下结论）。
+
+### 16.107.e ★ 修订（第 142 轮，2026-10-05）—— 簇 A 改判：**不是代码缺失，是仪器兜底违反 C 契约**
+
+> 本段为**增量追加**，上面 16.107.e 原文（含「最高优先 = 簇 A … 需单独立案取证」）
+> **一字未改**。本段给出该"单独立案"的最终裁定与根修，并**修订记账**。
+> 原文的**事实部分全部成立**（8 次 strcmp + 6 处 stride 0x44 表读确实存在），
+> 但**归因**错了：那些量在**独立函数 `GetCoreIndex`（0x2b5624）** 里，不在被测的
+> `FilePreEmu` / `SeletEmuCore` 里；且"我方早死"这一观测是**仪器缺陷**造成的。
+
+#### 142.1 原文归因的两处更正（逐条附证据）
+
+| 原文表述 | 裁定 | 铁证 |
+|---|---|---|
+| 「工厂侧 `strcmp ×8` + 6 处表读（stride 0x44）」在 `FilePreEmu`/`SeletEmuCore` 侧 | **量在 `GetCoreIndex`（@0x2b5624，148B）里** | 工厂 `FilePreEmu`(0x16f08–0x171dc) 体内 strcmp **0 个**；`SeletEmuCore`(0x21c08–0x2232c) 体内 **1 个**(0x22008)；`0x16f5c: bl 2b5624 <GetCoreIndex>` |
+| 「那 8 次来自被内联的遍历子过程」 | **不是内联**，是**普通独立函数调用** | `readelf` 全表：`GetCoreIndex` 有独立 FUNC 符号（工厂 size=148） |
+| 「我方 `strlen/strcpy` 且早死」= 真嫌疑「我方该循环未进入」 | **假发散**，根因在差分器的**外部调用兜底** | 见 142.2 全链证据 |
+
+#### 142.2 ★ 完整因果链（现场实测，四个单变量实验互证）
+
+实验矩阵（云开发 workspace，`unicorn 2.1.4`；`--steps 20000`）：
+
+| # | 条件 | `FilePreEmu` | `SeletEmuCore` | 结论 |
+|---|---|---|---|---|
+| E1 | 基线（默认口径） | DIVERGE（misc 组 F=509 / O=**22** 条） | DIVERGE（F=518 / O=**26**） | 复现第 141 轮 |
+| E2 | `CGM_MAP_WILD=1` | **与 E1 逐位相同** | 同 | MAP_WILD **零影响**（它只映射"栈上方"，死点在 `0x0`）⇒ 不是观测力不足 |
+| E3 | `CGM_SEED_NULL=1` | 深度差 561 vs 578，**残留 1 条真判据** | **PASS** | NULL 链捕获后 SeletEmuCore 直接转 PASS ⇒ 原 DIVERGE 是**野指针早死**造成的 |
+| E4 | E3 + `CGM_NO_LIBC_MODEL=1` | 深度差 223 vs 231，**残留 1 条 `data-reads`** | — | 关模型后 `calls_ext` **逐项相同**，但读序列仍差 ⇒ 定位到访存侧 |
+
+E3/E4 残留的那一条差异，用**只读探针**（打印两侧**原始未归一** `reads`/`writes`/`calls`）钉死：
+
+| 侧 | 原始读序列（misc 组 r0=1，`CGM_SEED_NULL=1`） | 指令数 | `calls_ext` |
+|---|---|---|---|
+| 工厂 F | 第 1 条 `0x003bc2c0 (FilenameExt):1:R` + 35 个 `default_core_list` 步进读 + Filetype/log | 561 | strlen,strcpy,strcmp×35,vfprintf,fopen,vfprintf |
+| 我方 O | 第 1 条 `0x003b0254 (default_core_list):1:R`（**没有 FilenameExt[0]**） | 578 | **完全相同** |
+
+⇒ 两侧 `strcmp` 循环**都跑完了**（35 次全同）、外部调用序列**逐项相同**，
+**唯一差别是我方没读 `FilenameExt[0]`**。
+
+**根因（两侧机器码逐条对照，字节级）** —— `strcpy(&FilenameExt, p); strupr(&FilenameExt);` 一句：
+
+```
+工厂  16f3c: mov r0, r4          ; r0 = &FilenameExt
+      16f40: bl  strcpy@plt       ; ★ r0（caller-saved）可被改写
+      16f44: mov r0, r4          ; ★★ 重新装载 —— 编译器认为有必要
+      16f48: bl  strupr
+
+我方  4e59a0: mov r0, r4         ; r0 = 0x3bc2c0（经 GOT，实测槽值 = 0x003bc2c0 ✓）
+      4e59a4: bl  strcpy          ;   实为 PLT thunk @0x401530
+      4e59a8: bl  strupr         ; ★★ 无 reload ⇒ r0 仍是 strcpy 的返回值
+```
+
+**两侧都是合法代码**（AAPCS：r0 是 caller-saved，`strcpy` 可以改写它）。
+我方 clang -Os 判定「`strcpy` 返回值未被使用 ⇒ reload 冗余」而消掉它 ——
+**在真实硬件上两侧行为完全一致**。
+
+分岔只发生在差分器里：`misc` 组 r0=1 ⇒ `strcpy` 的 **src 不可读** ⇒
+`libc_model.Model.call` 抛异常 ⇒ 走兜底 ⇒ **旧兜底硬写 `r0 = 0`**
+（`diff_exec.py` 原第 666 行）⇒ 工厂 reload 拿到 `&FilenameExt`、我方 `strupr(NULL)` 早死。
+⇒ **根因定性：差分器兜底路径违反 libc 的 C 契约**（`char *strcpy(char *dest, const char *src)`
+**恒返回 dest**，与 src 是否可读**无关**）。**不是被测代码的缺陷。**
+
+#### 142.3 根修（类别级，非局部补丁）
+
+新增 `libc_model.CONTRACT_DST_RET` + `libc_model.fallback_r0()`（**唯一真源**）：
+凡 C 标准规定「返回 dest」的函数（`strcpy/strncpy/strcat/strncat/memcpy/memmove/memset`）
+在**未建模/模型抛异常**时，兜底返回 `dest`（= 实参 `a[0]`），**不再返回 0**。
+`diff_exec` 兜底分支改为**只调用**该函数（纪律：同一规则禁止写两处）。
+
+★ **修首版就被端到端复测抓出一个真错**：初版把 dest 误写成第 1 实参（`a[1]`=src），
+自证全绿但 `strupr` 仍读 `0x1` 早死。修法：`CONTRACT_DST_RET` 改为记**槽位** `'r0'`；
+自证锚点用 **a[0] 与 a[1] 取不同值**（0xAAAAAAAA vs 0x3BC2C0），
+并加反向锚点「契约表内无 `r1` 项」—— 保证"dest/src 搞反"时**自证会变红**。
+
+★ **第二个真缺陷（本轮自证抓出）**：`libc_model.self_test()` **此前没有任何调用方**
+（`diff_exec --self-test` 只**重写**了其中几条），模型侧 55 条自证**一条都没跑** ——
+新锚点写在**死链**上，形同虚设。修法：`diff_exec.self_test()` **整条调用**它
+（不重述、不摘抄），标签加 `libc模型自证·` 前缀。
+⇒ `--self-test` 条数 **108 → 163**，失败 **0**。
+
+#### 142.4 效果（权威复现，棘轮只减不增）
+
+| 指标 | 修订前（第 139/141 轮） | 修订后（第 142 轮） | 变化 |
+|---|---|---|---|
+| PASS | 767 | **770** | **+3** |
+| DIVERGE | 20 | **17** | **−3** |
+| TRUNC(不可判) | 3 | 3 | — |
+| REFDEAD / SKIP | 0 / 0 | 0 / 0 | — |
+| 自洽校验 | 767+20+3 = 790 ✓ | 770+17+3 = **790** ✓ | — |
+
+收敛名单（机械差集，**新增 0**）：`FilePreEmu`、`SeletEmuCore`、`get_value_from_items`
+—— 三个都是**同一根因族**（前两个是 `strcpy` 返回值被依赖；第三个是
+旧账 `ret F=0x2 O=0x0` ⇒ 现两侧 `ret=0x2`，同属"指针返回值型兜底"族）。
+
+★ 因此本段把 16.107.e 的簇 A 从「**最高优先真缺陷**」改判为
+「**已定位并根修的仪器缺陷**」；16.107.e 的 `DIVERGE 18` / `TRUNC 5` 属**历史轮次**口径，
+不随后续轮次重述（口径不同不可直接相减，见 GAP 17.10）。
+
+#### G1·补六 ★★★★★ **第 9 个真实分歧：工厂 filename XOR `key2[0x18]`**（2026-10-09 R168 云端反汇编铁证）
+
+**发现链（全部可复核，云端 `/tmp/fac_disasm.txt` 75.8 万行全量反汇编）**：
+
+| # | 证据（工厂机器码） | 结论 |
+|---|---|---|
+| 1 | `unzlocal_GetCurrentFileInfoInternal+0x40c`（0x114e0-0x114f0）：`lufread(sl, r4, 1, file)`；`0x114f8: cmp r0,#1; movne r6,#0; mvnne r4,#0`；`0x11500: beq 1156c` | filename 读进缓冲后，`lufread` 必须恰好返回 1 才进下一段 |
+| 2 | `+0x498`（0x1156c-0x115a8）：`ldr r3,[sp,#8]`（缓冲非空）+ `cmp r4,#0; ble → 跳过`；`0x11580: ldr r2,[pc,#96]` → 字面量池 `0x115e8 = 0xfffffe4c`（**-0x1b4**）；`0x11588: ldr r1,[sp,#12]`（GOT 基址）；`0x11590: ldr r0,[r1,r2]`（**GOT 槽间接取 key2 指针**）；循环体 `11594: ldrb r2,[r3]` / `11598: ldrb r1,[r0,#24]` / `1159c: eor r2,r2,r1` / `115a0: strb r2,[r3],#1` | **filename 逐字节 `^= key2[0x18]`（原地写回）**——厂商在 Wischik 上游之外加的解密层；key2 的角色 = 签名表(前 8B) + **XOR 密钥(第 24B)** |
+| 3 | 我们 `src/upstream/xunzip/unzip.cpp:3153-3167`：`lufread(szFileName,...)` 后**无任何 XOR** | 上游标准版无此段 ⇒ **两侧结构不同源**，G1·补五"已排除实现差异"的结论**只覆盖字段读取，漏了此段** |
+| 4 | golden `ui_cn.zip` CD 解析（本地 python struct）：6 条目、filename **明文**（ui.cfg/menu.raw/search.raw/setting.raw/type.raw/game.raw）、每条 `xfl=36B` extra；EOCD 校验 `cd_off+cd_size == EOCD 位置` ✓ | 沙箱 key2[0x18]=0 ⇒ 工厂 XOR 恒等 ⇒ **理论上沙箱内两侧 filename 应相同**——但 C5 实测工厂 `find ui.cfg/menu.raw/root.dat fail`、rebuild 全找到 ⇒ **除 XOR 段外还有未定位的遍历差异**（候选：工厂 GoToNext 的 pos 推进公式 / extra 跳过口径 / `current_file_ok` 判定） |
+| 5 | C5 复测（R168，云端 report/qemu_c5）：两侧 M0-M6 全 ✓；`key2 re-assert` 三次回读全 `50 4b 05 06 50 4b 07 08`（**未被覆写**——推翻 GAP 补充1"写入者必覆写"的旧归因：场景 B 旧实验的覆写值 `00 00 00 00 00 7d 1e 47` 只出现在**无 hook** 时；hook 每次 open 重断言后现场=注入值）；M6R：工厂缺 ui.cfg+menu.raw / rebuild 全读到；M7：工厂 exit=139 崩 `mui_menu+0x148`(0x2334c, `ldrh ip,[r3,#4]`, r3=DAT_003af28c=NULL=menu.raw 未加载) / rebuild exit=124 存活 | 崩溃链定性：**menu.raw 未加载 ⇒ `memcpy(DAT_003af29c, DAT_003af28c+*DAT_003af28c, w*h*2)` 内联展开 NULL 解引用**；rebuild 因 menu.raw 读到而存活——C4/C5/gdb 三条路径（mui_setting+0x114 / mui_menu+0x148 / mui_ReadJoystick 链）同一 NULL 源 |
+| 6 | gdb 探针会话（gdb-multiarch + qemu -g）：断点未命中即崩（gdb batch 断点 commands 时序问题，两次尝试）| gdb 直读 filename 字节的路径**未走通**，留待下一轮修正探针时序（或改 shim 拦 `strcmp` dump 实参） |
+
+**⇒ 结论（分层）**：
+1. **已实测确证**：工厂 filename XOR key2[0x18] 段存在、我们缺失 ⇒ **第 9 个真实分歧**（真机上 key2[0x18]=K≠0 时两侧 filename 解码不同——我们输出明文原文，工厂输出 原文^K）。
+2. **已实测确证**：key2 写入者在 hook 模式下"最后一次 re-assert 后无覆写"⇒ 写入窗口在 **zip open 之前**（与 GAP 补充1 的"B 之后 E 之前"结论一致，且更精确：**E 之后无第二次覆写**）。
+3. **待逐指令对拍**：沙箱内（K=0、XOR 恒等）两侧 find 结果仍分叉 ⇒ 存在**第二个遍历层差异**，候选 = `unzGoToNextFile` 的 pos 推进 / extra/comment 跳过 / `current_file_ok` 初始化链；需把工厂 0x110d4-0x1190c 全函数与我们 3072-3230 逐指令对拍（下一轮 P0）。
+4. **真机方向不变**（GAP 287 行）：key2 全 28 字节的真值（尤其 [0x18]）只有真机能给；沙箱无法伪造"对的 K"。
+
+#### G1·补七 ★★★★★ **三探针定案：工场 find fail 的收敛点 = GCFI 尾部值校验（第 10 分歧的形状）**（2026-10-09 R169）
+
+**三探针互锁证据（全部同一轮 C5 口径：工厂二进制 + KEY2_SEED+HOOK，CNB cnb-sr6-1k4fgbcpi）**：
+
+| 探针 | 观测 | 结论 |
+|---|---|---|
+| strace 全量（1414 行） | open 后 = 窗口 seek(4947968)+read(3313) + EOF seek×3 + close，无更多 syscall | stdio 4K 缓冲掩盖后续读，strace 层不可判；但排除"没有 CD 读"的表象 |
+| strcmp（377 条，含 MIXED hex） | **零 zip filename 比对、零 MIXED 乱码** | 工场 `unzLocateFile` 从未进入比较循环 ⇒ `current_file_ok=0`；同时证伪"key2[0x18] 被写入者改非零导致 filename 乱码"假说 |
+| fseek+fread 交织（精确分组） | 每轮 open：`fseek(EoCD=4951259)→fread(1)×22`（EOCD 字段全读）+ `fseek(CD=4950716)→fread(1)×46`（**恰=CD entry 头字节数**）后戛然而止 | 工场 GoToFirst 把 46B 头**完整读取且每字节 fread 成功**，GCFI 却返回非 OK ⇒ **err 置位于 46B 读完后的尾部判定**（工场 0x112a0-0x11300，上游 Wischik 无此分支） |
+
+**⇒ 第 10 个真实分歧（已定位形状，待语义重建）**：工场 `unzlocal_GetCurrentFileInfoInternal`
+在 46B 头读完后有一个我们源码没有的**值校验分支**。R170 P0 = 把 0x112a0-0x11300 逐分支
+翻译成 C 对拍（候选：flag/comp/vermade 值域、或 size/lSeek 溢出判定），找到后 1:1 复刻。
+**沙箱内"两侧同构 find fail"才是对齐目标**——当前 rebuild 能找到而工厂找不到，本身证明
+我们的 GCFI 与工厂在尾部判定上结构不同。
+
+**本轮已落地**：filename XOR key2[0x18] 段已 1:1 复刻进 unzip.cpp（第 9 分歧闭案；
+沙箱 K=0 恒等、C5 复测 rebuild 行为不变 ✓）。三探针（strcmp/fseek/fread）已入 shim
+（门控 CGM_STRCMP_TRACE / CGM_FSEEK_TRACE / CGM_FREAD_TRACE，harness 白名单已接）。
+
+
+#### G1·补八 ★★★★★ **R170 判决闭环：第 10、11 个真实分歧 = 两处 key2 槽位 magic 校验；1:1 复刻后 M6R/M7 两侧同步**（2026-10-10 R170）
+
+**★★ 更正声明（推翻 16.62 的"厂商删掉 magic 比对"结论）**：16.62 当时只看了 0x11128 起的
+字段读取循环，漏了 seek 成功分支 `0x11118: beq 113ac`——magic 比对**存在**，只是比对对象
+从上游字面量换成 key2 槽位。误读源：反汇编顺序阅读时 113ac 是"向后跳转目标"，未展开。
+
+| # | 工厂地址 | 比对对象 | 语义 | 修复 |
+|---|---|---|---|---|
+| 10 | GCFI `0x113ac-0x113f0`（`unzlocal_GetCurrentFileInfoInternal`）| uMagic vs **key2[12..15]**（CD "PK\x01\x02"）；不等再 vs **key2[8..11]**（LFH "PK\x03\x04"）；都不等 → err=UNZ_BADZIPFILE（0x113e8 mvnne #102）| CD entry magic 校验 | unzip.cpp GCFI magic 段改 key2 槽位取值 ✓ |
+| 11 | CoherencyHeader `0x11a64-0x11a84`（`unzlocal_CheckCurrentFileCoherencyHeader`）| uMagic vs **key2[20..23]**（对象偏移 #20）；不等再 vs **key2[16..19]**（偏移 #16）；都不等 → err=102 | LFH magic 校验（与 #10 同构，同一 GOT 槽 -0x1b4 取 key2 指针）| unzip.cpp CoherencyHeader magic 段改 key2 槽位 ✓ + shim key2_assert 扩到 24B ✓ |
+
+**发现链（R169 三探针 → R170 反汇编语义重建 → C5 复测分叉后移 → 定位 #11）**：
+1. R169 定案"46B 头读完后的尾部值校验"——R170 展开反汇编发现该"尾部校验"实为 magic 段
+   （GCFI 的 magic 读在 seek 成功后，而非上游顺序的"最前"）。
+2. 第 10 分歧修复 + shim 扩 16B 后首次 C5 复测（C5Q 前身）：**分叉后移**——工厂 GoToFirst
+   成功（strace 出现与 rebuild 同构的 LFH 段 seek(0)+read(4096)），find fail 依旧 ⇒
+   分叉已在 OpenCurrentFile/CoherencyHeader 内部。
+3. 展开工厂 CoherencyHeader 0x11a64-0x11a84：同构 key2 槽位比对（#20/#16）⇒ 第 11 分歧。
+4. 修复 + shim 扩 24B 后终测（C5Q2，CNB cnb-ht4-1k4hqhcul，2026-10-10）：
+
+**终测判决（report/qemu_c5q_r170/，云端 report/qemu_c5q2 原件已取回）**：
+- 里程碑矩阵：M0-M2/M5/M6/M6R/M7 两侧全 ✓ 同步；M6R = "ui.cfg+menu.raw 均读到"（两侧）；
+  **差集 = 空**。M3/M4 两侧同因 ✗（driver.so 加载失败，沙箱无真 KMS），M7 = 活着(exit=124)。
+- 行为门禁：B1 exit 124=124 ✓ / **B2 events 106/106 全一致** ✓ / B3/B4/B5(menu.log sha 同)/
+  B7/B8a(4=4)/B8b(180=180) 全 PASS。仅 B6/B6R（帧哈希"没测到"——渲染循环未跑，两侧同因，
+  与 R167 C4 判据口径一致：这是沙箱环境限制，不是行为分歧）。
+- 事件级对照：工厂与 rebuild 的事件序列逐条一致（含 27 次 `open /sdcard//.dat fail` 的
+  root.dat 条目遍历、`find font.ttf fail`（font.ttf 真不在包内）——两侧同构失败）。
+
+**⇒ M6R 分叉（自 2026-09-20 M6R 判据设立以来 20 轮的"rebuild 读得到 / 工厂读不到"结构差）
+就此闭案**：根因 = 工厂两处 zip magic 校验均比对 key2 槽位（沙箱无写入者时全 0 ⇒ 必然
+BADZIPFILE），我们源码用字面量总能通过。两处 1:1 复刻 + shim seed 24B 后，两侧在沙箱内
+行为完全一致。
+
+**shim key2_assert 最终形态（24B）**：[0..3]="PK\5\6" [4..7]="PK\7\8"（EOCD，SearchCentralDir）；
+[8..11]="PK\3\4" [12..15]="PK\1\2"（GCFI CD/LFH magic）；[16..19]="PK\3\4" [20..23]="PK\1\2"
+（CoherencyHeader LFH/CD magic）；[24..27]=0（key2[0x18]=24 ⇒ filename XOR 恒等）。
+key2 全 28B 语义至此完整复刻（symtab size=28 与四段用途全部对上）。
+
+**附带修正（本轮 C5Q 事故，仪器纪律）**：harness 现编 shim 落到宿主 arm-gcc（glibc 2.38）
+而 guest sysroot 是 glibc 2.29 ⇒ `GLIBC_2.38 not found` ⇒ 全场 exit=1、里程碑全 ✗。
+根因链：nohup 命令串里 `. /tmp/cgm_env.sh` 的 CC 未被 harness `_cc_detect` 看到（探测
+顺序 CC>arm-gcc>zig，arm-gcc 在 PATH 里存在）。修法：跑 harness 时显式
+`CGM_SHIM_SO=/tmp/guest_shim.so`（cnb_env 用 zig 预编的 glibc-2.29 shim），绕过现场编译。
+该坑已在本轮 PROGRESS 记录，防复发。
+
+
+#### G1·补九 ★★★ **golden folder→core 映射对表收尾（9/9 实证闭合）**（2026-10-11 R170 续）
+
+**证据源**（全部一手，零猜测）：①原厂 SD `cores/filelist.xml` 135 条逐游戏 core 指定（实测）；
+②`cores/config.xml` 29 个 emucore 注册表（实测）；③各 folder 实际 ROM 头字节级检测
+（iNES `4E45531A` / GB logo `CEED6666` / GBC flag `0x143` / GBA logo `24FFAE51` / SMC `C0..1C` /
+MD `SEGA@0x100` / MAME 多文件命名 / PS1 `PLAYSTATION` 标记 / A26 扩展名）；④fileinfo_decoded.txt
+20,648 条逐 folder 分布（000×8514 / 001×4768 / 002×5575 / 003×340 / 004×1072 / 005×192 /
+006×150 / 007×28 / 008×9）。
+
+| folder | 平台（ROM 头实证） | 原厂 core（filelist.xml / config.xml 实证） | TreeFrogUI cores.md 对应 |
+|---|---|---|---|
+| 000 | 街机（MAME 多文件 ROM，如 1941.zip 内 `41-1m.3a`） | fbalpha2012×72 / fba×13 / extend×18 / fbafast×1 / cps2×1（filelist 逐游戏指定） | `fba`/`mame2000` 族（同平台不同 ABI：原厂 libemu_* 自定义 ABI vs 标准 libretro） |
+| 001 | **NES/FC**（`4E45531A` iNES 头实证） | 未在 filelist（旁证：真机有 `libemu_nes.so`+`libemu_nestopia.so`；config.xml 注册 FCEUmm/Nestopia） | `nes`/`FC` → fceumm_libretro.so ✓（与记忆表 001=FC 一致） |
+| 002 | **SFC/SNES**（`.smc` 头 `C0 00 1C 00` 实证） | snes9x2010×19 + snes9x×2（filelist 逐游戏指定） | `snes`/`SFC` → snes9x 族 ✓ |
+| 003 | **MD/Genesis**（`.bin` 内 `SEGA`@0x100 实证） | 未在 filelist（旁证：真机有 `libemu_md.so`；config.xml 注册 PicoDrive/GPGX） | `md` → picodrive/gpgx ✓（与记忆表 003=MD 一致） |
+| 004 | **GBA**（logo `24 FF AE 51` 实证） | mgba×9（filelist 逐游戏指定） | `gba`/`GBA` → gpsp；原厂选 mgba（G1·补八轮旁证：真机另有 libemu_gpsp.so） |
+| 005 | **GB**（GB logo ✓，cart_type=0x01，cgb_flag=0x00 单色） | 未在 filelist（旁证：真机有 `libemu_tgbdual.so`；config.xml 注册 Gambatte/TGBDual） | `gb` → gambatte ✓（与记忆表 005=NES→**实为 GB**，修正） |
+| 006 | **GBC**（GB logo ✓，cart_type=0x1c，cgb_flag=0xC0 实证） | 未在 filelist（同 005 旁证） | `gbc` → gambatte ✓（新实证：006=GBC 不是"GB"统称） |
+| 007 | **PS1**（.img 含 `PLAYSTATION` 标记，126MB） | 未在 filelist（旁证：真机有 `libemu_pcsx.so` + `.pcsx4all` 目录；config.xml 注册 pcsx_rearmed） | `psx` → pcsx_rearmed ✓ |
+| 008 | **Atari 2600**（.A26 扩展名，Tempest proto） | 未在 filelist（旁证：真机有 `libemu_stella.so`；config.xml 注册 Stella） | `a2600` → stella ✓ |
+
+**结论与修正**：
+1. **9/9 folder 平台全部 ROM 头字节级实证**——记忆旧表「005=NES」**错误**（005=GB、006=GBC，
+   NES 是 001）；其余 8 项与旧表一致。本表为权威，旧表作废。
+2. **filelist.xml 只覆盖 000/002/004**（135 条逐游戏 core 指定）；001/003/005-008 的 core
+   由 config.xml 29 项注册表 + 实机 .so 库存旁证，**分层标注：000/002/004=逐游戏实证，
+   其余=注册表+库存旁证**（沙箱内无逐游戏指定文件可考）。
+3. TreeFrogUI cores.md（SF3000 代）folder 用平台名不用数字，**不同构但可映射**；
+   重合系统（FC/SFC/MD/GBA/GB/GBC/PS1/2600/街机）9/9 全对上——树蛙表的权威性确认，
+   但其 libretro ABI 与原厂 libemu_* 自定义 ABI 不兼容（R161 已证），仅作行为参照。
+4. **007=PS1 的 fileinfo 条目 28 条**：iso×5 + img×23——与 golden/sdcard_min 场景 J 的
+   `.dat` 遍历行为（27 次 `open /sdcard//.dat fail`）数量级吻合（root.dat mode=filelist
+   生成的 135 项里 002 起头 ⇒ C5Q2 观测的条目遍历来自真 filelist）。

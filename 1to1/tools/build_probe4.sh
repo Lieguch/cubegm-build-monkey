@@ -15,7 +15,12 @@
 # ============================================================
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CC="${CC:-arm-linux-gnueabihf-gcc}"
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh
+#   （原为 `CC="${CC:-arm-linux-gnueabihf-gcc}"` 硬编；三个环境各只装一种编译器，
+#     硬编任何一种都会在其余两个失败 —— 已在 build_guest_shim / build_upstream /
+#     link_full 上连续踩坑三次，见 cgm_cc_probe.sh 头注）。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 PY="${PY:-python}"
 OUT="${1:-$ROOT/build/rkgame.probe4}"
 

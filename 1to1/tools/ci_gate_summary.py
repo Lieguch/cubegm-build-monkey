@@ -49,18 +49,40 @@ BAD = ('failure', 'cancelled', 'timed_out', 'action_required')
 #     加/删步骤自动跟随，**不会再出现"加步骤忘改常量"的漂移**。
 #   读不到 workflow 文件 ⇒ 返回 None，调用方用保守兜底（43 = 44 步减自身）。
 def _derive_min_steps():
-    wf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      '.github', 'workflows', '1to1-verify.yml')
-    try:
-        with open(wf, encoding='utf-8', errors='replace') as fh:
-            txt = fh.read()
-    except OSError:
-        return None
-    n = len(re.findall(r'^\s+id:\s*s\d+\s*$', txt, re.M))
-    return (n - 1) if n > 1 else None
+    """数出本 workflow 里"门禁步骤"的个数，作为 verdict 的下界。
+
+    ★★ 2026-10-05（第 146 轮）修**路径推导缺陷** —— 这正是本函数注释里
+       自己写的那句"本项目实测被此坑了一轮"，但当时只修了判据、没修路径：
+       CI 的每个 step 都 `cd 1to1`，所以 workflow 实际在 **`<repo>/1to1/.github/`**，
+       而本函数只找 `<repo>/.github/` ⇒ 云端实测 `DERIVED=None`，
+       **静默落 fallback 43**，而真实 step 数是 46 ⇒ 下界失效。
+    ⇒ 判据失效的表现与"全部通过"**完全一样**（这正是本函数存在的理由）。
+    ⇒ 修法：按候选顺序逐个探测，**并把"一个都没找到"显式暴露**（不静默 fallback）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))          # <repo>/1to1/tools
+    repo = os.path.dirname(here)                              # <repo>/1to1
+    cands = [
+        os.path.join(repo, '.github', 'workflows', '1to1-verify.yml'),   # 实际布局（CI 里 cd 1to1）
+        os.path.join(os.path.dirname(repo), '.github', 'workflows', '1to1-verify.yml'),  # 仓库根布局
+    ]
+    for wf in cands:
+        try:
+            with open(wf, encoding='utf-8', errors='replace') as fh:
+                txt = fh.read()
+        except OSError:
+            continue
+        n = len(re.findall(r'^\s+id:\s*s\d+\s*$', txt, re.M))
+        if n > 1:
+            # ★ 落盘实测值供自证/排查用（不参与判据，避免"多写一处口径"）
+            _DERIVED_PATH.append(wf)
+            return (n - 1)
+    return None
 
 
+_DERIVED_PATH = []
 MIN_STEPS_DERIVED = _derive_min_steps()
+# ⚠ fallback 43 只在"确实读不到 workflow"时用；`ci_gate_summary.self_test()`
+#   有一条锚点专门检查"读不到时必须显式报出来"，不许静默当 43。
 MIN_STEPS = MIN_STEPS_DERIVED if MIN_STEPS_DERIVED else 43
 
 

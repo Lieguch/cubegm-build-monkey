@@ -948,3 +948,4 @@ ProtectCode	003e1acf	00000001	.bss	g	O
 ProtectVer	003e1ad0	00000001	.bss	g	O	
 ReturnToMenu	003e1ad1	00000001	.bss	g	O	
 joy_key_Temp	003e1ad2	00000001	.bss	g	O	
+_GLOBAL_OFFSET_TABLE_	003b1fc4	00000000	.got	l	O	

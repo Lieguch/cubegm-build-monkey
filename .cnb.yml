@@ -32,6 +32,13 @@ $: # 兜底匹配所有分支
             python3 -m pip install -q --break-system-packages pyelftools capstone unicorn ziglang 2>/dev/null \
               || python3 -m pip install -q pyelftools capstone unicorn ziglang 2>/dev/null \
               || echo "(pip 安装失败，进入环境后手动装)"
+            # ★ 2026-10-06（第 153 轮实测）：差分判据需要的系统级依赖此前**完全没装**：
+            #   azure qemu-arm（qemu-arm-static 在另一段才装）、arm 交叉工具链（objdump 取符号名）、
+            #   且 apt-get install **无 -y** ⇒ 每次内建启动都在这里挂死整个 stages。
+            #   （CI 里 qemu 有、云开发没有 ⇒ 本段补齐，判据才能在云上跑。）
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+              qemu-user qemu-user-static binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf bzip2 \
+              || echo "(apt 安装失败，进入环境后手动装)"
             python3 -c "import elftools,capstone,unicorn;print('elftools/capstone/unicorn OK')" || true
             python3 -c "import ziglang,os;print('zig =',os.path.join(os.path.dirname(ziglang.__file__),'zig'))" || true
 
@@ -255,25 +262,70 @@ main:
             # Checkout artifacts to get the binary back.
             git checkout artifacts 2>/dev/null || git checkout -f artifacts
             set +e
-            echo "=== Running rkgame under qemu-arm (8s timeout) ==="
+            echo "=== Running rkgame under qemu-arm (8s timeout, pty-captured) ==="
             echo "Binary: $(stat -c%s output/rkgame) bytes"
-            timeout 8 qemu-arm-static -L /arm-root -cpu cortex-a7 \
+            # ★★★ 2026-10-04（第 129 轮）**全缓冲假判据根修**（承第 127 轮坐实的根因）：
+            #   原写法 `... ./output/rkgame > test-emu.log 2>&1` 把 stdout 挂**文件**
+            #   ⇒ glibc 判为非 TTY ⇒ **全缓冲(4KB)**；程序被 SIGSEGV/SIGABRT 杀死时
+            #   缓冲区**不 flush** ⇒ 崩溃前全部 printf 丢失（实测可抓 0 字节，
+            #   连 main() 第一句 `puts("rkgame v1.42")` 都不留）⇒
+            #   下面 grep "rkgame v1.42" / "^directory:" 会因**空日志**恒为 0
+            #   ⇒ RESULT 恒 FAIL，而**失败原因被仪器自身掩盖**（假判据的二次伤害）。
+            #   根修 = 经 tools/pty_exec.py 采集：只把 stdout 挂 pty（行缓冲 ⇒ 崩溃前
+            #   内容保留），stderr 仍独立（不混入 qemu 自身噪音）。契约见该文件 docstring：
+            #   `pty_exec.py [--timeout SEC] <cmd> [args...]`，超时返回 124。
+            #   回退：把下面两行换回原 `timeout 8 qemu-arm-static ... > test-emu.log 2>&1`。
+            PYTHONPATH="${PYTHONPATH:-}:$PWD/tools" python3 tools/pty_exec.py --timeout 8 \
+                qemu-arm-static -L /arm-root -cpu cortex-a7 \
                 -E LD_LIBRARY_PATH=/arm-root/lib/arm-linux-gnueabihf \
                 -E PATH=/arm-root/usr/bin:/usr/bin:/bin \
                 -E HOME=/tmp \
                 -E TMPDIR=/tmp \
-                ./output/rkgame > test-emu.log 2>&1
+                ./output/rkgame > test-emu.log 2>test-emu.stderr.log
             EXIT_CODE=$?
             set -e
-            echo "=== child stdout/stderr ==="
+            echo "=== child stdout (pty-captured) ==="
             cat test-emu.log
-            echo "=== device-side session log ==="
-            cat /sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no device log)"
+            echo "=== child stderr (kept separate) ==="
+            cat test-emu.stderr.log 2>/dev/null || echo "(no stderr)"
+            echo "=== device-side session log (qemu 下通常不存在，仅供排查) ==="
+            cat /sdcard/cubegm/rkgame.log 2>/dev/null || echo "(no device log — qemu 下预期如此，判据走 stdout)"
             if [ -f /sdcard/cubegm/rkgame.crash.log ]; then
               echo "=== crash log ==="; cat /sdcard/cubegm/rkgame.crash.log
             fi
-            HAS_BANNER=0; grep -q "rkgame rebuild starting" /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_BANNER=1
-            HAS_START=0;  grep -q "session start"           /sdcard/cubegm/rkgame.log 2>/dev/null && HAS_START=1
+            # ★★ 2026-10-03（第125 轮）**假判据根修**：原来grep 的是
+            #   "rkgame rebuild starting" / "session start" —— 这两句**只存在于
+            #   tools/stage_sd_probe4.py 的注释里**（描述设备 stdout 的文字），
+            #   **我方代码从不输出，工厂也没有** ⇒ 判据恒为 0 ⇒ **永远 FAIL**。
+            #   改用**工厂真值**（三重证据）：
+            #     ① 工厂 main 机器码第 7 条 = `bl @puts@plt`（golden/factory.funcs.json）
+            #     ② 工厂 .rodata 偏移 1340 处确有 "rkgame v1.42"（src/data/factory_rodata.bin）
+            #     ③ 我方 src/proprietary/main/FUN_00009b58_main.c:17 `puts("rkgame v1.42");`
+            #   通道：**stdout**（不是设备侧文件）—— `RARCH_LOG_V` 在
+            #   `log_file_initialized==0` 时走 `vfprintf(stdout,…)`；
+            #   而 qemu-user 的 stdout **继承宿主 fd 1** ⇒ 落在 test-emu.log
+            #   （依据：QEMU 官方文档 invocation，"-L 只设置 ELF 解释器前缀，不是 chroot"）。
+            HAS_BANNER=0; grep -q "rkgame v1.42" test-emu.log 2>/dev/null && HAS_BANNER=1
+            HAS_START=0;  grep -q "^directory:" test-emu.log 2>/dev/null && HAS_START=1
+            # ★★ 第 129 轮：**仪器自检**——pty 采集若仍拿不到任何 stdout，
+            #   说明「采集通道」本身坏了（pty_exec.py 不在 / 不可执行 / 产物不存在），
+            #   此时 HAS_BANNER=0 只是**仪器失效**，不是「程序没输出」。
+            #   ⇒ 两者必须分开报，否则又是一次「假判据伪装成真实失败」。
+            LOG_BYTES=$(wc -c < test-emu.log 2>/dev/null || echo 0)
+            if [ "$LOG_BYTES" -eq 0 ]; then
+              echo "★★ INSTRUMENT-FAIL：pty 采集到 0 字节 stdout ⇒ 判据不可用"
+              echo "   （查：tools/pty_exec.py 是否随仓上传 / python3 是否可用 / ./output/rkgame 是否存在）"
+              RESULT="INSTRUMENT-FAIL (0 bytes stdout; 判据不可用)"
+              echo "=== RESULT: $RESULT (exit=$EXIT_CODE) ==="
+              git config user.email "cnb@lieguch"
+              git config user.name "CNB-Build"
+              git checkout -B artifacts
+              git add test-emu.log test-emu.stderr.log 2>/dev/null || true
+              git commit -q -m "test-emu: INSTRUMENT-FAIL (0 bytes stdout via pty)" || true
+              git push -q origin artifacts 2>/dev/null || true
+              exit 1
+            fi
+            echo "  [instrument] stdout 采集量 = ${LOG_BYTES} 字节（>0 ⇒ 采集通道可用）"
             if [ $EXIT_CODE -eq 124 ] && [ $HAS_BANNER -eq 1 ] && [ $HAS_START -eq 1 ]; then
               RESULT="PASS (timeout; session alive)"
             elif [ $EXIT_CODE -eq 0 ]; then

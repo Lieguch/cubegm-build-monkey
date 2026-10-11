@@ -17,10 +17,23 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/build/upstream}"
-CC="${CC:-arm-linux-gnueabihf-gcc}"
+CC="${CC:-}"
 PY="${PY:-python}"
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh
+#   （本文件此前自带一份拷贝，现改为 source，避免"同一规则写两处"）。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 mkdir -p "$OUT"
 
+# ★★★ 2026-10-04（第 138 轮）根治：原为 `CC="${CC:-arm-linux-gnueabihf-gcc}"`（**硬编**）。
+#   实测事故（云开发工作区只装了 ziglang）：
+#     `CC=arm-linux-gnueabihf-gcc` ⇒ 不存在 ⇒ xunzip 的 CXX 被 sed 拼成
+#     **`arm-linux-gnueabihf-g c++`**（连编译器名都被切断）⇒ 自举编译失败
+#     ⇒ `XUnzip.o` 缺失 ⇒ `link_audit` 报「XUnzip 编译失败」，
+#        而真因是"编译器不存在"这条被静默掉的信息。
+#   与 tools/build_guest_shim.sh、三个桩脚本同款：按
+#   「① CC 环境变量 ② arm 交叉 gcc ③ zig 在 PATH ④ zig 作为 python 包」顺序探测。
+#   探测结果**必须打印** ⇒ 报告能自证"这轮用什么编的"。
 winpath() {
     if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
@@ -220,6 +233,127 @@ if [ -f "$LC/localcharset.c" ]; then
     else
         echo "  FAIL localcharset"; head -3 "$OUT/_err_localcharset.txt"
     fi
+fi
+
+# ---------- 6) xunzip（C++ 移植）**自举** ----------
+# ★★2026-10-03（第121 轮，判据 XUNZIP-BOOTSTRAP.md）**结构性根治**。
+#   病灶：`link_full.sh:146` 期望 `src/upstream/xunzip/XUnzip.o`，
+#     而 `.gitignore` 排除 `*.o`（红线 3：构建产物不入库）
+#     ⇒ **任何新克隆 / 新云工作区都必然缺它**
+#     ⇒ `link_audit` rc=4 / `link_full` rc=12，整轮构建报废。
+#   而 `cnb_ladder.sh:99` 早就用 `UP=` **显式上传**它——
+#     ⇒ **同一个"预编译产物依赖"写了两处，其中一处（这里）漏了**。
+#   根治：由本脚本**自己编出来**，任何环境都能自举；
+#   `link_full.sh` 的 `DIAG_XUNZIP` 覆盖机制保持不变（诊断版仍可替换）。
+XU="$ROOT/src/upstream/xunzip"
+XU_O="$XU/XUnzip.o"
+if [ -s "$XU/unzip.cpp" ] && [ -s "$XU/zip.cpp" ]; then
+    # C++ 编译器：$CC 形如 "<zig> cc" / "arm-linux-gnueabihf-gcc" ⇒ 换成对应的 c++/g++
+    # ★★ 2026-10-04（第 138 轮）修 sed 缺陷：原式
+    #   `s|[[:space:]]*cc[[:space:]]*$| c++|; s|[[:space:]]*gcc[[:space:]]*$| g++|`
+    # ★★ 2026-10-04（第 138 轮）修 sed 缺陷 —— 两处（自证抓到的）：
+    #   ① **顺序错**：原式
+    #      `s|[[:space:]]*cc[[:space:]]*$| c++|; s|[[:space:]]*gcc[[:space:]]*$| g++|`
+    #      对 `arm-linux-gnueabihf-gcc` 会**先**命中第一条（尾部 `cc`）⇒ 拼成
+    #      `arm-linux-gnueabihf-g c++` ⇒ 连编译器名都被切断。
+    #   ② **分隔符冲突**：`(^|[/ ])` 里的 alternation `|` 与 `s|...|...|` 的分隔符
+    #      同字符 ⇒ `sed: unknown option to 's'`（自证时 5/5 腿全空）。
+    #   修法：分隔符换成 `#`（模式里不会出现），并按后缀优先级一次替换。
+    CXX=$(printf '%s' "$CC" | sed -E \
+        -e 's#(^|[/ ])arm-linux-gnueabihf-gcc$#\1arm-linux-gnueabihf-g++#' \
+        -e 's#(^|[/ ])arm-buildroot-linux-gnueabihf-gcc$#\1arm-buildroot-linux-gnueabihf-g++#' \
+        -e 's#(^|[/ ])gcc$#\1g++#' \
+        -e 's#[[:space:]]+cc$# c++#')
+    # _need=1 表示"要编译"。先看现成 .o 是否**已是最新**（源不比它新）⇒ 可跳过。
+    # ★ 反过来写会出静默假绿：改了源码却沿用旧 .o。
+    # ★★ 2026-10-04（第 138 轮）补 fail-closed：`.o` **不存在**时必须编译。
+    #   实测病灶：`XUnzip.o` 被上一轮失败的 `link_audit` 删除（该脚本的纪律是
+    #   "编译失败即删目标对象、禁止链接陈旧对象"），而本脚本的 `_need` 判据只比
+    #   **时间戳**（`if [ -s "$XU_O" ]`）⇒ 目标不存在时**整个 if 块被跳过**
+    #   ⇒ 静默不编译、不报错 ⇒ 后续 `link_audit` 报「XUnzip 编译失败」而真因是
+    #   **"上一步删了它，这一步没重建"**。两轮都看不出因果。
+    #   修法：`_need` 初始为 1，**仅在 .o 存在且不陈旧**时才置 0。
+    _need=1
+    if [ -s "$XU_O" ]; then
+        _stale=0
+        for _s in unzip.cpp zip.cpp operator_shim.cpp unzip.h zip.h; do
+            if [ -f "$XU/$_s" ] && [ "$XU/$_s" -nt "$XU_O" ]; then _stale=1; break; fi
+        done
+        [ "$_stale" = "0" ] && _need=0
+    fi
+    if [ "$_need" = "1" ]; then
+        echo "-- xunzip：自举编译 C++（$CXX）"
+        # ★★★ 2026-10-04（第 130 轮）**根修：C++17 移除 `register` ⇒ 自举必失败**。
+        #   症状（云开发实测，link rc=12 阻断）：`unzip.cpp` 用 zlib 原生的
+        #     `register uInt j;` / `register int k;` …（5 处），而 `zig c++` 默认
+        #     **C++17** ⇒ 报 `ISO C++17 does not allow 'register' storage class
+        #     specifier [-Wregister]`（5 errors generated）⇒ `XUnzip.o` 缺失
+        #     ⇒ `link_full.sh` 的 fail-closed 直接报「XUnzip 对象不存在」exit 12。
+        #   根因：**标准版本不匹配**（不是源码坏、不是工具链缺功能）。
+        #     权威依据：cppreference「Storage class specifiers」——`register`
+        #     "deprecated (until C++17)"；WG21 **N4340**《Remove Deprecated Use of
+        #     the register Keyword》自 C++17 起移除该 specifier。
+        #   修法：显式钉到 **gnu++11**（工厂 CFLAGS 同款 `gnu11` 口径，见
+        #     `PROJECT-MEMORY` 工厂 CFLAGS `-std=gnu11`），不用 `-std=c++17` 硬改源码。
+        #   回退：删除 `${XU_STD:-}` 即可（但会重新链接失败 —— 它是必需的）。
+        XU_STD="${XU_STD:--std=gnu++11}"
+        # ★★ 2026-10-04（第 130 轮）**根修之二：XUnzip 编译缺 `-target` ⇒ 编出宿主 x86-64**。
+        #   症状（修完 `-std` 后暴露的新失败）：`ld.lld: error: XUnzip.o is
+        #     incompatible with armelf_linux_eabi`。
+        #   根因：原命令 `$CXX -c …` **完全没有目标三元组参数**。`$CXX` 只是把
+        #     `$CC`（形如 `<zig> cc`）里的 `cc` 换成 `c++` —— **`<zig>` 后面没有跟
+        #     `-target arm-linux-gnueabihf`**（那个参数在本脚本里是通过 `$ARCH`
+        #     传给各组件的，XUnzip 这一行**从来没带上**）⇒ `zig c++` 按默认宿主
+        #     目标编译 ⇒ 产出 `EM_X86_64 / ELFCLASS64` 的 .o。
+        #   实测证据：改前 `XUnzip.o` header = `EM_X86_64 / ELFCLASS64`；
+        #     显式加 `-target arm-linux-gnueabihf` 后 = `EM_ARM / ELFCLASS32` ✓。
+        #   ★ 连带解释了一个更早的怪现象：`elf_syms.py` 读 `XUnzip.o` 得到 0 符号 ——
+        #     那不是工具坏，而是**它在读一个 x86-64 对象**（详见 elf_syms.py 的
+        #     ELF64 支持说明；该支持本身仍需保留，用于诊断这类目标错配）。
+        #   修法：目标参数与 `$ARCH` **同源**（`$ARCH` 已按 `$CC` 区分 zig / 非 zig）。
+        #   回退：删掉 `$ARCH` 即可（但会重新链接失败 —— 目标是必需的）。
+        # ★ 顺带修的第三个缺陷：`EXTRA_XU_FLAGS` 原是**裸引用**（无 `:-` 默认值），
+        #   而本脚本开头 `set -u` ⇒ 外部未传该变量时**整条命令死在 shell 展开阶段**
+        #   （报 `EXTRA_XU_FLAGS: unbound variable`），连编译都没开始、错误日志为空。
+        #   潜伏原因是早先 `_need` 分支从未真正执行到。现已改为 `${EXTRA_XU_FLAGS:-}`，
+        #   与本文件其它 `EXTRA_INC_TRAIL` 的写法对齐。
+        if $CXX -c $ARCH $CGM_FID_EXTRA $XU_STD -O2 -w -fno-exceptions -fno-rtti ${EXTRA_XU_FLAGS:-} \
+             -I"$(winpath "$XU")" -I"$(winpath "$XU/posix")" \
+             "$(winpath "$XU/unzip.cpp")" -o "$(winpath "$XU_O")" 2>"$OUT/_err_xunzip.txt"; then
+            echo "   OK XUnzip.o（$(wc -c < "$XU_O") B，$XU_STD）"
+        else
+            echo "   FAIL xunzip 自举（$XU_STD）"; head -6 "$OUT/_err_xunzip.txt" 2>/dev/null
+            rm -f "$XU_O"
+        fi
+    else
+        echo "-- xunzip：XUnzip.o 已是最新（$(wc -c < "$XU_O") B），跳过编译"
+    fi
+    # 符号自检：必须能提供工厂那 5 个 XUnzip_* 入口，缺则**响亮失败**
+    # ★★★ 2026-10-04（第 130 轮）**修正自检口径**（原口径从一开始就是错的）。
+    #   原来 grep 的是**裸名** `OpenZipU/FindZipItemA/UnzipItem/CloseZipU/GetZipItemA`，
+    #   但本组件是 **C++ 编译**（`unzip.cpp`），导出的是 **Itanium mangled 名**；
+    #   工厂侧同样如此 —— `upstream/factory_component_funcs.json` 的 XUnzip 段
+    #   **64 个符号全部是 mangled 名**，且**根本没有** `OpenZipU`/`CloseZipU`
+    #   （工厂用的是 `TUnzip` 类的成员函数）。
+    #   ⇒ 原口径即使编译成功也会**永远报"缺入口符号"**（假失败），
+    #     而 `exit 12` 又会阻断整条构建 ⇒ 仪器缺陷伪装成代码缺陷。
+    #   修正为按**工厂真实符号名**核对（取自 factory_component_funcs.json 的 TUnzip 段）。
+    if [ -s "$XU_O" ]; then
+        _sy=$($PY "$(winpath "$ROOT/tools/elf_syms.py")" "$(winpath "$XU_O")" 2>/dev/null)
+        _miss=""
+        for _s in _ZN6TUnzip4OpenEPvjj _ZN6TUnzip5CloseEv _ZN6TUnzip3GetEiP8ZIPENTRY \
+                 _ZN6TUnzip5UnzipEiPvjj _ZN6TUnzip4FindEPKchPiP8ZIPENTRY; do
+            printf '%s' "$_sy" | grep -q "	$_s" || _miss="$_miss $_s"
+        done
+        if [ -n "$_miss" ]; then
+            echo "★★ XUnzip.o 缺工厂入口符号（mangled 口径）：$_miss ⇒ 就地失败（不靠下游 undefined 兜底）" >&2
+            exit 12
+        fi
+        echo "   符号自检通过（TUnzip 工厂入口 5 个，mangled 口径）"
+    fi
+else
+    echo "★ xunzip 源缺失（$XU/unzip.cpp 或 zip.cpp）—— 若确实不需要可忽略；" >&2
+    echo "  若需要请从 zip_utils.zip 解包（见 src/upstream/xunzip/.XUnzip.src.sha256）。" >&2
 fi
 
 echo "== 产物 =="

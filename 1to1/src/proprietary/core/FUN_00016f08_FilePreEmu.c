@@ -23,10 +23,35 @@ gh_u4 FilePreEmu(char *param_1)
   int local_30;
   
   pcVar1 = (char *)GetFilenameExt(param_1);
-  strcpy((char *)(ze + 184),pcVar1);
-  strupr(ze + 184);
+  /* ★★★ 2026-10-04（第 132 轮）T09 根修：`(ze + 184)` 是 **Ghidra 重建的错误基址**。
+   *
+   * 取证链（算术自证，非推断）：
+   *   工厂 FilePreEmu @0x16f08 前 10 条（golden/factory.funcs.json + pyelftools 实读）：
+   *       4  ldr r4, [pc, #0x28c]     ; 字面量 @0x171ac = 0x003a52cc
+   *       7  add r4, pc, r4           ; ARM PC = 指令地址+8 = 0x16f2c
+   *   9  add r4, r4, #0xc8        ; +200
+   *   ⇒ r4 = (0x16f2c + 0x3a52cc) + 0xc8 = 0x3bc1f8 + 0xc8 = **0x3bc2c0**
+   *   而 0x3bc2c0 = `FilenameExt`（`src/compat/globals.h:4602` 已按工厂地址声明）。
+   *
+   *   另一条独立验算：`file_info_list` @0x3b2220 size **0xa0a0**，
+   *   0x3b2220 + 0xa0a0 = **0x3bc2c0** ⇒ `FilenameExt` 就是 `file_info_list`
+   *   数组的**紧邻后继**（`&file_info_list[0xa0a0]`），两条路径指向同一地址 ✓
+   *
+   * 错在哪：Ghidra 把 0x3bc2c0 识别成 `ze + 184`（`ze` @0x3bc2d0，0x3bc2d0+0xb8=0x3bc388），
+   *   与真地址 0x3bc2c0 **相差 0xC8(200) 字节** ⇒ 差分实测工厂读 FilenameExt、
+   *   我方读 ze+184（`tools/diff_exec.py` 报「仅F=FilenameExt+0@0x3bc2c0
+   *   仅O=ze+184@0x3bc388」）。
+   * 为何必须改而不是登记豁免：`FilenameExt` 与 `file_info_list` 在工厂 `.bss` 里
+   *   **相邻**，绑错基址 = 真机读到**另一个对象的内存**（同 dup_sym_gate 文档里
+   *   `ArchivePath` 的真缺陷族）⇒ 是真缺陷，不是等价实现。
+   * 为何不用 `&file_info_list[0xa0a0]` 表达式：语义上等价，但 `FilenameExt`
+   *   已在 globals.h 按工厂地址声明、且 `SeletEmuCore.c:139` 已在用它 ⇒ 用符号更可读。
+   * 回退：git checkout src/proprietary/core/FUN_00016f08_FilePreEmu.c
+   */
+  strcpy((char *)&FilenameExt,pcVar1);
+  strupr((char *)&FilenameExt);
   Filetype = 0;
-  GetCoreIndex((char *)(ze + 184));
+  GetCoreIndex((char *)&FilenameExt);
   RARCH_LOG("Filetype %d\n",Filetype);
   uVar5 = Filetype;
   if (Filetype < 0x10000) {
@@ -72,10 +97,10 @@ gh_u4 FilePreEmu(char *param_1)
           if (iVar4 == 0) {
             strupr(auStack_154);
             pcVar1 = (char *)GetFilenameExt(auStack_154);
-            strcpy((char *)(ze + 184),pcVar1);
-            strupr(ze + 184);
-            RARCH_LOG("FilenameExt %s\n",(char *)(ze + 184));
-            GetCoreIndex((char *)(ze + 184));
+            strcpy((char *)&FilenameExt,pcVar1);
+            strupr((char *)&FilenameExt);
+            RARCH_LOG("FilenameExt %s\n",(char *)&FilenameExt);
+            GetCoreIndex((char *)&FilenameExt);
             RARCH_LOG("Filetype %d\n",Filetype);
             ZIP_BUF_SIZE = local_30;
             ZIP_BUF = malloc(local_30 + 0x10);

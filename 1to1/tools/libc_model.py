@@ -144,6 +144,65 @@ PTR_RETURNING = (
     '__ctype_tolower_loc', '__errno_location', 'index', 'rindex',
 )
 
+# --------------------------------------------------------------------------- #
+# ★★★ 2026-10-05（第 142 轮）**契约型 dst 返回者** —— 类别级根修，不是补丁。
+#
+# 现象（簇 A 闭环实测，见 PROGRESS.md 第 142 轮）：
+#   `FilePreEmu` 里 `strcpy(&FilenameExt, p); strupr(&FilenameExt);` 一句，
+#   两侧机器码不同：
+#       工厂 16f3c: mov r0,r4 / bl strcpy@plt / **16f44: mov r0,r4** / bl strupr
+#       我方 4e59a0: mov r0,r4 / bl strcpy    / （无 reload）      / bl strupr
+#   工厂多一条 `mov r0,r4`。**两侧都是合法代码**：AAPCS 规定 r0 是 caller-saved，
+#   strcpy 可以改写它；工厂重新装载，我方（clang -Os）判定"strcpy 返回值未被使用 ⇒
+#   reload 冗余"而消掉它。**在真实硬件上两侧行为完全一致。**
+#
+#   但在 diff_exec 里两侧分岔了：`misc` 语料 r0=1 ⇒ `strcpy` 的 **src 不可读** ⇒
+#   `Model.call` 抛异常 ⇒ 走兜底 ⇒ **兜底把 r0 写成 0**（diff_exec.py:666）。
+#   于是：工厂 reload ⇒ `strupr(&FilenameExt)`；我方 ⇒ `strupr(0)` ⇒ 早死。
+#   实测两侧 `calls_ext` 逐项相同、35 次 strcmp 全同，**只差一条 `FilenameExt[0]` 读**。
+#
+# 根因定性：**兜底路径违反了 libc 的 ABI 契约**，不是代码缺陷。
+#   C 标准规定 `char *strcpy(char *dst, const char *src)` **恒返回 dst**，
+#   与 src 是否可读**无关**。同理 `strncpy`/`strcat`/`strncat`/`memcpy`/`memmove`/
+#   `memset`/`stpcpy`（返回 dst+len）。⇒ 这类函数的返回值是**契约确定的**，
+#   模型即使无法读取源数据，也**必须**返回 `r1`（dst），绝不能返回 0。
+#
+# 为什么这是"类别"而不是"给 strcpy 打补丁"：
+#   它对**所有** dst 返回型函数成立，且两侧**同一张表** ⇒ 差异只可能来自被测代码。
+#   之前 `PTR_RETURNING` 只约束"必须建模"，**没有任何一处约束"未建模时兜底成什么"**
+#   ⇒ 这就是缺口。本表 + `fallback_r0()` 把它补上。
+#
+# ★ 取值口径（必须与 C 契约逐条对应，不许凭印象扩表）：
+#   'r0'     —— 返回第 0 实参（**dest**）。`strcpy(char *dest, const char *src)`
+#               的 dest 是**第 0** 实参（`a[0]`），src 才是 `a[1]`。
+#               ★ 第 142 轮首版误写成 'r1'（把 src 当 dest）⇒ 兜底返回 src
+#                 ⇒ `strupr(src)` 读到 0x1 仍早死；由端到端复测抓出，不是靠看代码想当然。
+#   'r1'     —— 返回第 1 实参（用于 dest 位于第 1 位的函数，本项目当前无）
+#   'r0+n'   —— 返回 dest+n（`stpcpy` 返回"结尾 NUL 之后"）：本项目未建模，暂不列
+CONTRACT_DST_RET = {
+    'strcpy': 'r0', 'strncpy': 'r0',
+    'strcat': 'r0', 'strncat': 'r0',
+    'memcpy': 'r0', 'memmove': 'r0', 'memset': 'r0',
+}
+
+
+def fallback_r0(name, a):
+    """未建模 / 模型抛异常时，**按 C 契约**该返回什么（`a` = r0..r3 实参）。
+
+    ★ 与 `diff_exec` 兜底分支是**唯一一处**实现（纪律：同一规则禁止写两处）。
+      消费者只许调用本函数，不许自己判"这个名字是不是指针返回型"。
+      ★ 它是**模块级函数**（不是 `Model` 方法）：兜底路径上 `Model` 实例可能
+        处于半初始化状态，且 `CGM_NO_LIBC_MODEL=1` 时根本没有 Model ——
+        做成方法会让"关模型"这条 A/B 腿直接 AttributeError（实测踩到）。
+    ★ 契约型（`CONTRACT_DST_RET`）⇒ 返回 dest，**与数据无关**，这是 C 标准保证的；
+      其余 ⇒ 0（保持旧行为：语义确实未知，不猜）。
+    """
+    kind = CONTRACT_DST_RET.get(ALIASES.get(name, name))
+    # `a` 是 [r0, r1, r2, r3]；'rN' ⇒ 取第 N 个实参。
+    if kind and len(kind) == 2 and kind[0] == 'r' and kind[1].isdigit():
+        return a[int(kind[1])]
+    return 0
+
 
 def _cmp(a, b):
     """strcmp/memcmp 语义：a<b ⇒ -1，a==b ⇒ 0，a>b ⇒ 1（以 32 位补码返回）。"""
@@ -454,6 +513,32 @@ def self_test():
     for n in ('strchr', 'strrchr', 'strstr', 'strdup', 'malloc', 'calloc',
               '__ctype_b_loc', '__errno_location'):
         c('指针返回型必须建模：%s' % n, n in PTR_RETURNING, True)
+
+    # 4b) ★★★ 2026-10-05（第 142 轮）**契约型 dst 返回者**的自证（正 + 反 + 覆盖）。
+    #   背景：`PTR_RETURNING` 只约束"必须建模"，**没有**约束"未建模时兜底成什么"
+    #   ⇒ 缺口 ⇒ 簇 A 的 `strupr(NULL)` 假 DIVERGE（第 142 轮实测）。
+    #   正例：`strcpy` 等按 C 契约恒返回 dest（**第 0 实参**）⇒ 兜底必须给 a[0]。
+    #   ★ `_A` 的 a[0]/a[1] **刻意取不同值**（0xAAAA… vs 0x3BC2C0）——
+    #     否则"取错槽位"（第 142 轮首版把 dest 写成 r1 的那个 bug）会**照样全绿**。
+    #     这条锚点必须能在"dest/src 搞反"时变红，否则它没有判别力。
+    _A = [0xAAAAAAAA, 0x3BC2C0, 0x22222222, 0x33333333]
+    for _n in ('strcpy', 'strncpy', 'strcat', 'strncat',
+               'memcpy', 'memmove', 'memset'):
+        c('契约型兜底返回 dest(a[0])：%s' % _n, fallback_r0(_n, _A), 0xAAAAAAAA)
+    # 反例：语义确实未知的**不得**被猜成 dest（否则从"少观测"变成"造假观测"）。
+    for _n in ('strlen', 'strcmp', 'strchr', 'strdup', 'malloc', 'fopen', 'printf'):
+        c('非契约型兜底仍为 0：%s' % _n, fallback_r0(_n, _A), 0)
+    # 覆盖：契约表**不得**收录未在 PTR_RETURNING 里的名字（两表口径必须一致）。
+    c('契约表 ⊆ 指针返回型集合',
+      set(CONTRACT_DST_RET) <= set(PTR_RETURNING), True)
+    # 覆盖：契约表非平凡（防止被误清空成空表而自证仍"全绿"）。
+    c('契约表非平凡（>=7 个）', len(CONTRACT_DST_RET) >= 7, True)
+    # 覆盖：别名必须能归一（`__strcpy_chk` 与 `strcpy` 走同一契约）。
+    c('别名归一后同契约：__strcpy_chk', fallback_r0('__strcpy_chk', _A), 0xAAAAAAAA)
+    # ★ 反向判别力：契约表里**不得**有"取 r1"的项（dest 恒在 a[0]）。
+    #   若有人把某函数错登记成 'r1'，这条会红。
+    c('契约表内无 r1 项（dest 恒为 a[0]）',
+      [k for k, v in CONTRACT_DST_RET.items() if v != 'r0'], [])
 
     # 5) 未建模清单必须存在且为列表（"没建模"要能列名，不能静默）
     c('Model 有 unmodelled 列表', isinstance(Model().unmodelled, list), True)

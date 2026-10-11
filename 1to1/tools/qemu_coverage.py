@@ -232,9 +232,12 @@ def main():
                  % (prov_cov, prov_tot, 100.0 * prov_cov / max(1, prov_tot),
                     prov_cov_bytes, prov_tot_bytes,
                     100.0 * prov_cov_bytes / max(1, prov_tot_bytes)))
-        if unmatched:
+        if unmatched_alias:
             L.append('   ★ 名字无法匹配 %d 个（**仪器问题，不是"未执行"**）：%s'
-                     % (len(unmatched), ', '.join(unmatched[:6])))
+                     % (len(unmatched_alias), ', '.join(unmatched_alias[:6])))
+        if unmatched_gap:
+            L.append('   ★ 名单里无源/TODO 的真实缺口 %d 个（**未实现，非仪器问题**）：%s'
+                     % (len(unmatched_gap), ', '.join(unmatched_gap[:6])))
         entered = sorted(((int(r['size']), r['name'], r.get('module', '')) for r in rows
                           if name2idx.get(r['name']) in hit
                           or name2idx.get(norm_alias(r['name'])) in hit), reverse=True)

@@ -116,6 +116,101 @@ def canon_obj_name(n):
     return n
 
 
+# --------------------------------------------------------------------------- #
+# PLT 名字解析（第 152 轮重写）：**按 GOT 槽地址配名**，与 .rel.plt 的顺序无关。   #
+# --------------------------------------------------------------------------- #
+# ★★ 为什么换掉「.rel.plt 顺序位置配对」（第 150/151 轮遗留的 P1）
+#    旧法：`.plt` 里第 k 个 `ldr pc,[..]` ↔ `.rel.plt` 第 k 个名字。
+#    它是**位置**配对：任何一处多数/漏数一个 `ldr pc` ⇒ 其后**全部名字错位**
+#    ⇒ `calls_ext` 整体失真（第 150 轮的回归就是这个味道：两侧 `plt_map` 塌掉、
+#    `calls_ext` 全空 ⇒ **假 PASS**）。
+#
+# ★ 新法依据（两种链接器的 stub 形态都唯一确定一个 GOT 地址）：
+#    GNU ld（12 B）：add ip,pc,#A ; add ip,ip,#B ; ldr pc,[ip,#C]!
+#    lld  （16 B）：同上 + 一个 .word 填充
+#    ⇒ GOT = (stub+8) + A + B + C      【ARM 的 `add ip,pc,#A` 里 pc = 本指令地址+8】
+#    `.rel.plt` 的每条 R_ARM_JUMP_SLOT 其 r_offset **就是 GOT 槽地址** ⇒ 直接配名。
+#    与 stub 计数、与 .rel.plt 顺序**全都无关**。
+#
+# ★ 验收（tools/_r152_plt_got.py，工厂 + 重建产物）：
+#    新法 map 与旧法 map **逐项相同**（工厂 105 槽 / 我方 104 槽，名字与地址全一致）。
+#    旧法作为**金丝雀**留在 `_build_plt_positional`，由 `--self-test` 每轮比对。
+
+def _arm_ror(v, r, bits=32):
+    r &= bits - 1
+    return ((v >> r) | (v << (bits - r))) & ((1 << bits) - 1)
+
+
+def _arm_imm12(word):
+    """ARM 数据处理指令的「imm8 + rotate」立即数真实值。"""
+    return _arm_ror(word & 0xFF, ((word >> 8) & 0xF) * 2)
+
+
+# `add ip, pc, #A`：[27:20]=0x28(ADD,imm) | Rn=15 | Rd=12
+_ARM_ADD_PC_IP = 0x028FC000
+# `add ip, ip, #B`：[27:20]=0x28(ADD,imm) | Rn=12 | Rd=12
+_ARM_ADD_IP_IP = 0x028CC000
+# `ldr pc, [ip, #C](!)`：保留 [27:25]=010 / [22]B=0 / [20]L=1 / Rn=12 / Rd=15，
+#   忽略 P[24] U[23] W[21]（正负偏移、是否回写都不影响 GOT 地址）。
+_ARM_LDR_PC_IP_KEEP = 0x065FF000
+_ARM_LDR_PC_IP_WANT = 0x041CF000
+
+
+def _plt_stub_got(raw, stub_addr):
+    """从 stub 的前 3 条字算出它跳的 GOT 地址；形态不认 ⇒ None。"""
+    got = None
+    for i in range(3):
+        (word,) = struct.unpack_from('<I', raw, i * 4)
+        if word == 0:
+            return None
+        if (word & 0x0FFFF000) == _ARM_ADD_PC_IP:
+            got = stub_addr + 8 + _arm_imm12(word)
+            continue
+        if (word & 0x0FFFF000) == _ARM_ADD_IP_IP:
+            if got is None:
+                return None
+            got += _arm_imm12(word)
+            continue
+        if (word & _ARM_LDR_PC_IP_KEEP) == _ARM_LDR_PC_IP_WANT:
+            if got is None:
+                return None
+            off12 = word & 0xFFF
+            if not (word >> 23) & 1:          # U=0 ⇒ 负偏移
+                off12 = -off12
+            return got + off12
+        return None
+    return None
+
+
+def _plt_got_map(elf, raw):
+    """→ (stub起始地址 → 符号名, lo, hi)。stub 起始地址 = 旧版 `ldr pc` 地址 - 8，key 口径不变。"""
+    plt = elf.get_section_by_name('.plt')
+    rel = elf.get_section_by_name('.rel.plt')
+    if plt is None or rel is None:
+        return {}, None, None
+    dynsym = elf.get_section_by_name('.dynsym')
+    got2name = {}
+    for r in rel.iter_relocations():
+        try:
+            got2name[int(r['r_offset'])] = dynsym.get_symbol(r['r_info_sym']).name
+        except Exception:
+            pass
+    a0, off, size = plt['sh_addr'], plt['sh_offset'], plt['sh_size']
+    body = raw[off:off + size]
+    m = {}
+    for i in range(0, size - 12 + 1, 4):
+        g = _plt_stub_got(body[i:i + 12], a0 + i)
+        if g is None:
+            continue
+        nm = got2name.get(g)
+        if nm:
+            m[a0 + i] = nm
+    if m:
+        ks = sorted(m)
+        return m, ks[0] - 4, ks[-1] + 4
+    return m, None, None
+
+
 class Bin(object):
     def __init__(self, path):
         self.path = path
@@ -242,8 +337,19 @@ class Bin(object):
                 best, bestn = (lo, hi), n
         return best
 
-    # --- PLT：用 capstone 找 `ldr pc, [...]`，按 .rel.plt 顺序配名 ---
+    # --- PLT：按 **GOT 槽地址** 配名（第 152 轮）；旧的位置配对降级为自证金丝雀 ---
+    # ★★★ 第 149/150 轮的血泪（勿再犯）：
+    #   ① 第 149 轮我曾以"位置配对在 lld 下会错位"为由改判据，结果**引入回归**
+    #      （`plt_map` 塌成 0 ⇒ `calls_ext` 两侧全空 ⇒ 假 PASS）⇒ 当场回滚；
+    #   ② 第 152 轮**重新**做这件事，但先写了 `tools/_r152_plt_got.py` 只**探**不改：
+    #      在工厂 + 重建产物上证明「GOT 配对 map 与位置配对 map **逐项相同**」，
+    #      才把生产路径换过来，并把旧法留作金丝雀（见 `_build_plt_positional`）。
     def _build_plt(self):
+        return _plt_got_map(self.elf, self.raw)
+
+    # ★ 旧法（`.plt` 里第 k 个 `ldr pc,[..]` ↔ `.rel.plt` 第 k 个名字）。
+    #   **不再是生产路径**；只给 `--self-test` 当金丝雀：一旦与新法逐项不同就 fail-loud。
+    def _build_plt_positional(self):
         plt = self.elf.get_section_by_name('.plt')
         rel = self.elf.get_section_by_name('.rel.plt')
         if plt is None or rel is None:
@@ -519,7 +625,7 @@ def _machine_for(b, mode):
 
 
 def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None,
-             mode=None, _retry=True, stop_at=None):
+             mode=None, _retry=True, stop_at=None, seed=None, out_windows=None):
     """执行 fname(args)。mode=None 时自动判 ARM/Thumb（先 ARM，遇 INSN_INVALID 再试 Thumb）。
 
     ★ 2026-10-01 新增 `stop_at`（**共同视野前缀**用，见 `compare()` 的两侧早死判据）：
@@ -603,6 +709,11 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     mu.mem_write(SCRATCH, b'\x00' * SCRATCH_SIZE)
     mu.mem_write(SCRATCH + 0x100, b'A\x00')
     mu.mem_write(SCRATCH + 0x200, b'core\x00')
+    # ★★★ 2026-10-07（第 160 轮）：**函数特设输入的内存种子**。
+    #   必须在段内容 / SCRATCH 标准重置**之后**写，否则会被上面的重置覆盖。
+    #   两侧用同一份 bytes ⇒ 种子本身不构成差异源（判据仍是两侧被测代码）。
+    for _va, _bs in (seed or ()):
+        mu.mem_write(_va, _bs)
     # ★★ 2026-10-03（第121 轮，判据见 PSEUDOSYM-CORPUS.md）：`core` 组专用入参。
     #   'NES' 是default_core_list（@0x3b0254, stride 0x44）的**第10 项**
     #   ⇒ GetCoreIndex 应做**恰好 11 次 strcmp** 后命中并返回 10。
@@ -659,11 +770,23 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
                 if len(ctx['modelled']) < MAX_TRACE:
                     ctx['modelled'].append(nm)
             else:
-                # ★ 兜底返回 0，但**必须登记**：未建模的调用在报告里单列，
-                #   绝不静默当成"两侧一致"（纪律 3："没跑"与"跑了但过了"必须可区分）。
+                # ★ 兜底：**必须登记**未建模；绝不静默当成"两侧一致"
+                #   （纪律 3："没跑"与"跑了但过了"必须可区分）。
                 if len(ctx['unmodelled']) < MAX_TRACE:
                     ctx['unmodelled'].append(nm)
-                m.reg_write(ac.UC_ARM_REG_R0, 0)
+                # ★★★ 2026-10-05（第 142 轮）**根修**：兜底不得硬写 0。
+                #   簇 A 实测铁证：`FilePreEmu` 里 `strcpy(&FilenameExt,p); strupr(&FilenameExt);`
+                #   工厂 gcc 6.2 编出 `bl strcpy@plt` + **`mov r0,r4`（reload）**，
+                #   我方 clang -Os 消掉 reload（判定返回值未使用 ⇒ 冗余）——
+                #   **两侧都是合法代码，真实硬件上行为一致**。但在 diff_exec 里
+                #   src 不可读 ⇒ 模型抛异常 ⇒ 旧兜底 `r0=0` ⇒
+                #   工厂 reload 拿到 `&FilenameExt`、我方 `strupr(NULL)` ⇒ 假 DIVERGE。
+                #   根因：兜底**违反 libc 的 C 契约**（`strcpy` 恒返回 dst，与数据无关）。
+                #   判定表与实现都在 `libc_model.fallback_r0()`（唯一真源，纪律 69），
+                #   本处**只调用、不重述**。
+                _a = [m.reg_read(ac.UC_ARM_REG_R0 + i) for i in range(4)]
+                m.reg_write(ac.UC_ARM_REG_R0,
+                            libc_model.fallback_r0(nm, _a) & 0xFFFFFFFF)
             m.reg_write(ac.UC_ARM_REG_PC, m.reg_read(ac.UC_ARM_REG_LR))
             return
         if ctx['insns'] > budget:
@@ -702,6 +825,16 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
     for i, v in enumerate(list(args)[:4]):
         mu.reg_write(ac.UC_ARM_REG_R0 + i, v & 0xFFFFFFFF)
+    # ★★★ 2026-10-07（第 160 轮）：**AAPCS 栈参数**（第 5 个及以后的参数）。
+    #   ARM 过程调用标准：前 4 个参数走 r0-r3，第 5 个起**由调用方压栈**，
+    #   被调函数从 [sp], [sp+4], … 读取。
+    #   病灶（第 160 轮查 FDCT32 时实测发现）：本函数曾经**只写 r0-r3**，
+    #   `args[4:]` 被静默丢弃 ⇒ 被调函数从栈读到的是复用实例的**残留**或零
+    #   ⇒ 语料组里写了第 5 个参数等于没写，`gb`（guard bits）恒定走旧分支。
+    #   ★ 栈内容已在上方被 `_zeros` 清过（第 108 轮的残留泄漏修复），此处只覆写。
+    _sp0 = STACK_BASE + STACK_SIZE - 0x100
+    for i, v in enumerate(list(args)[4:]):
+        mu.mem_write(_sp0 + i * 4, (v & 0xFFFFFFFF).to_bytes(4, 'little'))
 
     if os.environ.get('CGM_DBG_REGS') == '1':
         sys.stderr.write('   [entry] %-30s mode=%s addr=0x%x (lowbit=%d) r0=0x%x r1=0x%x r2=0x%x r3=0x%x\n'
@@ -741,6 +874,18 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
         for nm, (sa, sz) in (syms_for_final or b.data_syms).items():
             if d[0] <= sa < d[1] and 0 < sz <= 64:
                 final[nm] = blob[sa - d[0]:sa - d[0] + sz].hex()
+    # ★★★ 2026-10-07（第 160 轮）：**输出窗字节**（判据③的直接实现，见 FN_CORPUS）。
+    #   必须在摘钩子 / 释放机器**之前**读——此时 emu_start 已结束，最终内存在机器里。
+    #   `out_windows` = [(名字, vaddr, size), ...]；读不到 ⇒ None（调用方按 fail-loud 处理）。
+    #   ★ 与 `final` 的区别：`final` 只吃 dregion 内 size<=64 的具名符号（覆盖不到
+    #     `items` 这种 0x3e80 的大对象）；输出窗**显式声明**要验哪一段，且不限大小。
+    out_bytes = {}
+    if out_windows:
+        for _nm, _va, _sz in out_windows:
+            try:
+                out_bytes[_nm] = bytes(mu.mem_read(_va, _sz))
+            except UcError:
+                out_bytes[_nm] = None
     # ★ 显式释放：746 函数 × 2 二进制 ≈ 1500 个 Unicorn 实例（每个映射数 MB）。
     #   实测**大循环下会 MemoryError**（Unicorn C 侧内存未及时回收）。
     #   ⇒ 摘钩子 + 置空 + 交给 gc（批量循环里另有周期 gc.collect()）。
@@ -760,7 +905,9 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
             'unmodelled': sorted(set(ctx['unmodelled'])),
             'modelled': sorted(set(ctx['modelled'])),
             # ★ 未映射访问现场：(access, address, size) 或 None（第 98 轮）
-            'fault': ctx['fault']}
+            'fault': ctx['fault'],
+            # ★ 输出窗字节（第 160 轮）：{名字: bytes} 或 {名字: None}（读不到）
+            'out_bytes': out_bytes}
 
 
 CORPUS = [
@@ -772,6 +919,134 @@ CORPUS = [
     ('core', [SCRATCH + 0x300, SCRATCH + 0x300, SCRATCH, 0]),
     ('misc', [1, 2, 4, 0x1000]),
 ]
+
+
+def _unpack_cps(items):
+    """语料条目归一为 `(组名, args, seed, out_windows)`。
+
+    · 2 元组 ⇒ seed=None, out_windows=None（全局 CORPUS 的老格式，向后兼容）
+    · 3 元组 ⇒ out_windows=None
+    · 4 元组 ⇒ (组名, args, seed, out_windows)；out_windows = [(名字, vaddr, size), ...]
+    """
+    for it in items:
+        if len(it) == 2:
+            yield it[0], it[1], None, None
+        elif len(it) == 3:
+            yield it[0], it[1], it[2], None
+        elif len(it) == 4:
+            yield it[0], it[1], it[2], it[3]
+        else:
+            raise ValueError('语料条目必须是 2/3/4 元组'
+                             '（名字, args[, seed[, out_windows]]）：%r' % (it,))
+
+
+# ★★★ 2026-10-07（第 160 轮）：**函数特设合法输入组**（不污染全局 CORPUS）。
+#
+#   病灶（第 156.1 轮实证）：`xmp3_FDCT32` 这类**纯计算**函数在全局 CORPUS 下
+#   必然撞未映射早死——CORPUS 的 r0/r1 指向 SCRATCH 假数据、r2/r3 是被当索引的
+#   大整数 ⇒ FDCT32 用 `offset*4 + 0x400*4` 算出的写址飞出 SCRATCH ⇒ 两侧
+#   双双 WRITE_UNMAPPED，判据③（两侧输出比对）**根本没有观测窗**。
+#
+#   依据（先查官方上游，不猜）：`src/upstream/mp3/real/dct32.c` 的权威签名是
+#       void FDCT32(int *buf, int *dest, int offset, int oddBlock, int gb);
+#     · buf    ：32 个定点样本，**原地变换**（写回 buf[0..0x1f]）
+#     · dest   ：输出缓冲区，写址 = dest + 64*16 + ((offset-oddBlock)&7)
+#                + VBUF_LENGTH*(oddBlock?0:1) … 最远 ≈ dest + 0x1510
+#     · offset ：真实调用方 `xmp3_Subband` 传的是 0..7 的环索引
+#     · oddBlock：0 或 1
+#     · gb     ：guard bits；`gb < 6` 时先把 buf 整体右移 (6-gb)
+#   ⇒ 给它配**合法**入参：buf/dest 落在真实具名数据对象里，offset/oddBlock/gb
+#      取真实取值范围内的值。
+#
+#   ★★ 为什么 buf/dest **必须落在具名数据对象**（而不是 SCRATCH）：
+#     访存指纹只在 `spans`（两侧 STT_OBJECT 区间并集）内被记录，终值 `final`
+#     只覆盖 dregion 内的具名符号。若用 SCRATCH，两侧都"看不见输出"⇒ **假 PASS**
+#     （这正是本仪器从头到尾在防的那一类）。落在具名对象里 ⇒ 写入进指纹、
+#     两侧同址可比 ⇒ 差异只会来自被测代码。
+#   ★★ 种子内容两侧**逐位相同**（同一份 bytes）⇒ 不构成差异源。
+#   ★★ 地址一律**从符号表查**（第 152 轮纪律：不手写常量）。已核对两侧同址：
+#        corecfg  @0x3cfac8 size 0x3e80（buf，原地写 128B 足够）
+#        items    @0x3d3948 size 0x3e80（dest，最远写 +0x1510 足够，且与 corecfg 相邻不重叠）
+#        dcttab   @0x2e428c size 0xc0（只读查表，两侧同址 —— 第 134 轮已修绑定）
+def _fdct32_buf_seed():
+    """32 个定点样本（|x| < 2^18 ⇒ ≥6 guard bits，依据 dct32.c 头注释的溢出前提）。
+
+    确定性 LCG：同一份代码在任何机器上给出同一序列（不依赖 RNG 状态/时序）。
+    """
+    v = 0x12345678
+    vals = []
+    for _ in range(32):
+        v = (v * 1103515245 + 12345) & 0x7fffffff
+        vals.append(((v >> 11) - 0x40000) & 0xffffffff)     # [-2^18, 2^18) → uint32
+    return b''.join(x.to_bytes(4, 'little') for x in vals)
+
+
+FDCT32_BUF_SEED = _fdct32_buf_seed()
+
+# ★★★ 2026-10-07（第 160 轮取证后追加）：**输出窗**（判据③的直接实现）。
+#
+#   取证结论（云工作区 `_r160b_probe.py`，两侧 unicorn 跑同一组合法输入）：
+#     · buf  [0x3cfac8, +0x80)  最终字节**逐位相同**（原地变换的完整输出）
+#     · dest [0x3d3948, +0x1000) 最终字节**逐位相同**（覆盖最远写址 dest+0xC27）
+#   而 `data-reads` 分歧的**全部**来源已被逐项钉死（见下方「新发现与决策」）：
+#     ① dcttab+0..+116（stage-1 的 30 个系数）：工厂 GCC 把 `static const`
+#        数组**常量折叠成立即数**（Ghidra 里是 `* 0x4013c251` 这类立即乘），
+#        我方因第 134 轮把 `dcttab` 改成 `extern`（绑定镜像地址）⇒ clang
+#        **无法**折叠外部数组 ⇒ 老老实实查表。**值相同（镜像逐字节一致）**。
+#     ② buf[0..7] 多读一次：clang -Os 的寄存器压力 ⇒ reload；工厂留在寄存器里。
+#     ③ 8B 读 = clang 把相邻两个 32 位载入合并成 `ldm rN!, {rA,rB}`（工厂 2×LDR）。
+#   ⇒ 访问模式是编译策略，**不是语义**；函数的真实输出（buf/dest 字节）才是。
+#
+#   ★★ 判据设计（纪律：先写死判据、后改代码、不得直接放宽）：
+#     声明输出窗的组，**直接比窗口字节**。窗口逐位相同 ⇒ 本组的 `data-reads`
+#     差异被**证明**不影响输出（对该输入）⇒ 降级为 note 留痕。
+#     这**不是**放宽 `read_width_only`——它换成了**更强**的判据（直接验输出）。
+#   ★★ 两道反向约束（防这次降级被滥用）：
+#     · 窗口读不到 / 内容不同 ⇒ 照样进 `diffs` 判 DIVERGE（fail-loud）；
+#     · 存在 `data-writes` 差异时**不得**降级——写覆盖不同说明有落在窗口之外
+#       的写，窗口不能代表完整输出。
+#   ★ 窗口的**完备性是声明者的责任**：buf 覆盖原地变换的全部 32 样本，
+#     dest 覆盖源码里全部 d[0]/d[8] 写址（dct32.c:207-264，最远 dest+0xC27 < 0x1000）。
+FDCT32_OUT = [('buf', 0x3cfac8, 0x80), ('dest', 0x3d3948, 0x1000)]
+
+FN_CORPUS = {
+    # ★ 只在 `--fn xmp3_FDCT32` 时启用；`--fn` 不写棘轮台账（只有 --batch 写）。
+    'xmp3_FDCT32': [
+        # (组名, [buf, dest, offset, oddBlock, gb], [(vaddr, bytes)...], out_windows)
+        ('legal-even', [0x3cfac8, 0x3d3948, 0, 0, 6],
+         [(0x3cfac8, FDCT32_BUF_SEED)], FDCT32_OUT),
+        ('legal-odd', [0x3cfac8, 0x3d3948, 0, 1, 6],
+         [(0x3cfac8, FDCT32_BUF_SEED)], FDCT32_OUT),
+        ('legal-shift', [0x3cfac8, 0x3d3948, 3, 0, 0],
+         [(0x3cfac8, FDCT32_BUF_SEED)], FDCT32_OUT),
+        ('legal-hi-off', [0x3cfac8, 0x3d3948, 7, 1, 3],
+         [(0x3cfac8, FDCT32_BUF_SEED)], FDCT32_OUT),
+    ],
+}
+
+
+def _validate_fn_corpus(bf, bo, fname):
+    """FN_CORPUS 条目的**机械门禁**：种子地址与输出窗必须落在**两侧**都映射的段内。
+
+    ★ 为什么必须查而不信手写常量：手写地址一旦因布局变动而失效，种子会写到
+      未映射页 ⇒ `mem_write` 抛 UcError ⇒ 表现成"函数崩了"而不是"配置错了"。
+      输出窗同理：窗口半截在段外 ⇒ `mem_read` 拿不到完整字节 ⇒ 本该判
+      「输出不同」却报「读不到」，判据被悄悄换成更弱的那条。
+    ★ fail-loud（第 98 轮纪律：装不上/不对就抛，绝不静默退化）。
+    """
+    for cname, _args, seed, outs in FN_CORPUS.get(fname, ()):
+        for va, _bs in (seed or ()):
+            for tag, b in (('工厂', bf), ('我方', bo)):
+                if b.seg_of(va) is None:
+                    raise ValueError(
+                        'FN_CORPUS[%s] 组 %r 的种子地址 0x%x 不落在%s的任何 PT_LOAD 内'
+                        % (fname, cname, va, tag))
+        for _nm, va, sz in (outs or ()):
+            for tag, b in (('工厂', bf), ('我方', bo)):
+                if b.seg_of(va) is None or b.seg_of(va + sz - 1) is None:
+                    raise ValueError(
+                        'FN_CORPUS[%s] 组 %r 的输出窗 %s [0x%x,+0x%x) 不完整落在%s的任何 PT_LOAD 内'
+                        % (fname, cname, _nm, va, sz, tag))
 
 
 def norm_stop(s):
@@ -1013,7 +1288,7 @@ RULER_CONSTANT_NAMES = ('ESCALATE_FACTOR',)
 #   · 执行后端开关：只换实现、**不改判据** ⇒ 只记**名字**，不记值
 #     （`CGM_MACHINE_REUSE` 已在 §0.28 用 sha256 逐字节证明与默认路径等价；
 #      记值会让"本地带 reuse、CI 不带"这种无关差异把台账判废）。
-RULER_PROTOCOL_SWITCHES = ('CGM_REFDEAD_OFF', 'CGM_INLINE_MOVE_OFF')
+RULER_PROTOCOL_SWITCHES = ('CGM_REFDEAD_OFF', 'CGM_INLINE_MOVE_OFF', 'CGM_DEADEQ2_OFF')
 RULER_BACKEND_SWITCH_NAMES = ('CGM_MACHINE_REUSE', 'CGM_NO_LIBC_MODEL')
 
 # 触到步数上限 ⇒ 以 ESCALATE_FACTOR× 预算**重试一次**。
@@ -1282,6 +1557,26 @@ def _fault_str(f):
     return '%s@0x%x sz=%d' % (kind, addr, size)
 
 
+def _fault_out_of_segments(addr, *bins):
+    """死亡地址是否落在**所有**产物的 PT_LOAD 段**之外**。
+
+    ★ 用途（DEADEQ-v2，第 153 轮）：只有落在所有段之外的死亡地址才是
+      「野指针 / NULL 解引用」——它两侧的语义同为「解引用了一个未初始化的
+      指针」，**与数据布局无关，因此可比**。落在段内的死亡地址是绝对地址，
+      两侧段布局不同 ⇒ 不可比（§0.46 的实测结论）。
+    ★ 只读探针先行：见 `build/_r153_probe.py`（在现有 batch 数据上模拟过，
+      5 个 UNDECIDABLE 的死亡地址全部落在段外：0x0 / 0x1 / 0x40）。
+    """
+    if addr is None:
+        return False
+    for b in bins:
+        for seg in b.segs:
+            va, fsz, msz = seg[0], seg[1], seg[2]
+            if va <= addr < va + msz:
+                return False
+    return True
+
+
 def trace_diffs(rf, ro, bf, bo, fname, spec_private, fspans, void_fns=None,
                 allow_terminal=True, cap_f=False, cap_o=False, cap_asym=False):
     """两条轨迹的**观测差异** —— 唯一真源（全量路径与「共同视野前缀」路径共用）。
@@ -1364,6 +1659,60 @@ def trace_diffs(rf, ro, bf, bo, fname, spec_private, fspans, void_fns=None,
     return diffs, note, ret_unjudged, fps
 
 
+def _out_window_diffs(rf, ro, outs):
+    """输出窗逐位比对（第 160 轮，判据③的直接实现）。
+
+    → (差异数据, 全部窗口是否逐位相同, 相同窗口的描述列表)。
+
+    ★ **纯函数**：只读 `rf`/`ro` 的 `out_bytes` 字段 ⇒ 可离线自证（--self-test）。
+    ★ `out_bytes` 由 `run_func(out_windows=...)` 在执行结束后从机器里读出；
+      读不到（窗口落在段外）记 `None` ⇒ 这里报「不可读」⇒ fail-loud。
+    """
+    if not outs:
+        return [], False, []
+    ob_f, ob_o = rf.get('out_bytes') or {}, ro.get('out_bytes') or {}
+    diffs, ok_names = [], []
+    for nm, va, sz in outs:
+        bf_b, of_b = ob_f.get(nm), ob_o.get(nm)
+        if bf_b is None or of_b is None:
+            diffs.append('data-out %s 不可读（窗口落在段外？）' % nm)
+            continue
+        if bf_b != of_b:
+            n = sum(1 for i in range(sz) if bf_b[i] != of_b[i])
+            first = next(i for i in range(sz) if bf_b[i] != of_b[i])
+            diffs.append('data-out %s 不同 %d/%dB @0x%x F=%s O=%s'
+                         % (nm, n, sz, va + first,
+                            bf_b[first:first + 8].hex(), of_b[first:first + 8].hex()))
+        else:
+            ok_names.append('%s[0x%x+0x%x]' % (nm, va, sz))
+    all_ok = bool(ok_names) and len(ok_names) == len(outs)
+    return diffs, all_ok, ok_names
+
+
+def _apply_out_equiv(diffs, note, out_ok, out_names_ok):
+    """输出等价降级（第 160 轮）。→ (diffs, note, 被降级掉的 data-reads 列表)。
+
+    前提（由调用方在前面机械检查）：`out_ok` = 输出窗**全部**逐位相同。
+    ★ **反向约束**：存在 `data-writes` 差异时**不得**降级——写覆盖不同说明有
+      落在窗口之外的写，窗口不能代表完整输出。
+    ★ 降级**只动 `data-reads`**：stop/ret/calls_ext/data-final/data-writes
+      一律保留——它们不是"访问模式"，照旧是判据。
+    """
+    if not out_ok or any(d.startswith('data-writes') for d in diffs):
+        return diffs, note, []
+    kept, suppressed = [], []
+    for d in diffs:
+        if d.startswith('data-reads'):
+            suppressed.append(d)
+        else:
+            kept.append(d)
+    if suppressed:
+        note = (note + ' ;; ' if note else '') + \
+            '输出等价（输出窗 %s 逐位相同）⇒ data-reads 差异被证明不影响输出' \
+            % ','.join(out_names_ok)
+    return kept, note, suppressed
+
+
 def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     rows, verdict = [], 'PASS'
     # ★★★ 2026-09-29 新增：**逐组机器可读明细**（`--dump-rows`）。
@@ -1385,9 +1734,9 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     # ★ 最终内容两侧共用**工厂的符号名**（同址同名才可比）
     kw = dict(steps=steps, spans=spans, syms_for_final=bf.data_syms)
     ret_unjudged = False
-    for cname, args in (corpus or CORPUS):
-        rf = run_func(bf, fname, args, **kw)
-        ro = run_func(bo, fname, args, **kw)
+    for cname, args, cseed, outs in _unpack_cps(corpus or CORPUS):
+        rf = run_func(bf, fname, args, seed=cseed, out_windows=outs, **kw)
+        ro = run_func(bo, fname, args, seed=cseed, out_windows=outs, **kw)
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
             _x('SKIP', None, None, err=str(rf.get('error') or ro.get('error'))[:100])
@@ -1427,6 +1776,14 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
                          'F 侧的外部调用/访存指纹无观测力，不得据此判我们发散（§2.3）' % sf))
             _x('refdead', sf, so)
             continue
+        # ★ DEADEQ-v2 组级豁免：见下方 `trace_diffs` **之后**的豁免块（第 154 轮移位）。
+        #   ★ 第 153 轮第一版把豁免放在这里并 `continue`（跳过 trace_diffs），实测后果：
+        #     594 个「早死但**无 diffs**」的 info 组被改判 deadeq ⇒ 146 个旧 PASS 函数
+        #     被函数级分支拖进 DEADEQ（PASS 771→625，DEADEQ 0→147）。
+        #     根因：**没算差异就豁免**，把"两侧轨迹一致"的组也标成"不可判"。
+        #   ★ 根解原则（第 154 轮）：**豁免只能减少 DIVERGE，绝不能把 PASS 降级为不可判。**
+        #   ★ 三个机械条件（fault 逐位相同 / 段外 / calls_ext 相同）与历史教训
+        #     （DEADEQ-v1 视野对齐被推翻）写在下方豁免块，描述只允许有一处（纪律 69）。
         # ★★★ 2026-10-01：「两侧同类早死 ⇒ 本组不可比」这个假设**已被实测推翻**，不要重犯。
         #   我曾按 `min(insns)` 把两侧截断到同一指令数再比，结果（单变量 A/B，同一产物）：
         #       旧口径 PASS 759 ｜ DIVERGE **18**        新口径 PASS 623 ｜ DIVERGE **81**
@@ -1441,6 +1798,13 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
             rf, ro, bf, bo, fname, spec_private, fspans, void_fns,
             allow_terminal=True, cap_f=cap_f, cap_o=cap_o, cap_asym=cap_asym)
         diffs.extend(diffs2)
+        # ★★★ 2026-10-07（第 160 轮）：**输出窗逐位判据**（FN_CORPUS 的 `out` 字段）。
+        #   背景（FDCT32 取证闭环）：`data-reads` 分歧，但 buf/dest 的**最终字节逐位相同**
+        #   ⇒ 访问模式（读几次/读多宽/常量是否折叠成立即数）是编译策略，不是语义。
+        #   ★ 实现在 `_out_window_diffs`（纯函数，--self-test 可直接自证）；
+        #     降级在**下方** DEADEQ-v2 豁免块之后做（`_apply_out_equiv`）。
+        _out_diffs, out_ok, out_names_ok = _out_window_diffs(rf, ro, outs)
+        diffs.extend(_out_diffs)
         # ★★★ 2026-10-01：死亡现场（未映射访问的 地址/宽度/读写）**只作证据，不作判据**。
         #   实测：把“现场不同”直接当成差异 ⇒ DIVERGE 18 → **91**。
         #   根因：死亡地址是**绝对地址**，而两套映像的**数据布局不同**（我方 0x4xxxxx）
@@ -1460,11 +1824,61 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
                 % (rf['insns'], ro['insns']))
         if _ru:
             ret_unjudged = True
+        # ★★★ 2026-10-06（第 153 轮）：**共同早死等价（DEADEQ-v2）** —— 只在
+        #   「两侧崩在**同一个野地址**」时豁免本组，**不含任何视野对齐**。
+        #   ★ 为什么这是**根本**而不是补丁：UNDECIDABLE 7 个里的 5 个，两侧的死亡
+        #     由**同一个未初始化的运行时全局**造成（取证：工厂 `mui_DisplayLine_t`
+        #     反编译为 `*(int *)((&m_ui)[m_ui + 0x16] + 0x40)`；沙箱里 `m_ui` 是
+        #     .data 初值 0 ⇒ 算出地址 0x40 ⇒ 读 0x40 崩。两侧**逐位同一个死亡点**）。
+        #     ⇒ 对给定输入产生**同一个致命错误** ⇒ 语义等价。剩下的「深度差 / 死前
+        #     多读几个全局」只发生在死前的合法执行里，由指令密度与代码布局决定
+        #     （§0.46 已实测：这不是语义差异）。
+        #   ★ 与被撤销的 DEADEQ-v1 的关键区别：v1 按 `min(insns)` **对齐视野**
+        #     （无效刻度，凭空造 63 个发散）；v2 **不对齐**，只钉三个条件：
+        #       ① 两侧 fault 三元组（访问码/地址/宽度）**逐位相同**；
+        #       ② 死亡地址落在**两侧所有 PT_LOAD 之外**（⇒ 野指针，非数据布局差异）；
+        #       ③ 两侧 `calls_ext` 序列相同（⇒ 执行的是同一段逻辑）。
+        #   ★ 判别力（反例，实测保留为 DIVERGE）：`strtrim` F READ@0x0 vs
+        #     O READ@0xffffffff ⇒ ①不满足 ⇒ 不豁免（这正是 §0.47 记录的「真差异」样本）。
+        #   ★ 可关：`CGM_DEADEQ2_OFF=1` 恢复旧口径（A/B 与回归）。
+        #   ★★★ 2026-10-06（第 154 轮）**位置修正**：豁免块必须在 `trace_diffs`
+        #     **之后**，且**只豁免「本组原本会判 DIVERGE」的组**（`diffs` 非空）。
+        #     第 153 轮第一版放在 `trace_diffs` 之前并 `continue` ⇒ 594 个「早死但
+        #     无 diffs」的 info 组被改判 deadeq ⇒ 108 个「4 组全早死且无 diffs」的
+        #     旧 PASS 函数被拖进 DEADEQ（PASS 771→625）⇒ 判据观测力被严重稀释。
+        #     ★ 根解原则：**豁免只能减少 DIVERGE，绝不能把 PASS 降级为不可判。**
+        if (diffs and os.environ.get('CGM_DEADEQ2_OFF') != '1'
+                and sf in _EARLY and so in _EARLY
+                and fs_f and fs_o
+                and list(fs_f) == list(fs_o)
+                and _fault_out_of_segments(fs_f[1], bf, bo)
+                and list(rf.get('calls_ext') or []) == list(ro.get('calls_ext') or [])):
+            rows.append((cname, 'deadeq', rf['ret'], ro['ret'], rf['insns'], ro['insns'],
+                         sf, so, [],
+                         (note + ' ;; ' if note else '')
+                         + 'DEADEQ-v2 豁免（本组原判 DIVERGE）：两侧同类早死且死亡现场'
+                           '逐位相同（%s）⇒ 同一个逻辑死亡点；被豁免的差异全来自死前'
+                           '深度（指令密度），不构成语义差异（第 154 轮）'
+                           % _fault_str(fs_f)))
+            _x('deadeq', sf, so, diffs=list(diffs), note=note,
+               wr_f=_fps['wr_f'], wr_o=_fps['wr_o'],
+               rd_f=_fps['rd_f'], rd_o=_fps['rd_o'],
+               ca_f=_fps['ca_f'], ca_o=_fps['ca_o'],
+               fault_f=list(fs_f), fault_o=list(fs_o))
+            continue
+        # ★★★ 2026-10-07（第 160 轮）：**输出等价降级**（实现在 `_apply_out_equiv`，
+        #   纯函数，--self-test 可自证）。前提：输出窗全部逐位相同（out_ok）
+        #   且无 data-writes 差异。降级只动 data-reads，其余判据一律保留。
+        diffs, note, _suppressed = _apply_out_equiv(diffs, note, out_ok, out_names_ok)
         if diffs:
             verdict = 'DIVERGE'
         _x('DIVERGE' if diffs else ('info' if note else 'ok'), sf, so,
            diffs=list(diffs), note=note, wr_f=_fps['wr_f'], wr_o=_fps['wr_o'],
            rd_f=_fps['rd_f'], rd_o=_fps['rd_o'], ca_f=_fps['ca_f'], ca_o=_fps['ca_o'],
+           # ★ 被输出等价降级掉的 data-reads（审计用：--dump-rows 可见，不丢信息）
+           suppressed=list(_suppressed),
+           # ★ 返回值（机器可读；classify_signal 的 ABI 档用，第 154 轮）
+           ret_f=rf['ret'], ret_o=ro['ret'],
            # ★ 死亡现场（机器可读；**不是判据**，见 compare() 注释）
            fault_f=list(fs_f) if fs_f else None, fault_o=list(fs_o) if fs_o else None)
         rows.append((cname, 'DIVERGE' if diffs else ('info' if note else 'ok'),
@@ -1475,8 +1889,16 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     # 若**没有任何一组**能给出判定（全是"参照侧早死"）⇒ 该函数整体不可判（REFDEAD）
     elif rows and all(r[1] == 'refdead' for r in rows):
         verdict = 'REFDEAD'
-    # 若**没有任何一组**能给出判定（全是"两侧同类早死且共同视野前缀一致"）⇒ 整体不可判（DEADEQ）
-    elif rows and all(r[1] == 'deadeq' for r in rows):
+    # 若**没有任何一组**存在**未豁免**的差异、且**至少一组**被 DEADEQ-v2 豁免 ⇒
+    #   该函数的 DIVERGE 被 DEADEQ-v2 完全豁免 ⇒ DEADEQ（第 154 轮修正）。
+    #   ★ 为什么条件是「有 deadeq 组」而不是「所有组都早死」：DEADEQ-v2 的语义是
+    #     「豁免本组**原本要判的 DIVERGE**」。一个所有组都早死但**无任何差异**的函数，
+    #     旧口径本来就是 PASS（两侧轨迹一致）；把它改判不可判会稀释判据观测力
+    #     （第 153 轮第一版实测教训：PASS 771→625）。
+    #   ★ 混合情形（`outputxy1`：core/strs 组两侧早死且无差异 ⇒ ok/info；
+    #     misc/zero 组有差异但被豁免 ⇒ deadeq）在此正确判为 DEADEQ。
+    elif (rows and not any(r[1] == 'DIVERGE' for r in rows)
+          and any(r[1] == 'deadeq' for r in rows)):
         verdict = 'DEADEQ'
     if out is not None:
         out['ret_unjudged'] = 1 if ret_unjudged else 0
@@ -1520,6 +1942,100 @@ void _start(void) { for (;;) probe(1); }
 '''
 
 
+# ★★★ 2026-10-05（第 153 轮）：DIVERGE 的**信号强度**分档（只读不改）。
+#   为什么需要：现存 DIVERGE 里混着「两侧在非法输入组**双双撞未映射内存而死**」的噪声，
+#   差异只反映"死在哪个地址 / 跑了几步"，与语义无关（`strtrim` 是完整取证过的样板 ——
+#   合法输入组两侧 ret 逐项相同，只有 `[zero]` 组发散且两侧都 READ_UNMAPPED 早死）。
+#   把它们和真有语义差异的混进同一个 DIVERGE 数字 ⇒ 头条误导 + 诱导"给噪声改源码"。
+#
+#   ★ 本函数**只读不判**：输入 = `compare()` 已经产出的 xr 逐组明细，**不重跑、不改变
+#     任何 verdict / stats / 判据指纹 / 棘轮台账**；只在汇总里多打一行派生分类。
+#   ★ 规则（只用 xr 已有字段，不引入新判据）：
+#       跑完组   = 两侧 stop 都是 `return`（都正常跑完）；
+#       早死组   = 两侧 stop 都是 UC_ERR_*_UNMAPPED；
+#       发散组   = 该组 kind == 'DIVERGE'（`diffs` 非空 —— 唯一的判据承载体）。
+#     · 无跑完组                                  ⇒ UNDECIDABLE（没有任何一致证据，不许算 NOISE）
+#     · 有跑完组，且**任一跑完组本身发散**          ⇒ REAL（合法输入下就有可观测差异 —— 这是要追的）
+#     · 有跑完组，跑完组全一致，但有**非早死**的发散组 ⇒ REAL（发散形态不是"双双早死"，视野不对齐）
+#     · 有跑完组，跑完组全一致，发散组**全是早死组**  ⇒ NOISE
+#   ★ 判别力由 `--self-test` 的反例保证（见 selftest_classify）：把某个跑完组改成发散 ⇒ 必须判 REAL。
+_EARLY_STOPS = ('UC_ERR_READ_UNMAPPED', 'UC_ERR_WRITE_UNMAPPED', 'UC_ERR_FETCH_UNMAPPED')
+
+
+def _ret_value_is_artifact(v):
+    """ret 值是否是「沙箱人造物」：落在 SCRATCH/STACK 区，或是明显非指针的小整数。
+
+    ★ 用途（第 154 轮，classify_signal 的 ABI 档）：两侧 ret 都是人造物时，
+      「ret 不同」只反映**按值返回结构体时的寄存器布局差异**（ABI），不是语义差异。
+    ★ 小整数阈值 0x1000：真指针不会落在这个范围；两侧「类型类别」不同本身
+      就是「两侧返回约定不同」的证据（如 F 侧把结构体放成 r0 小常数、O 侧放指针）。
+    """
+    if v is None:
+        return False
+    if SCRATCH <= v < SCRATCH + SCRATCH_SIZE:
+        return True
+    if STACK_BASE <= v < STACK_BASE + STACK_SIZE:
+        return True
+    return v < 0x1000
+
+
+def _ret_only_and_sandbox(r):
+    """该 DIVERGE 组的差异是否**只有 ret**、且两侧 ret 都是沙箱人造物。
+
+    ★ ret 值优先取 xr 的结构化字段 `ret_f`/`ret_o`（batch 路径，权威）；
+      缺失时从 `diffs` 文本正则解析 —— 该格式由 `trace_diffs()` 的
+      `'ret F=0x%x O=0x%x'` 唯一定义，本函数**只解析、不复述规则**（纪律 69）。
+    ★ diffs 为空 ⇒ 返回 False（不是 ret-only），避免 vacuous truth 吞掉真 REAL。
+    """
+    dd = [str(x) for x in (r.get('diffs') or [])]
+    if not dd or not all(x.startswith('ret ') for x in dd):
+        return False
+    vf, vo = r.get('ret_f'), r.get('ret_o')
+    if vf is None or vo is None:
+        import re
+        m = re.match(r'ret F=(0x[0-9a-fA-F]+) O=(0x[0-9a-fA-F]+)$', dd[0])
+        if not m:
+            return False
+        vf, vo = int(m.group(1), 16), int(m.group(2), 16)
+    return _ret_value_is_artifact(vf) and _ret_value_is_artifact(vo)
+
+
+def classify_signal(rows):
+    """rows = 一个函数的 xr 字典列表（字段 grp/kind/sf/so/diffs/ret_f/ret_o…）。
+    → ('REAL'|'ABI'|'NOISE'|'UNDECIDABLE', 说明)。
+    ★ ABI（第 154 轮）：跑完组的差异**只有 ret** 且两侧 ret 都是沙箱人造物 ⇒
+      ABI 寄存器布局差异，**不是语义差异**（不改判据，只改派生分档）。"""
+    if not rows:
+        return 'UNDECIDABLE', '无逐组明细（compare 未产出 xr）'
+    finished = [r for r in rows if r.get('sf') == 'return' and r.get('so') == 'return']
+    if not finished:
+        return 'UNDECIDABLE', '无跑完组（全是早死/单侧死/截断），视野不对齐，无法判语义'
+    bad_finished_rows = [r for r in finished if r.get('kind') == 'DIVERGE']
+    bad_finished = [r['grp'] for r in bad_finished_rows]
+    if bad_finished:
+        # ★ 2026-10-06（第 154 轮）：ret-only 差异 + 两侧 ret 都落在沙箱人造区
+        #   ⇒ **ABI 档**（不是语义差异）。唯二样本：`stbtt__get_subrs`
+        #   （F=`0x7d000300` O=`0x7e03fed0`）/ `stbtt__tesselate_curve`
+        #   （F=`0x1` O=`0x7d000300`）—— 第 146–149 轮已证 `stbtt__buf` 按值传参
+        #   的寄存器布局差异同理；两侧同一次编译、调用方与被调方约定自洽 ⇒ 真机无害。
+        #   ★ 判别力（反例，必须保留 REAL）：一侧 ret 落在**产物段内**（真地址）
+        #     ⇒ 可能是数据布局差异 ⇒ 仍 REAL。
+        if all(_ret_only_and_sandbox(r) for r in bad_finished_rows):
+            return 'ABI', ('跑完组 %s 的差异**只有 ret**，且两侧 ret 都落在沙箱人造区'
+                           '（SCRATCH/STACK）或为小整数 ⇒ ABI 寄存器布局差异，非语义'
+                           '（第 154 轮）') % ','.join(sorted(bad_finished))
+        return 'REAL', '跑完组 %s 两侧观测不同（合法输入下即有差异）' % ','.join(sorted(bad_finished))
+    diverging = [r for r in rows if r.get('kind') == 'DIVERGE']
+    non_early = [r['grp'] for r in diverging
+                 if not (r.get('sf') in _EARLY_STOPS and r.get('so') in _EARLY_STOPS)]
+    if non_early:
+        return 'REAL', '发散组 %s 不是双侧早死（形态差异，不是单纯死亡点不同）' % ','.join(sorted(non_early))
+    if not diverging:
+        return 'NOISE', '（其实没发散 —— 不该进分类器；batch 却把它列在 DIVERGE 里，需核对）'
+    return 'NOISE', '跑完组 %d 个全部一致；发散组 %s 全是双侧早死（只在非法输入下发散，无语义含量）' % (
+        len(finished), ','.join(sorted(r['grp'] for r in diverging)))
+
+
 def partition_ok(stats, n_funcs):
     """判据分桶自洽：PASS+DIVERGE+TRUNC+SKIP+REFDEAD 必须等于本轮函数数。
 
@@ -1534,7 +2050,7 @@ def partition_ok(stats, n_funcs):
     """
     return (stats.get('PASS', 0) + stats.get('DIVERGE', 0)
             + stats.get('TRUNC', 0) + stats.get('SKIP', 0)
-            + stats.get('REFDEAD', 0)) == n_funcs
+            + stats.get('REFDEAD', 0) + stats.get('DEADEQ', 0)) == n_funcs
 
 
 def _strip_src(s):
@@ -1679,6 +2195,12 @@ def self_test():
         BF, BO = Bin(FACTORY), Bin(OURS)
         c('前置：工厂 .symtab 可用（FUNC > 700）', len(BF.funcs) > 700, True)
         c('前置：两侧 PLT 都解析出名字', len(BF.plt_map) > 0 and len(BO.plt_map) > 0, True)
+        # ★ 第 152 轮：PLT 名字解析换成了 GOT 槽配对；旧的位置配对留作**金丝雀**。
+        #   两者若逐项不同 ⇒ 解析路径漂了 ⇒ calls_ext 的名字不可信 ⇒ 必须 fail-loud。
+        #   （此前 `_r152_plt_got.py` 已在两份产物上证明二者逐项相同：工厂 105 / 我方 104 槽。）
+        for tag, B in (('工厂', BF), ('我方', BO)):
+            c('金丝雀  %s PLT：GOT配对 与 位置配对 **逐项相同**（%d 槽）' % (tag, len(B.plt_map)),
+              B.plt_map == B._build_plt_positional()[0], True)
         n = 'FBA_Load'
         if n in BF.funcs and n in BO.funcs:
             rf = run_func(BF, n, [0, 0, 0, 0], 4000)
@@ -1778,6 +2300,16 @@ def self_test():
 
         # ---- libc 模型接线（GAP 17.16）：外部调用不再一律返回 0 ----------------
         if 1:
+            # ⓿ ★★★ 2026-10-05（第 142 轮）**接上 `libc_model.self_test()` 整条链**。
+            #   为什么必须接（这是本轮自证抓到的**真缺陷**，不是形式主义）：
+            #     `libc_model.self_test()` 此前**没有任何调用方** —— `diff_exec --self-test`
+            #     只**重写**了其中几条（直接引用 `libc_model.PTR_RETURNING` 之类），
+            #     于是模型侧 108 条自证**一条都没跑**，新加的契约型锚点也只写在死链上
+            #     ⇒ 典型的「自证形同虚设 = 假绿」。
+            #   ⇒ 这里**整条调用**（不重述、不摘抄），元组从 `(label,got,want)`
+            #     折算成本文件的 `(tag,got,want,ok)`。标签加前缀便于一眼看出来源。
+            for _lb, _g, _w in libc_model.self_test():
+                c('libc模型自证· ' + _lb, _g, _w)
             # ① 跨模块一致性：CALL_MECH 里的 ctype 名必须是 libc_model 真正实现的
             pred_names = {n for n, w in libc_model.CTYPE_PREDICATES.items() if w}
             tbl_names = {'__ctype_b_loc', '__ctype_toupper_loc', '__ctype_tolower_loc'}
@@ -1796,10 +2328,22 @@ def self_test():
             c('前提  `strs` 组存在（有效字符串输入）', len(rs), 1)
             c('反例  有效字符串下我方侧不得再 READ_UNMAPPED（libc 模型缺位造成的假发散）',
               'UC_ERR_READ_UNMAPPED' in (rs[0][6], rs[0][7]), False)
-            c('正例  `strupr` 的调用名差异被识别为**机制等价**并留痕（不是静默放行）',
-              rs[0][1], 'info')
-            c('正例  留痕文本里**同时打印了两侧原始调用名**（可复核，不是抹掉）',
-              ('islower' in (rs[0][9] or '')) and ('__ctype_b_loc' in (rs[0][9] or '')), True)
+            # ★★ 2026-10-04（第 130 轮）**锚点更新：判据从「留痕」改为「已消解」**。
+            #   旧锚点要求 `strupr` 判为 `info`（无差异但有留痕，且留痕里同时出现
+            #   `islower` 与 `__ctype_b_loc`）—— 那描述的是**调用名差异被机制等价归一、
+            #   留痕待人工复核**的中间状态。
+            #   实测（第 130 轮，云开发权威基线）：`strupr` 判为 **`ok`**，即两侧
+            #   连留痕都没有 ⇒ `islower` / `__ctype_b_loc` 的调用序列差异**已彻底消解**
+            #   （`libc_model` 的 ctype 族建模把它归一成了同一机制，且不留残余说明）。
+            #   ⇒ 旧锚点是**过期判据**（instrument drift），不是代码缺陷；
+            #     若继续要求 `info` 就会把「更强的结果」误判成「仪器坏了」。
+            #   新锚点按位宽无关的**方向性**断言：只可能 ok/info（绝不能 DIVERGE），
+            #   并在 note 非空时**仍要求**它同时含两侧调用名（保留可复核性）。
+            c('正例  `strupr` 非 DIVERGE（调用名机制等价已消解：ok 或 info）',
+              rs[0][1] in ('ok', 'info'), True)
+            c('正例  若仍有留痕，则必须同时打印两侧原始调用名（可复核，不是抹掉）',
+              (rs[0][9] in (None, '')) or
+              (('islower' in (rs[0][9] or '')) and ('__ctype_b_loc' in (rs[0][9] or ''))), True)
             c('反例  NULL 输入时两侧**同样**读崩 ⇒ 不得被判成发散',
               v_s, 'PASS')
 
@@ -1851,6 +2395,68 @@ def self_test():
               read_width_only([('LN', 'A', 0, 4, 'R')], [('LN', 'B', 0, 4, 'R')])[0], False)
             c('反例  读写方向不同 ⇒ 不得判为粒度差异',
               read_width_only([('A', 0x10, 4, 'R')], [('A', 0x10, 4, 'W')])[0], False)
+            # ★★★ 2026-10-07（第 160 轮）：**输出窗逐位判据**（`_out_window_diffs` +
+            #   `_apply_out_equiv`，两个纯函数）。先离线自证判据本身，再端到端跑 FDCT32。
+            c('正例  `_unpack_cps` 2 元组 → (名, args, None, None)',
+              list(_unpack_cps([('a', [1])])),
+              [('a', [1], None, None)])
+            c('正例  `_unpack_cps` 3 元组 → seed 透传、out=None',
+              list(_unpack_cps([('a', [1], [(2, b'x')])])),
+              [('a', [1], [(2, b'x')], None)])
+            c('正例  `_unpack_cps` 4 元组 → out_windows 透传',
+              list(_unpack_cps([('a', [1], None, [('w', 2, 4)])])),
+              [('a', [1], None, [('w', 2, 4)])])
+            try:
+                list(_unpack_cps([('a', 1, 2, 3, 4)]))
+                _bad5 = 'no-raise'
+            except ValueError:
+                _bad5 = 'raised'
+            c('反例  `_unpack_cps` 5 元组必须报错（不得静默截断）', _bad5, 'raised')
+            _OW = [('w', 0x1000, 8)]
+            _same = b'\x01\x02\x03\x04\x05\x06\x07\x08'
+            c('正例  无输出窗 ⇒ 不比、不降级（[], False, []）',
+              _out_window_diffs({}, {}, []), ([], False, []))
+            c('正例  窗口逐位相同 ⇒ 无差异、out_ok=True',
+              _out_window_diffs({'out_bytes': {'w': _same}},
+                                {'out_bytes': {'w': _same}}, _OW),
+              ([], True, ['w[0x1000+0x8]']))
+            c('反例  窗口内容不同 ⇒ 报 data-out 且 out_ok=False',
+              _out_window_diffs({'out_bytes': {'w': _same}},
+                                {'out_bytes': {'w': b'\x00' * 8}}, _OW)[1], False)
+            c('反例  窗口读不到（None）⇒ 报「不可读」且 out_ok=False（fail-loud）',
+              _out_window_diffs({'out_bytes': {'w': None}},
+                                {'out_bytes': {'w': _same}}, _OW),
+              (['data-out w 不可读（窗口落在段外？）'], False, []))
+            c('反例  多窗口中只要有一个不同 ⇒ out_ok=False（必须**全部**相同）',
+              _out_window_diffs({'out_bytes': {'a': b'x', 'b': b'y'}},
+                                {'out_bytes': {'a': b'x', 'b': b'z'}},
+                                [('a', 0, 1), ('b', 1, 1)])[1], False)
+            c('正例  out_ok 且仅 data-reads 差异 ⇒ 降级（diffs 清空、note 留痕）',
+              _apply_out_equiv(['data-reads 仅F=[x]'], '', True, ['w[0x1000+0x8]'])[0], [])
+            c('正例  降级后 note 必须含「输出等价」（可审计，不是静默放过）',
+              '输出等价' in _apply_out_equiv(['data-reads x'], '', True, ['w'])[1], True)
+            c('反例  out_ok 但有 data-writes 差异 ⇒ **不得**降级（窗口可能不完备）',
+              _apply_out_equiv(['data-reads x', 'data-writes y'], '', True, ['w'])[0],
+              ['data-reads x', 'data-writes y'])
+            c('反例  out_ok=False ⇒ 任何差异都不得降级',
+              _apply_out_equiv(['data-reads x'], '', False, [])[0], ['data-reads x'])
+            c('正例  降级只动 data-reads：calls_ext 等其它判据**必须保留**',
+              _apply_out_equiv(['data-reads x', 'calls_ext y'], '', True, ['w'])[0],
+              ['calls_ext y'])
+            c('正例  被降级的 data-reads 必须被返回（审计不丢信息）',
+              _apply_out_equiv(['data-reads x', 'calls_ext y'], '', True, ['w'])[2],
+              ['data-reads x'])
+            # ★ 端到端：真实 FDCT32（两侧真实 ELF，4 组合法输入）。
+            #   依据（第 160 轮云工作区取证）：buf 128B + dest 4096B 逐位相同
+            #   ⇒ data-reads 差异（dcttab 折叠/buf reload/LDM 合并）被证明不影响输出。
+            _fv, _frows = compare(BF, BO, 'xmp3_FDCT32', steps=20000,
+                                  corpus=FN_CORPUS['xmp3_FDCT32'],
+                                  void_fns=void_fns_all())
+            c('正例  FDCT32 输出等价 ⇒ 整体 PASS（不再判 DIVERGE）', _fv, 'PASS')
+            c('正例  每一组都留痕「输出等价」',
+              all('输出等价' in (r[9] or '') for r in _frows if r[1] in ('ok', 'info')), True)
+            c('正例  四组全部跑到 return（观测窗有效，不是双双早死的假 PASS）',
+              all(r[6] == 'return' and r[7] == 'return' for r in _frows), True)
             # 分桶自洽（2026-09-27，P0-B）：真实头条数字 661/75/5/0 = 741
             c('正例  分桶自洽：661+75+5+0+0 == 741',
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 0}, 741), True)
@@ -1865,12 +2471,63 @@ def self_test():
             c('正例  REFDEAD 计入后自洽：661+75+5+0+20 == 761',
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0, 'REFDEAD': 20}, 761), True)
             # ★ 2026-10-01 新增锚点：DEADEQ 桶**必须**计入等式（否则“不可判”被静默漏计）
-            # ★ 2026-10-01：DEADEQ 桶已撤销（实测无效）。
-            #   **但保留一条锚点**：分桶等式**只认列出的桶** ⇒ 多给一个桶就是不自洽
-            #   （防止有人悄悄再加一桶却忘记接线）。
-            c('反例  多出一个未接线的桶（DEADEQ=12）⇒ 必须判为不自洽',
+            # ★ 2026-10-06（第 153 轮）：DEADEQ 桶**重新接线**（v2 = 两侧同一个野地址早死）。
+            #   分桶等式**只认列出的桶** ⇒ 多给一个桶就是不自洽。
+            c('正例  DEADEQ 计入后自洽：661+75+5+0+0+12 == 753',
               partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0,
-                            'REFDEAD': 0, 'DEADEQ': 12}, 753), False)
+                            'REFDEAD': 0, 'DEADEQ': 12}, 753), True)
+            c('反例  多出一个未接线的桶（BOGUS=12）⇒ 必须判为不自洽',
+              partition_ok({'PASS': 661, 'DIVERGE': 75, 'TRUNC': 5, 'SKIP': 0,
+                            'REFDEAD': 0, 'BOGUS': 12}, 753), False)
+
+        # ---- ★ 2026-10-05（第 153 轮）：classify_signal 判别力（正反对照）----------
+        #   规则只允许有一处（纪律 69）⇒ `diverge_classify.py` 的旧实现作废，统一调这里。
+        if 1:
+            def _xr(grp, kind, sf='return', so='return', diffs=None, ret_f=None, ret_o=None):
+                return {'fn': 't', 'grp': grp, 'kind': kind, 'sf': sf, 'so': so,
+                        'diffs': diffs or [], 'ret_f': ret_f, 'ret_o': ret_o}
+
+            ok = [_xr('zero', 'ok', 'UC_ERR_READ_UNMAPPED', 'UC_ERR_READ_UNMAPPED'),
+                  _xr('strs', 'DIVERGE', 'UC_ERR_READ_UNMAPPED', 'UC_ERR_WRITE_UNMAPPED'),
+                  _xr('core', 'ok'), _xr('misc', 'info')]
+            c('正例  classify  跑完组全一致 + 发散组都是双侧早死 ⇒ NOISE',
+              classify_signal(ok)[0], 'NOISE')
+            _bad = list(ok); _bad[2] = _xr('core', 'DIVERGE')
+            c('反例  classify  跑完组里就有差异 ⇒ **必须 REAL**（NOISE 不许吞真信号）',
+              classify_signal(_bad)[0], 'REAL')
+            _bad2 = list(ok); _bad2[1] = _xr('strs', 'DIVERGE', 'return',
+                                             'UC_ERR_READ_UNMAPPED')
+            c('反例  classify  发散组是「单侧死」（视野不对齐）⇒ REAL',
+              classify_signal(_bad2)[0], 'REAL')
+            # ★ 2026-10-06（第 154 轮）：ABI 档 —— ret-only + 两侧 ret 都是沙箱人造物
+            _abi = list(ok)
+            _abi[2] = _xr('core', 'DIVERGE', diffs=['ret F=0x7d000300 O=0x7e03fed0'],
+                          ret_f=0x7d000300, ret_o=0x7e03fed0)
+            c('正例  classify  ret-only 且两侧 ret 都在沙箱区 ⇒ ABI（非语义差异）',
+              classify_signal(_abi)[0], 'ABI')
+            _abi2 = list(ok)
+            _abi2[2] = _xr('core', 'DIVERGE', diffs=['ret F=0x1 O=0x7d000100'],
+                           ret_f=0x1, ret_o=0x7d000100)
+            c('正例  classify  一侧 ret 是小整数、一侧沙箱区 ⇒ ABI（类型类别不同）',
+              classify_signal(_abi2)[0], 'ABI')
+            _real_ret = list(ok)
+            _real_ret[2] = _xr('core', 'DIVERGE', diffs=['ret F=0x3e0000 O=0x7d000300'],
+                               ret_f=0x3e0000, ret_o=0x7d000300)
+            c('反例  classify  一侧 ret 落在**产物段内**（真地址）⇒ 仍 REAL',
+              classify_signal(_real_ret)[0], 'REAL')
+            _real_mixed = list(ok)
+            _real_mixed[2] = _xr('core', 'DIVERGE',
+                                 diffs=["data-reads 仅F=[] 仅O=['0x003cfa94:4:R ×1']"])
+            c('反例  classify  差异含 data-reads（不只是 ret）⇒ 仍 REAL',
+              classify_signal(_real_mixed)[0], 'REAL')
+            _nod = [_xr(g, 'DIVERGE', 'UC_ERR_READ_UNMAPPED', 'UC_ERR_READ_UNMAPPED')
+                    for g in ('zero', 'strs', 'core', 'misc')]
+            c('反例  classify  无跑完组 ⇒ UNDECIDABLE（无一致证据，不许算 NOISE）',
+              classify_signal(_nod)[0], 'UNDECIDABLE')
+            c('反例  classify  空明细 ⇒ UNDECIDABLE（不许默认 NOISE）',
+              classify_signal([])[0], 'UNDECIDABLE')
+            c('正例  classify  跑完组全一致且无发散 ⇒ NOISE 且说明含「不该进分类器」',
+              '没发散' in classify_signal([_xr('zero', 'ok'), _xr('strs', 'ok')])[1], True)
 
         # ---- ★ 2026-09-29 新增：台账**口径指纹**（防"尺子换了却被读成 ★新增发散"）----
         if 1:
@@ -1979,7 +2636,10 @@ def main():
     cps = list(CORPUS)
     if a.groups:
         want = {g.strip() for g in a.groups.split(',') if g.strip()}
+        # ★ 第 160 轮：若该函数有特设语料（FN_CORPUS），组名以它的为准。
         known = {c[0] for c in CORPUS}
+        if a.fn and a.fn in FN_CORPUS:
+            known = {c[0] for c in FN_CORPUS[a.fn]}
         unknown = want - known
         if unknown:
             sys.stderr.write('★★ --groups 含未知语料组 %s（已知：%s）\n'
@@ -2025,7 +2685,20 @@ def main():
     if a.fn:
         vf = void_fns_all()          # ★ 双源：语料 ∪ 上游源码签名（第 105 轮）
         o = {}
-        v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps, void_fns=vf, out=o)
+        # ★ 第 160 轮：函数特设合法输入组（如 `xmp3_FDCT32` 的合法定点缓冲区）。
+        #   ★ 只在 FN_CORPUS 里有该函数时替换全局语料；--groups 仍可按组名筛子集。
+        cps_fn = FN_CORPUS.get(a.fn)
+        if cps_fn is not None:
+            _validate_fn_corpus(BF, BO, a.fn)      # 种子地址必须两侧都映射（fail-loud）
+            if a.groups:
+                want = {g.strip() for g in a.groups.split(',') if g.strip()}
+                cps_fn = [c for c in cps_fn if c[0] in want]
+            if not cps_fn:
+                sys.stderr.write('★★ FN_CORPUS[%s] 被 --groups 过滤成空集\n' % a.fn)
+                return 9
+        else:
+            cps_fn = cps
+        v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps_fn, void_fns=vf, out=o)
         print('  %s ⇒ %s' % (a.fn, v))
         if o.get('ret_unjudged'):
             print('     [ret] 该函数返回类型为 void ⇒ r0 是残留值，**未作判据**（GAP 17.12）')
@@ -2047,7 +2720,8 @@ def main():
         esc_steps = a.steps * ESCALATE_FACTOR
         void_fns = void_fns_all()    # ★ 双源（第 105 轮）
         vmsg = 'void 表 = Ghidra 语料 ∪ 上游源码签名'
-        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0, 'REFDEAD': 0}
+        stats = {'PASS': 0, 'DIVERGE': 0, 'SKIP': 0, 'INFO': 0, 'TRUNC': 0, 'REFDEAD': 0,
+                 'DEADEQ': 0}
         n_esc = 0                      # 靠放大预算才判出来的函数数
         n_voidret = 0                  # r0 因"返回类型 void"而未作判据的函数数
         voidret_names = []
@@ -2057,6 +2731,7 @@ def main():
         trunc_names = []
         refdead_names = []
         skip_names = []
+        deadeq_names = []
         all_x = []          # ★ `--dump-rows` 用：逐组机器可读明细（**不截断**）
         for i, n in enumerate(names):
             o = {}
@@ -2086,6 +2761,8 @@ def main():
                 trunc_names.append(n)
             elif v == 'REFDEAD':
                 refdead_names.append(n)
+            elif v == 'DEADEQ':
+                deadeq_names.append(n)
             elif v == 'SKIP':
                 skip_names.append(n)
             if any(len(r) > 9 and r[9] for r in rows if r[1] in ('ok', 'info')):
@@ -2137,6 +2814,18 @@ def main():
                 stats['PASS'] += len(imv_names)      # 与 calls_ext 的内联等价同待遇：计入 PASS
                 div_names_all[:] = [x for x in div_names_all if x not in _s]
                 det[:] = [(n, t) for n, t in det if n not in _s]
+        # ★★★ 2026-10-05（第 153 轮）：DIVERGE **信号强度**分档（派生报告，只读不改）。
+        #   见 classify_signal()：把 DIVERGE 拆成 REAL（合法输入下就有差异）/ ABI
+        #   （ret-only 且两侧 ret 都落在沙箱人造区，非语义差异）/ NOISE（只在
+        #   双侧早死组发散）/ UNDECIDABLE（无跑完组）。**不改 stats、不改 verdict**，
+        #   棘轮台账与分桶自洽等式一律不动 —— 这一行只是让头条数字不再把噪声当信号。
+        _byfn_x = {}
+        for _r in all_x:
+            _byfn_x.setdefault(_r['fn'], []).append(_r)
+        sig = {'REAL': [], 'ABI': [], 'NOISE': [], 'UNDECIDABLE': []}
+        for _n in sorted(set(div_names_all)):
+            _t, _w = classify_signal(_byfn_x.get(_n, []))
+            sig[_t].append((_n, _w))
         lines = ['=' * 96, 'diff_exec 批量对拍（工厂 vs 重建产物）', '=' * 96,
                  '  分母口径：工厂 STT_FUNC ∧ 有名 ∧ st_size>0 = 804（权威，与 ledger/functions.csv 同源）',
                  '  ⚠ 已排除工厂 st_size==0 的无长度别名 %d 个（工具链 CRT/libgcc，非重建范围）：%s'
@@ -2148,22 +2837,41 @@ def main():
                  % (a.steps, ESCALATE_FACTOR, n_esc),
                  '  返回类型：%s；r0 未作判据（void）的函数 %d 个'
                  % (vmsg, n_voidret),
-                 '  汇总：PASS %d ｜ DIVERGE %d ｜ TRUNC(不可判) %d ｜ REFDEAD(参照侧早死) %d ｜ SKIP %d'
-                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP']),
+                 '  汇总：PASS %d ｜ DIVERGE %d ｜ TRUNC(不可判) %d ｜ DEADEQ(共同早死等价) %d '
+                 '｜ REFDEAD(参照侧早死) %d ｜ SKIP %d'
+                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['DEADEQ'],
+                    stats['REFDEAD'], stats['SKIP']),
                  '        （另：INFO「内联等价留痕」%d 个 —— 在 ok/info 行上单独计数，**与上面各类不互斥**，'
                  '不可相加）' % stats['INFO'],
                  '        （另：**访存**内联等价留痕 %d 个 —— 已计入 PASS，**与上面各类不互斥**，'
                  '不可相加；关掉用 CGM_INLINE_MOVE_OFF=1）%s'
                  % (len(imv_names), ('：' + ', '.join(imv_names[:12])) if imv_names else ''),
-                 '  ★ 自洽校验：%d + %d + %d + %d + %d = %d ；本轮函数数 = %d ⇒ %s'
-                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['REFDEAD'], stats['SKIP'],
-                    stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['REFDEAD'] + stats['SKIP'],
+                 '  ★ 自洽校验：%d + %d + %d + %d + %d + %d = %d ；本轮函数数 = %d ⇒ %s'
+                 % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['DEADEQ'],
+                    stats['REFDEAD'], stats['SKIP'],
+                    stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['DEADEQ']
+                    + stats['REFDEAD'] + stats['SKIP'],
                     len(names),
-                    'OK' if (stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['REFDEAD']
-                             + stats['SKIP']) == len(names)
+                    'OK' if (stats['PASS'] + stats['DIVERGE'] + stats['TRUNC'] + stats['DEADEQ']
+                             + stats['REFDEAD'] + stats['SKIP']) == len(names)
                     else '★ 不一致 ⇒ 判据分桶有漏项，本报告不可引用 ★'),
                  '', '  --- DIVERGE 明细（前 80）---']
         lines.extend(t for _, t in det[:80])
+        # ★★★ 信号强度分档（第 153 轮）：**不改变上面任何 verdict**，只把同一批 DIVERGE
+        #   按「差异出现在合法输入组 / 只出现在双侧早死组 / 根本没有跑完组」重述一遍。
+        #   目的：头条数字 DIVERGE=N 里的噪声可见，避免"给噪声改源码"。
+        lines.append('')
+        lines.append('  --- DIVERGE 信号强度（派生，不改判据）：REAL %d ｜ ABI %d ｜ NOISE %d ｜ UNDECIDABLE %d ｜'
+                     ' 合计 %d ---' % (len(sig['REAL']), len(sig['ABI']), len(sig['NOISE']),
+                                        len(sig['UNDECIDABLE']),
+                                        len(sig['REAL']) + len(sig['ABI']) + len(sig['NOISE'])
+                                        + len(sig['UNDECIDABLE'])))
+        lines.append('      REAL = 有跑完组且其中就有差异（**该追**）；'
+                     'NOISE = 跑完组全一致、发散只在双侧早死组（**别改源码**）；'
+                     'UNDECIDABLE = 无跑完组（先补沙箱/模型）')
+        for _t in ('REAL', 'ABI', 'NOISE', 'UNDECIDABLE'):
+            for _n, _w in sig[_t]:
+                lines.append('    [%-11s] %-34s %s' % (_t, _n[:34], _w))
         lines.append('')
         lines.append('  --- 访存内联等价（工厂把共享子过程内联进调用方，其余观测量全一致；'
                      '已计入 PASS，**与上面各类不互斥**）（前 40）---')
@@ -2183,6 +2891,10 @@ def main():
                      '（不得算成我们的发散；§2.3 的机械实现）---')
         lines.extend('  %s' % n for n in (refdead_names[:40] or ['（无）']))
         lines.append('')
+        lines.append('  --- DEADEQ：两侧**同一个野地址（段外）早死** ⇒ 语义等价，不计 DIVERGE'
+                     '（DEADEQ-v2，第 153 轮；关掉用 CGM_DEADEQ2_OFF=1）---')
+        lines.extend('  %s' % n for n in (deadeq_names[:40] or ['（无）']))
+        lines.append('')
         lines.append('  --- SKIP：一侧执行环境报错，本组无判据 ---')
         lines.extend('  %s' % n for n in (skip_names[:40] or ['（无）']))
         # ★ 同名数据符号冲突必须**列名**：以名字为键会静默折叠 ⇒ 归因错误 ⇒ 可能假 PASS
@@ -2200,16 +2912,16 @@ def main():
             lines.append('  （无）')
         # ★ 棘轮台账：只允许"发散函数减少"，不允许新增（防"修一个坏一个"）
         div_names = sorted(set(div_names_all))
-        undecidable = set(trunc_names) | set(skip_names) | set(refdead_names)
+        undecidable = set(trunc_names) | set(skip_names) | set(refdead_names) | set(deadeq_names)
         rc = 1 if stats['DIVERGE'] else 0
         # ★ 分桶自洽（fail-closed）：PASS+DIVERGE+TRUNC+SKIP+REFDEAD 必须**等于**本轮函数数。
         #   不等 ⇒ 有函数没被计入任何一桶（判据漏项）⇒ 报告不可引用 ⇒ 直接红。
         #   来源：2026-09-27 发现 INFO 曾被并列在汇总行里，让人误以为四类可相加（实际 INFO 是重叠计数）。
         _part_ok = partition_ok(stats, len(names))
         if not _part_ok:
-            sys.stderr.write('★★ 分桶不自洽：PASS+DIVERGE+TRUNC+SKIP+REFDEAD ≠ 本轮函数数 '
-                             '(%d+%d+%d+%d+%d vs %d)\n'
-                             % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'],
+            sys.stderr.write('★★ 分桶不自洽：PASS+DIVERGE+TRUNC+DEADEQ+SKIP+REFDEAD ≠ 本轮函数数 '
+                             '(%d+%d+%d+%d+%d+%d vs %d)\n'
+                             % (stats['PASS'], stats['DIVERGE'], stats['TRUNC'], stats['DEADEQ'],
                                 stats['SKIP'], stats['REFDEAD'], len(names)))
             rc = 1
         if a.ledger:
@@ -2300,7 +3012,7 @@ def main():
                         steps=a.steps, escalate_factor=ESCALATE_FACTOR,
                         shared=len(common), judged=len(names),
                         stats={k: stats[k] for k in
-                               ('PASS', 'DIVERGE', 'TRUNC', 'REFDEAD', 'SKIP', 'INFO')},
+                               ('PASS', 'DIVERGE', 'TRUNC', 'DEADEQ', 'REFDEAD', 'SKIP', 'INFO')},
                         refdead_off=(os.environ.get('CGM_REFDEAD_OFF') == '1'),
                         inline_move_off=(os.environ.get('CGM_INLINE_MOVE_OFF') == '1'),
                         inline_move_equiv=sorted(imv_names))

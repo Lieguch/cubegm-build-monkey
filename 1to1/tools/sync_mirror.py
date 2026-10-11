@@ -85,25 +85,27 @@ def git(args, cred=None, cwd=None, timeout=900, quiet=False, secrets=()):
 
 
 def file_list():
-    """取与 GitHub 同一份清单（复用 push_1to1.py 的选择规则）。"""
-    py = sys.executable
-    r = subprocess.run([py, os.path.join(ROOT, 'tools', 'push_1to1.py'), '--list-only'],
-                       capture_output=True, cwd=ROOT,
-                       env={**os.environ, 'GITHUB_TOKEN': os.environ.get('GITHUB_TOKEN', 'x')})
-    txt = r.stdout.decode('utf-8', 'replace')
-    if r.returncode != 0 or 'FILELIST' not in txt:
-        print('  ★ 取不到清单：rc=%d' % r.returncode)
-        print('    ' + (r.stderr.decode('utf-8', 'replace')[-300:] or txt[-300:]))
+    """取清单 —— **唯一真源是 `tools/filelist.py`（不再 shell 调push_1to1.py）**。
+
+    ★★ 2026-10-03（第 121 轮，判据 FILELIST-TOOLCHAIN.md F5）**根治循环依赖**：
+       原来这里 `subprocess` 调 `push_1to1.py --list-only`，
+       而 `push_1to1.py` 因 `EXCLUDE={'tools/push_1to1.py'}`（自身含 token）**永不入库**
+       ⇒ **在云工作区必然失败**（实测 `can't open file .../push_1to1.py`）
+       ⇒ 「本地改了 → 云上看不到」，上一轮 `default_core_list.c` 就这样差点漏掉。
+       现在直接 `import filelist`（该文件**不含 token**⇒ 可入库可上云）。
+    ★ 规则仍只写一处：`push_1to1.py`（GitHub）与本文件（CNB）**共同 import 它**。
+    """
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    try:
+        import filelist
+    except ImportError as e:
+        print('  ★ 取不到清单模块 tools/filelist.py：%s' % e)
+        print('    （它必须入库才能在云端工作；若刚新增，先同步一次）')
         return None
-    items, header = [], ''
-    for l in txt.split('\n'):
-        if l.startswith('FILELIST'):
-            header = l
-        elif '\t' in l:
-            a, b = l.split('\t', 1)
-            items.append((a.strip(), b.strip()))
-    print('  %s' % header)
-    return items
+    _k = filelist.kept()
+    print('  FILELIST\t%d\t(跳过构建产物/备份 %d)'
+          % (len(_k), len(filelist.FILES) - len(_k)))
+    return [(a, b) for a, b in _k]
 
 
 def detect_catastrophic_shrink(numstat_text, allow_shrink=False):
@@ -323,6 +325,38 @@ def main():
     rc, _ = git(['push', 'origin', 'HEAD:main'], cred=CRED, cwd=MIRROR, secrets=secrets)
     if rc != 0:
         print('  ★ push 失败')
+        # ★ 失败可见性诊断（2026-10-06 第 153 轮）：这里失败过两次（Repository Not Found），
+        #   两次都浪费了一整轮去追，第二次定位到「helper 在场但凭据没送达」是可能的瞬时态。
+        #   「推送失败」背后至少有四类互斥成因：凭据没取到 / helper 未装配 / 服务端 404 /
+        #   网络层。每种不一样，下面把能测的**当场测掉**并打印，把人力留给真正的根因。
+        probe = [p for p in os.environ.get('PATH', '').split(os.pathsep) if p]
+        probe = [p for p in probe
+                 if 'PortableGit' in p and os.path.isdir(p)]
+        pe = dict(os.environ)
+        pe['PATH'] = ';'.join(GITDIRS + [pe.get('PATH', '')])
+        try:
+            cr = subprocess.run(
+                ['git', 'credential', 'fill'],
+                input=b'protocol=https\nhost=cnb.cool\n\n',
+                capture_output=True, env=pe, timeout=60, cwd=MIRROR)
+            got = (cr.stdout).decode('utf-8', 'replace')
+            has_pw = 'password=' in got
+            print('    [诊断] helper 链是否可取凭据：%s（rc=%d）'
+                  % ('可取到' if has_pw else '取不到（失败点=凭据链路，不是仓库/网络）', cr.returncode))
+        except Exception as e:                                # noqa: BLE001
+            print('    [诊断] helper 链探测异常：%s' % e)
+        try:
+            import urllib.request, ssl
+            with urllib.request.urlopen(
+                    'https://%s/%s.git/info/refs?service=git-receive-pack' % (HOST, PROJECT),
+                    timeout=20,
+                    context=ssl._create_unverified_context()) as rsp:
+                pass
+            print('    [诊断] 服务端 refs 端点可达（说明仓库存在、TLS 通）')
+        except urllib.error.HTTPError as e:
+            print('    [诊断] 服务端 refs 端点 HTTP %d（无凭据访问 → 401 属正常）' % e.code)
+        except Exception as e:                                # noqa: BLE001
+            print('    [诊断] 服务端 refs 端点不可达：%s' % e)
         return 1
     print('  ✓ 同步完成')
     return 0

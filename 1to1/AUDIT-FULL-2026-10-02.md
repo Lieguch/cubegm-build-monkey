@@ -316,3 +316,108 @@ P1 曾被写成「段布局 9→2」。4 次改动全部失败并回退，产物
 | D | `_Z17FormatZipMessageUjPcj` · `get_item_from_line` | 调用次数 / 多一次 `strlen` | 待定性 |
 | E | `TestLibz0`(×3 组) | 仅「原始名不同」 | 命名，可豁免 |
 | F | TRUNC 5 个 | `MP3InitDecoder` `TestRun` `TestUSBJoy` `WaitNMI` `xmp3_AllocateBuffers` | **不可判**（≠ 收敛，纪律不变量） |
+
+---
+
+# 第 121 轮（2026-10-03）：§8.4 簇 A **已收敛** —— 判决与更正
+
+> 本节**只增不删** §8 的历史结论；下面是对 §8.4「簇 A = 唯一最高优先真缺陷嫌疑」的**结案**。
+
+## 9.1 结论：簇 A 收敛，`GetCoreIndex` 功能已 1:1
+
+**判决性证据**（云端 `cnb-a2n-1k40p84gg`，产物 sha `8f9af037`，zig 0.16.0/-Os，`abi_rc=0`）：
+
+| 测项 | 工厂 | 我方 | 判定 |
+|---|---|---|---|
+| `GetCoreIndex` / `core` 组返回值 | `ret=0xa`（=10） | `ret=0xa` | ✅ **功能 1:1** |
+| `GetCoreIndex` / core 深度 | 159 ins | 166 ins | ✅ 同量级（差 7 条 = 编译器习语） |
+| `FilePreEmu` / strs 深度 | 518 ins | 539 ins | ✅ 同量级 |
+| `FilePreEmu` / strs 死亡现场 | `R!@0x0 sz=4` | `R!@0x0 sz=4` | ✅ 一致 |
+| `FilePreEmu` / **core** 深度 | 532 ins | 551 ins | ✅ 同量级 |
+
+`core` 组入参 = `&"NES"`，而 `NES` 是 `default_core_list`（`@0x3b0254`，stride `0x44`）第 **10** 项
+⇒ 两侧都返回 10，证明**表遍历 + strcmp 链 + Filetype 回写**整条路径两侧等价。
+
+## 9.2 真根因（Ghidra 伪符号）—— 与 §8.3 的猜测不同
+
+§8.3 当时列了两个「待取证」线索（簇 A / 簇 B）。**簇 A 的真根因既不是 GOT，也不是编译口径**：
+
+```
+工厂 FilePreEmu 机器码（golden/factory.funcs.json.t1）：
+  5   ldr r4, [pc, #652]     ; r4 = &FilenameExt
+  8   add r4, pc, r4
+ 10   add r4, r4, #200   ★   ; r4 = FilenameExt + 200
+ 14   mov r0, r4
+ 15   bl @strcpy@plt
+ 16   mov r0, r4
+ 17   bl @strupr
+ 19   mov r0, r4
+ 22   bl @GetCoreIndex       ; r4 贯穿整个函数
+```
+
+| 项 | 值 |
+|---|---|
+| `FilenameExt` | `0x3bc2c0` size=**4**（`char[4]`，**不是缓冲**） |
+| `FilenameExt + 200` | `0x3bc388` |
+| 覆盖 `0x3bc388` 的真实对象 | **`ze` @ `0x3bc2d0` size=**304**，偏移 **+184** |
+
+⇒ **Ghidra 把 `ze+184` 渲染成裸符号 `FilenameExt`（丢了 `+200`）**。
+我方照抄 `strcpy((char*)&FilenameExt, …)` 写进 4 字节槽 ⇒ **越界 200 字节**，
+污染 `tree/filelist_tree/res_hz/ze` ⇒ `GetCoreIndex` 读到污染数据首字节 `\0`
+⇒ 立刻 `return -1` ⇒ **永不进入 strcmp 循环**（正是 §8.4 里「仅工厂侧有 strcmp×8」的成因）。
+
+**已修**：`FilePreEmu.c` 7 处 `&FilenameExt` → `(ze + 184)`。
+符号化验证：`diff_exec` 现在把该读点显示为 `ze+184@0x3bc388`（修前显示 `FilenameExt`）。
+
+## 9.3 对 §8 的两处**公开更正**
+
+| §8 的记载 | 实测 | 更正 |
+|---|---|---|
+| 「新增 `core` 组后 DIVERGE 20（+1）」暗示产品变差 | +1 来自 `GetCoreIndex` 因**多一组入参**而多判一次（表读粒度差异） | ✅ 判决尺变严，**不是新增功能缺陷** |
+| §7.2「编译口径是共因」 | 第 118 轮已证伪（26 > 18） | ✅ 保持原判 |
+
+**另需登记的两条假根因**（都曾导致写有害补丁）：
+
+1. **「GOT 条目 `0x003b0134` ≠ 符号 `0x003b0254`」是误判**：
+   装 `0x3b0134` 的槽（`.got+0x5b8 @0x4de210`）属于 **`DAT_003b0134`**
+   （被 `FBA_Load.c:43` 使用），与 `GetCoreIndex` 无关；
+   `default_core_list` 的真槽在 `.got+0x1b8 @0x4dde10` = `0x003b0254`，**完全正确**。
+2. `0x3b0134` 落在 `turbo_delay@0x3b0128(4B)` 与 `user_joy_key_mask@0x3b0154`
+   之间的 **40 字节空洞**里（`DAT_003b012c…0150` 全是 size=0 占位），
+   **不对应任何真实工厂对象**。
+
+## 9.4 全量现状（更新 §8.1 的基线）
+
+```
+PASS 763 ｜ DIVERGE 20 ｜ TRUNC(不可判) 5 ｜ REFDEAD 0 ｜ SKIP 0
+产物 sha 8f9af037…（zig 0.16.0 / -Os / abi_rc=0）
+```
+
+⚠ 与 §8.1 的 `PASS 765 / DIVERGE 18` **不可直接比较** —— 因为 `diff_exec`
+的 `CORPUS` 从 3 组增到 4 组（新增 `core`），**每组都独立参与判决**。
+可比口径是「`strs`/`zero`/`misc` 三组的判定」，那三组与基线一致。
+
+## 9.5 §8.4 分类表的更新
+
+| 簇 | §8.4 状态 | 第 121 轮实况 |
+|---|---|---|
+| **A** `FilePreEmu`/`SeletEmuCore` | ★ 真缺陷嫌疑（最高优先） | ✅ **已收敛**（`ze+184`），功能 1:1 |
+| B `DrawFrame` | 与 §0.103 `rotation_buff` 关联 | ⏸ 未动（`rotation_buff` 已是自有段符号，优先级低于 A） |
+| C `DisplayPage_list` | 多访存待定性 | ⏸ 未动 |
+| D `FormatZipMessage`/`get_item_from_line` | 调用次数差异 | ⏸ 未动 |
+| E `TestLibz0`×3 | 仅原始名不同 | ⏸ 命名差异，**可豁免**（已在台账） |
+| F TRUNC 5 个 | 不可判 | ⏸ 不可判 ≠ 未收敛（纪律） |
+
+## 9.6 剩余的「1 个真正的产品问题」尚未定位
+
+`FilePreEmu` / `misc` 组（`r0=0x1`）我方仍在 **23 条指令**早死（工厂 509 条），
+死亡现场 `sz=1` vs 工厂 `sz=4`。
+
+**但这不是产品缺陷**：`r0=0x1` 指向未映射内存，两侧在进入 `GetCoreIndex` **之前**
+就分岔了（`GetFilenameExt` 内部 `strlen(0x1)` 直接踩空）。
+⇒ 属**合成入参不可判**，按纪律不得计入收敛判据。
+
+**下一步该做的是**：给 `diff_exec` 增加**真正可判**的入参族（不是继续调 corpus 数字），
+或按纪律 143 普查 `mui_*` 的同型伪符号（`tools/scan_pseudo_sym.py` 已产出 640 条候选，
+高危项集中在 `mui_LoadSetting`(+1248/+88/+68/+36)、`mui_do_file_list`(+516/+644/+388/+260)、
+`shoucang`(+640/+512/+384/+256)）。

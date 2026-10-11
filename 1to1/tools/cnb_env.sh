@@ -46,6 +46,21 @@ for c in arm-linux-gnueabihf-gcc qemu-arm-static gdb-multiarch strace objdump re
   printf "   %-26s %s\n" "$c" "$(command -v "$c" || echo '★MISSING')"
 done
 
+# ★★ 第 139 轮新增：把「环境退化」变成**显式的 fail-closed 门禁**。
+#   动机（真实事故）：CNB 工作区跨天回收 ⇒ 容器重建 ⇒ apt 装过的东西全丢。
+#   本段原来只 `command -v` 打印一下就继续 ⇒ 后面所有差分实验都会 `exit=127`，
+#   而 `pty_exec.py` 把 exec 失败包装成 `Error while loading …: Exec format error`
+#   写到 **stdout** ⇒ 两侧都失败时 `diff` 得到"逐字相同" ⇒ **假绿**。
+#   ⇒ 交给 tools/ensure_env.sh 统一处理（它还管 --reinstall：dpkg 记录为已安装
+#      但文件被删时，普通 `apt-get install` 是空操作）。
+#   纪律：差分/判据类脚本**必须先过这一关**，否则「环境问题」会被误读成「代码问题」。
+if [ "$FAST" = 0 ]; then
+  if ! sh tools/ensure_env.sh; then
+    echo "   !! 环境自愈失败（见上方说明）—— 中止，别把 exit=127 当成程序行为"
+    exit 13
+  fi
+fi
+
 # ---------------------------------------------------------------- 2) sysroot
 echo "== [2/7] armhf sysroot -> /arm-root（直接调用 CI 用的同一个脚本）"
 # ★★ 为什么必须调用 ci_qemu_env.sh 而不是抄一份 deb 清单：

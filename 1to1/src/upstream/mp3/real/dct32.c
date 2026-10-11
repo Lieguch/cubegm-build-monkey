@@ -81,26 +81,32 @@
 
 #define COS4_0  0x5a82799a	/* Q31 */
 
-static const int dcttab[48] = {
-	/* first pass */
-	COS0_0, COS0_15, COS1_0,	/* 31, 27, 31 */
-	COS0_1, COS0_14, COS1_1,	/* 31, 29, 31 */
-	COS0_2, COS0_13, COS1_2,	/* 31, 29, 31 */
-	COS0_3, COS0_12, COS1_3,	/* 31, 30, 31 */
-	COS0_4, COS0_11, COS1_4,	/* 31, 30, 31 */
-	COS0_5, COS0_10, COS1_5,	/* 31, 31, 30 */
-	COS0_6, COS0_9,  COS1_6,	/* 31, 31, 30 */
-	COS0_7, COS0_8,  COS1_7,	/* 31, 31, 28 */
-	/* second pass */
-	 COS2_0,  COS2_3, COS3_0,	/* 31, 29, 31 */
-	 COS2_1,  COS2_2, COS3_1,	/* 31, 31, 30 */
-	-COS2_0, -COS2_3, COS3_0, 	/* 31, 29, 31 */
-	-COS2_1, -COS2_2, COS3_1, 	/* 31, 31, 30 */
-	 COS2_0,  COS2_3, COS3_0, 	/* 31, 29, 31 */
-	 COS2_1,  COS2_2, COS3_1, 	/* 31, 31, 30 */
-	-COS2_0, -COS2_3, COS3_0, 	/* 31, 29, 31 */
-	-COS2_1, -COS2_2, COS3_1, 	/* 31, 31, 30 */
-};
+/* ★★★ 2026-10-04（第 134 轮）T09 根修 #4：删掉重复的 `static const dcttab[48]` 定义，
+ * 改为引用 `src/data/factory_image.S` 里**已存在**的镜像别名。
+ *
+ * 根因（取证闭合，与第 131 轮 `default_core_list` **完全同型**）：
+ *   ① 工厂 `dcttab` @ 0x002e428c，size 0xc0=192，`.rodata`，**LOCAL**
+ *      —— 见 ledger/factory_globals.tsv:56。
+ *   ② 镜像别名**早就生成好了**（factory_image.S:277-279）：
+ *        .globl dcttab
+ *        .set  dcttab, __f_rodata_base + 0x85e8      ⇒ 0x2e428c（与工厂逐位一致）
+ *   ③ 但本文件原来又写了一份 `static const int dcttab[48] = {...}`，
+ *      编进**自有 .rodata** @ 0x4d837c，**LOCAL 符号在汇编层遮蔽了上面的 .globl 别名**
+ *      ⇒ 产物里同名两份：0x2e428c(GLOBAL, 镜像) + 0x4d837c(LOCAL, C 定义)。
+ *   ④ 实测两份内容与工厂**逐字节相同**（192/192，前 16 字节
+ *      `51c21340fb22855172464f40bd45b340` 三方一致）⇒ 纯重复副本，
+ *      唯一问题是**代码读的是错地址那份**。
+ *   ⑤ 后果（diff_exec 第 133 轮权威报告）：
+ *      `xmp3_FDCT32 [strs] data-reads 仅F=[] 仅O=['dcttab+100:4:R@0x4d83e0' ...]`。
+ *
+ * 为何不改判据而是改绑定：工厂 GLOBAL/LOCAL 数据必须落在工厂地址（本项目纪律，
+ *   GAP 17.14 + tools/dup_sym_gate.py 检查 3）。放宽判据会掩盖同族的真缺陷。
+ * 为何不用 `&dcttab[0]` 之类的绕路：那样仍是 LOCAL 副本，地址不变。
+ * 校验：`xmp3_FDCT32` 只把它当只读查表用（`const int *cptr = dcttab;`），
+ *   内容由镜像提供逐字节相同 ⇒ 行为等价，且从此与工厂读同一地址。
+ * 回退：git checkout src/upstream/mp3/real/dct32.c（或删掉本 extern 换回原定义块）。
+ */
+extern const int dcttab[];	/* 48 项 × 4B = 192 B；定义见 src/data/factory_image.S */
 
 #define D32FP(i, s0, s1, s2) { \
     a0 = buf[i];			a3 = buf[31-i]; \

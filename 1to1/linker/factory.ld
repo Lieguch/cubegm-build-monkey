@@ -10,6 +10,7 @@ SECTIONS
   .fimg_rodata 0x002dbca4 : { *(.fimg_rodata) }
   .fimg_data_rel_ro_local 0x003ae5c4 : { *(.fimg_data_rel_ro_local) }
   .fimg_data 0x003af000 : { *(.fimg_data) }
+  .fimg_got 0x003b1cfc : { *(.fimg_got) }
   .fimg_bss 0x003b2178 : { *(.fimg_bss) }
   .fimg_bss_pad 0x003e2000 : { *(.fimg_bss_pad) }
 
@@ -63,6 +64,20 @@ SECTIONS
   .data ALIGN(0x1000) : { *(.data) *(.data.*) }
   .bss  ALIGN(0x1000) : { *(.bss) *(.bss.*) *(COMMON) }
   .text ALIGN(0x1000) : { *(.init) *(.text) *(.text.*) *(.fini) }
+  /* ---- ③b 段边界必须页对齐（否则一个页被两个权限不同的段共享，后映射的覆盖前者）----
+   * ★★★★★ 2026-10-02（GAP 16.100）：`.text` 的**末端不页对齐**（实测 0x540fc8），
+   *   紧随其后的 `.ARM.exidx`（R 段）于是**与 `.text` 的尾页（0x540000）共享同一页**。
+   *   加载器按 PT_LOAD 逐段 mmap、粒度是页，**后映射的 R 段覆盖 ⇒ 该页丢掉 X** ⇒
+   *   跳到该页内任何一个函数都是**取指故障**（`SIGSEGV si_code=2 SEGV_ACCERR`，
+   *   且 **si_addr == PC**）。页内实测有 **24 个 FUNC**：`TUnzip::Open/Get/Find/Unzip/Close`、
+   *   `unztell`、`FormatZipMessageU` … 全 XUnzip/Zip 一族。
+   *   实测（云上 qemu-user + 设备真 sysroot + guest shim + 三桩）：
+   *     pc = si_addr = 0x005401d8 = `_ZN6TUnzip4OpenEPvjj` 入口；`[pc-4]=0xe12fff1e`（`bx lr`）
+   *     ⇒ 工厂侧 `openat("//ui_cn.zip")` ×3，**我方 0 次**（M6 里程碑分支的直接原因）。
+   *   对照：原厂只有 2 个 PT_LOAD，0x00008000 与 0x003ae000 **都页对齐**、末端也页对齐
+   *     ⇒ 原厂共享页 **0 个**。
+   *   修法 = 给「起新权限类的输出段」加 ALIGN(0x1000)（`.ARM.exidx` 这里就是缺的那个）。
+   *   门禁 = `tools/seg_page_audit.py`（已钉进 link_full.sh，fail-closed）。 */
   .ARM.exidx ALIGN(0x1000) : { *(.ARM.exidx) *(.ARM.exidx.*) }
   /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame) *(.debug*) *(.ARM.attributes) }
 }

@@ -15,7 +15,12 @@
 #   CC=arm-linux-gnueabihf-gcc sh tools/recon_build.sh [报告路径]
 # ============================================================
 set -u
-CC="${CC:-arm-linux-gnueabihf-gcc}"
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh
+#   （原为 `CC="${CC:-arm-linux-gnueabihf-gcc}"` 硬编；三个环境各只装一种编译器，
+#     硬编任何一种都会在其余两个失败 —— 本脚本正是第 138 轮构建失败的直接原因：
+#     `link_full.sh:128 arm-linux-gnueabihf-gcc: command not found`）。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REP="${1:-$ROOT/report/recon_build.txt}"
 SRCDIR="$ROOT/src/proprietary"

@@ -57,6 +57,36 @@ import difflib
 _VOLATILE_RE = re.compile(r'^E\|\[shim\] \[sp\+\s*\d+\]\s*=')
 
 
+def zero_baseline_hashes():
+    """全零帧缓冲的 FNV-1a 哈希集合（现场算，不硬编常量）。
+
+    ★ 纪律 155（第 137 轮）：桩报的 `frame_hash` 若恰好等于"全零 buffer"的哈希，
+      说明**一个像素都没观测到**（画面在别处，或那块 buffer 是空的）。
+      这种值"看起来像一个正常哈希"，必须显式识别，否则报告会给出假绿。
+
+    口径与 `tools/guest_shim/drm_stub.c` 的 `fnv1a` **逐字一致**：
+      h = 2166136261; 对每字节 h ^= b; h *= 16777619（32 位截断）
+    尺寸按 `CREATE_DUMB` 常见的 (1280x1280) @ (16/32 bpp) 覆盖：
+      pitch = w * ceil(bpp/8);  size = pitch * h;  分配向上取整到页
+    （即便尺寸估错，只要哈希"看起来正常"就不会命中本集合 ⇒ 不会误杀真观测）
+    """
+    def fnv1a(nbytes):
+        h = 2166136261
+        for _ in range(nbytes):
+            h ^= 0
+            h = (h * 16777619) & 0xFFFFFFFF
+        return '%08x' % h
+
+    out = set()
+    for w, h_px in ((1280, 1280),):
+        for bpp in (16, 32, 8, 24):
+            pitch = w * ((bpp + 7) // 8)
+            need = pitch * h_px
+            pages = (need + 4095) // 4096
+            out.add(fnv1a(pages * 4096))
+    return out
+
+
 def _drop_volatile(ev):
     """丢弃"栈内容转储"行（跨二进制偶然），返回 (保留的序列, 丢弃行数)。"""
     keep = [x for x in ev if not _VOLATILE_RE.match(x)]
@@ -276,11 +306,42 @@ def main():
     else:
         checks.append(('B5 log_sha', True, 'SKIP (一侧无日志文件)'))
 
+    # ---- B6 帧缓冲内容：**两侧画面必须逐字节一致**（1:1 复刻的最终判据之一）----
+    # ★ 2026-10-04（第 137 轮）根修：此前 `frame_hash` 去读**宿主** `/dev/fb0`，
+    #   qemu-user 里没有该设备 ⇒ **恒 `none`** ⇒ 这条判据从未真正生效过（静默 SKIP）。
+    #   现在由 DRM 桩在**真实呈现点**对帧缓冲实体逐字节哈希（见 tools/guest_shim/drm_stub.c）。
+    #   ⚠ 口径纪律：`none` 一律判 **FAIL**（不是 SKIP）——
+    #   "没测到画面" 与 "画面一致" 是两件事，把它算成 SKIP 等于把"没测"伪装成"过"。
     fha, fhb = a.get('frame_hash', 'none'), b.get('frame_hash', 'none')
-    if fha != 'none' and fhb != 'none':
-        chk('B6 frame_hash', fha == fhb, '%s vs %s' % (fha, fhb))
+    if fha == 'none' or fhb == 'none':
+        chk('B6 frame_hash', False,
+            '一侧/两侧无画面哈希（%s vs %s）—— 这是"没测到"，不是"一致"' % (fha, fhb))
     else:
-        checks.append(('B6 frame_hash', True, 'SKIP (一侧不可读)'))
+        # ★★ 纪律 155：哈希必须自带"全零基线"识别。
+        #   第 137 轮的教训：实测 `e96c9dc5` 与**全零 buffer 的 FNV-1a 逐位相同**，
+        #   报告里却看不出"这是全零" —— 而它看起来像一个完全正常的哈希。
+        #   ⇒ 把"等于全零基线"识别为**未观测到像素**，判 FAIL 而不是 PASS。
+        zr = zero_baseline_hashes()
+
+        def _kind(h):
+            return ('全零基线 %s ⇒ 未观测到像素' % h) if h in zr else '有内容'
+
+        if fha in zr or fhb in zr:
+            chk('B6 frame_hash', False,
+                '%s vs %s —— %s / %s' % (fha, fhb, _kind(fha), _kind(fhb)))
+        else:
+            chk('B6 frame_hash', fha == fhb, '%s vs %s' % (fha, fhb))
+
+    # ---- B6R 帧提交次数：两侧都必须**真的在刷帧**（防止 0 帧也判一致）----
+    # 为什么要这条：`frame_hash` 相同也可能是"两侧都是黑屏 + 都没提交过"。
+    #   ⇒ 必须同时证明「提交次数 > 0」，哈希比较才有意义。
+    cma, cmb = int(a.get('frame_commits', 0)), int(b.get('frame_commits', 0))
+    if cma > 0 or cmb > 0:
+        chk('B6R frame_commits', cma > 0 and cmb > 0,
+            '%d vs %d（必须两侧都 > 0，否则"哈希相同"可能是都没画）' % (cma, cmb))
+    else:
+        chk('B6R frame_commits', False,
+            '两侧 frame_commits 都是 0 ⇒ 渲染循环根本没跑起来')
 
     sma, smb = int(a.get('shm_heartbeat', 0)), int(b.get('shm_heartbeat', 0))
     if sma > 0 and smb > 0:

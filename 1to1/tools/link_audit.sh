@@ -20,7 +20,12 @@ SRCDIR="$ROOT/src/proprietary"
 PY="${PY:-python}"
 
 # CC 可以是 "zig cc" 这样的多词命令
-CC="${CC:-arm-linux-gnueabihf-gcc}"
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh
+#   （原为 `CC="${CC:-arm-linux-gnueabihf-gcc}"` 硬编；三个环境各只装一种编译器，
+#     硬编任何一种都会在其余两个失败 —— 本脚本正是第 138 轮构建失败的直接原因：
+#     `link_full.sh:128 arm-linux-gnueabihf-gcc: command not found`）。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 
 # Windows 上的原生 Python / zig.exe 需要 Windows 风格路径
 winpath() {
@@ -86,6 +91,28 @@ fi
 CGM_HDR="-nostdinc -I$CGM_GI -I$CGM_GIF -I$CGM_GD"
 CGM_FID_EXTRA="-fno-builtin-strcmp"
 OPT="${OPT:--Os}"
+# ★★★ 2026-10-05（第 152 轮）：**per-TU 保真 flag 表**（编译口径的一部分，只在**这里**定义一次）。
+#   格式: <源码 basename>=<flag...>   （多个 flag 用空格，整体被引号包住）
+#
+#   每一条都必须有**两条腿**才许登记：
+#     ① 机制（工厂编译器不做这个优化，clang 做 ⇒ 形态偏离工厂）；
+#     ② 同步基线上的**单变量净账实测**（DIVERGE 只减不增，且确认不是判据塌陷）。
+#
+#   -- FUN_0000b6b0_TestLibz0.c = -fno-builtin-malloc -------------------------------
+#   ① 机制：clang 把 `malloc(n)` + 紧接的 `memset(p,0,n)` **合并成一次 `calloc`** 调用
+#      （工厂 GCC 不做）。实测 .o 层：TestLibz0 里 calloc 1 次 / malloc 2 次
+#      ⇒ 与工厂的 malloc 3 次 + memset 1 次 对不上 ⇒ calls_ext 发散。
+#      加 flag 后：calloc 0 / malloc 3（对齐工厂形态）。
+#   ② 净账（tools/_r152_retest.sh，同步基线，UPOBJD 显式锁定）：
+#        基线 771/16  →  flag 腿 773/14
+#        收敛 = {TestLibz0, _ZN6TUnzip5CloseEv}   新增 = {}   净账 = +2
+#      且已排除**假收敛**：两侧 plt_map **逐项相同**（104 槽，名字/地址全一致）
+#      ⇒ 收敛不是判据塌陷。
+#      ⚠ 其中 `_ZN6TUnzip5CloseEv` 的收敛是**布局运气**（TUnzip::Close 代码没动，
+#        只是地址 +8；两侧都在执行 11~14 条指令后撞同一片未映射内存而死，
+#        该 verdict 本身几乎没有判别力），**不当作真实收益记账**；
+#        真实收益只有 TestLibz0（机制明确 + .o 层可验证）。
+PER_TU_FLAGS="FUN_0000b6b0_TestLibz0=-fno-builtin-malloc"
 # ★ 头集合**排在组件 -I 之后**（这里只有 src/compat 在它前面，是故意的：compat 是我们的垫片）。
 CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat ${CGM_HDR} ${EXTRA_INC:-} $CGM_FID_EXTRA $ARCH $FIDELITY"
 
@@ -106,12 +133,15 @@ case "$CC" in
 esac
 
 if [ "${1:-}" = "--print-cflags" ]; then
-    # 供别的门禁**读**口径用（不是让人抄）。四个变量都是"命令组件"，
-    # 调用方按 `CC + XUCMODE + XUFLAGS + CFLAGS + <src> -o <out>` 拼即可。
+    # 供别的门禁**读**口径用（不是让人抄）。五个变量都是"命令组件"，
+    # 调用方按 `CC + XUCMODE + XUFLAGS + CFLAGS + [<per-TU flag>] + <src> -o <out>` 拼即可。
+    # ★ PER_TU_FLAGS 只给**个别**源码加 flag；重编某个源码做新鲜度对拍时
+    #   必须把它算进去，否则会拿"口径不一致"的 .o 报假 FAIL（纪律 69：同一规则不写两处）。
     echo "CC=$CC"
     echo "CFLAGS=$CFLAGS"
     echo "XUCMODE=$XUCMODE"
     echo "XUFLAGS=$XUFLAGS"
+    echo "PER_TU_FLAGS=$PER_TU_FLAGS"
     exit 0
 fi
 
@@ -125,10 +155,16 @@ for f in "$SRCDIR"/*/*.c; do
     [ -f "$f" ] || continue
     total=$((total + 1))
     base=$(basename "$f" .c)
+    # ★ per-TU 保真 flag（唯一来源 = 上文 PER_TU_FLAGS；这里只**查表**，不重述规则）
+    tu_extra=""
+    for kv in $PER_TU_FLAGS; do
+        [ "${kv%%=*}" = "$base" ] && tu_extra="${kv#*=}"
+    done
     # zig.exe（Windows 原生）要求入参与 -o 均为 Windows 原生路径
     nf=$(winpath "$f")
     no=$(winpath "$OBJD/$base.o")
-    if $CC $CFLAGS "$nf" -o "$no" 2>"$ROOT/report/_link_err.txt"; then
+    # shellcheck disable=SC2086
+    if $CC $CFLAGS $tu_extra "$nf" -o "$no" 2>"$ROOT/report/_link_err.txt"; then
         ok=$((ok + 1))
     else
         bad=$((bad + 1))

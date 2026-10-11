@@ -3096,11 +3096,31 @@ int unzlocal_GetCurrentFileInfoInternal (unzFile file, unz_file_info *pfile_info
 
 
 	// we check the magic
+	/* ★★★★★ 1:1（第 10 个真实分歧主体，R169 三探针定位·R170 反汇编语义重建）：
+	 * 工场 0x113ac-0x113f0：magic getLong 后与 **key2[12..15]（CD 签名 "PK\1\2"）**
+	 * 比较，相等 → 视为已校验继续（0x1153c）；不等再与 **key2[8..11]（LFH 签名
+	 * "PK\3\4"）** 比较，相等 → err 清 0 继续（0x113ec moveq）；都不等 →
+	 * err=UNZ_BADZIPFILE（0x113e8 mvnne r4,#102）。key2 指针经 GOT 槽（字面量
+	 * -0x1b4，与补六 filename XOR 同一 GOT 槽）间接取得。
+	 * ⇒ GAP 16.62「厂商删掉了 magic 比对」是**误读**（当时只看了 0x11128 起的
+	 * 字段循环，漏了 seek 成功分支 0x11118 beq 113ac 这段）：比对存在，只是
+	 * 比较对象从上游字面量 0x02014b50 换成了 key2 槽位。
+	 * ⇒ 沙箱内 key2[8..15]=0（旧 seed 只注入前 8B）⇒ 工厂 GoToFirst 必然
+	 * BADZIPFILE ⇒ current_file_ok=0 ⇒ unzLocateFile 直接 END_OF_LIST ⇒
+	 * find ui.cfg/menu.raw fail——与 R169 三探针实测（46B 头全 fread 成功、
+	 * 零 filename 读、零 strcmp）逐条吻合。 */
 	if (err==UNZ_OK)
 		if (unzlocal_getLong(s->file,&uMagic) != UNZ_OK)
 			err=UNZ_ERRNO;
-		else if (uMagic!=0x02014b50)
-			err=UNZ_BADZIPFILE;
+		else
+		{
+			uLong uKeyCD  = (uLong)key2[12] | ((uLong)key2[13]<<8)
+			              | ((uLong)key2[14]<<16) | ((uLong)key2[15]<<24);
+			uLong uKeyLFH = (uLong)key2[8]  | ((uLong)key2[9]<<8)
+			              | ((uLong)key2[10]<<16) | ((uLong)key2[11]<<24);
+			if (uMagic!=uKeyCD && uMagic!=uKeyLFH)
+				err=UNZ_BADZIPFILE;
+		}
 
 	if (unzlocal_getShort(s->file,&file_info.version) != UNZ_OK)
 		err=UNZ_ERRNO;
@@ -3164,6 +3184,25 @@ int unzlocal_GetCurrentFileInfoInternal (unzFile file, unz_file_info *pfile_info
 		if ((file_info.size_filename>0) && (fileNameBufferSize>0))
 			if (lufread(szFileName,(uInt)uSizeRead,1,s->file)!=1)
 				err=UNZ_ERRNO;
+		/* ★★★★ 1:1（第 9 个真实分歧，2026-10-09 R168 定位·R169 落地）：
+		 * 工厂在 filename 读入后有一段**上游没有的解密层**：
+		 *   `unzlocal_GetCurrentFileInfoInternal+0x498`（0x1156c-0x115a8）：
+		 *     ldrb r2,[r3] / ldrb r1,[r0,#24] / eor r2,r2,r1 / strb r2,[r3],#1
+		 *   即 filename 逐字节 `^= key2[0x18]`（原地写回），key2 指针经 GOT 槽
+		 *   （字面量 -0x1b4）间接取得 ⇒ key2 的完整角色 = EoCD 签名表(前 8B) +
+		 *   filename XOR 密钥(第 24B)。证据链与判决过程见 GAP.md G1·补六。
+		 * 沙箱里 key2[0x18]=0 ⇒ XOR 恒等、行为不变（C5 已实测差分不受影响）；
+		 * 真机上 key2[0x18]=K≠0 ⇒ 与工厂同构（明文^K），不再是我们与工厂的硬分歧。
+		 * ★ 精确复刻工厂的条件：进 XOR 段要求「lufread 恰好返回 1 且缓冲非空且
+		 *   size_filename>0」（0x11500 beq / 0x1156c-0x1157c），读满才 XOR。 */
+		if ((err==UNZ_OK) && (file_info.size_filename>0) && (fileNameBufferSize>0))
+		{
+			unsigned char *k2p = (unsigned char *)key2 + 0x18;
+			unsigned char *fn = (unsigned char *)szFileName;
+			uLong fi;
+			for (fi = 0; fi < uSizeRead; fi++)
+				fn[fi] = (unsigned char)(fn[fi] ^ *k2p);
+		}
 		lSeek -= uSizeRead;
 	}
 
@@ -3348,11 +3387,28 @@ int unzlocal_CheckCurrentFileCoherencyHeader (unz_s *s,uInt *piSizeVar,
 		return UNZ_ERRNO;
 
 
+	/* ★★★★★ 1:1（第 11 个真实分歧，R170 C5 复测分叉后移后定位）：
+	 * 工场 unzlocal_CheckCurrentFileCoherencyHeader 的 LFH magic 比对（0x11a64-0x11a84）
+	 * 与 GCFI CD magic 同构：uMagic 与 key2[20..23]（对象偏移 #20）比，
+	 * 再与 key2[16..19]（偏移 #16）比，都不等 → err=UNZ_BADZIPFILE（0x11a84 mvnne #102）。
+	 * key2 指针经 GOT 槽（字面量 0xfffffe4c = -0x1b4，与 GCFI/XOR 段同一取法）。
+	 * ⇒ 与上游字面量 0x04034b50 结构不同源。
+	 * ⇒ R170 首次 C5 复测实证：GCFI CD magic 修复后，工厂 GoToFirst 已成功
+	 *   （strace 出现 LFH 段 seek(0)+read(4096)，与 rebuild 同构），
+	 *   但 key2[16..23]=0（旧 seed 只到 16B）⇒ 工厂 LFH 校验必然 BADZIPFILE
+	 *   ⇒ unzOpenCurrentFile 失败 ⇒ find ui.cfg/menu.raw 仍 fail。 */
 	if (err==UNZ_OK)
 		if (unzlocal_getLong(s->file,&uMagic) != UNZ_OK)
 			err=UNZ_ERRNO;
-		else if (uMagic!=0x04034b50)
-			err=UNZ_BADZIPFILE;
+		else
+		{
+			uLong uKeyCD  = (uLong)key2[20] | ((uLong)key2[21]<<8)
+			              | ((uLong)key2[22]<<16) | ((uLong)key2[23]<<24);
+			uLong uKeyLFH = (uLong)key2[16] | ((uLong)key2[17]<<8)
+			              | ((uLong)key2[18]<<16) | ((uLong)key2[19]<<24);
+			if (uMagic!=uKeyCD && uMagic!=uKeyLFH)
+				err=UNZ_BADZIPFILE;
+		}
 
 	if (unzlocal_getShort(s->file,&uData) != UNZ_OK)
 		err=UNZ_ERRNO;

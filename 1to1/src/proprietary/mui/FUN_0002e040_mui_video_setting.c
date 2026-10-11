@@ -40,11 +40,23 @@ gh_u4 mui_video_setting(void)
   int local_74;
   int local_70;
   int local_6c;
-  gh_u4 local_68 [8];
-  gh_u1 auStack_48 [36];
+  /* 证据（第 157 轮）：工厂 0x2e0848..0x2e0888 是一张物理相邻、16B 对齐的菜单表
+     「"FULL SCREEN"(16B) + pad(16B) + "4:3"(16B) + pad(16B)」，终止项 01 紧随其后
+     （工厂 .rodata 逐字节，见 build/_r157_probe.py）。Ghidra 把它还原成「散装字符串
+     字面量 + 指针比较扫描循环」，依赖 .rodata 物理相邻这一 GCC 6.2 的排布产物；
+     重建编译器的字符串池合并把 "FULL SCREEN" 与终止项拉开了 ~9.6KB（三份重建 ELF
+     实测："FULL SCREEN" 落在公共字符串池、紧邻 retro_set_audio_sample_batch，"4:3"
+     根本不在相邻位置）⇒ vst1.32 循环按 16B 步进把本应 64B 的写入堆成数千字节、
+     写爆栈（第 156 轮 diff_exec 死亡点 W!@0x7e040000，202 条指令、无外部调用、
+     无 data-write ⇒ 死在循环内、连循环后第一条 DAT_003af27c=0 都没执行）。
+     修法：① 把表显式化成 const 数组（物理相邻由语言保证，终止用数组边界而非
+     指针比较）；② 把 Ghidra 拆成两个局部（local_68[8] / auStack_48[36]）的 64B
+     菜单文本缓冲区合并为一个对象，64B 拷贝落在同一对象内（同族于铁律 45/75）。 */
+  static const char _video_menu_tbl[4][16] = { "FULL SCREEN", "", "4:3", "" };
+  struct { gh_u4 item0[8]; gh_u1 item1[36]; } _menu;
   
-  puVar7 = local_68;
-  pcVar11 = "FULL SCREEN";
+  puVar7 = _menu.item0;
+  pcVar11 = &_video_menu_tbl[0][0];
   do {
     pcVar12 = pcVar11 + 0x10;
     uVar3 = *(gh_u4 *)(pcVar11 + 4);
@@ -56,9 +68,13 @@ gh_u4 mui_video_setting(void)
     puVar7[3] = uVar5;
     puVar7 = puVar7 + 4;
     pcVar11 = pcVar12;
-  } while (pcVar12 != "\x01");
+  } while (pcVar12 != &_video_menu_tbl[4][0]);
   DAT_003af27c = 0;
-  uVar10 = DisplayZoomFlag >> 8;
+  /* ★ 第 158 轮取证：工厂 0x2e0b0-0x2e0c0 先加载 PTR_DisplayZoomFlag_003b1e5c
+     （.bss 指针，沙箱中为 0），再解引用取实际值。直接访问 DisplayZoomFlag
+     会跳过这次解引用，导致 O 侧不在此处死亡而继续走到 m_ui+1484。
+     恢复指针间接寻址以 1:1 匹配工厂指令序列。 */
+  uVar10 = *(gh_uint *)PTR_DisplayZoomFlag_003b1e5c >> 8;
   while ((DisplayThumbnailflag & 8) != 0) {
     usleep(1000);
   }
@@ -96,12 +112,12 @@ LAB_0002e19c:
   OutRect._12_4_ = 0;
   OutRect._20_4_ = 0x2d0;
   mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(gh_u1)DAT_003af840,DAT_003af844,
-                 (gh_byte *)(local_68));
+                 (gh_byte *)(_menu.item0));
   if (uVar10 == 0) {
     mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(gh_u1)DAT_003af71c,
                    DAT_003af718,(gh_byte *)&DAT_003af70f);
     mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,DAT_003af844,
-                   auStack_48);
+                   _menu.item1);
     mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(gh_u1)DAT_003af71c,DAT_003af718
                    ,(gh_byte *)&DAT_003af708);
   }
@@ -109,7 +125,7 @@ LAB_0002e19c:
     mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(gh_u1)DAT_003af71c,
                    DAT_003af718,(gh_byte *)&DAT_003af708);
     mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,DAT_003af844,
-                   auStack_48);
+                   _menu.item1);
     mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(gh_u1)DAT_003af71c,
                    DAT_003af718,(gh_byte *)&DAT_003af70f);
   }
@@ -136,7 +152,7 @@ LAB_0002e400:
         UnDrawSelectBar(local_88 + DAT_003af27c * 4,(int)DAT_003af2b8,0);
         mui_outputxy_t(DAT_003af29c,local_88[DAT_003af27c * 4] + 8,
                        local_88[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af840,DAT_003af844,
-                       (gh_byte *)(local_68 + DAT_003af27c * 8));
+                       (gh_byte *)(_menu.item0 + DAT_003af27c * 8));
         if (DAT_003af27c == uVar10) {
           mui_outputxy_t(DAT_003af29c,local_88[uVar10 * 4] + 0x120,local_88[uVar10 * 4 + 1] + -10,
                          (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)&DAT_003af70f);
@@ -151,7 +167,7 @@ LAB_0002e400:
       if (-1 < (int)uVar6) {
         DrawSelectBar(local_88 + uVar6 * 4);
         mui_outputxy_t(DAT_003af29c,local_88[uVar6 * 4] + 8,local_88[uVar6 * 4 + 1] + 6,
-                       (gh_u1)DAT_003af840,DAT_003af844,(gh_byte *)(local_68 + uVar6 * 8));
+                       (gh_u1)DAT_003af840,DAT_003af844,(gh_byte *)(_menu.item0 + uVar6 * 8));
         if (uVar6 == uVar10) {
           mui_outputxy_t(DAT_003af29c,local_88[uVar6 * 4] + 0x120,local_88[uVar6 * 4 + 1] + -10,
                          (gh_u1)DAT_003af71c,DAT_003af718,(gh_byte *)&DAT_003af70f);
@@ -195,12 +211,12 @@ LAB_0002e544:
         uVar10 = (gh_uint)(uVar9 == 0);
         DrawSelectBar(local_88 + DAT_003af27c * 4);
         mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(gh_u1)DAT_003af840,
-                       DAT_003af844,(gh_byte *)(local_68));
+                       DAT_003af844,(gh_byte *)(_menu.item0));
         if (uVar9 == 0) {
           mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -6,(gh_u1)DAT_003af71c,
                          DAT_003af718,(gh_byte *)&DAT_003af708);
           mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,
-                         DAT_003af844,auStack_48);
+                         DAT_003af844,_menu.item1);
           mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -10,(gh_u1)DAT_003af71c,
                          DAT_003af718,(gh_byte *)&DAT_003af70f);
         }
@@ -208,7 +224,7 @@ LAB_0002e544:
           mui_outputxy_t(DAT_003af29c,local_88[0] + 0x120,local_88[1] + -10,(gh_u1)DAT_003af71c
                          ,DAT_003af718,(gh_byte *)&DAT_003af70f);
           mui_outputxy_t(DAT_003af29c,local_78 + 8,local_74 + 6,(gh_u1)DAT_003af840,
-                         DAT_003af844,auStack_48);
+                         DAT_003af844,_menu.item1);
           mui_outputxy_t(DAT_003af29c,local_78 + 0x120,local_74 + -6,(gh_u1)DAT_003af71c,
                          DAT_003af718,(gh_byte *)&DAT_003af708);
         }

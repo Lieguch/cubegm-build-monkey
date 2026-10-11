@@ -78,17 +78,39 @@ extern FrameHeader fh;
  * Return:      none
  *
  * Notes:       slow, platform-independent equivalent to memset(buf, 0, nBytes)
+ *
+ * ---- 2026-10-05（第 144 轮）工厂形态对齐：两处改动，均有铁证，勿删 ----
+ *
+ * 【证据 1：工厂侧】golden/factory.rkgame.bin
+ *   ClearBuffer = 0x002bdefc / **32B / GLOBAL FUNC**（readelf -sW 实测），
+ *   函数体是 8 条指令的**逐字节 strb 循环**（cmp r1,#0 / bxle lr / add r1,r0,r1
+ *   / mov r3,#0 / strb r3,[r0],#1 / cmp r0,r1 / bne）。
+ *   `xmp3_AllocateBuffers`（0x2bdf1c）的 **8 个 bl 全部指向 ClearBuffer**。
+ *
+ * 【证据 2：我方侧（改前）】
+ *   1) clang 把上面这个 for 循环识别成 memset ⇒ 14 个调用点全部改指向
+ *      **memset PLT 桩**（`bl 401620`，落在 .plt 0x401420+0x200），
+ *      且函数体被替换成 `b <memset>` 尾调用（20B，零 strb）。
+ *   2) `static` 使它无法成为 GLOBAL 符号，与工厂可被 `bl` 的形态不符。
+ *
+ * 【改法与为什么不用 flag】
+ *   - `__attribute__((no_builtin("memset")))`：clang 官方属性，**仅作用于本函数体**。
+ *     第 144 轮全量 A/B 已否决 flag 方案（`-fno-builtin-memset` → DIVERGE 17→19 净恶化，
+ *     且对本函数零效应：它只拦"编译器自己合成 memset"，管不到"函数体内 idiom 识别"）。
+ *   - **删除本 TU 的重复定义**，改为 include `proto.h` 复用**唯一实现**
+ *     （`src/proprietary/misc/FUN_002bdefc_ClearBuffer.c`，工厂 0x2bdefc 的 1:1 复刻）。
+ *     理由：工厂二进制里 `ClearBuffer` **只有一个** GLOBAL 符号（readelf 实测），
+ *     而本项目原先有两处定义（此处 static 一份 + 复刻文件一份），
+ *     靠 `static` 回避了冲突 —— 那正是"同一规则写两处"，会让两份实现的 codegen
+ *     各走各的（此处被识别成 memset，复刻文件被内联掉）。
+ *     统一到唯一实现后，工厂形态（32B 逐字节 strb 循环 + 可被 bl 的 GLOBAL 符号）
+ *     由**一处**代码决定，`xmp3_AllocateBuffers` 的 8 个 bl 也会自然指向它。
+ *   非 clang 编译器按 C11 忽略 unknown attribute，语义不变 ⇒ gcc 对照腿安全。
  **************************************************************************************/
-static void ClearBuffer(void *buf, int nBytes)
-{
-	int i;
-	unsigned char *cbuf = (unsigned char *)buf;
 
-	for (i = 0; i < nBytes; i++)
-		cbuf[i] = 0;
-
-	return;
-}
+/* ★ 唯一实现见 src/proprietary/misc/FUN_002bdefc_ClearBuffer.c（工厂 0x2bdefc）。
+ *   这里只取声明（签名 gh_u1* / int 与本处 void* / int 在 ARM EABI 下同宽，兼容）。 */
+extern void ClearBuffer(void *buf, int nBytes);
 
 /**************************************************************************************
  * Function:    AllocateBuffers

@@ -27,18 +27,14 @@ mkdir -p "$OUT"
 
 # 交叉编译器选择：① 显式 CC_ARM ② 系统 arm gcc（CI 已 apt 安装）③ zig
 TARGET="arm-linux-gnueabihf.2.29"     # 设备真实 glibc = 2.29（实测自 org.bin 的 rootfs）
-if [ -n "${CC_ARM:-}" ]; then
-    CC="$CC_ARM"
-elif command -v arm-linux-gnueabihf-gcc >/dev/null 2>&1; then
-    CC="arm-linux-gnueabihf-gcc"
-elif command -v zig >/dev/null 2>&1; then
-    CC="zig cc"
-elif [ -n "${CC:-}" ]; then
-    :   # 用调用方给的 CC
-else
-    echo "!! 找不到 ARM 交叉编译器（CC_ARM / arm-linux-gnueabihf-gcc / zig / CC）" >&2
-    exit 1
-fi
+# ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh。
+#   本文件此前自带一份探测（用 CC_ARM），与 build_guest_shim/build_upstream 的那份
+#   **同规则两处写**，且缺 `arm-buildroot-linux-gnueabihf-gcc` 分支
+#   ⇒ CI（装 arm-gcc）与云开发（只有 ziglang）各只能命中一半。
+#   cgm_cc_probe.sh 已把「① CC ② CC_ARM ③ arm-gcc ④ arm-buildroot-gcc ⑤ gcc
+#   ⑥ zig ⑦ python 包 ziglang」收敛到一处，本文件只保留 source。
+. "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
+    || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 
 # ★★ 关键：zig **必须显式给 `-target`**，否则它按**本机宿主**编译。
 #   实测（2026-09-19）：`CC_ARM="<zig> cc"` 不加 -target ⇒ 产出 Windows COFF，
@@ -71,7 +67,16 @@ $CC -shared -fPIC -nostdlib -O1 -w \
 
 echo "  已生成 $OUT/libasound.so.2（$(wc -c < "$OUT/libasound.so.2") B）"
 
-# ---- 自证：导出符号必须覆盖 driver.so 实测引用的 20 个 snd_* ----
+# ---- 自证：导出符号必须覆盖 driver.so 引用的 snd_pcm_* ----
+# ★★ NEED 清单的**唯一权威** = tools/driver_stub_coverage.py（它解析 driver.so 的
+#   .dynsym 得出需求，第 163 轮收敛）。本脚本不再写第二份清单（"同一规则禁止写两处"）；
+#   拿不到 ⇒ fail-closed 退出，绝不退化成"不校验"（那会让桩漂移静默通过）。
+PY="${PY:-python3}"
+command -v "$PY" >/dev/null 2>&1 || PY=python
+NEED="$("$PY" "$ROOT/tools/driver_stub_coverage.py" --print-need alsa)" \
+    || { echo "!! 取 NEED 清单失败：$PY $ROOT/tools/driver_stub_coverage.py --print-need alsa" >&2; exit 13; }
+[ -n "$NEED" ] || { echo "!! NEED 清单为空（driver.so 解析失败？查 golden/sdcard_min/driver.so）" >&2; exit 13; }
+
 if command -v arm-linux-gnueabihf-nm >/dev/null 2>&1; then
     NM=arm-linux-gnueabihf-nm
 elif command -v nm >/dev/null 2>&1; then
@@ -79,13 +84,6 @@ elif command -v nm >/dev/null 2>&1; then
 else
     NM=""
 fi
-NEED="snd_pcm_avail snd_pcm_close snd_pcm_drop snd_pcm_hw_params \
-snd_pcm_hw_params_any snd_pcm_hw_params_get_buffer_size snd_pcm_hw_params_get_channels \
-snd_pcm_hw_params_get_period_size snd_pcm_hw_params_set_access \
-snd_pcm_hw_params_set_buffer_size_near snd_pcm_hw_params_set_channels \
-snd_pcm_hw_params_set_format snd_pcm_hw_params_set_period_size_near \
-snd_pcm_hw_params_set_rate_near snd_pcm_hw_params_sizeof snd_pcm_open \
-snd_pcm_prepare snd_pcm_recover snd_pcm_start snd_pcm_writei"
 if [ -n "$NM" ]; then
     got="$($NM -D --defined-only "$OUT/libasound.so.2" 2>/dev/null | awk '{print $NF}' | sort)"
     miss=""
@@ -96,5 +94,5 @@ if [ -n "$NM" ]; then
         echo "  ★ 缺失符号:$miss" >&2
         exit 1
     fi
-    echo "  自证：20 个 snd_* 全部导出 ✓"
+    echo "  自证：$(printf '%s' "$NEED" | wc -w) 个 snd_pcm_* 全部导出 ✓"
 fi

@@ -164,3 +164,127 @@ python tools/diag_symbolize.py build/rkgame.diag <取回的>/frames.bin \
 2. 在 `src/diag/cgm_wrap.c` 加 `__real_<sym>` 声明 + `__wrap_<sym>` 实现
 3. （自检门禁会替你挡第 2 步的遗漏）
 4. `sh tools/build_diag.sh` ⇒ 应看到 `✓ 自检：N 个 wrap 符号全部有实现`
+
+---
+
+---
+
+## 九、autorun 劫持（真机 drop-in 前置步骤）
+
+> **红线提醒**：此节改动涉及原厂 `setting.xml`，属"改原厂文件"范畴。
+> 执行前必须明确：**改什么 / 怎么改 / 如何回退**。未获用户显式确认不得落地。
+
+### 9.1 目的
+
+原厂 `golden/sdcard_min/setting.xml` 第一行**实测**为 `<autorun file="" driver="" />`
+（file 与 driver 均为空 ⇒ 不开机直进游戏）。该字段由 **rkgame 自己的 `main`** 读取：
+`autorunfile[0]=='\0'` 走 `main_Menu()`；非空则按前缀分派（`/USBJoystickTest`→TestUSBJoy、
+`/JoystickTest`→JoystickTest、其余→`autorun(file,driver)`）。
+`autorun()`（60B）语义：`RARCH_LOG("autorun %s %s")` → `InitScr()` → **driver 非空则立即 return**
+→ 否则 `run_game(file)`。
+⇒ 改变应从**实测空值**出发：目标是让真机拉起**自己构建的** `rkgame`（或 `rkgame.diag`），
+  需把该字段从空改为目标文件名（同下 9.2）。
+
+### 9.2 改法（原子替换）
+
+```sh
+# 备份（必做，回退依据）
+cp /sdcard/cubegm/setting.xml /sdcard/cubegm/setting.xml.factory.bak
+
+# 替换 autorun 目标（★ golden 实测格式是**双属性** `<autorun file="" driver="" />`，
+#   旧的单属性 sed 模式**匹配不上**，等于没改 —— 必须用整标签替换）
+python3 - <<'PYEOF'
+p = '/sdcard/cubegm/setting.xml'
+d = open(p, 'rb').read()
+old_line = b'<autorun file="" driver="" />'
+new_line = b'<autorun file="rkgame" driver="" />'
+assert old_line in d, 'setting.xml 无预期的 autorun 原值，中止（防误改）'
+open(p, 'wb').write(d.replace(old_line, new_line, 1))
+print('autorun 已改')
+PYEOF
+
+# 校验（必须看到新值）
+grep '<autorun' /sdcard/cubegm/setting.xml
+# 期望输出：<autorun file="rkgame" driver="" />
+```
+
+### 9.3 回退流程
+
+```sh
+# 从备份还原
+cp /sdcard/cubegm/setting.xml.factory.bak /sdcard/cubegm/setting.xml
+grep '<autorun' /sdcard/cubegm/setting.xml
+# 期望输出：<autorun file="" driver="" />（golden 原样）
+```
+
+### 9.4 BEGIN.txt 判定
+
+诊断版 `rkgame.diag` 启动后会在 `/sdcard/cubegm/_diag/` 下写 `BEGIN.txt`（首行 = 构建 SHA + 时间戳）。
+**真机 drop-in 成功的最低判据** = 该文件存在且内容非空。若不存在 ⇒ 启动链在 exec 之前就已失败
+（路径错 / 权限错 / setting.xml 未生效 / 内核 panic），**不要继续后续测试**。
+
+---
+
+## 十、hcge / fbdev_draw_frame 观测点（视频/音频初始化入口权威清单）
+
+> **本节来源**：Ghidra 反编译 `FUN_0000d678_InitDisplay.c` 与 `FUN_0000db08_InitSound.c`，
+> 非猜测、非二手文档。每个符号都附源文件行号，可机械复核。
+
+### 10.1 视频初始化入口（4 个 dlsym）
+
+来自 `src/proprietary/hw/FUN_0000d678_InitDisplay.c`：
+
+| 绑定方式 | 符号 | 用途 / 调用点 |
+|---|---|---|
+| dlsym(^30) | `video_driver_setting` | 设置显示参数（分辨率/帧率/格式） |
+| run_process(^39) | `video_drivers_init` | 图形后端整体初始化（`run_process_constprop_0`） |
+| dlsym(^42) | `video_driver_disp_frame` | 提交一帧到显示后端（**核心渲染出口**） |
+| dlsym(^47) | `video_driver_setmode` | 切换显示模式（分辨率/刷新率变更时调用） |
+| dlsym(^52) | `video_driver_get_size` | 查询当前显示尺寸（菜单/UI 布局依赖） |
+| run_process（DeinitDisplay ^14） | `video_driver_deinit` | 显示后端整体反初始化 |
+
+**假桩覆盖要求**：上表全部符号（含 `run_process` 携带的 `video_drivers_init` /
+`video_driver_deinit`）必须出现在 `driver_stub.so` 的 `.dynsym` 导出表中，
+且 `bind ∈ {GLOBAL, WEAK}`、`visibility != hidden`、`st_shndx != 0`。
+仅存在于 `.symtab` 或为 LOCAL/hidden ⇒ 外部 UNDEF 无法绑定 ⇒ 计为**未覆盖**。
+
+### 10.2 音频初始化入口（2 个 dlsym）
+
+来自 `src/proprietary/hw/FUN_0000db08_InitSound.c`：
+
+| 绑定方式 | 符号 | 用途 / 调用点 |
+|---|---|---|
+| dlsym(^17) | `sound_driver_init` | 初始化音频后端（采样率/通道/缓冲） |
+| dlsym(^38) | `sound_driver_playframe` | 提交一帧 PCM 数据（**核心音频出口**） |
+| run_process（DeinitSound ^14） | `sound_driver_deinit` | 音频后端反初始化 |
+
+**覆盖要求同 10.1**。
+
+### 10.3 DRM_IOCTL 计数作为渲染管线一致性铁证
+
+`video_driver_disp_frame` 的真实现必然触发 `DRM_IOCTL_MODE_ADDFB2` + `DRM_IOCTL_MODE_PAGE_FLIP`。
+在 qemu 或真机的 strace/kern.log 中统计这两个 ioctl 的调用次数：
+
+- **> 0 次** ⇒ 渲染管线至少走到提交帧这一步（M6R 里程碑的必要条件）。
+- **= 0 次但进程存活** ⇒ dlsym 成功但后端未真正渲染（假绿风险，需查 shim 实现）。
+- **dlsym 返回 NULL** ⇒ 进程通常在 InitDisplay 阶段就 abort（exit ≠ 124）。
+
+### 10.4 qemu 结构性限制（诚实声明）
+
+qemu-system-arm 无 RK3036 机器模型；`-dtb` 只把设备树交给内核，**不改变 qemu 提供的硬件**。
+因此以下事项**只有真机能答**，qemu 结果不能作为最终判据：
+
+- 真 SFC MMIO 语义（地址映射 / 寄存器位宽 / 时序）
+- 「sdcard is damaged」校验逻辑（原厂对 SD 卡 CID/CSD 的检查）
+- 真面板时序与背光控制
+- 真手柄 ADC 采样与按键映射
+
+qemu 的价值在于**启动链连通性 + 软件层行为对齐**；上述硬件相关缺口必须留给真机 drop-in 验证。
+
+**9 符号清单的机械守护**：`tools/driver_stub_coverage.py` 第 165 轮起内置 `ABI_SYMS`
+（上面 9 个符号，权威来源 = golden driver.so `.dynsym` 实测 DEFINED + 上述源码调用点），
+`--print-need private` 导出该清单；`tools/_r165_abi_selftest.py` 提供判别力自证
+（腿A 真库覆盖 / 腿B 删符必判缺 / 腿C 选错 provider 必判缺）。任何代替/桩化 driver.so
+的产物都必须全数导出这 9 个符号，缺一即亮红。
+但根据 PROGRESS.md §0.0 约束 2/3：**模拟进度达 100% 之前，禁止在任何文档/报告/对话中提及真机验证**；
+达到 100% 后由 agent 主动向用户提出。本节仅为技术备忘，不构成"现在就该上真机"的建议。

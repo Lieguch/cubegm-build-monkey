@@ -252,9 +252,16 @@ static const int c9_4 = 0x7e0e2e32;
 /* format = Q31
  * cos(((0:8) + 0.5) * (pi/18)) 
  */
-static const int c18[9] = {
-	0x7f834ed0, 0x7ba3751d, 0x7401e4c1, 0x68d9f964, 0x5a82799a, 0x496af3e2, 0x36185aee, 0x2120fb83, 0x0b27eb5c, 
-};
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int c18[9] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:236 已有的镜像别名
+ *   `.set c18, __f_rodata_base + 0x6050`（= 工厂地址 共 36 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/imdct.c
+ */
+extern const int c18[];
+
 
 /* require at least 3 guard bits in x[] to ensure no overflow */
 static __inline void idct9(int *x)
@@ -327,11 +334,16 @@ static __inline void idct9(int *x)
  *      fastWin[2*j+1] = c(j)*(s(j) - c(j))
  * format = Q30
  */
-static const int fastWin36[18] = {
-	0x42aace8b, 0xc2e92724, 0x47311c28, 0xc95f619a, 0x4a868feb, 0xd0859d8c,
-	0x4c913b51, 0xd8243ea0, 0x4d413ccc, 0xe0000000, 0x4c913b51, 0xe7dbc161,
-	0x4a868feb, 0xef7a6275, 0x47311c28, 0xf6a09e67, 0x42aace8b, 0xfd16d8dd,
-};
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int fastWin36[18] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:239 已有的镜像别名
+ *   `.set fastWin36, __f_rodata_base + 0x6074`（= 工厂地址 共 72 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/imdct.c
+ */
+extern const int fastWin36[];
+
 
 /**************************************************************************************
  * Function:    IMDCT36

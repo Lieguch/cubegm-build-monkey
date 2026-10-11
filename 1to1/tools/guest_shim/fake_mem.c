@@ -49,6 +49,23 @@
  * 且**工厂侧与重建侧加载同一份**，保证差分是"同一环境下比实现"。
  */
 #define _GNU_SOURCE
+/* ---- LFS 重命名免疫（2026-10-08，R164）--------------------------------------
+ * 根因（云端 arm-linux-gnueabihf-gcc 14.2 / glibc 2.29 实测定位）：
+ *   `_GNU_SOURCE` 令 glibc `features.h` 定义 `__USE_FILE_OFFSET64`，进而
+ *   `fcntl.h` 把 `open` 以 `__REDIRECT(open, ..., open64)` 声明、`stdio.h` 把
+ *   `fopen` 以 `__REDIRECT(fopen, ..., fopen64)` 声明 ⇒ 我们在源里**同时**定义
+ *   `open`+`open64` / `fopen`+`fopen64` 时，`open`/`fopen` 被改名为 `open64`/`fopen64`，
+ *   与紧随其后的真实 `open64`/`fopen64` 定义撞名，汇编期
+ *   `Error: symbol `open64' is already defined`（单变量实验：两两组合里
+ *   `open+open64` 与 `fopen+fopen64` 必复现，`open+fopen64`、`open64+fopen` 不复现）。
+ *   注：glibc 通过 `__REDIRECT` 导出的符号名仍是 `open64`（guest 侧 PLT/dlsym 可见），
+ *   故拦截语义不因本 undef 而削弱。
+ * 修法（最小侵入）：在**任何** include 之前 undef 掉驱动重命名的两个宏，
+ * 保留 `_GNU_SOURCE` 的其余扩展（`__USE_GNU`/`__USE_MISC`/`__USE_LARGEFILE64` 仍在）。
+ * 编译验证：`sh tools/probe_lfs.sh`（云端）→ BUILD_OK，导出符号 open/open64/fopen/fopen64 四具全。
+ */
+#undef _FILE_OFFSET_BITS
+#undef _TIME_BITS
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -284,10 +301,23 @@ static void note(const char *fmt, ...);
 
 static void key2_assert(void)
 {
-    static const unsigned char sig[8] = { 'P', 'K', 0x05, 0x06, 'P', 'K', 0x07, 0x08 };
+    /* ★ R170 扩到 24B：工场两处 magic 校验都比对 key2 槽位——
+     *   · GCFI CD magic（0x113c4-0x113f0）：key2[12..15]（"PK\1\2"）与 key2[8..11]（"PK\3\4"）；
+     *   · CoherencyHeader LFH magic（0x11a64-0x11a84）：key2[20..23] 与 key2[16..19]
+     *     （同一 GOT 槽 -0x1b4 取 key2 指针，对象偏移 #20 / #16）。
+     *   只注入 16B 时 LFH 校验必然 BADZIPFILE ⇒ unzOpenCurrentFile fail ⇒ find 仍 fail。
+     *   [24..27] 保持 0（key2[0x18]=0x18 偏移=24 ⇒ filename XOR key 恒等）。 */
+    static const unsigned char sig[24] = {
+        'P', 'K', 0x05, 0x06,   /* [0..3]   EOCD 签名（unzlocal_SearchCentralDir 用） */
+        'P', 'K', 0x07, 0x08,   /* [4..7]   EOCD 第二签名 */
+        'P', 'K', 0x03, 0x04,   /* [8..11]  LFH 签名（GCFI magic 第二比较对象） */
+        'P', 'K', 0x01, 0x02,   /* [12..15] CD 签名（GCFI magic 第一比较对象） */
+        'P', 'K', 0x03, 0x04,   /* [16..19] LFH 签名（CoherencyHeader magic 第二比较对象） */
+        'P', 'K', 0x01, 0x02,   /* [20..23] CD 签名（CoherencyHeader magic 第一比较对象） */
+    };
     volatile unsigned char *p = (volatile unsigned char *)(unsigned long)0x003E190Cu;
     int i;
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 24; i++) {
         p[i] = sig[i];
     }
 }
@@ -337,6 +367,105 @@ static void key2_hook_try(const char *path)
              (unsigned)p[4], (unsigned)p[5], (unsigned)p[6], (unsigned)p[7]);
         g_key2_hook_logged++;
     }
+}
+
+/* ---- strcmp 轨迹（CGM_STRCMP_TRACE=1）：工厂 zip 遍历判决探针 -------------------
+ * 为什么需要（2026-10-09 R169）：C5 里工厂 find ui.cfg/menu.raw fail 而 rebuild 全找到，
+ * 而 strace 只能看到 syscall 层——stdio 缓冲把 fseek 全部掩盖（实测两侧 llseek 序列
+ * 3 次 vs 6 次+读，但无法细分到 entry 级）。工厂遍历 CD 的最后一步是
+ * `unzStringFileNameCompare(...,1)` = `strcmp(current, target)` ⇒ 拦它就能看到
+ * 工厂读出的每个 filename 字节。gdb batch 断点在 qemu gdbstub 下两次不稳（R168），
+ * 拦截层是更便宜且不会被时序坑的路。
+ * ★ 公平性：两侧同一 shim、同一开关 ⇒ 差分公平；只打「两个参数都是 ≤40 字节可见串」
+ *   的调用，避免把无关 strcmp（长串/二进制）打成噪声。
+ * ★ 架构同 fopen 拦截：constructor 预解析真 strcmp（strcmp 是热路径，
+ *   绝不在拦截体内首次 dlsym）。
+ * ★ dlsym 的弱声明定义在本文件更靠后的 fopen 段；为让本段（位置更靠前）可用，
+ *   把「弱声明 + RTLD_NEXT 宏」上移到这里（后面的 fopen 段重复声明同一弱符号
+ *   是合法的——weak 声明可重复，不会产生新符号或类型冲突）。 */
+__attribute__((weak)) extern void *dlsym(void *handle, const char *symbol);
+#ifndef SHIM_RTLD_NEXT
+#define SHIM_RTLD_NEXT ((void *)-1l)
+#endif
+
+static int g_strcmp_trace, g_strcmp_n;
+static int (*g_real_strcmp)(const char *, const char *);
+
+static void shim_resolve_strcmp(void)
+{
+    if (dlsym != NULL && g_real_strcmp == NULL) {
+        g_real_strcmp = (int (*)(const char *, const char *))dlsym(SHIM_RTLD_NEXT, "strcmp");
+    }
+}
+
+static int str_is_printable_short(const char *s)
+{
+    int n = 0;
+    if (s == NULL) return 0;
+    while (s[n] != '\0') {
+        unsigned char c = (unsigned char)s[n];
+        if (c < 0x20 || c > 0x7e) return 0;
+        n++;
+        if (n > 40) return 0;
+    }
+    return n > 0;
+}
+
+int strcmp(const char *a, const char *b)
+{
+    int r;
+    if (g_real_strcmp == NULL) {
+        /* 未解析（理论上不会——constructor 已预解析）：退化为朴素实现，
+         * 与 glibc strcmp 对可见 ASCII 的结果一致。 */
+        const unsigned char *ua = (const unsigned char *)a;
+        const unsigned char *ub = (const unsigned char *)b;
+        r = 0;
+        while (ua[r] != '\0' && ua[r] == ub[r]) r++;
+        r = (int)ua[r] - (int)ub[r];
+    } else {
+        r = g_real_strcmp(a, b);
+    }
+    if (g_strcmp_trace == 0) {
+        const char *e = getenv("CGM_STRCMP_TRACE");
+        g_strcmp_trace = (e && e[0]) ? 1 : 0;
+    }
+    if (g_strcmp_trace && g_strcmp_n < 512) {
+        /* ★ R169 判决扩展：不过滤「可见性」——filename 可能被 key2[0x18] XOR 成
+         *   不可见字节（写入者假说），%s 打印会出乱码/NUL 截断。
+         *   改为「短串（≤40B 且前 8 字节无 NUL）即记，用 %02x hex 首字节」。
+         *   可见串照常用 %s（保持可读）；含不可见字节的串打 hex 前缀。 */
+        int sa = str_is_printable_short(a);
+        int sb = str_is_printable_short(b);
+        int len_ok = 0;
+        int i;
+        for (i = 0; i < 8; i++) {
+            if (a == NULL || a[i] == '\0') { len_ok = (a != NULL); break; }
+        }
+        if (a != NULL && a[0] == '\0') len_ok = 0;
+        if (len_ok) {
+            for (i = 0; i < 8; i++) {
+                if (b == NULL || b[i] == '\0') break;
+            }
+        }
+        if (sa && sb) {
+            g_strcmp_n++;
+            if (g_strcmp_n <= 64
+                || a[0]=='u' || a[0]=='m' || a[0]=='f' || a[0]=='s' || a[0]=='t' || a[0]=='g'
+                || b[0]=='u' || b[0]=='m' || b[0]=='f' || b[0]=='s' || b[0]=='t' || b[0]=='g') {
+                note("[shim] strcmp #%02d \"%s\" vs \"%s\" -> %d\n", g_strcmp_n, a, b, r);
+            }
+        } else if (sa != sb && (sa || sb)) {
+            /* 一侧可见一侧乱码 —— 判决性：用 hex 打乱码侧前 8 字节 */
+            const char *bad = sa ? b : a;
+            const char *good = sa ? a : b;
+            g_strcmp_n++;
+            note("[shim] strcmp #%02d MIXED good=\"%s\" bad=hex[%02x %02x %02x %02x %02x %02x] -> %d\n",
+                 g_strcmp_n, good,
+                 (unsigned char)bad[0], (unsigned char)bad[1], (unsigned char)bad[2],
+                 (unsigned char)bad[3], (unsigned char)bad[4], (unsigned char)bad[5], r);
+        }
+    }
+    return r;
 }
 
 static int open_impl(const char *path, int flags, va_list ap)
@@ -420,8 +549,11 @@ int access(const char *path, int mode)
  *   ② 取不到就退化为 `open(path, mode→flags) + fdopen(fd, mode)`（只覆盖常见的
  *      r/w/a 与 `+`、`b`、`x` 组合；本场景只读为主，风险可控）。
  */
+/* 弱声明已在 strcmp 段前置（weak 可重复声明） */
 __attribute__((weak)) extern void *dlsym(void *handle, const char *symbol);
+#ifndef SHIM_RTLD_NEXT
 #define SHIM_RTLD_NEXT ((void *)-1l)
+#endif
 
 static int mode_to_flags(const char *mode)
 {
@@ -503,6 +635,92 @@ FILE *fopen(const char *path, const char *mode)
 FILE *fopen64(const char *path, const char *mode)
 {
     return shim_fopen_impl(path, mode, 1);
+}
+
+/* ---- fseek 轨迹（CGM_FSEEK_TRACE=1）：工厂 GoToFirst 的 pos 现形 -----------------
+ * 为什么需要（2026-10-09 R169）：strcmp 探针证明工厂 unzLocateFile 从未进入比对循环
+ * （377 条 strcmp 零 zip filename）；strace 证明 open 后无 CD 读 syscall（4K stdio
+ * 缓冲把 [0x4B8A30,EOF) 全覆盖 ⇒ CD 读缓冲命中不可见）。工厂 GoToFirst 失败的
+ * pos_in_central_dir 到底是多少，只剩 `fseek`（lufseek 的底座）能回答。
+ * ★ 只记 offset<10MB 且 whence 有效的调用；上限 64 条。 */
+static int g_fseek_trace, g_fseek_n;
+static int (*g_real_fseek)(FILE *, long, int);
+
+static void shim_resolve_fseek(void)
+{
+    if (dlsym != NULL && g_real_fseek == NULL) {
+        g_real_fseek = (int (*)(FILE *, long, int))dlsym(SHIM_RTLD_NEXT, "fseek");
+    }
+}
+
+int fseek(FILE *f, long off, int whence)
+{
+    int r;
+    if (g_real_fseek == NULL) {
+        /* 底层回退：用 lseek 系统调用实现（glibc fseek 语义近似；
+         * 本探针路径只在 constructor 前 dlsym 失败才会走到，正常不触发）。 */
+        r = (int)syscall(
+#ifdef SYS_lseek
+            SYS_lseek
+#else
+            __NR_lseek
+#endif
+            , 0, off, whence);
+    } else {
+        r = g_real_fseek(f, off, whence);
+    }
+    if (g_fseek_trace == 0) {
+        const char *e = getenv("CGM_FSEEK_TRACE");
+        g_fseek_trace = (e && e[0]) ? 1 : 0;
+    }
+    if (g_fseek_trace && g_fseek_n < 64 && off >= 0 && off < 10000000
+        && (whence == 0 || whence == 1 || whence == 2)) {
+        g_fseek_n++;
+        note("[shim] fseek #%02d off=%ld whence=%d -> %d\n", g_fseek_n, off, whence, r);
+    }
+    return r;
+}
+
+/* ---- fread 轨迹（CGM_FREAD_TRACE=1）：工厂 CD 首entry 读取失败点现形 ---------------
+ * 为什么需要（2026-10-09 R169 终局定位）：fseek 探针证明工厂成功 seek 到 CD 起点
+ * (0x4B8ABC) 与 EoCD (0x4B8CDB)，但首 entry 读取后立即放弃（current_file_ok=0，
+ * strcmp 探针 377 条零 zip filename 互锁）。GCFI 内所有字段读取都走 lufread→fread
+ * ⇒ 拦 fread 就能看到「读了几个字节、返回了几个」。 */
+static int g_fread_trace, g_fread_n;
+static size_t (*g_real_fread)(void *, size_t, size_t, FILE *);
+
+static void shim_resolve_fread(void)
+{
+    if (dlsym != NULL && g_real_fread == NULL) {
+        g_real_fread = (size_t (*)(void *, size_t, size_t, FILE *))dlsym(SHIM_RTLD_NEXT, "fread");
+    }
+}
+
+size_t fread(void *buf, size_t size, size_t n, FILE *f)
+{
+    size_t r;
+    if (g_real_fread == NULL) {
+        /* 回退：直接 syscall 读（语义近似，正常不触发） */
+        r = (size_t)syscall(
+#ifdef SYS_read
+            SYS_read
+#else
+            __NR_read
+#endif
+            , 0, buf, size * n);
+    } else {
+        r = g_real_fread(buf, size, n, f);
+    }
+    if (g_fread_trace == 0) {
+        const char *e = getenv("CGM_FREAD_TRACE");
+        g_fread_trace = (e && e[0]) ? 1 : 0;
+    }
+    if (g_fread_trace && g_fread_n < 256 && n <= 8 && size <= 8192) {
+        g_fread_n++;
+        note("[shim] fread #%02d size=%u n=%u -> %u\n",
+             g_fread_n, (unsigned)size, (unsigned)n, (unsigned)r);
+    }
+    return r;
 }
 
 int openat(int dirfd, const char *path, int flags, ...)
@@ -909,10 +1127,14 @@ static void sfc_fault(int sig, siginfo_t *si, void *vctx)
              *   （`JSONDecodeError: Invalid control character`），而 CI 仍报 success
              *   ⇒ **三个场景静默失去判定**。
              *   ⇒ 一律用**可打印的十六进制文本**表达字节值（下面已是纯 ASCII）。 */
-            note("[shim] key2 @0x3E190C 现值 = %02x %02x %02x %02x %02x %02x %02x %02x"
-                 "（已 seed 时期望 = 50 4b 05 06 50 4b 07 08；未 seed 时 key2 在 BSS，期望全 0）\n",
+            note("[shim] key2 @0x3E190C 现值[0..15] = %02x %02x %02x %02x %02x %02x %02x %02x"
+                 " %02x %02x %02x %02x %02x %02x %02x %02x"
+                 "（已 seed 期望 = 50 4b 05 06 50 4b 07 08 | 50 4b 03 04 50 4b 01 02；"
+                 "未 seed 时 key2 在 BSS，期望全 0；[16..27] 恒 0 ⇒ key2[0x18] XOR 恒等）\n",
                  (unsigned)k2p[0], (unsigned)k2p[1], (unsigned)k2p[2], (unsigned)k2p[3],
-                 (unsigned)k2p[4], (unsigned)k2p[5], (unsigned)k2p[6], (unsigned)k2p[7]);
+                 (unsigned)k2p[4], (unsigned)k2p[5], (unsigned)k2p[6], (unsigned)k2p[7],
+                 (unsigned)k2p[8], (unsigned)k2p[9], (unsigned)k2p[10], (unsigned)k2p[11],
+                 (unsigned)k2p[12], (unsigned)k2p[13], (unsigned)k2p[14], (unsigned)k2p[15]);
         }
         note("[shim] ★ 真崩溃 @0x%08lx 不在设备页 (base=%p) pc=0x%08lx lr=0x%08lx sp=0x%08lx\n",
              addr, (void *)g_sfc_base,
@@ -1224,6 +1446,9 @@ __attribute__((constructor)) static void shim_poison_stack(void)
         }
     }
     shim_resolve_fopen();
+    shim_resolve_fseek();
+    shim_resolve_fread();
+    shim_resolve_strcmp();
     /* ★ 场景 F：解析输入事件注入脚本（默认关） */
     parse_input_hex(getenv("CGM_INPUT_HEX"));
     g_ev_fill = parse_int(getenv("CGM_INPUT_FILL"));
@@ -1350,16 +1575,236 @@ static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
     return (void *)syscall(__NR_mmap2, addr, len, prot, flags, fd, off >> 12);
 }
 
+/* ---- 接管 DRM 桩的帧缓冲（第 137 轮：让"画面"成为可判据的真实像素）----
+ *
+ * 为什么用 dlsym 而非链接期依赖：
+ *   本 shim 与三桩是**独立编译的独立 DSO**，桩是**可选**的（由 `CGM_DRM_STUB` 开关控制）。
+ *   若 shim 在链接期引用桩的符号，未启用桩时 shim 会带一条未定义动态符号
+ *   ⇒ loader 可能拒绝加载整个 shim（把"桩可选"变成"桩必需"）。
+ *   ⇒ 用 `dlsym(RTLD_DEFAULT, ...)` 在**运行时**探测：取到就接管，取不到就退回原路径。
+ *   `RTLD_DEFAULT` 在 glibc 里就是 ((void*)0)，用整数 0 不引入任何 libc 符号依赖。
+ */
+typedef void       *(*cgm_fb_addr_fn)(void);
+typedef unsigned int (*cgm_fb_size_fn)(void);
+
+static int shim_drm_probe_done;
+static cgm_fb_addr_fn shim_fb_addr_fn;
+static cgm_fb_size_fn shim_fb_size_fn;
+
+/* 一次性探测桩的三个导出符号（取不到就全部为 0 ⇒ 桩不在）。
+ * 抽成独立函数是因为「接管 dumb 映射」与「画布登记」两处都要用到 size。 */
+static void shim_drm_probe(void)
+{
+    void *(*dlsym_fn)(void *, const char *);
+    if (shim_drm_probe_done) return;
+    shim_drm_probe_done = 1;
+    {
+        extern void *dlsym(void *, const char *) __attribute__((weak));
+        dlsym_fn = dlsym;
+    }
+    if (dlsym_fn == 0) return;
+    shim_fb_addr_fn = (cgm_fb_addr_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_address");
+    shim_fb_size_fn = (cgm_fb_size_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_size");
+}
+
+/* 桩回填的帧缓冲字节数（= pitch × height）；桩不在或尚未 CREATE_DUMB ⇒ 0。 */
+static unsigned int shim_drm_fb_size_of(void)
+{
+    shim_drm_probe();
+    if (shim_fb_size_fn == 0) return 0;
+    return shim_fb_size_fn();
+}
+
+/* 返回值：命中 ⇒ 桩帧缓冲实体地址；未命中 ⇒ 0（调用方退回原路径）。 */
+static void *shim_drm_fb_lookup(unsigned long off, size_t len)
+{
+    cgm_fb_addr_fn fb_addr;
+    cgm_fb_size_fn fb_size;
+    void *base;
+    unsigned int bytes;
+
+    shim_drm_probe();
+    fb_addr = shim_fb_addr_fn;
+    fb_size = shim_fb_size_fn;
+    (void)len;
+
+    if (fb_addr == 0 || fb_size == 0) return 0;      /* 未启用桩：原样退回 */
+
+    base = fb_addr();
+    if ((unsigned long)base == 0) return 0;          /* 桩在，但还没 CREATE_DUMB */
+    if (base != (void *)(unsigned long)off) return 0;/* 不是那块帧缓冲：原样退回 */
+
+    bytes = fb_size();
+    /* 长度自洽检查：真实内核 mmap 用的就是 create_dumb 回填的 size。
+     * 不一致说明我们与桩的约定错位 ⇒ **fail-closed**（不接管），
+     * 而不是"照样接管一片大小不对的内存"。 */
+    if (bytes == 0 || len > (size_t)bytes) return 0;
+    return base;
+}
+
+/* ---- 画布登记（匿名私有映射中，尺寸 == CREATE_DUMB 的 size 者）----
+ *
+ * 背景与取证见 `mmap()` 里的 ★★★ 注释：`driver.so` 从不在 dumb buffer 上作画，
+ * 它自己 mmap 匿名内存当画布，再 blit 到 DRM 呈现路径。
+ * ⇒ 桩要拿到真实像素，就必须知道「当前画布是哪块」。
+ *
+ * ★★ 数据流方向（2026-10-04 第 137 轮回归后确立）：
+ *   **shim → 桩的单向写入**。shim 用 libc 的 `dlsym`（它本就有 libc 依赖）
+ *   找到桩导出的 `drm_stub_canvas_ptr`，登记画布时直接写进去。
+ *   桩侧**零符号解析**（它 `-nostdlib`，且 ARM EABI 根本没有 `__NR_dlsym` ——
+ *   我先前硬编 516 导致 `exit=139` 回归，见桩里那段注释）。
+ *   桩不在 ⇒ dlsym 找不到 ⇒ 不写 ⇒ 桩退回自己的 dumb buffer 实体。
+ *
+ * 判据（**尺寸精确相等**，不猜）：
+ *   只登记「`len` 等于桩在 CREATE_DUMB 里回填的 `size`」的匿名映射。
+ *   尺寸由桩通过 `drm_stub_fb_size()` 提供 ⇒ 与内核语义一致，不靠任何假设。
+ *   登记不到 / 尺寸对不上 ⇒ 桩如实报"无"，**不退回"假装有画面"**。
+ */
+#define CANVAS_MAX 8
+/* 前置声明：定义在上面的 shim_drm_* 段（画布登记在 mmap 拦截里用它做尺寸判据） */
+static unsigned int shim_drm_fb_size_of(void);
+
+static struct {
+    void *addr;
+    unsigned int len;
+    unsigned long seq;                 /* 序号：越大越"新" */
+} g_canvas[CANVAS_MAX];
+static unsigned long g_canvas_seq;
+
+/* 桩导出的画布指针（桩不在 ⇒ 保持 0） */
+static void **shim_stub_canvas_slot(void)
+{
+    static void **slot;
+    static int probed;
+    void *(*dlsym_fn)(void *, const char *);
+    if (probed) return slot;
+    probed = 1;
+    {
+        extern void *dlsym(void *, const char *) __attribute__((weak));
+        dlsym_fn = dlsym;
+    }
+    if (dlsym_fn != 0)
+        slot = (void **)(unsigned long)dlsym_fn((void *)0, "drm_stub_canvas_ptr");
+    return slot;
+}
+
+void shim_canvas_note(void *p, size_t len)
+{
+    unsigned int want = shim_drm_fb_size_of();   /* 桩回填的帧缓冲字节数（0 = 桩不在） */
+    int i, free_i = -1;
+
+    if (p == 0 || p == MAP_FAILED) return;
+    if (want == 0) return;                            /* 桩不在 ⇒ 无尺寸判据 ⇒ 不登记 */
+    if (len != (size_t)want) return;                 /* ★ 尺寸必须精确相等 */
+
+    for (i = 0; i < CANVAS_MAX; i++) {
+        if (g_canvas[i].addr == p) { g_canvas[i].len = want; return; }
+        if (g_canvas[i].addr == 0 && free_i < 0) free_i = i;
+    }
+    if (free_i < 0) free_i = 0;               /* 满了就复用 0 号（最旧） */
+    g_canvas[free_i].addr = p;
+    g_canvas[free_i].len  = want;
+    g_canvas[free_i].seq  = ++g_canvas_seq;
+
+    /* ★ 把"最新画布"写进桩 —— **实测无效，已停用**（2026-10-04 第 137 轮）。
+     *
+     *   停用原因（硬证据，两条）：
+     *     ① `driver.so` 的 `mmap` 是**自封定义**（`.symtab` 有 `mmap@@GLIBC_2.4`，
+     *        不是 UNDEF）⇒ 直接发 `SVC`，**绕过 glibc 包装**；
+     *     ② 实测：本函数一次都没被触发（shim 的「画布登记」日志**零行**）
+     *        —— 即使参数完全吻合（strace 里确有
+     *        `mmap2(NULL,3276800,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0)`）。
+     *   ⇒ 宿主侧 LD_PRELOAD 拦不到 guest 自封的 syscall。
+     *   ⇒ 观测点已改到**桩自己的 `drmModeAddFB2`**（内核 GEM 路径），见 drm_stub.c。
+     *
+     *   保留这段登记逻辑的理由：① 它是**正确**的判据（尺寸精确相等）；
+     *   ② 若将来 driver.so 改用 libc mmap（即走包装），它会立刻生效；
+     *   ③ 它是"为何不能靠追私有画布"的**活证据**（删掉就没人知道为什么）。
+     *   —— 但**桩已不再读它**（`canvas_current()` 已删）。 */
+    if (0) {
+        void **slot = shim_stub_canvas_slot();
+        if (slot != 0) *slot = p;
+    }
+}
+
+/* munmap 时注销，避免把已释放的页当画布算哈希（否则读到的是别的映射） */
+void shim_canvas_forget(void *addr, size_t len)
+{
+    int i;
+    for (i = 0; i < CANVAS_MAX; i++)
+        if (g_canvas[i].addr == addr) g_canvas[i].addr = 0;
+    /* ★ 若桩正指着这块被释放的画布，必须把槽清空 ——
+     *   否则桩会在呈现点哈希一块**已 munmap** 的页（读到的是别的映射 ⇒ 假画面）。 */
+    {
+        void **slot = shim_stub_canvas_slot();
+        if (slot != 0 && *slot == addr) {
+            /* 退回"最新登记的仍有效画布"；没有就 0（桩会如实报无） */
+            int k, best = -1;
+            for (k = 0; k < CANVAS_MAX; k++) {
+                if (g_canvas[k].addr == 0) continue;
+                if (best < 0 || g_canvas[k].seq > g_canvas[best].seq) best = k;
+            }
+            *slot = best < 0 ? (void *)0 : g_canvas[best].addr;
+        }
+    }
+}
+
+/* ---- 诊断用只读查询（**桩不依赖这两个**）----
+ * ★ 数据流已改为 shim → 桩的单向写入（见 shim_stub_canvas_slot 的注释）。
+ *   这两个函数保留作**诊断**：报告里打「候选画布数 / 当前画布地址」，
+ *   用来识别"画布登记是否命中、是否有歧义"，避免只有哈希看不出问题在哪。 */
+__attribute__((visibility("default")))
+void *shim_canvas_latest(void)
+{
+    int i, best = -1;
+    for (i = 0; i < CANVAS_MAX; i++) {
+        if (g_canvas[i].addr == 0) continue;
+        if (best < 0 || g_canvas[i].seq > g_canvas[best].seq) best = i;
+    }
+    return best < 0 ? (void *)0 : g_canvas[best].addr;
+}
+
+__attribute__((visibility("default")))
+unsigned int shim_canvas_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < CANVAS_MAX; i++) if (g_canvas[i].addr != 0) n++;
+    return (unsigned int)n;
+}
+
 void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
 {
     unsigned long uoff = (unsigned long)off;
 
+    /* ★★★ 2026-10-04（第 137 轮）：接管 DRM 桩的帧缓冲映射。
+     *   桩（libdrm.so.2 替身）在 `MAP_DUMB` 里回填的 offset 就是**它自己那块 buffer**
+     *   的真实地址（真实内核语义：mmap 映射到 GEM buffer 的 vma，不是副本）。
+     *   ⇒ 这里识别出"该 offset 是桩持有的帧缓冲"就把 guest 视图接到**同一块内存**上，
+     *      画面即被写入桩能观测的那份实体，桩在 `drmModePageFlip` 处逐字节哈希。
+     *   取不到桩符号（未启用 CGM_DRM_STUB）⇒ 走原有路径，行为一字不变。 */
+    if (fd >= 0 && (flags & MAP_SHARED) && (prot & PROT_WRITE)) {
+        void *fb = shim_drm_fb_lookup(uoff, len);
+        if (fb != 0) return fb;
+    }
+
     if (fd >= 0 && (flags & MAP_SHARED) && (prot & PROT_WRITE)
         && uoff >= PHYS_OFF_MIN) {
-        /* 物理寄存器映射 ⇒ 给一块真实可写的匿名零页（"映射成功，但设备不存在"） */
         void *p = sys_mmap2(NULL, len, PROT_READ | PROT_WRITE,
                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (p != MAP_FAILED) {
+            /* ★★★ 2026-10-04（第 137 轮）**画布登记**。
+             *   取证结论（strace 实录，57 次 mmap 逐条归类）：
+             *     · 桩的 `dumb buffer` 实体地址**从未**被当作 mmap offset 使用；
+             *     · `driver.so` 全部画面走的是
+             *       `mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)`
+             *       并伴随 `munmap(旧)+mmap(新)` 的成对序列（它自己管画布生命周期），
+             *       再把画面 blit 到 DRM 呈现路径。
+             *   ⇒ 像素**不在 dumb buffer 里**，在 `driver.so` 的私有画布里。
+             *   ⇒ 所以 shim 在这里登记「尺寸与 CREATE_DUMB 回填的 size 一致的匿名映射」
+             *      为**候选画布**，供桩在呈现点取真实像素。
+             *   ★ 判据纪律：只登记**尺寸精确相等**的（不是"看起来像"），
+             *      登记不到就桩那边如实报无，不猜。 */
+            shim_canvas_note(p, len);
             if (uoff == SFC_REG_OFF) {
                 if (!g_mode_ready) {           /* CGM_SFC_MODE=seed 可回退旧行为 */
                     const char *md = getenv("CGM_SFC_MODE");
@@ -1376,6 +1821,22 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
         }
         /* 匿名映射也失败 ⇒ 退回原语义，让上层自己去报错 */
     }
+
+    /* ★★★ 画布登记的**真实入口**（2026-10-04 第 137 轮）。
+     *   上面那个分支要求 `fd >= 0 && MAP_SHARED`，而 `driver.so` 的画布是
+     *   `mmap(NULL, size, PROT_RW, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)`
+     *   —— **fd = -1** ⇒ 根本进不去 ⇒ 上一处登记永远不会触发（实测确实 0 候选）。
+     *   ⇒ 这里覆盖「匿名可写映射」这一类，与 fd 无关。
+     *   尺寸判据仍是**与桩 CREATE_DUMB 回填的 size 精确相等**（见 shim_canvas_note）。 */
+    if (fd < 0 && (flags & MAP_ANONYMOUS) && (prot & PROT_WRITE)) {
+        void *p = sys_mmap2(addr, len, prot, flags, -1, uoff);
+        if (p != MAP_FAILED) {
+            shim_canvas_note(p, len);
+            return p;
+        }
+        return MAP_FAILED;
+    }
+
     return sys_mmap2(addr, len, prot, flags, fd, uoff);
 }
 
@@ -1588,11 +2049,16 @@ int munmap(void *addr, size_t len)
 {
     long r;
 
+    /* ★ 2026-10-04（第 137 轮）：注销画布登记 ——
+     *   否则桩会把**已释放**的页当"当前画面"算哈希（读到的是别的映射 ⇒ 假画面）。
+     *   取证背景见 shim_canvas_note 的注释：driver.so 伴随 munmap+mmap 成对换画布。 */
+    shim_canvas_forget(addr, len);
+
     /* 设备页被解除映射后必须"撤防"，否则处理器会把普通缺址当成设备访问 */
     if (g_sfc_base && (unsigned long)addr >= (unsigned long)g_sfc_base
         && (unsigned long)addr < (unsigned long)g_sfc_base + g_sfc_pagelen) {
         note("[shim] SFC 设备撤防（munmap %p）：faults=%lu cmds=%lu unhandled=%lu mmio_trace_seq=%lu\n",
-             addr, g_faults, g_cmds, g_unhandled);
+             addr, g_faults, g_cmds, g_unhandled, g_mmio_seq);
         sfc_disarm();
     }
     r = syscall(__NR_munmap, addr, len);

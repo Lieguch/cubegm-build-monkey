@@ -51,12 +51,17 @@ python3 -c "import elftools" 2>/dev/null || {
 }
 say "  pyelftools=$(python3 -c 'import elftools;print("OK")' 2>&1 | tail -1) capstone=$(python3 -c 'import capstone;print("OK")' 2>&1 | tail -1) unicorn=$(python3 -c 'import unicorn;print("OK")' 2>&1 | tail -1)"
 
-# ---- 跨平台门禁：ABI / PT_INTERP（★ 第 109 轮新增，不依赖 arm objdump）----
+# ---- 跨平台门禁：ABI / PT_INTERP / 假桩产物（★ 不依赖 arm objdump）----
 #  为什么必须是独立一块：下面 ALL 里的门禁**全都依赖 arm-linux-gnueabihf-objdump**，
-#  而这两条只读 ELF 头 —— 装在 Windows/CNB 都能跑，没理由等 objdump。
-#  ★ 它们守住的是"设备能不能 exec 起来"这一层：真机 `execve` 只认 PT_INTERP 的绝对路径。
+#  而这几条只读 ELF 头 / 只需一个 armhf 编译器 —— 装在 Windows/CNB 都能跑，没理由等 objdump。
+#  ★ 它们守住的是"设备能不能 exec 起来 / 沙箱里 driver.so 能不能被桩喂饱"这一层：
+#    真机 `execve` 只认 PT_INTERP 的绝对路径；driver.so 只认 libdrm/libasound 的导出符号。
+#  ★ 第 163 轮新增 `sh tools/driver_stub_elf_gate.sh`（假桩产物级第三腿）：
+#    源级判据只管"符号写在桩源里"，产物级对**编出来的 DSO 的 .dynsym** 断覆盖，
+#    并造 objcopy 反例自证判别力。它的 rc=3 = "无 objcopy，反例腿跳过"
+#    ⇒ 计"前置缺失"而非失败（与下面 ALL 循环同一口径）。
 say ""
-say "== 跨平台门禁：ABI / PT_INTERP =="
+say "== 跨平台门禁：ABI / PT_INTERP / 假桩产物 =="
 fail=0
 for spec in "tools/abi_check.py build/rkgame.rebuilt.elf" \
             "tools/enforce_interp.py --check build/rkgame.rebuilt.elf" \
@@ -65,12 +70,19 @@ for spec in "tools/abi_check.py build/rkgame.rebuilt.elf" \
             "tools/ssh_literal_guard.py tools/cnb_ladder.sh" \
             "tools/ssh_literal_guard.py --selftest" \
             "tools/pre_device_gate.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin golden/device_rootfs_min" \
-            "tools/fimg_ref_audit.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin"; do
+            "tools/fimg_ref_audit.py build/rkgame.rebuilt.elf golden/factory.rkgame.bin" \
+            "tools/_r165_abi_selftest.py" \
+            "sh tools/driver_stub_elf_gate.sh"; do
     say "########## $spec ##########"
-    python3 $spec >>"$OUT" 2>&1
+    case "$spec" in
+        sh\ *) sh $spec >>"$OUT" 2>&1 ;;
+        *) python3 $spec >>"$OUT" 2>&1 ;;
+    esac
     rc=$?
     say "  [$spec] rc=$rc"
-    [ "$rc" = "0" ] || fail=$((fail + 1))
+    if [ "$rc" = "0" ]; then :;
+    elif [ "$rc" = "3" ]; then say "      （前置缺失，不计入失败）";
+    else fail=$((fail + 1)); fi
 done
 
 # ---- 门禁清单（每个：名字 → 需要的额外参数）----

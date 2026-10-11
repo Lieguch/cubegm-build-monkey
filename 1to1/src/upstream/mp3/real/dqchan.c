@@ -47,12 +47,28 @@
 typedef int ARRAY3[3];	/* for short-block reordering */
 
 /* optional pre-emphasis for high-frequency scale factor bands */
-static const char preTab[22] = { 0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,2,2,3,3,3,2,0 };
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static char preTab[22] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:275 已有的镜像别名
+ *   `.set preTab, __f_rodata_base + 0x85d0`（= 工厂地址 共 22 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/dqchan.c
+ */
+extern const char preTab[];
+
 
 /* pow(2,-i/4) for i=0..3, Q31 format */
-static const int pow14[4] = { 
-	0x7fffffff, 0x6ba27e65, 0x5a82799a, 0x4c1bf829
-};
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int pow14[4] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:263 已有的镜像别名
+ *   `.set pow14, __f_rodata_base + 0x84c0`（= 工厂地址 共 16 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/dqchan.c
+ */
+extern const int pow14[];
+
 
 /* pow(2,-i/4) * pow(j,4/3) for i=0..3 j=0..15, Q25 format */
 static const int pow43_14[4][16] = {
@@ -78,20 +94,16 @@ static const int pow43_14[4][16] = {
 };
 
 /* pow(j,4/3) for j=16..63, Q23 format */
-static const int pow43[] = {
-	0x1428a2fa, 0x15db1bd6, 0x1796302c, 0x19598d85, 
-	0x1b24e8bb, 0x1cf7fcfa, 0x1ed28af2, 0x20b4582a, 
-	0x229d2e6e, 0x248cdb55, 0x26832fda, 0x28800000, 
-	0x2a832287, 0x2c8c70a8, 0x2e9bc5d8, 0x30b0ff99, 
-	0x32cbfd4a, 0x34eca001, 0x3712ca62, 0x393e6088, 
-	0x3b6f47e0, 0x3da56717, 0x3fe0a5fc, 0x4220ed72, 
-	0x44662758, 0x46b03e7c, 0x48ff1e87, 0x4b52b3f3, 
-	0x4daaebfd, 0x5007b497, 0x5268fc62, 0x54ceb29c, 
-	0x5738c721, 0x59a72a59, 0x5c19cd35, 0x5e90a129, 
-	0x610b9821, 0x638aa47f, 0x660db90f, 0x6894c90b, 
-	0x6b1fc80c, 0x6daeaa0d, 0x70416360, 0x72d7e8b0, 
-	0x75722ef9, 0x78102b85, 0x7ab1d3ec, 0x7d571e09, 
-};
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int pow43[] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:266 已有的镜像别名
+ *   `.set pow43, __f_rodata_base + 0x84d0`（= 工厂地址 共 192 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/dqchan.c
+ */
+extern const int pow43[];
+
 
 /* sqrt(0.5) in Q31 format */
 #define SQRTHALF 0x5a82799a
@@ -108,12 +120,27 @@ static const int poly43lo[5] = { 0x29a0bda9, 0xb02e4828, 0x5957aa1b, 0x236c498d,
 static const int poly43hi[5] = { 0x10852163, 0xd333f6a4, 0x46e9408b, 0x27c2cef0, 0xfef577b4 };
 
 /* pow(2, i*4/3) as exp and frac */
-static const int pow2exp[8]  = { 14, 13, 11, 10, 9, 7, 6, 5 };
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int pow2exp[8] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:272 已有的镜像别名
+ *   `.set pow2exp, __f_rodata_base + 0x85b0`（= 工厂地址 共 32 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/dqchan.c
+ */
+extern const int pow2exp[];
 
-static const int pow2frac[8] = {
-	0x6597fa94, 0x50a28be6, 0x7fffffff, 0x6597fa94, 
-	0x50a28be6, 0x7fffffff, 0x6597fa94, 0x50a28be6
-};
+
+/* ★★★ 2026-10-04（第 134 轮）T09 系统性根修 自动迁移（tools/migrate_dup_image_tables.py）：
+ *   原为 `static int pow2frac[8] = {...}` ⇒ 编进自有 .rodata/.data，
+ *   产生 LOCAL 符号**遮蔽**了 src/data/factory_image.S:269 已有的镜像别名
+ *   `.set pow2frac, __f_rodata_base + 0x8590`（= 工厂地址 共 32 字节）。
+ *   ⇒ 产物里同名两份、内容逐字节相同（已逐字节校验），代码读的是**错地址那份**。
+ *   本次改为 extern 引用镜像别名，从此与工厂读同一地址。
+ *   回退：git checkout /workspace/1to1/src/upstream/mp3/real/dqchan.c
+ */
+extern const int pow2frac[];
+
 
 /**************************************************************************************
  * Function:    DequantBlock

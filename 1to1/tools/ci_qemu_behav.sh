@@ -49,7 +49,54 @@ EXEC_KEEP="${CGM_EXEC_KEEP_DIR:-/tmp/cgm_exec_keep}"
 #   ★ 不能硬编码：地址随每次重链接漂移，指到别的函数上会让探针静默失去意义。
 FRAME_TARGET="${CGM_FRAME_TARGET:-spi_driver_init}"
 
-QLIB="$SYSROOT/usr/lib/arm-linux-gnueabihf:$SYSROOT/lib/arm-linux-gnueabihf"
+# ★★★ 2026-10-04（第 135 轮）根修：`QLIB` 原先**硬编 bootlin 的三级目录布局**
+#   （`usr/lib/arm-linux-gnueabihf`），而**设备 rootfs（golden/device_rootfs_min，
+#   来源 org.bin 的 squashfs 分区）的库是扁平 `usr/lib` + `lib/`**
+#   ⇒ 用设备 rootfs 当 SYSROOT 时，`LD_LIBRARY_PATH` 指向两个**不存在的目录**
+#   ⇒ 动态链接器找不到 `libz.so.1` / `libstdc++.so.6`
+#   ⇒ 报 `error while loading shared libraries: libz.so.1: cannot open shared object file`
+#   ⇒ **两侧同为 exit=127、里程碑全 ✗**（差集为空但两边都失败 ⇒ 环境问题，掩盖真实差异）。
+#
+#   为什么之前没暴露：那个 SYSROOT 是 **bootlin63 sysroot**（自带 libz/libstdc++），
+#   恰好掩盖了「QLIB 路径写错」这个缺陷 —— 典型的"环境恰好对，掩盖了配置错误"。
+#   （第 135 轮实测：换新云工作区、只暴露设备 rootfs，才把真因照出来。）
+#
+#   修法（**不硬编任何布局**，按实际存在的目录探测，顺序 = 设备真实优先级）：
+#     ① `$SYSROOT/usr/lib`                （设备 squashfs 布局）
+#     ② `$SYSROOT/usr/lib/arm-linux-gnueabihf` （bootlin/buildroot 布局）
+#     ③ `$SYSROOT/lib/arm-linux-gnueabihf`
+#     ④ `$SYSROOT/lib`
+#   每条**必须真实存在**才加入（`-d` 判定）⇒ 两种 sysroot 都能用，且不会引入
+#   指向不存在目录的噪声项。**与其它显式开关同哲学：不改动默认行为的语义，
+#   只是让默认行为在两种真实布局下都成立。**
+QLIB=""
+for _d in \
+    "$SYSROOT/usr/lib" \
+    "$SYSROOT/usr/lib/arm-linux-gnueabihf" \
+    "$SYSROOT/lib/arm-linux-gnueabihf" \
+    "$SYSROOT/lib"
+do
+    [ -d "$_d" ] && { [ -n "$QLIB" ] && QLIB="$QLIB:$_d" || QLIB="$_d"; }
+done
+# 兜底：若一个都没找到（sysroot 路径错），**响亮失败**而不是让 qemu 在运行时报 127
+# （127 会被差分器算成"两侧同步"，从而掩盖环境错配 —— 这正是第 135 轮踩的坑）。
+if [ -z "$QLIB" ]; then
+    echo "★★ SYSROOT=$SYSROOT 下**一个库目录都没有**（检查了 usr/lib、lib 及 arch 三级目录）" >&2
+    echo "★★  ⇒ sysroot 路径无效；**在此 fail-closed**，不要让 qemu 报 127 被当成'两侧一致'。" >&2
+    exit 12
+fi
+# 记录实际选中的库路径（便于复核"跑的时候到底用了哪些目录"）
+if [ "${CGM_VERBOSE:-0}" = "1" ]; then
+    echo "[QLIB] SYSROOT=$SYSROOT"
+    echo "[QLIB] 选中：$QLIB"
+    echo "[QLIB] 存在哪些 DT_NEEDED 的库："
+    for _s in libz.so.1 libstdc++.so.6 libc.so.6 libm.so.6; do
+        _hit=""
+        for _d in $(echo "$QLIB" | tr ':' ' '); do [ -e "$_d/$_s" ] && { _hit="$_d/$_s"; break; }; done
+        printf '  %-18s %s\n' "$_s" "${_hit:-★未找到}"
+    done
+fi
+
 
 mkdir -p "$OUT"
 
@@ -84,6 +131,38 @@ SHIM_ON=0
 #     于是"严格设备模式"实验得到 violation=0 的**假阴性**。
 #   shim 本身可以用 `zig cc -target arm-linux-gnueabihf.2.29` 在开发机编好（已验证），
 #   没必要要求每台运行机都装交叉编译器。
+# ★★★ 2026-10-04（第 135 轮）**自动探测 ARM 交叉编译器**（根治 shim 静默降级）。
+#   为什么必须自动探测而不是要求调用方传 `CC`：
+#     云开发工作区/CI/本机的可用编译器**各不相同** ——
+#       · CI(GitHub Actions) 装了 `gcc-arm-linux-gnueabihf`（workflow 里 apt 装的）；
+#       · CNB 云开发工作区 **只装了 ziglang**（本项目的编译主力），没有 `cc`；
+#       · Windows 本机有 zig.exe，没有 arm-linux-gnueabihf-gcc。
+#     硬编任何一个都会在其余两个环境失败 ⇒ shim 静默降级 ⇒ M2 之后里程碑全失真。
+#   探测顺序（**从"最像工厂"到"最通用"**，与项目其它脚本口径一致）：
+#     ① 环境变量 `CC`（调用方显式指定，最高优先，不覆盖）
+#     ② 交叉 gcc（`arm-linux-gnueabihf-gcc` / `arm-buildroot-linux-gnueabihf-gcc`）
+#     ③ `zig cc`（**必须有**，否则本项目根本编不出东西）
+#   ★ 探测结果**必须打印** ⇒ 报告里能自证"这一轮 shim 是用什么编的"。
+_cc_detect() {
+    if [ -n "${CC:-}" ]; then echo "$CC"; return 0; fi
+    for c in arm-linux-gnueabihf-gcc arm-buildroot-linux-gnueabihf-gcc; do
+        command -v "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
+    done
+    _zig=$(command -v zig 2>/dev/null || true)
+    if [ -z "$_zig" ]; then
+        _zig=$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)
+    fi
+    [ -n "$_zig" ] && { echo "$_zig cc"; return 0; }
+    return 1
+}
+CC_FOR_SHIM="$(_cc_detect || true)"
+if [ -z "$CC_FOR_SHIM" ]; then
+    echo "★★ 找不到任何 ARM 交叉编译器（CC 未设、无 arm-*-gcc、无 zig）"
+    echo "★★   修法：apt-get install -y gcc-arm-linux-gnueabihf   或   pip install ziglang"
+else
+    echo "[shim] 交叉编译器 = $CC_FOR_SHIM"
+fi
+
 if [ -n "${CGM_SHIM_SO:-}" ]; then
     if [ -f "$CGM_SHIM_SO" ]; then
         cp -f "$CGM_SHIM_SO" "$SHIM"
@@ -93,11 +172,36 @@ if [ -n "${CGM_SHIM_SO:-}" ]; then
         echo "!! CGM_SHIM_SO 指定了不存在的文件：$CGM_SHIM_SO"
         SHIM=""
     fi
-elif [ "${CGM_GUEST_SHIM:-1}" = "1" ] && sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
+elif [ "${CGM_GUEST_SHIM:-1}" = "1" ] && [ -n "$CC_FOR_SHIM" ] && \
+     CC="$CC_FOR_SHIM" sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
     SHIM_ON=1
     echo "guest shim = $SHIM（已构建；两侧都加载它）"
 else
-    echo "!! guest shim 构建失败/被禁用 ⇒ 本轮**不带 shim**（可观测窗口较浅）；日志见 $OUT/shim_build.txt"
+    # ★★★ 2026-10-04（第 135 轮）**根修 + 根因记录**：
+    #   症状 = M2（SPI/SFC 初始化）恒 ✗、M5/M6/M7 全 ✗，exit=139。
+    #   真因 = **不是 shim 不可用**，而是**编译 shim 用的编译器不对**：
+    #     `build_guest_shim.sh` 默认 `CC=cc`（宿主 x86 gcc），
+    #     而云工作区**没装 cc** ⇒ `cc: command not found` ⇒ 编译失败
+    #     ⇒ 走到 `else` 分支**静默降级**为「不带 shim 跑」。
+    #   为什么这段静默降级是**缺陷本身**：
+    #     它把「工具链缺失（可修）」与「shim 不可用（不可修）」两种情形
+    #     压成同一条提示，且**继续跑完**⇒ 报告看起来「只是 shim 没带」，
+    #        而真实后果是 M2 之后**整个里程碑链全部失真**。
+    #     ⇒ 必须**响亮报告 + 指出修法**，否则每轮都会重复踩。
+    echo "★★ guest shim 构建失败 ⇒ M2(SFC) 之后的里程碑全部失真，**本轮结论不可用于 T10**。"
+    echo "★★ 日志：$OUT/shim_build.txt"
+    #   自动诊断：把最常见的三种真因直接指出来（省掉一轮"猜"）。
+    if [ -z "$CC_FOR_SHIM" ]; then
+        echo "★★ 真因：**找不到任何 ARM 交叉编译器**（CC 未设 / 无 arm-*-gcc / 无 zig）。"
+        echo "★★   修法：apt-get install -y gcc-arm-linux-gnueabihf   或   pip install ziglang"
+    elif grep -qE 'cc: command not found|gcc: command not found' "$OUT/shim_build.txt" 2>/dev/null; then
+        echo "★★ 真因：**宿主 C 编译器缺失**（CC=cc 找不到）。"
+        echo "★★   修法：apt-get install -y gcc"
+    elif grep -qE 'unable to create module|requires position independent' "$OUT/shim_build.txt" 2>/dev/null; then
+        echo "★★ 真因：zig driver 拒绝该目标组合（见 PROJECT-MEMORY 的 PIC 限制）。"
+    else
+        echo "★★ 真因未归类 ⇒ **不要猜**，按 shim_build.txt 的真实报错逐条取证。"
+    fi
     SHIM=""
 fi
 
@@ -136,7 +240,7 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done
@@ -151,6 +255,24 @@ mk_wrap() {
     if [ "${CGM_LIBKMS_STUB:-0}" = "1" ] && [ -d "$ROOT/report/stublib" ]; then
         _LIBPATH="$QLIB:$ROOT/report/stublib"
     fi
+    # ★★★ 2026-10-04（第 135 轮）**第三个同族静默降级 → 改 fail-closed**。
+    #   症状：里程碑矩阵里 M2/M5/M6/M7 全 ✗，而报告只显示 M3/M4 ✓ —— 看起来"启动链正常"，
+    #         实际程序在 `video_drivers_init → gr_init` 就崩了（`driver.so + 0x3ca8`
+    #         的 `ldr r3,[r3]`，r3=0；si_addr=NULL），**后面那些里程碑根本没机会发生**。
+    #   真因：桩目录不存在（`stublib`/`drmstublib`/`alsastublib` 全空）⇒ 上面的
+    #         `[ -d ... ]` / `[ -f ... ]` 判定为假 ⇒ **桩没注入** ⇒ LD_LIBRARY_PATH 里
+    #         是真 `libdrm.so.2` ⇒ 沙箱无真 DRM ⇒ `gr_init()` 返 NULL ⇒ 必崩。
+    #   为什么必须 fail-closed：这已经和 `QLIB`（指向不存在目录）、guest shim
+    #   （编译器缺失）构成**同族三例** ——「环境/工具缺失 → 静默降级 → 报告仍然跑完
+    #   → 结论失真」。三例的共同修法都是**缺了就响亮失败，不许静默跳过**。
+    #   ⇒ 开了 `CGM_*_STUB=1` 却找不到对应桩 ⇒ **就地退出 12**，并给出修法。
+    if [ "${CGM_LIBKMS_STUB:-0}" = "1" ] && [ ! -d "$ROOT/report/stublib" ]; then
+        echo "★★ 开了 CGM_LIBKMS_STUB=1 但 $ROOT/report/stublib 不存在 ⇒ 桩没注入" >&2
+        echo "★★   后果：driver.so 会用**真 libkms** → 沙箱无真 KMS → 后面必崩，" >&2
+        echo "★★        而里程碑报告会显示成「只是没到那几步」，**结论失真**。" >&2
+        echo "★★   修法：先跑 sh tools/build_libkms_stub.sh（CC 要指向 ARM 交叉编译器）。" >&2
+        exit 12
+    fi
     # ★★ 场景 C2（`CGM_DRM_STUB=1`）：桩 `libdrm.so.2` —— 让厂商闭源 driver.so 的图形初始化能过。
     #   为什么需要（2026-09-19 实测定案，见 GAP 16.22）：
     #     设备真实 rootfs 有 `libkms.so.1` ⇒ `dlopen(driver.so)` 成功 ⇒ 进 `video_drivers_init()`
@@ -160,6 +282,14 @@ mk_wrap() {
     #       而"历史 48/68/76 覆盖率"恰恰是 driver.so **没加载**才走到的 —— 那不是真机路径。
     #   ★ 桩必须排**最前**：否则真 libdrm 先生效，桩白造。
     #   ★ 与 libkms 桩同样是**显式开关**：默认关，不启用时行为一字不变（防"环境改动泄漏到别的场景"）。
+    if [ "${CGM_DRM_STUB:-0}" = "1" ] && [ ! -f "$ROOT/report/drmstublib/libdrm.so.2" ]; then
+        echo "★★ 开了 CGM_DRM_STUB=1 但 $ROOT/report/drmstublib/libdrm.so.2 不存在 ⇒ 桩没注入" >&2
+        echo "★★   后果（已实测）：driver.so 加载成功 → video_drivers_init → gr_init() 返 NULL" >&2
+        echo "★★        → 崩在 driver.so + 0x3ca8 的 ldr r3,[r3]（r3=0，si_addr=NULL）。" >&2
+        echo "★★        里程碑表现：M2/M5/M6/M7 全 ✗（**看起来像没走到，实际是没机会走到**）。" >&2
+        echo "★★   修法：先跑 sh tools/build_libdrm_stub.sh。" >&2
+        exit 12
+    fi
     if [ "${CGM_DRM_STUB:-0}" = "1" ] && [ -f "$ROOT/report/drmstublib/libdrm.so.2" ]; then
         _LIBPATH="$ROOT/report/drmstublib:$QLIB"
     fi
@@ -171,6 +301,14 @@ mk_wrap() {
     #   ★ 全仓普查：**只有 driver.so 引用 `snd_*`**（工厂 rkgame / 重建 elf / icube 均 0）
     #     ⇒ 整体替换 libasound.so.2 不影响任何其它模块。
     #   ★ 同样是**显式开关**且排在最前：默认关，不启用时行为一字不变（防"环境改动泄漏到别的场景"）。
+    if [ "${CGM_ALSA_STUB:-0}" = "1" ] && [ ! -f "$ROOT/report/alsastublib/libasound.so.2" ]; then
+        echo "★★ 开了 CGM_ALSA_STUB=1 但 $ROOT/report/alsastublib/libasound.so.2 不存在 ⇒ 桩没注入" >&2
+        echo "★★   后果（已实测）：桩 libdrm 打通图形后，两侧都止于" >&2
+        echo "★★        pcm.c:3009: snd_pcm_avail: Assertion 'pcm' failed.（真实 alsa-lib 的断言）" >&2
+        echo "★★        ⇒ driver.so 未检查返回值就用 NULL 句柄 ⇒ abort()。" >&2
+        echo "★★   修法：先跑 sh tools/build_libasound_stub.sh。" >&2
+        exit 12
+    fi
     if [ "${CGM_ALSA_STUB:-0}" = "1" ] && [ -f "$ROOT/report/alsastublib/libasound.so.2" ]; then
         _LIBPATH="$ROOT/report/alsastublib:$_LIBPATH"
     fi

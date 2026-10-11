@@ -53,6 +53,13 @@ def read_sections(p):
                 pass
     return secs
 
+# ★ 链接器保留符号：任何用户侧 `.globl`/`.set` 定义都会触发
+#   `ld.lld: error: cannot redefine linker defined symbol`。
+#   本工具目前因 `.got` 不在 MIRRORED 内而恰好不会输出 GOT 锚，但这是
+#   隐式旁路 —— 显式拉黑，防止 symtab/段归属变化时同类故障复现。
+RESERVED_SYMBOLS = frozenset({'_GLOBAL_OFFSET_TABLE_'})
+
+
 def read_image_aliases(root='src/data/factory_image.S'):
     """已由工厂镜像模块别名的符号名集合（避免重复定义）"""
     names = set()
@@ -82,8 +89,10 @@ def main():
     # 手工补充：Ghidra 恢复名（非真实符号）→ 真实地址（工厂证据）
     # crc_table = _ZL9crc_table @0x002e01c4 (l O .rodata, 1024B) —— XUnzip.cpp 内嵌 zlib 的 CRC 表
     EXTRA = {'crc_table': ('.rodata', 0x002e01c4 - 0x002dbca0)}
-    hits = sorted(set(n for n in undef if n in loc and loc[n][2] in MIRRORED and n not in already)
-                  | set(n for n in undef if n in EXTRA and n not in already))
+    hits = sorted(set(n for n in undef if n in loc and loc[n][2] in MIRRORED
+                      and n not in already and n not in RESERVED_SYMBOLS)
+                  | set(n for n in undef if n in EXTRA and n not in already
+                        and n not in RESERVED_SYMBOLS))
     skipped = sorted(n for n in undef if n in loc and loc[n][2] not in MIRRORED)
     for n in skipped:
         print('  跳过 %s（段 %s 未镜像，由 CRT/链接器提供）' % (n, loc[n][2]))
@@ -104,6 +113,9 @@ def main():
         L.append('.globl %s' % n)
         L.append('.set %s, __f%s_base + 0x%x' % (n, sec.replace('.', '_'), off))
         print('  alias %-24s %s+0x%x (size 0x%x)' % (n, sec, off, sz))
+    # ★ 机械门禁：输出物不得含任何链接器保留符号（fail-closed，先于链接器报错）
+    leaked = [ln for ln in L if any(r in ln for r in RESERVED_SYMBOLS)]
+    assert not leaked, 'gen_local_alias 泄漏保留符号: %r' % leaked
     open(outp, 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
     print('共 %d 个别名 → %s' % (len(hits), outp))
 

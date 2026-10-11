@@ -30,6 +30,13 @@ __f_data_base:
 	.incbin "factory_data.bin"
 	.size __f_data_base, 0x2cfc
 
+	.section .fimg_got,"aw",%progbits
+	.globl __f_got_base
+	.type __f_got_base, %object
+__f_got_base:
+	.incbin "factory_got.bin"
+	.size __f_got_base, 0x478
+
 	.section .fimg_bss,"aw",%nobits
 	.globl __f_bss_base
 	.type __f_bss_base, %object
@@ -2777,6 +2784,9 @@ __f_bss_pad_base:
 	.globl user_joy_key_mask
 	.set user_joy_key_mask, __f_data_base + 0x1154
 	.size user_joy_key_mask, 0x100
+	.globl default_core_list
+	.set default_core_list, __f_data_base + 0x1254
+	.size default_core_list, 0x1a90
 	.globl DAT_003b0274
 	.set DAT_003b0274, __f_data_base + 0x1274
 	.size DAT_003b0274, 0x0
@@ -2810,6 +2820,11 @@ __f_bss_pad_base:
 	.globl _libiconv_version
 	.set _libiconv_version, __f_data_base + 0x2cf8
 	.size _libiconv_version, 0x4
+
+/* .got：2 个符号 */
+	.globl PTR_DisplayZoomFlag_003b1e5c
+	.set PTR_DisplayZoomFlag_003b1e5c, __f_got_base + 0x160
+	.size PTR_DisplayZoomFlag_003b1e5c, 0x4
 
 /* .bss：193 个符号 */
 	.globl completed.10349

@@ -75,32 +75,36 @@ say() { echo "$@" | tee -a "$OUT"; }
 
 # ---- 取对照工具链 -----------------------------------------------------------
 ensure_tc() {
-    # ★ `.ok` 由 `touch` 创建（0644）⇒ 判定必须用 `-f`，`-x` 永远不命中（会重复下载）。
-    [ -f "$TC/.ok" ] && return 0
-    mkdir -p cache_tc
-    if [ ! -s "$TC.tar.bz2" ]; then
-        echo "  下载 bootlin63（约 64 MB）...  url=$TC_URL"
-        curl -fsSL --retry 3 --retry-delay 2 --max-time 900 -o "$TC.tar.bz2" "$TC_URL" \
-            2>report/_ab_tc.txt
-        rc=$?
-        if [ "$rc" != "0" ]; then
-            echo "   ★★ 下载失败 curl rc=$rc"; sed 's/^/     /' report/_ab_tc.txt | head -6
-            echo "     --- 环境事实（URL / 网络 / 磁盘）---"; df -h . 2>/dev/null | head -3
-            return 1
-        fi
-    fi
-    echo "  tarball = $(stat -c%s "$TC.tar.bz2" 2>/dev/null) B；解压中 ..."
-    rm -rf "$TC"; mkdir -p "$TC"
-    tar -xjf "$TC.tar.bz2" -C "$TC" --strip-components=1 2>report/_ab_tc.txt
+    # ★★ 2026-10-03（第 121 轮，判据 TC-DOWNLOAD-DEFECT.md T1）**统一到一份 curl**。
+    #   病灶：本函数原先**内嵌一份自己的 curl**（缺 `-4`、且 `--max-time 900` 在
+    #   CNB→bootlin 的 IPv6 劣速下必然超时：63MB ÷ 27KB/s ≈ 39 分钟 ≫ 15 分钟）。
+    #   ★HANDOFF §3.3 当初只修了 `tools/fetch_bootlin63.sh`（独立脚本），
+    #     这份**内嵌副本没被修到** ⇒ 同一个 URL 有两处 curl、只有一处带 `-4`。
+    #   根治：不再自己拼 curl，改为**复用 fetch_bootlin63.sh**
+    #   （它是幂等的、且带 Content-Length + `bzip2 -t` 双重完整性校验，质量更高）。
+    #   纪律：同一规则禁止写两处。
+    sh tools/fetch_bootlin63.sh
     rc=$?
     if [ "$rc" != "0" ]; then
-        echo "   ★★ 解压失败 tar rc=$rc"; sed 's/^/     /' report/_ab_tc.txt | head -6
+        echo "   ★★ 抓取工具链失败 rc=$rc（详见上方输出）"
         df -h . 2>/dev/null | head -3
         return 1
     fi
-    touch "$TC/.ok"
+    # 关键输入自检：不是"tar 在就算成功"，而是**链接期真正需要的文件**在不在
+    #   （crt1.o / libc_nonshared.a / libgcc.a —— 见 fetch_bootlin63.sh 头部取证）
+    _missing=""
+    for _f in "$TC/bin/arm-buildroot-linux-gnueabihf-gcc.br_real"; do
+        [ -f "$_f" ] || _missing="$_missing $_f"
+    done
     TCSYS=$(ls -d "$TC"/*/sysroot 2>/dev/null | head -1)
+    [ -n "$TCSYS" ] || _missing="$_missing <sysroot>"
+    if [ -n "$_missing" ]; then
+        echo "   ★★ 工具链目录存在但**关键输入缺失**：$_missing"
+        echo "      （这不是网络问题，是解压不完整；删掉 cache_tc/bootlin63 重试）"
+        return 1
+    fi
     echo "  工具链就绪：$DWGCC"
+    echo "  sysroot：$TCSYS"
 }
 
 # ---- 量一条腿 ---------------------------------------------------------------

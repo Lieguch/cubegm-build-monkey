@@ -336,6 +336,23 @@ jobs:
           #   gen_data_module.SEC_DEF，唯一真源），并校验重名的主/从绑定。
           python3 tools/dup_sym_gate.py --self-test
           python3 tools/dup_sym_gate.py
+          echo '--- 镜像重复副本门禁（第 135 轮）---'
+          # ★ 为什么必须钉进 CI：这是一类**会静默复发**的缺陷。
+          #   机制：`src/data/factory_image.S` 已为每个工厂数据对象生成镜像别名
+          #   （`.globl NAME` + `.set NAME, __f_*_base + off`，地址 = 工厂地址），
+          #   但若有人新增一个 `static const T NAME[] = {...}`，它会编进自有 .rodata/.data
+          #   并产生 **LOCAL** 符号，**在汇编层遮蔽**镜像别名
+          #   ⇒ 产物里同名两份（内容逐字节相同的纯重复副本），
+          #     **代码读的是非工厂地址那份** ⇒ 真机行为与工厂不同。
+          #   真实案例：`default_core_list`（第 131 轮）、`dcttab`/`preTab`/`pow14`/
+          #   `pow43`/`pow2exp`/`pow2frac`/`c18`/`fastWin36`（第 134 轮，共 8 张表）。
+          #   ★ `dup_sym_gate` 检查 3 只能**报**「地址不对」，报不出「为什么会不对」；
+          #     本工具进一步指出**是哪个 .c 的 static 定义遮蔽了别名**，并给出修法。
+          #   ★ 用 `--check`（只读）而不是 `--apply`：CI 只判不修（fail-closed，rc≠0 即红）。
+          #   ★ 工具自身有 20 条自证（含「内容不一致必须跳过」等缺陷态反例），
+          #     先跑自证再跑本体 —— 与本文件其它门禁同一哲学。
+          python3 tools/migrate_dup_image_tables.py --selftest
+          python3 tools/migrate_dup_image_tables.py --check
           echo '--- compat 头 × glibc 的声明一致性（双向自证）★ 硬门禁 ---'
           # ★ 为什么单列一步：`__timezone_ptr_t` 那次冲突在 CI 上**每轮只暴露一个**
           #   （推一次、等 8 分钟）。本步把「我们的声明 vs glibc 2.24 原文」的对拍
@@ -691,6 +708,85 @@ jobs:
           name: 1to1-p2a-report
           path: 1to1/report/
           if-no-files-found: warn
+
+      - name: 中间产物新鲜度门禁（陈旧 .o 会污染判据，必须最先跑）
+        id: s51
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★ 2026-10-05（第 151 轮）引入，第 152 轮提至**所有判据之前**。
+          # 背景（本项目最隐蔽的一类假信号）：
+          #   第 150 轮据「只换一个 .o 后重链」的 A/B 得出「flag 净账 −1，不采纳」，
+          #   第 151 轮追查发现**那个结论是假的** ——
+          #     build/upstream/mp3_buffers.o 的 mtime 比 buffers.c **早 4.5 小时**
+          #     （上游对象没跟着第 144 轮的源码修改重编），
+          #     于是「用陈旧 upstream 链出的产物」里 xmp3_AllocateBuffers 仍指向 memset PLT
+          #     ⇒ batch 报「新增 2 个 DIVERGE」⇒ 被误读成 flag 造成回退。
+          #   实测：同一份 obj 连续重链两次 sha **完全相同** ⇒ 链接可复现，元凶就是陈旧 .o。
+          # ★ 为什么必须**排在最前**：陈旧产物会让**其余所有判据**的结论一起失真，
+          #   且症状（"某函数突然发散"）与"真的回退"完全一样。
+          #   先跑它 ⇒ 若 FAIL，后面 s47/s48/s50/s49 的结果只能当"待复核"，不能直接采信。
+          python3 tools/stale_artifact_gate.py --fix-hint
+
+      - name: 重复实现门禁（同名全局函数在多个 TU 各自定义）
+        id: s47
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★ 2026-10-05（第 146 轮）引入。背景：
+          #   工厂二进制里 `ClearBuffer` 只有**一个** GLOBAL 符号（0x2bdefc, 32B），
+          #   而我方代码库曾有**两份**独立实现（复刻版 + 上游 static 版），靠 static
+          #   回避了链接冲突 —— 表面全绿，代价是两份实现的 codegen 各走各的：
+          #   上游那份被 clang 识别成 memset 尾调用、复刻那份被内联掉，
+          #   导致 `xmp3_AllocateBuffers` / `MP3InitDecoder` 双双 DIVERGE，
+          #   而根因**完全不在这两个函数上**（真正的差异是"调自己的 ClearBuffer"
+          #   还是"调 libc memset"）。删掉重复实现后 DIVERGE 17 → 16。
+          # ⇒ 本门禁把那次人工发现固化为常设检查。
+          # ⚠ 它是**源侧**门禁（查"多实现"），产物侧的"漏实现"只作观察项报出、
+          #   不参与失败判定（gcc 的 .part/.isra/.constprop 命名差异会造成假红）。
+          python3 tools/dup_symbol_gate.py
+
+      - name: 「工厂有定义我方缺失」符号分类（命名归一后再判缺）
+        id: s48
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★ 2026-10-05（第 146 轮）引入。背景：
+          #   直接比对两侧 FUNC 符号集合会得到「工厂有、我方缺 19 个」，
+          #   逐项核实后**全部有解释**（5 个 CRT 口径 + 11 个 gcc 克隆后缀命名差异
+          #   + 2 个 tail-call thunk + 1 个 static inline 被内联），
+          #   **真漏实现 = 0**。不归一化就会把这些差异当成缺口 ⇒ 假红。
+          # ⇒ 本步骤先做命名归一（点号/下划线两种克隆后缀、两侧对称），
+          #   只让「归一后仍缺」的参与失败判定。
+          python3 tools/missing_func_classify.py
+
+      - name: 分配类 builtin 合并形态留痕（malloc+memset → calloc）
+        id: s50
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★ 2026-10-05（第 151 轮）引入。背景：
+          #   clang 会把 `p=malloc(n); memset(p,0,n);` 合并成 `calloc(n,1)`，
+          #   工厂 gcc 6.2 不合并 ⇒ 运行期 `calls_ext` 出现真实差异
+          #   （TestLibz0 实测：工厂 malloc+memset vs 我方 calloc）。
+          #   第 150 轮实测 `-fno-builtin-malloc` 可精确对齐工厂形态。
+          # ⚠ 本步骤**只登记不判失败**：合并是合法优化，是否收敛以
+          #   `diff_exec` 的运行期 calls_ext 为准；这里是静态形态留痕，
+          #   供人工复核时快速定位（两侧口径统一走 plt_map，勿改）。
+          python3 tools/builtin_merge_gate.py --all
+
+      - name: 上游定点宏 codegen 语义门禁（MULSHIFT32 等，MP3 族）
+        id: s49
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★ 2026-10-05（第 149 轮）引入。背景：
+          #   helix 的 `MULSHIFT32(x,y) = ((int64_t)x*(int64_t)y) >> 32` 取**高 32 位**。
+          #   若编译器把该语义整体丢掉，MP3 解码输出会被污染，而**编译/链接/ABI 全绿**，
+          #   只有行为差分能发现 ⇒ 需要一个静态可拦的检查。
+          #   判据只管「有没有 64→高 32 位乘法」（smmul/smull/umull/smal/umal），
+          #   **形态差异不判失败**（第 149 轮已用 qemu-arm 8/8 实测语义等价）。
+          python3 tools/mulshift_gate.py
 
       - name: 门禁总账（★ 逐步骤收齐：任何一步失败都在这里一次性报全并硬失败）
         id: s42

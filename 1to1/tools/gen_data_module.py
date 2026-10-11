@@ -38,11 +38,21 @@ FIMG = {'.text': '.fimg_text',
         '.data.rel.ro_local': '.fimg_data_rel_ro_local',
         '.data.rel.ro.local': '.fimg_data_rel_ro_local',
         '.data': '.fimg_data',
+        # ★ 2026-10-04（第 138 轮）新增：工厂 .got 落在 0x3B1CFC–0x3B2174（1144 B），
+        #   正好在 .data 末端与 .bss 之间的空洞里，此前镜像**完全没覆盖**。
+        #   后果（实测）：0x3B1E10（PTR_key2）工厂=0x3E190C、我方=0
+        #   ⇒ unzlocal_SearchCentralDir 读 key2 得 0 ⇒ 永远找不到 EoCD 签名
+        #   ⇒ zip 打不开，只能靠 shim 的 CGM_KEY2_SEED 假象"跑通"。
+        #   量化：globals.h 里 279 个 PTR_* 曾全仓零引用（tools/scan_ptr_init.py）；
+        #   ★ R159 起：mui_video_setting 首个引用 PTR_DisplayZoomFlag_003b1e5c，
+        #     被引用 PTR_* 的别名改由 RE_PTR（见下）通用供应。
+        '.got': '.fimg_got',
         '.bss': '.fimg_bss'}
 SEC_DEF = [('.text', 'a', 'progbits', None),
            ('.rodata', 'a', 'progbits', None),
            ('.data.rel.ro.local', 'aw', 'progbits', None),
            ('.data', 'aw', 'progbits', None),
+           ('.got', 'aw', 'progbits', None),
            ('.bss', 'aw', 'nobits', None)]
 
 # ★★ 工厂 .text 的**声明 size 越界**：0x9b10 + 0x2D21B8 = 0x2DBCC8，已经压到
@@ -50,6 +60,12 @@ SEC_DEF = [('.text', 'a', 'progbits', None),
 #    否则会把 .fini/.rodata 的头 0x30 字节一起吞进 .fimg_text。
 #    依据：工厂节表实测（.fini file off 0x2d3c98 / .rodata file off 0x2d3ca0）。
 MIRROR_END = {'.text': 0x2dbc98}
+
+# ★ R159：GOT_ANCHOR_VMA 已移除。
+#   第 138 轮曾为工厂 `.got` 锚符号 `_GLOBAL_OFFSET_TABLE_`（0x3b1fc4）生成 `.set` 别名，
+#   但 `_GLOBAL_OFFSET_TABLE_` 是 **lld 保留符号**，任何用户侧定义（含 `.set`）都会触发
+#   `cannot redefine linker defined symbol`。工厂 .got 数据已由 .incbin 完整镜像，
+#   数据访问走段内别名（PTR_* / DAT_*），不依赖该锚 ⇒ 不再需要。
 
 # ★★ 镜像尾部 slack（页对齐的一整块零页）
 #   血泪（P5 第一轮真实差分）：工厂进程里 `.bss` 之后**紧邻堆**（brk 就落在 .bss 末尾的下一页，
@@ -93,6 +109,12 @@ RE_DAT = re.compile(r'^DAT_([0-9a-fA-F]{6,8})$')
 # ★ UNK_<hex>：Ghidra 对「落在未命名区域」的地址起的合成名（工厂 .text 段内
 #   的只读数据表就是这种情况：实测 0xD2F00/0x118000 都是 .word 表，不是代码）。
 RE_UNK = re.compile(r'^UNK_([0-9a-fA-F]{6,8})$')
+# ★ R159：PTR_<name>_<8hex> / PTR_<8hex> —— Ghidra 给 .got 内指针槽位起的合成名。
+#   历史上全仓零引用（见下方 46-47 行注释）故从不别名；R158 修复
+#   mui_video_setting 后首次引用 PTR_DisplayZoomFlag_003b1e5c ⇒ 链接 undefined symbol。
+#   通用修法：凡 MISSING 名单里出现的 PTR_*，按尾部 8 位十六进制解析地址、
+#   落到其所在段（通常 .fimg_got）做别名 ⇒ 今后任何 PTR_* 被引用都自动覆盖。
+RE_PTR = re.compile(r'^PTR_(?:.+_)?([0-9a-fA-F]{8})$')
 
 
 def load_layout(p):
@@ -206,15 +228,19 @@ def main():
         if m in syms:
             continue
         md = RE_DAT.match(m) or RE_UNK.match(m)
+        ptr = None
         if not md:
+            ptr = RE_PTR.match(m)       # ★ R159：.got 指针槽位（见 RE_PTR 注释）
+        if not md and not ptr:
             unplaced.append(m)
             continue
-        addr = int(md.group(1), 16)
+        addr = int((md or ptr).group(1), 16)
         s = which_sec(addr)
         if not s:
             unplaced.append(m)
             continue
-        syms[m] = (addr, s, 0)          # DAT_/UNK_ 合成名：真实尺寸未知 ⇒ 0
+        # DAT_/UNK_ 合成名：真实尺寸未知 ⇒ 0；PTR_* 是 4 字节指针槽位 ⇒ 4
+        syms[m] = (addr, s, 4 if ptr else 0)
 
     # ---- 生成汇编 ----
     lines = []
@@ -233,25 +259,49 @@ def main():
         bl = nm.strip('.').replace('.', '_')
         if ty == 'nobits':
             A('\t.space 0x%x' % s['size'])
+            # ★ 2026-10-04（第 138 轮）修：`nobits` 分支**必须 `continue`**。
+            #   病灶：`.bss`（nobits）走完 `.space` 后会**继续往下**落到
+            #   `if nm in SKIP_HEAD: ... else: A(incbin)` ⇒ 又输出一行
+            #   `.incbin "factory_bss.bin"` ⇒ 而 `.bss` 是 NOBITS、**根本没有 bin 文件**
+            #   （`src/data/` 下也确实没有）⇒ 汇编报
+            #   `Could not find incbin file 'factory_bss.bin'` ⇒ factory_local.o 编不出
+            #   ⇒ **1125 个镜像别名一个都不进 DEFINED** ⇒ link_audit 误报 `MISSING=401`。
+            #   为什么以前没炸：`.got` 缺席时 `if/elif` 链的末支是 `else`（Python 语法要求），
+            #   视觉上像"互斥"；我加入 `.got` 分支后改成 `elif nm in SKIP_HEAD: ... else: ...`，
+            #   才把这条**一直存在**的 fall-through 暴露出来。
+            A('\t.size __f%s_base, 0x%x' % (nm.replace('.', '_'), s['size']))
+            A('')
+            if nm == '.bss':
+                # ★ 见文件头 BSS_PAD 注释：恢复「镜像 .bss 之后仍是已映射内存」这一性质。
+                A('\t/* ---- 镜像尾部 slack（%d 字节零填充，页对齐）---- */' % BSS_PAD)
+                A('\t.section .fimg_bss_pad,"aw",%progbits')
+                A('\t.globl __f_bss_pad_base')
+                A('\t.type __f_bss_pad_base, %object')
+                A('__f_bss_pad_base:')
+                A('\t.zero 0x%x' % BSS_PAD)
+                A('\t.size __f_bss_pad_base, 0x%x' % BSS_PAD)
+                A('')
+            continue
+        if nm == '.got':
+            # ★ R159 修正：`_GLOBAL_OFFSET_TABLE_` 是**链接器保留符号**，
+            #   任何用户侧定义（含 `.set`）都会触发
+            #   `ld.lld: error: cannot redefine linker defined symbol`。
+            #   工厂 .got 内容已由 `.incbin` 完整镜像到 `.fimg_got`，
+            #   数据访问走段内别名（如 PTR_DisplayZoomFlag_003b1e5c），
+            #   不依赖 `_GLOBAL_OFFSET_TABLE_` 锚 ⇒ 直接整段 incbin，不定义锚。
+            A('\t.incbin "factory_%s.bin"' % bl)
+            A('\t.size __f%s_base, 0x%x'
+              % (nm.replace('.', '_'), s['size'] - s.get('_skip', 0)))
+            A('')
+            continue
+        if nm in SKIP_HEAD:
+            # ★ bin 文件本身已跳过 SKIP_HEAD 字节（gen 时 blob=elf[off+skip:off+size]），
+            #   此处不能再 skip —— 否则 GNU as 报错、clang 静默截断尾部 4 字节
+            A('\t.incbin "factory_%s.bin"' % bl)
         else:
-            if nm in SKIP_HEAD:
-                # ★ bin 文件本身已跳过 SKIP_HEAD 字节（gen 时 blob=elf[off+skip:off+size]），
-                #   此处不能再 skip —— 否则 GNU as 报错、clang 静默截断尾部 4 字节
-                A('\t.incbin "factory_%s.bin"' % bl)
-            else:
-                A('\t.incbin "factory_%s.bin"' % bl)
+            A('\t.incbin "factory_%s.bin"' % bl)
         A('\t.size __f%s_base, 0x%x' % (nm.replace('.', '_'), s['size'] - s.get('_skip', 0)))
         A('')
-        if nm == '.bss':
-            # ★ 见文件头 BSS_PAD 注释：恢复「镜像 .bss 之后仍是已映射内存」这一性质。
-            A('\t/* ---- 镜像尾部 slack（%d 字节零填充，页对齐）---- */' % BSS_PAD)
-            A('\t.section .fimg_bss_pad,"aw",%progbits')
-            A('\t.globl __f_bss_pad_base')
-            A('\t.type __f_bss_pad_base, %object')
-            A('__f_bss_pad_base:')
-            A('\t.zero 0x%x' % BSS_PAD)
-            A('\t.size __f_bss_pad_base, 0x%x' % BSS_PAD)
-            A('')
     A('/* ---- 符号别名 ---- */')
     per_sec = {nm: [] for nm, _, _, _ in SEC_DEF}
     for name, (addr, sec, sz) in sorted(syms.items(), key=lambda kv: (kv[1][1], kv[1][0])):
@@ -261,6 +311,12 @@ def main():
         A('/* %s：%d 个符号 */' % (nm, len(per_sec[nm])))
         skip = SKIP_HEAD.get(nm, 0)
         for addr, name, sz in per_sec[nm]:
+            if name == '_GLOBAL_OFFSET_TABLE_':
+                continue      # ★ R159 修正（第二处）：链接器保留符号，任何用户侧
+                              #   `.globl`/`.set` 定义都会触发
+                              #   `ld.lld: error: cannot redefine linker defined symbol`。
+                              #   该符号可能经 factory_globals.tsv / _undef_all.txt
+                              #   进入 syms 字典，被本通用循环当普通符号输出 ⇒ 显式跳过。
             off = addr - secs[nm]['addr'] - skip
             if off < 0:
                 continue      # 位于被跳过的 CRT 头部内（_IO_stdin_used）
@@ -308,6 +364,9 @@ def main():
                   ('.fimg_rodata', '.rodata'),
                   ('.fimg_data_rel_ro_local', '.data.rel.ro.local'),
                   ('.fimg_data', '.data'),
+                  # ★ 2026-10-04（第 138 轮）新增：工厂 .got @0x3B1CFC（1144 B）落在
+                  #   .data 末端与 .bss 之间的空洞，此前镜像没覆盖 ⇒ 279 个 PTR_* 全空。
+                  ('.fimg_got', '.got'),
                   ('.fimg_bss', '.bss')]
     for fname, sec in fimg_order:
         vma = secs[sec]['addr'] + SKIP_HEAD.get(sec, 0)
