@@ -142,20 +142,44 @@ jobs:
       - name: 行为采集 + 差分 ★ 硬门禁（设备真机 sysroot + 三桩 + key2seed + key2hook）
         run: |
           cd 1to1
+          # ★ 172 轮：先**接住**门禁退出码再判。
+          #   旧写法在 `bash -e` 下只要门禁非零就当场中断本步 ⇒ 后面的证据断言
+          #   **一次都没执行过**（死代码：run 38223795416 以 rc=3 中断，M6 断言未跑）。
+          #   ⇒ 改为：证据断言**必须**跑完，再按 rc 定性退出（严判不改）。
+          set +e
           SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
           CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu
+          GATE_RC=$?
+          set -e
+          echo "GATE_RC=$GATE_RC"
           echo '--- 硬门禁：driver.so 是否已加载（stdout 不应再出现 libkms 报错）---'
           grep -a "driver.so" report/qemu/rundir_factory/stdout.txt \
                             report/qemu/rundir_rebuild/stdout.txt \
                             report/qemu/rundir_control/stdout.txt \
             | head -5 || echo "(两侧均无 driver.so 报错行 ⇒ 已成功加载)"
           echo '--- 硬门禁：M6/M6R 证据（key2 re-assert 行必须在两侧 stderr 出现）---'
-          for s in factory rebuild; do
+          for s in factory rebuild control; do
             grep -a -m1 "key2 re-assert on open" "report/qemu/rundir_$s/stderr.txt" \
               || { echo "::error::rundir_$s 无 key2 re-assert 行 ⇒ M6 未走到（HOOK 未生效？）"; exit 1; }
           done
+          echo '--- 硬门禁：帧提交观测是否成立（两侧都必须真的在刷帧）---'
+          for s in factory rebuild control; do
+            n=$(grep -a -o 'frame#[0-9][0-9]*' "report/qemu/rundir_$s/stderr.txt" | cut -d'#' -f2 | sort -n | tail -1)
+            echo "rundir_$s 最大提交序号 = ${n:-0}"
+            [ "${n:-0}" -gt 0 ] || { echo "::error::rundir_$s 未观测到任何帧提交 ⇒ 仪器失效（不是被测对象的问题）"; exit 1; }
+          done
+          # ---- 定性退出（严判：任何非零都让本步红，绝不静默）----
+          if [ "$GATE_RC" -eq 0 ]; then
+            echo "硬门禁全过（rc=0）"
+          elif [ "$GATE_RC" -eq 2 ]; then
+            echo "::error::硬门禁 rc=2：B6 全零基线（观测点天花板·诚实红，R171b 单变量已钉死）"
+            exit 2
+          else
+            echo "::error::硬门禁 rc=$GATE_RC（非 0/2 ⇒ 不是已钉死的诚实红，必须逐条查）"
+            exit "$GATE_RC"
+          fi
 
 
       # ★★ 场景 B：注入厂商 ZIP 签名表（key2@0x3E190C）⇒ 资源包**可打开** ⇒ 首次进入菜单正文。

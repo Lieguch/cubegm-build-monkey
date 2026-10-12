@@ -138,7 +138,15 @@ if [ -s "$RUNDIR/stderr.txt" ]; then
     #   ⇒ 从事件流剔除逐帧行；**stderr.txt 原样保留并上传制品**（人仍可查完整回溯）。
     #   ★ 同时补一条**与布局无关**的崩溃形态事件（原始故障地址 + 信号号，不经 norm 的 ADDR 折叠）：
     #     「崩在哪个地址、什么信号」这一最关键语义仍留在硬门禁里，且要求两侧严格相等。
-    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]'         | LC_ALL=C grep -av '^\[shim\] \[sp+[0-9]' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
+    # ★ 172 轮（根修·判据侧）：DRM 桩的帧行（`[drmstub] frame#…`）**不进 events 判据流**。
+    #   为什么（与上面 `[shim] [sp+N]` 逐帧回溯同一类理由，但成因不同）：
+    #     帧行是**仪器自身的探针输出**，其条数与序号取决于 host 调度 ——
+    #     30 s 全速渲染下两侧提交数本就不同（3586 vs 3584），帧号又是调度敏感的；
+    #     把它算进 events ⇒ B0c 确定性控制组的"可复现前缀"会被**调度噪声**打断
+    #     （CI 实测：同一二进制两遍 61/228 ⇒ INCONCLUSIVE）。
+    #   判据不丢：B6（画面哈希）与 B6R（提交数）都从 stderr.txt **原文**提取（见下），
+    #     不经过 events ⇒ 这里剔除的是噪声，不是证据。
+    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]'         | LC_ALL=C grep -av '^\[shim\] \[sp+[0-9]' | LC_ALL=C grep -av '^\[drmstub\] frame#' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
     _cfa=$(LC_ALL=C grep -a -o '真崩溃 @0x[0-9a-fA-F]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*@//')
     _csg=$(LC_ALL=C grep -a -o 'target signal [0-9]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*signal //')
     printf 'C|crash_fault=%s
@@ -220,7 +228,12 @@ _fbline=$(LC_ALL=C grep -a -o '\[drmstub\] frame#[0-9]* hash=[0-9a-f]* dim=[0-9x
           "$RUNDIR/stderr.txt" 2>/dev/null | tail -1)
 if [ -n "$_fbline" ]; then
     FBHASH=$(printf '%s' "$_fbline" | sed -n 's/.* hash=\([0-9a-f]*\).*/\1/p')
-    FBFRAMES=$(LC_ALL=C grep -a -c '\[drmstub\] frame#' "$RUNDIR/stderr.txt" 2>/dev/null || true)
+    # ★ 172 轮（与桩侧根修配套）：桩改为**只打有信息量的帧行**后，
+    #   「帧行数 ≠ 提交次数」（全零场景 3586 次提交只打首帧 + 3 个 1024-checkpoint）。
+    #   ⇒ 提交数改从行内 `frame#N` 的**最大序号**取（N 由桩的 ldrex/strex 原子递增 ⇒ 唯一单调）；
+    #     取最大值而非行数，既不受"行被去重"影响，也天然免疫帧号重复/错位。
+    FBFRAMES=$(LC_ALL=C grep -a -o 'frame#[0-9][0-9]*' "$RUNDIR/stderr.txt" 2>/dev/null \
+               | cut -d'#' -f2 | sort -n | tail -1)
     case "$FBFRAMES" in ''|*[!0-9]*) FBFRAMES=0 ;; esac
     # 桩"无实体"时输出 "frame# --"（无 hash=/dim= 字段），本就被上面的 grep 正则排除；
     # 只有 hash= 后为空（''）才是"没算到哈希" ⇒ 降级 none。

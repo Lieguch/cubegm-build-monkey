@@ -247,9 +247,23 @@ static u32  g_fb_bytes;        /* 实体大小 = pitch * height（内核语义�
 static u32  g_fb_pitch;        /* 每行字节数（内核回填值，须被尊重）    */
 static u32  g_fb_w, g_fb_h, g_fb_bpp;
 static u32  g_fb_flips;        /* PageFlip 次数 = 真实硬件的帧提交次数    */
-/* 256 而非 128：#2974 这类 4 位帧号 + 8 位哈希 + `dim=WxHxBPP` + `src=c`
- * 一起写，128 已经很紧 —— 宁可留余量，也不要在长行上截断（截断会让判据误读）。 */
-static char g_hash_line[256];  /* 最后一次提交的帧哈希（供 shim/capture 读）*/
+
+/* ★★ 2026-10-12（第 172 轮）根修：删除共享行缓冲 `g_hash_line`。
+ *   旧设计把行格式化进**全局**缓冲再 write(2)；两个线程并发提交时，
+ *   A 格式化到一半被 B 覆写 ⇒ A 的 write 打出**残行**（CI 实测证据：
+ *   同一份参考二进制两遍运行，一遍 `frame#10 hash=e96c9dc5`、
+ *   另一遍 `frame#10 hashe96c9dc5` —— 同一个 `=` 字节被对方覆写）。
+ *   新设计：行在**栈上**构造 + 一次 write(2)（长度 ≤ PIPE_BUF ⇒ POSIX 保证管道写原子）
+ *   ⇒ 任何交织下都不可能出现残行。
+ *   同时新增（同样是根修的一部分）：
+ *     · g_fb_lock      —— ARMv7 ldrex/strex 自旋锁，把「取号+实体快照+哈希+打行」串行化
+ *     · g_last_hash    —— 上一次**已打印**的哈希（变化检测，见 fb_commit_hash）
+ *     · g_fb_flips_last_chk —— 上一次 checkpoint 打印时的提交序号
+ *     · g_last_no_px   —— 上一次是否是「无像素实体」状态（状态变化才打行） */
+static volatile u32 g_fb_lock;
+static u32 g_last_hash;
+static u32 g_fb_flips_last_chk;
+static u32 g_last_no_px;
 
 /* ---- 纯 syscall（零 libc 依赖，保持桩的自足性）----
  * ★★ 关键修正（2026-10-04 第 137 轮，自证抓到）：
@@ -396,20 +410,100 @@ static u8 *g_fb2_buf;
 static u32 g_fb2_bytes;
 
 /* 在帧提交点算一次哈希（真实硬件语义：呈现点 = 一帧被送到扫描 out） */
+/* ---------------- ARMv7 独占访问原语（ldrex / strex）----------------
+ * ★ 为什么自己写而不用 __atomic/__sync 内建：本桩 `-nostdlib`，**不链接 libgcc / libatomic**。
+ *   内建在基线架构不支持时会被降级成 **libcall**（链接期才炸，且报错与病因无关）。
+ *   手写 ldrex/strex 是 ARMv7-A 的原生指令（本项目真机 RK3036G = 四核 Cortex-A7）；
+ *   qemu-user 对每个 vCPU 实现了 exclusive monitor（linux-user/main.c `do_strex`；
+ *   qemu 官方定性：good enough for real code）⇒ 语义确定、可用。 */
+static u32 fb_atomic_inc(volatile u32 *p)
+{
+    u32 v, ok;
+    __asm__ __volatile__(
+        "2: ldrex %0, [%2]\n"
+        "   add   %0, %0, #1\n"
+        "   strex %1, %0, [%2]\n"
+        "   teq   %1, #0\n"
+        "   bne   2b"
+        : "=&r"(v), "=&r"(ok)
+        : "r"(p)
+        : "cc", "memory");
+    return v;                 /* 返回**新值** ⇒ 每次提交拿到唯一且单调的序号 */
+}
+
+static void fb_lock_take(volatile u32 *lk)
+{
+    u32 v, ok;
+    __asm__ __volatile__(
+        "1: ldrex %0, [%2]\n"
+        "   cmp   %0, #0\n"
+        "   bne   1b\n"
+        "   mov   %1, #1\n"
+        "   strex %0, %1, [%2]\n"
+        "   teq   %0, #0\n"
+        "   bne   1b"
+        : "=&r"(v), "=&r"(ok)
+        : "r"(lk)
+        : "cc", "memory");
+}
+
+static void fb_lock_drop(volatile u32 *lk)
+{
+    __asm__ __volatile__("dmb sy" ::: "memory");
+    *lk = 0u;
+    __asm__ __volatile__("dmb sy" ::: "memory");
+}
+
+/* ★★★ 2026-10-12（第 172 轮）根修：本函数是「帧提交观测点」，此前是**脆弱设计**。
+ *
+ * 失败现场（GitHub Actions run 38223795416，step 10 判 INCONCLUSIVE rc=3）：
+ *   **同一份**参考二进制跑两遍，stderr 有 **45+ 行字节不一致**：
+ *     ① 帧号重复：`frame#4` 出现两次 ⇒ `g_fb_flips++` 非原子（两线程同读旧值、各写一次）
+ *     ② 行撕裂  ：一遍 `frame#10 hash=e96c9dc5`、另一遍 `frame#10 hashe96c9dc5`
+ *                ⇒ 共享 `g_hash_line`：A 格式化 → B 覆写 → A 的 write(2) 打出残行
+ *     ③ 帧号错位：两遍从第 62 行起帧号错开 1（①的连带）
+ *   ⇒ behav_diff 确定性控制组（B0c）判「可复现前缀 61/228 < 60%」⇒ INCONCLUSIVE。
+ *
+ * 根因不是「CI 跑得快所以撞车」（CNB 云测 227/227 只是运气好撞上慢调度），而是三处设计缺陷：
+ *   ① 行在**全局缓冲**里格式化后 write(2)      ⇒ 并发覆写残行
+ *   ② 提交序号 `g_fb_flips++` 非原子            ⇒ 帧号重复 / 错位
+ *   ③ **每帧**打一行（30s 内 3586 行恒等哈希）  ⇒ 竞态窗口放大 3586 倍，且把
+ *      `behav_capture.sh` 的 events 前 200 行窗口**挤成帧行**（真正的语义事件被挤出）
+ *
+ * 根修（不靠运气、不靠"重试/豁免/调阈值"）：
+ *   A. 行在**栈上**构造 + 单次 write(2)（长度 ≤ PIPE_BUF ⇒ POSIX 保证管道写原子）⇒ 残行不可能出现
+ *   B. 提交序号用 ldrex/strex 原子递增 ⇒ 序号唯一、单调
+ *   C. 同一套 ldrex/strex 做**自旋锁**，把「取号 + 实体快照 + 哈希 + 打行」串行化
+ *      ⇒ 行序 == 提交序；实体重配（dumb_fill / AddFB2）与哈希不再交叠（消除 UAF）
+ *   D. **只打有信息量的行**：首帧 / 哈希变化帧 / 每 1024 次提交的 checkpoint
+ *      ⇒ 全零场景每侧 stderr 由 3586 行降到 ≈4 行：任何调度交织下字节级可复现，
+ *         且 events 的 200 行窗口还给真正的语义事件（判据范围变宽，不是变窄）
+ */
 static void fb_commit_hash(void)
 {
-    char *q = g_hash_line;
-    u32 i;
+    char line[128];
+    char *q = line;
+    u32 i, flip;
     const char *pre = "[drmstub] frame#";
     const char *mid = " hash=";
     const char *dim = " dim=";
-    u8 *src;
+    u8  *src;
+    u32  bytes;
+    u32  hash = 0u;
+    int  have_px = 0;
+    int  emit = 0;
+    int  is_chk = 0;
 
-    g_fb_flips++;
-    src = g_fb2_valid ? g_fb2_buf : 0;   /* 只有内核 fb 实体才算"画面" */
-    /* ★ 首个提交打一行"我读到的槽值"：与 shim 的「画布登记」日志对照，
+    fb_lock_take(&g_fb_lock);
+
+    /* ★ 原子取号：任何交织下每条提交拿到唯一且单调的序号（旧实现 `++` 会丢更新）*/
+    flip  = fb_atomic_inc(&g_fb_flips);
+    src   = g_fb2_valid ? g_fb2_buf : 0;   /* 只有内核 fb 实体才算"画面" */
+    bytes = g_fb2_bytes;
+
+    /* ★ 首个提交打一行「我读到的槽值」：与 shim 的「画布登记」日志对照，
      *   一次就能分清是"shim 没登记"还是"登记了但桩读不到"。 */
-    if (g_fb_flips == 1u) {
+    if (flip == 1u) {
         char l2[96];
         char *q2 = l2;
         const char *t1 = "[drmstub] fb2_buf=";
@@ -424,63 +518,77 @@ static void fb_commit_hash(void)
         *q2 = '\n';
         stub_syscall3(STUB_NR_write, 2, (long)l2, (long)(q2 - l2 + 1));
     }
-    if (src == 0 || g_fb2_bytes == 0) {
-        /* 没有可哈希的像素 ⇒ 如实说"无"，不伪造哈希（不假装观测到了） */
-        for (i = 0; pre[i]; i++) q[i] = pre[i];
-        q += i;
-        *q++ = ' '; *q++ = '-'; *q++ = '-';
-        *q++ = '\n';
-        stub_syscall3(STUB_NR_write, 2, (long)g_hash_line,
-                      (long)(q - g_hash_line));
-        return;
+
+    if (src != 0 && bytes != 0u) {
+        hash = fnv1a(src, bytes);
+        have_px = 1;
+        if (flip == 1u || hash != g_last_hash) emit = 1;          /* 首帧 / 画面变了 */
+        if (flip - g_fb_flips_last_chk >= 1024u) { emit = 1; is_chk = 1; }  /* 周期性心跳 */
+    } else {
+        /* 没有可哈希的像素 ⇒ 如实说"无"，不伪造哈希（不假装观测到了）；
+           同样只在**状态变化**时打（旧实现每次提交都打 ⇒ 同样的噪声与竞态）*/
+        if (flip == 1u || g_last_no_px == 0u) emit = 1;
     }
+
+    if (!emit) { fb_lock_drop(&g_fb_lock); return; }
+
+    if (have_px) { g_last_hash = hash; g_last_no_px = 0u; }
+    else         { g_last_no_px = 1u; }
+    if (is_chk)  { g_fb_flips_last_chk = flip; }
+
     for (i = 0; pre[i]; i++) q[i] = pre[i];
     q += i;
-    /* frame# 序号（十进制，手写转换） */
-    { char nb[12]; int k = 0; u32 v = g_fb_flips;
+    /* frame# 序号（十进制，手写转换）*/
+    { char nb[12]; int k = 0; u32 v = flip;
       if (!v) nb[k++] = '0';
       while (v) { nb[k] = (char)('0' + (v % 10u)); v /= 10u; k++; }
       while (k) *q++ = nb[--k];
     }
-    for (i = 0; mid[i]; i++) q[i] = mid[i];
-    q += i;
-    q = put_hex8(q, fnv1a(src, g_fb2_bytes));
-    for (i = 0; dim[i]; i++) q[i] = dim[i];
-    q += i;
-    /* dim=WxHxBPP（只给 w/h/bpp 三个十进制位，pitch 已在哈希覆盖范围内） */
-    { const u32 vs[3] = { g_fb2_w, g_fb2_h, (g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) * 8 }; int k;
-      for (k = 0; k < 3; k++) {
-        char nb[12]; int m = 0; u32 v = vs[k];
-        if (!v) nb[m++] = '0';
-        while (v) { nb[m] = (char)('0' + (v % 10u)); v /= 10u; m++; }
-        while (m) *q++ = nb[--m];
-        if (k == 0) *q++ = 'x';
-        else if (k == 1) *q++ = 'x';
-      }
+    if (!have_px) {
+        *q++ = ' '; *q++ = '-'; *q++ = '-';
+    } else {
+        for (i = 0; mid[i]; i++) q[i] = mid[i];
+        q += i;
+        q = put_hex8(q, hash);
+        for (i = 0; dim[i]; i++) q[i] = dim[i];
+        q += i;
+        /* dim=WxHxBPP（只给 w/h/bpp 三个十进制位，pitch 已在哈希覆盖范围内）*/
+        { const u32 vs[3] = { g_fb2_w, g_fb2_h, (g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) * 8 }; int k;
+          for (k = 0; k < 3; k++) {
+            char nb[12]; int m = 0; u32 v = vs[k];
+            if (!v) nb[m++] = '0';
+            while (v) { nb[m] = (char)('0' + (v % 10u)); v /= 10u; m++; }
+            while (m) *q++ = nb[--m];
+            if (k != 2) *q++ = 'x';
+          }
+        }
+        /* ★ 带上**来源标记** src=：f=内核 framebuffer 实体（可信），
+         *   n=无（fail-closed，如实报无，绝不拿无关内存冒充画面）。
+         *   这是"观测是否可信"的自证 —— 之前出现过"哈希恒等于全零 buffer"
+         *   而报告看不出原因，就是缺这个标记。 */
+        *q++ = ' ';
+        *q++ = 's';
+        *q++ = 'r';
+        *q++ = 'c';
+        *q++ = '=';
+        *q++ = g_fb2_valid ? 'f' : 'n';
+        if (is_chk) { *q++ = ' '; *q++ = 'c'; *q++ = 'h'; *q++ = 'k'; }
     }
-    /* ★ 带上**来源标记** src=：f=内核 framebuffer 实体（可信），
-     *   n=无（fail-closed，如实报无，绝不拿无关内存冒充画面）。
-     *   这是"观测是否可信"的自证 —— 之前出现过"哈希恒等于全零 buffer"
-     *   而报告看不出原因，就是缺这个标记。 */
-    *q++ = ' ';
-    *q++ = 's';
-    *q++ = 'r';
-    *q++ = 'c';
-    *q++ = '=';
-    *q++ = g_fb2_valid ? 'f' : 'n';
     /* ★ fail-closed：写完必须留终止符。若行已满，截断并显式标记
-     *   （静默溢出到 g_hash_line 之外会破坏相邻状态，且判据读到半行会误判）。 */
-    if (q >= &g_hash_line[sizeof(g_hash_line) - 2]) {
-        q = &g_hash_line[sizeof(g_hash_line) - 3];
+     *   （静默越界会破坏相邻状态，且判据读到半行会误判）。 */
+    if (q >= &line[sizeof(line) - 2]) {
+        q = &line[sizeof(line) - 3];
         *q++ = '.';
         *q++ = '.';
     }
     *q = '\n';
 
     /* 打到 fd 2（stderr）：真机也会把 DRM 诊断写 dmesg，这里等价。
-     * `behav_capture.sh` 从 stderr.txt 读它 → 成为可判据的 frame_hash。 */
-    stub_syscall3(STUB_NR_write, 2, (long)g_hash_line,
-                  (long)(q - g_hash_line + 1));
+     * `behav_capture.sh` 从 stderr.txt 读它 → 成为可判据的 frame_hash。
+     * ★ 行在**栈上**、长度 ≤ PIPE_BUF ⇒ write(2) 对管道原子 ⇒ 不可能被并发写撕裂。 */
+    stub_syscall3(STUB_NR_write, 2, (long)line, (long)(q - line + 1));
+
+    fb_lock_drop(&g_fb_lock);
 }
 
 /* 供 shim 的 mmap 拦截调用：返回桩持有的帧缓冲实体（0 = 尚未 CREATE_DUMB） */
@@ -490,9 +598,6 @@ void *drm_stub_fb_address(void) { return (void *)g_fb_buf; }
 __attribute__((visibility("default")))
 unsigned int drm_stub_fb_size(void) { return g_fb_bytes; }
 
-/* 供 shim 读取最近一次提交的帧哈希（shim 会在自己退出时补打一行汇总） */
-__attribute__((visibility("default")))
-const char *drm_stub_last_hash(void) { return g_hash_line; }
 
 /* ★ 退出时打一行**汇总**：让"一次帧提交都没发生"这种失败**不可能静默**。
  *   用 `__attribute__((destructor))`（链接器级机制，`.fini_array`）而非 `atexit`
@@ -582,10 +687,18 @@ static void dumb_fill(unsigned long req, void *arg)
      *   重复 CREATE_DUMB（重新 modeset）⇒ 释放旧实体再分配，保持"一块活动 framebuffer"。*/
     {
         u32 need = (u32)bytes;
+        /* ★ 172 轮：实体切换进锁 —— 与 fb_commit_hash 的「快照+哈希」互斥，
+         *   否则另一线程可能拿到"新指针 + 旧尺寸"（错配 ⇒ 越界读）或读到半初始化的字段。 */
+        fb_lock_take(&g_fb_lock);
+        /* ★ 172 轮：不再主动 munmap 旧实体。两处理由：
+         *   ① 语义：内核 GEM 对象的生命周期归 handle —— CREATE_DUMB 产出的是**新**对象，
+         *      旧对象要等 DESTROY_DUMB 才释放；在这里主动 munmap 不属于它的语义。
+         *   ② 竞态：已发布过的实体可能正被另一线程哈希（fnv1a 逐字节读），
+         *      munmap 之后继续读 = UAF（宿主段错误，且症状与被测对象无关）。
+         *      ⇒ 去掉主动释放后，"发布过的指针"永远有效，与内核语义一致。
+         *      （30s 沙箱里 modeset 次数是个位数，遗留页面的量与 4 GB 地址空间相比可忽略）*/
         if (g_fb_buf != 0) {
-            /* munmap2（ARM EABI __NR_munmap2 = 91）*/
-            stub_syscall3(91, (long)g_fb_buf, (long)g_fb_bytes, 0);
-            g_fb_buf = 0;
+            g_fb_buf = 0;      /* 旧实体不再作为"活动"实体，但内存保留（见上）*/
             g_fb_bytes = 0;
         }
         /* pages = ceil(need/4096)；mmap2 的 pgoffset 以**页**为单位 */
@@ -612,6 +725,7 @@ static void dumb_fill(unsigned long req, void *arg)
                 drmstub_note2("mmap2_FAIL", (u32)addr, need);
             }
         }
+        fb_lock_drop(&g_fb_lock);
     }
 }
 
@@ -730,8 +844,11 @@ int drmModeAddFB2(int fd, u32 width, u32 height, u32 pixel_format,
         u32 pitch = (pitches && pitches[0]) ? pitches[0] : (width * 4u);
         u64 need = (u64)pitch * (u64)height;
         u32 pages;
-        if (g_fb2_buf != 0) {            /* 重排：先释放旧的，避免同尺寸多块时序号错乱 */
-            stub_syscall3(91, (long)g_fb2_buf, (long)g_fb2_bytes, 0);
+        /* ★ 172 轮：与 dumb_fill 同口径 —— 实体切换进锁（与哈希互斥），
+         *   且**不再 munmap 旧实体**（旧实体可能正被另一线程哈希 ⇒ UAF；
+         *   内核语义上旧 GEM 对象也要等 DESTROY_DUMB 才释放）。 */
+        fb_lock_take(&g_fb_lock);
+        if (g_fb2_buf != 0) {
             g_fb2_buf = 0; g_fb2_bytes = 0;
         }
         pages = (u32)((need + 4095u) / 4096u);
@@ -753,6 +870,7 @@ int drmModeAddFB2(int fd, u32 width, u32 height, u32 pixel_format,
                 drmstub_note2("AddFB2_ALLOC_FAIL", (u32)addr, pitch);
             }
         }
+        fb_lock_drop(&g_fb_lock);
     }
     return 0;
 }
