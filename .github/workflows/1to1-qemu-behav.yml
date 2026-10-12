@@ -106,12 +106,57 @@ jobs:
           echo '--- 被测二进制 ---'
           ls -la build/rkgame.rebuilt.elf golden/factory.rkgame.bin
 
-      - name: 行为采集 + 差分 ★ 硬门禁
+      # ★★ R171（2026-10-11）：硬门禁从「场景 A 无桩口径」升级为「设备真机 sysroot + 三桩 + key2seed」深口径。
+      #   为什么必须改：原口径用 jammy sysroot（/arm-root），它**没有 libkms.so.1** ⇒ `dlopen(driver.so)` 失败
+      #   ⇒ 渲染循环从不启动 ⇒ B6 frame_hash 恒 none / B6R frame_commits 恒 0。
+      #   R137 把这两项从 SKIP 改成 FAIL（"没测到" ≠ "一致"）⇒ 本硬门禁在 R137 语义下**必然 FAIL**，
+      #   而它 FAIL 的原因是**口径缺桩**，不是重建二进制有行为回归（判决见 PROGRESS R171）。
+      #   ★ 这是"仪器量程盖不住被测对象"，不是"被测对象坏了"：把量程对齐到设备真机口径，
+      #     B6/B6R 才第一次真正可观测。
+      #   ★ 与场景 C4/C5/J 同构（唯一差别：本步是硬门禁，它们是 continue-on-error 观测步）。
+      #     口径变更属单变量替换 ⇒ 历史数字（场景 A 浅口径）不可直接比较，见场景 J 注释。
+      # ★★ R171b（2026-10-12）：再补 CGM_KEY2_HOOK=1（单变量实证，CNB cnb-v4g-1k4ng6f3e）。
+      #   实测对照：只 SEED 不 HOOK ⇒ key2 在 constructor 之后被覆写 ⇒ 三侧 M6 ✗ zip 打不开
+      #   ⇒ 崩在 mui_setting NULL+4（exit=139）；加 HOOK（zip open 前一瞬重断言 24B 签名）⇒
+      #   三侧 M6 ✓ M6R ✓（ui.cfg+menu.raw 均读到）M7 ✓ 存活（exit=124），
+      #   B2 227/227 一致、B6R 3586 vs 3584（渲染循环全速跑 30s）。
+      #   ⇒ 无 HOOK 的硬门禁比 HOOK 口径浅 3 层（M6/M6R/M7 全测不到），B6R 形同虚设。
+      #   B6 仍按 R137 语义 FAIL（3580/3578 帧恒全零基线 e96c9dc5 src=f）——
+      #   这是 R137 取证的观测点天花板（driver.so 自封 mmap 私有画布，fb 实体从未被写入），
+      #   R171b 已在"程序确实在画"的前提下复现 ⇒ **诚实红，非行为分歧**（两侧完全对称）。
+      - name: 三桩构建（硬门禁前置；缺桩 = 仪器故障，fail-closed）
         run: |
           cd 1to1
-          SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=20 \
+          mkdir -p report/stublib report/drmstublib report/alsastublib
+          sh tools/build_libkms_stub.sh    report/stublib     || echo "[warn] libkms 桩构建失败"
+          sh tools/build_libdrm_stub.sh    report/drmstublib  || echo "[warn] libdrm 桩构建失败"
+          sh tools/build_libasound_stub.sh report/alsastublib || echo "[warn] libasound 桩构建失败"
+          echo '--- 三桩自证（SONAME 必须与 driver.so 的 DT_NEEDED 一致；UND 必须为 0）---'
+          for f in report/stublib/libkms.so.1 report/drmstublib/libdrm.so.2 report/alsastublib/libasound.so.2; do
+            [ -f "$f" ] || { echo "::error::缺 $f ⇒ 深口径无法建立（仪器故障，本场景判定不存在）"; exit 1; }
+            printf '  %-20s SONAME=%-18s UND=%s\n' "$(basename "$f")" \
+              "$(arm-linux-gnueabihf-readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME.*\[\(.*\)\]/\1/p' | head -1)" \
+              "$(arm-linux-gnueabihf-readelf -sW "$f" 2>/dev/null | grep -c 'UND')"
+          done
+
+      - name: 行为采集 + 差分 ★ 硬门禁（设备真机 sysroot + 三桩 + key2seed + key2hook）
+        run: |
+          cd 1to1
+          SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
+          CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu
+          echo '--- 硬门禁：driver.so 是否已加载（stdout 不应再出现 libkms 报错）---'
+          grep -a "driver.so" report/qemu/rundir_factory/stdout.txt \
+                            report/qemu/rundir_rebuild/stdout.txt \
+                            report/qemu/rundir_control/stdout.txt \
+            | head -5 || echo "(两侧均无 driver.so 报错行 ⇒ 已成功加载)"
+          echo '--- 硬门禁：M6/M6R 证据（key2 re-assert 行必须在两侧 stderr 出现）---'
+          for s in factory rebuild; do
+            grep -a -m1 "key2 re-assert on open" "report/qemu/rundir_$s/stderr.txt" \
+              || { echo "::error::rundir_$s 无 key2 re-assert 行 ⇒ M6 未走到（HOOK 未生效？）"; exit 1; }
+          done
+
 
       # ★★ 场景 B：注入厂商 ZIP 签名表（key2@0x3E190C）⇒ 资源包**可打开** ⇒ 首次进入菜单正文。
       #   为什么必须有它：场景 A 里两侧都停在 `open .../ui_cn.zip fail` ⇒ `mui_setting` NULL+4 崩，

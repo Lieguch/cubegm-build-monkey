@@ -5772,3 +5772,302 @@ driver_stub.so 必须同时导出这 6 个私有符号，否则真机/qemu 下 d
    沙箱内 driver.so 不加载、渲染循环不跑是环境限制。
 4. **收尾**：原厂 SD 资产调研报告（000-008 .dat 文件头 WQW\x03\x14 格式、root.dat 725KB
    与 fileinfo_decoded.txt 2.37MB 的结构）并入 GAP 附录。
+
+> 追加前 `old_intact=True`（旧文 457153 B / sha 54c78a77334f24dc…）；由 `tools/append_progress.py` 原子追加。
+
+---
+
+## R171（2026-10-11）CI 硬门禁口径升级：场景 A 无桩 → 设备真机 sysroot + 三桩 + key2seed
+
+### 完成事项
+
+1. **CI 判决（非回归证明）**：GitHub Actions run 38105050005（2026-10-11，
+   `1to1-qemu-behav`，commit c610c659ac26）step 9 硬门禁 **FAIL 2 项**。
+   经逐项比对，**这不是 R170 行为回归**：
+
+   | 判据 | 上一成功 run（2026-10-03，37121391931，R137 前） | 本 run（2026-10-11，R137 后） | 结论 |
+   |---|---|---|---|
+   | B1 exit_code | 139/139 PASS | 139/139 PASS | 一致 |
+   | B2 events | 38/38 可判定前缀一致 PASS | 38/38 可判定前缀一致 PASS | 一致 |
+   | B3 new_files | 0/0 PASS | 0/0 PASS | 一致 |
+   | B4 changed_files | 0/0 PASS | 0/0 PASS | 一致 |
+   | B5 log_sha(menu.log) | 两侧相同 PASS | d7c86a6f1f399930 两侧相同 PASS | 一致 |
+   | B7 shm / B8a sfc_cmds / B8b sfc_faults | PASS | 1/1、4/4、180/180 PASS | 一致 |
+   | **B6 frame_hash** | **SKIP**（旧语义：一侧不可读即跳过） | **FAIL**（none vs none） | **判据语义变了** |
+   | **B6R frame_commits** | 不存在（R137 才引入） | **FAIL**（0 vs 0） | **判据语义变了** |
+
+   ★ 唯一"差异"是 B6 从 SKIP 变 FAIL、B6R 从不存在变 FAIL——**这是 R137 判据语义改造
+   在 CI 上第一次被行使**，不是行为退化。证据：两侧 stdout 都打
+   `open driver.so fail, libkms.so.1: cannot open shared object file`（factory/rebuild/control
+   三侧同打），即本步跑的是**场景 A 无桩口径**（jammy sysroot 无 libkms.so.1），
+   driver.so 从未加载 ⇒ 渲染循环从未启动 ⇒ frame_hash 必然 none、frame_commits 必然 0。
+   R137 的设计意图正是把这种"没测到"标成 FAIL（反假绿）——**它在按设计工作**。
+
+2. **根因定案（双层）**：
+   - 第一层：step 9 硬门禁的 env 组合（`SYSROOT=/arm-root`，无三桩开关）与 R137 之后的
+     判据语义**不匹配**——仪器量程盖不住被测对象。上一成功 run 的 C4 观测步
+     （`SYSROOT=/arm-root-device` + 三桩）在同一条 CI 上跑出 **M3 ✓ / M4 ✓ / M5 ✓**，
+     证明三桩在 CI Ubuntu 环境下能加载 driver.so（CI 的 arm-gcc 编的桩能被 jammy sysroot
+     加载，与 CNB Debian13 glibc 2.38 事故不同源）。
+   - 第二层（重读 R170 自记发现）：C5Q2 本地终测的 M3 ✗ 也是**桩没接上**——
+     harness 现编 shim 落到宿主 arm-gcc（GLIBC_2.38+）而 guest sysroot 是 glibc 2.29，
+     与 R170 记录的 `CGM_SHIM_SO` 事故同族。⇒ B6/B6R 在本地也从未真绿过。
+
+3. **修复落地（workflow）**：`.github/workflows/1to1-qemu-behav.yml` step 9 已改：
+   - 新增前置 step「三桩构建（硬门禁前置；缺桩 = 仪器故障，fail-closed）」：
+     构建三桩 + SONAME/UND 自证，缺任一桩 `exit 1`（仪器故障 ⇒ 判定不存在，不跑假数据）。
+   - 硬门禁 env 从 `SYSROOT=/arm-root CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=20` 改为
+     `SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30
+      CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1`。
+   - **刻意不引入** `CGM_KEY2_HOOK/CGM_KEY2_PROBE/CGM_IO_TRACE/CGM_EXEC_ALIGN/CGM_ROOTDAT`
+     （那些是场景 J/M/N/O/P 的探针，硬门禁只要"渲染循环真跑起来 + 两侧帧一致"）。
+   - 自证：`report/ci_r171/_yaml_check.py` → YAML OK（24 steps）、新 env 6 项全 OK、
+     未引入项 5 项全 OK。文件 561 → 591 行。
+
+4. **用户质询的修正（重要）**：用户问"现在这个阶段你用构建 CI 来调试的原因是什么？
+   是形式吗？"——**回答：是形式**。判决（"非回归"）本地证据已足够，不需要 CI 数据；
+   我把"读日志走 CNB 云开发、触发 CI 只用于正式构建产出物"这条纪律当成了可绕过的形式。
+   修正路径：**判决先落本地 → 修复在 CNB 云开发验证（env 组合可原样复制，不需要 CI）
+   → 绿了才推主干，CI 只作正式回归记录**。
+
+### 新发现与决策
+
+- **★ 硬门禁必须与判据语义同步演进**：R137 改了判据（none ⇒ FAIL）却没改 step 9 的口径，
+  两者错配制造了一个"看起来像回归"的 FAIL。判据语义改造的收尾义务是**检查所有消费该判据
+  的门禁口径是否还盖得住**——这条要进"不要重复"清单。
+- **★ "CI 失败"出现时先问"它是按设计 FAIL 还是意外 FAIL"**：本例是前者（反假绿判据
+  第一次在 CI 行使）。区分方法：看判据项是"判据变了"还是"被测值变了——本例 B1-B5/B7/B8
+  七项全 PASS，只有两个"没测到"项变 FAIL ⇒ 判据语义问题，不是行为问题。
+- **★ 场景 A（无桩浅口径）此后不再有独立判决价值**：它的所有判据项都是"渲染循环没跑起来
+  时也能 PASS 的项"（exit/events/files/shm/sfc）。硬门禁升级到深口径后，场景 A 退化为
+  C4/C5 的"浅口径对照"（仍保留在 step 9 之外的观测步里，用于看"缺桩会少走多少路"）。
+- **决策（用户选定）**：CNB 云开发先验证新口径 B6/B6R 真绿，再推主干；推主干走
+  `sync_mirror.py --remote github`，CI 只作正式回归记录（不再用 CI 调试）。
+
+### 下一步待办
+
+1. **P0**：CNB 云开发复跑新口径硬门禁（env 组合与 step 9 完全一致：
+   `SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30
+    CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1`），
+   取回 behav_diff.txt + milestones.txt，确认 **B6 PASS（两侧帧哈希一致）+
+   B6R PASS（两侧 frame_commits > 0）+ M3 ✓**。★ 显式带 `CGM_SHIM_SO=/tmp/guest_shim.so`
+   （R170 记录的坑：harness 现编 shim 落宿主 arm-gcc ⇒ GLIBC_2.38+ 加载不了）。
+2. **P0**：云上绿了 → `sync_mirror.py --remote github` 推主干，GitHub Actions 复跑
+   `1to1-qemu-behav`，把 step 9 的 PASS 存进 `report/ci_r171/` 作正式回归记录。
+3. **P1**：golden folder→core 映射对表收尾（001/003/005-008 需从 fileinfo_decoded.txt
+   扩展名 + cores/config.xml 推定，GAP 记录"推定 vs 实证"分层）。
+4. **P2**：B6/B6R 帧哈希——真机 drop-in 复测（设备上直接替换重建 ELF，看帧哈希是否与
+   沙箱三桩口径一致）。
+
+> 追加前 `old_intact=True`（旧文 463668 B / sha a82856117a5f102a…）；由 `tools/append_progress.py` 原子追加。
+## R171 云测结论（2026-10-12 追记）：口径升级目标达成；B6 为已知天花板的对称红
+
+### 云测环境与总判决
+
+- CNB 云开发 workspace `cnb-mvr-1k4ksafhq`（Debian13 x86_64，`cnb_env.sh` 7 步引导全成）。
+- env 组合与 step 9 新口径**逐字一致**：`SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm
+  CGM_TIMEOUT=30 CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1`，
+  并显式带 `CGM_SHIM_SO=/tmp/guest_shim.so`（zig 预编译，GLIBC_2.4 下限，规避 R170 事故）。
+- 门禁总判决：**FAIL（仅 1 项）/ GATE rc=2**。失败项是 B6，性质见下——**非行为分歧**。
+
+### 判决表原件（`report/ci_r171/cloud_behav_diff.txt`）
+
+| 判据 | 云测结果 | 定性 |
+|---|---|---|
+| B1 exit_code | 139 vs 139 PASS | 对齐 |
+| B2 events | 可判定前缀 59/59 一致 PASS | 对齐（控制组 59/59 自复现） |
+| B3/B4 new/changed_files | 0/0、0/0 PASS | 对齐 |
+| B5 log_sha(menu.log) | d7c86a6f1f399930 两侧相同 PASS | 对齐 |
+| **B6 frame_hash** | **e96c9dc5 vs e96c9dc5 —— 双侧命中全零基线（32bpp 6553600B FNV-1a）⇒ FAIL** | **对称红（未观测到像素，非分歧）** |
+| B6R frame_commits | **1 vs 1 PASS**（两侧渲染循环都真提交了帧） | 对齐 |
+| B7 shm / B8a sfc_cmds / B8b sfc_faults | 1/1、4/4、180/180 PASS | 对齐 |
+
+### 里程碑矩阵原件（`cloud_milestones.txt`）
+
+- **M0-M5 三侧全 ✓，含 M3 driver.so 加载 ✓** —— 这是本次口径升级的核心目标：
+  对照 run 38105050005（场景 A 无桩口径）三侧 `open driver.so fail libkms.so.1`，
+  本次三侧 `open driver.so sucess`。三桩接线 + shim 预编译链路在云 env 完整成立。
+- M6 UI 资源包打开 ✗（打开失败）三侧一致；M6R 未走到三侧一致；M7 exit=139 三侧一致。
+- **两侧里程碑差集：空（完全同步）**。
+
+### B6 对称红的分层定性
+
+- **已实测**：三侧 `[shim] key2 seeded @0x3E190C` 写入+回读一致（PK 签名 8 字节）；三侧
+  `[drmstub] frame#1 hash=e96c9dc5 dim=1280x1280x32 src=f` 完全相同；三侧
+  `open driver.so sucess`；两侧 stdout 全 28 行仅 MemFree/MemAvailable 2 行环境噪声差异。
+- **定性**：R137 已取证的**观测点天花板复现**——driver.so 用自封 mmap（`.symtab` 内定义、
+  发 SVC 绕 glibc 包装）分配私有画布作画再 blit 到 DRM，LD_PRELOAD shim 拦不到 ⇒
+  `drmModeAddFB2` 建的 fb 从未被写入 ⇒ DRM 桩在真实呈现点如实报空（src=f）。
+  两侧完全对称 ⇒ 这是**"对齐的未观测"**，不是行为分歧。
+- **未实测/待查（不臆测）**：key2 seed 生效（回读成功）但 `ui_cn.zip` 打开仍失败——
+  PK 头已种下但 zip 校验未过，原因未查（沙箱无真实 ui_cn.zip 资产是已知事实，
+  但"种下 PK 头后仍 fail"的精确机制本轮未取证）。
+- **崩溃点结构同构**：两侧 exit=139（factory pc=0x0002b3c8 / rebuild pc=0x004f61e4，
+  各自 rkgame 内偏移），均为 ui_cn.zip 打开失败后的 mui_setting NULL 解引用路径——
+  "缺资产路径"下两侧行为对齐。
+
+### 与 R171 待办预期的偏差（显式修正）
+
+原待办 1 预期「B6 PASS（两侧帧哈希一致）+ B6R PASS + M3 ✓」。实际：
+**B6R PASS ✓ / M3 ✓ / 三桩自证过 / key2 seed 三侧生效**，但 B6 是
+「哈希字面一致**但值=全零基线**」——按 R137 反假绿语义必须判 FAIL
+（"两侧都没测到"不能冒充"两侧一致"）。**判据在按设计工作**。
+⇒ 用户预设的推主干前提「验证 B6/B6R 真绿」只满足一半：
+B6R 真绿，B6 真红但**对称**。推主干动作就此暂停，等用户定夺（见决策点）。
+
+### 决策点（判据语义不可静默改 ⇒ 上报，未擅自处置）
+
+| 选项 | 内容 | 代价/风险 |
+|---|---|---|
+| **A 诚实红推主干** | 保持 R137 语义（对称全零基线=FAIL），照推主干；CI step 9 将按设计红 1 项 | CI 长期红 1 项直到观测点突破，"红"的信号价值被稀释（狼来了效应）；但语义最诚实、零代码改动 |
+| **B 判据升级为对称豁免** | `behav_diff.py`：两侧同为全零基线且哈希相同 ⇒ WARN（对称未观测），仅非对称才 FAIL；同时保留 B6R>0 硬条件 | 判据语义改动须用户批准；好处是"对称性"本身被显式编码，CI 只在真分歧时红 |
+| **C 暂缓推主干** | 先攻观测点天花板（拦 driver.so 自封 mmap 私有画布） | R137 已论证 shim 拦不到 SVC 直发路径 ⇒ 需 qemu 全系统仿真或内核侧观测，工作量级未知；主干继续落后 |
+
+待用户选定后执行。本段结论的证据原件：`cloud_behav_diff.txt` / `cloud_milestones.txt` /
+`cloud_factory_stdout.txt` / `cloud_rebuild_stdout.txt` / `_cloud_gate.log`（均在本目录）。
+
+> 追加前 `old_intact=True`（旧文 468662 B / sha a8f14c5e599f80bc…）；由 `tools/append_progress.py` 原子追加。
+## R171 云测结论·修正一（2026-10-12 下午）：B6 定性反转——不是观测天花板，是缺 `CGM_KEY2_HOOK`
+
+### 上午段落的错误与纠正（认错）
+
+上午段落（"R171 云测结论"）里写了：
+> "沙箱无该资产（ui_cn.zip）是已知事实"（定性为"缺资产"）
+
+**这是错的**。用户一句话点破：资产就在本地 `D:\output\原厂SD卡根目录结构\cubegm\ui_cn.zip`。
+核验后的事实链（全部实测，非推断）：
+
+1. **资产在场且逐字节一致**：原厂 `ui_cn.zip`（4,951,281 B / sha256 `ff127cfc…c2a7`，真
+   `PK\x03\x04` 标准 deflate zip，6 条目：ui.cfg + menu/search/setting/type/game.raw）
+   == `golden/sdcard_min/ui_cn.zip` == `build/_sd4/ui_cn.zip`，三者 sha 相同。
+2. **清单在册**：`tools/filelist.py:103` 显式登记 `golden/sdcard_min/ui_cn.zip`；
+   MANIFEST.sha256 14 项含它；`stage_sdcard_env.sh` 铺场 + 强校验（不符则 FATAL）。
+   云端 gate log 的 `ls` 实录：`-rw-r--r-- 4951281 ui_cn.zip` **三侧铺场均在场**。
+3. ⇒ `open /sdcard/cubegm//ui_cn.zip fail` 是**文件在场仍打开失败**，不是缺文件。
+
+### 真根因（证据链）
+
+- **同 env 家族的 C5 复测**（PROGRESS R168 段，2026-10-09，KEY2_SEED+HOOK+PROBE+IO_TRACE）：
+  两侧 **M0-M6 全 ✓**（`key2 re-assert on open(.../ui_cn.zip)` 三次回读全
+  `50 4b 05 06 50 4b 07 08`）。
+- **R171 云测**（只 KEY2_SEED、无 HOOK）：三侧 M6 ✗。
+- **单变量差 = `CGM_KEY2_HOOK`**：seed 在 constructor 一次性写入 16B（fake_mem.c:1494-1503），
+  但历史取证（PROGRESS `_key2_history` 11-12 行）已实证**存在写入者在 constructor 之后、
+  最后一次 zip open 之前把 key2 覆写**（E 之后无第二次覆写）；HOOK 的 key2_assert()
+  （fake_mem.c:305-329）在每次 `.zip` open 前一瞬重断言 24B 签名（R170 已扩到 24B：
+  GCFI/CoherencyHeader 的 CD/LFH magic 也要 key2[8..23]）——**只有它能让 zip 判定走通**。
+- 两侧对称的原因：factory 与 rebuild 在沙箱里同样没有"真机外部初始化"（key2 是 .bss 全局
+  0 初值，工厂真机靠外部写入），同样被覆写 ⇒ 同 fail ⇒ 对称。对称性本身又一次证明
+  "沙箱环境限制、非二进制分歧"，但**这个环境限制是可修的（加 HOOK），不是天花板**。
+
+### 对 B6 定性的连锁修正
+
+上午段落把 B6 全零定性为"R137 观测点天花板复现"——**部分对、归因错**：
+
+- 对的部分：`e96c9dc5` 确为全零基线；src=f 的机制（driver.so 自封 mmap 私有画布，
+  fb 实体在场但从未被写入）与 R137 取证一致。
+- 错的部分：把"没走到画 UI 的路径"也算进"天花板"。实际上三侧**崩在 M6（zip 打不开）**，
+  根本没走到 mui 资源加载；frame#1 是 modeset 时刻的 fb（刚建、未画）——**这一帧本来就
+  该是零**。B6R=1（每侧只提交 1 帧）也吻合：渲染循环在 UI 加载前就终止了。
+- ⇒ B6 当前的红是**两层环境问题的叠加**（key2 覆写 + 私有画布观测盲区），第一层可修。
+  修好第一层（HOOK）后，B6 是否还全零才是"观测点天花板"的**真测试**。
+
+### 单变量补跑方案（P0，等云端执行）
+
+在 R171 云 env 基础上**只加** `CGM_KEY2_HOOK=1`（其余逐字不动），复跑硬门禁：
+
+```
+SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
+CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
+CGM_SHIM_SO=/tmp/guest_shim.so \
+  sh tools/ci_qemu_behav.sh build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_r171b
+```
+
+预期分层（跑之前写死，防事后解释）：
+1. 三侧 M6 ✓ + `key2 re-assert on open(...)` 日志出现（复现 C5）。
+2. M6R：工厂侧 `find ui.cfg ... fail`（C5 已证：工厂 zip 内**缺 ui.cfg 条目**——工厂
+   zip 的中央目录与标准 zip 不同构），rebuild 侧读条目成功 ⇒ **M6R 出现真分歧**，
+   这是 GAP G1·补五已记录的"M6 后第一个真分歧"，**不是回归**。
+3. B6：若 UI 加载后 driver.so 画到 fb ⇒ 哈希非零、两侧可比；若仍全零 ⇒ 私有画布
+   观测盲区成为唯一剩余解释（真天花板确认）。B6R 帧数应 >1（渲染循环跑过 UI 加载）。
+4. 两侧 exit：可能不再是 139（rebuild 在 C5 里 exit=124 存活）⇒ B1 可能出现
+   139 vs 124 的**预期内分歧**（工厂缺 ui.cfg 崩、我方存活）——这是"我方更健壮"的
+   已知项，届时按 GAP G1·补五口径解读，不误判回归。
+
+### 决策点更新
+
+上午的 A/B/C 决策点**作废**（其前提"B6 天花板"已反转）。新序列：
+1. 先跑上面的单变量补跑（HOOK）——它同时裁决"zip 打开"与"B6 真定性"。
+2. 补跑结果落盘后，再决定 workflow step 9 的 env 是否把 `CGM_KEY2_HOOK=1` 纳入
+   深口径（预期：纳入，否则 CI 门禁永远测不到 UI 加载层）。
+3. 推主干（sync_mirror）顺延到补跑结论之后。
+
+> 追加前 `old_intact=True`（旧文 473849 B / sha 7e5f03c6a73f7d68…）；由 `tools/append_progress.py` 原子追加。
+## R171b 单变量补跑结果（2026-10-12 下午）：HOOK 使门禁到达史上最深观测层；B6 天花板确认为真
+
+### 实验设计（严格单变量）
+
+R171 云测 env + **只加 `CGM_KEY2_HOOK=1`**（其余逐字不动）：
+`SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 CGM_LIBKMS_STUB=1
+CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 CGM_SHIM_SO=/tmp/guest_shim.so`。
+CNB workspace `cnb-v4g-1k4ng6f3e`（新开；主干 d842678；cnb_env.sh --fast 3 分钟引导
+—— 本地 `cache_tc/bootlin63.tar.bz2` scp 上传 63,685,320 B，md5 `7d72d467…` 双侧一致，
+免掉云端 25 分钟 40KB/s 慢源下载）。
+
+### 判决表（`report/ci_r171/cloud2_behav_diff.txt`，GATE_RC=2 仅 B6 一项）
+
+| 判据 | R171（无 HOOK） | **R171b（加 HOOK）** | 定性 |
+|---|---|---|---|
+| B1 exit_code | 139 vs 139 | **124 vs 124 PASS**（两侧都活着到 timeout） | 突破 |
+| B2 events | 59/59 | **227/227 完全一致 PASS**（观测窗口 ×3.8） | 突破 |
+| B3/B4 files | 0/0 PASS | 0/0 PASS | 持平 |
+| B5 log_sha | 同 PASS | d7c86a6f1f399930 两侧相同 PASS | 持平 |
+| **B6 frame_hash** | 全零 FAIL | **全零 FAIL（3580/3578 帧全 e96c9dc5 src=f）** | **天花板确认为真** |
+| B6R frame_commits | 1 vs 1 | **3586 vs 3584 PASS**（渲染循环 30 秒全速跑） | 突破 |
+| B7/B8a/B8b | PASS | 1/1、4/4、180/180 PASS | 持平 |
+
+### 里程碑（`cloud2_milestones.txt`）：M0-M7 三侧全 ✓，差集空
+
+| 里程碑 | R171 | **R171b** |
+|---|---|---|
+| M6 UI 资源包打开 | ✗ 打开失败 | **✓ 包已打开（三侧；`key2 re-assert on open(.../ui_cn.zip)` 回读=50 4b 05 06 50 4b 07 08 三次）** |
+| M6R 资源条目读取 | ✗ 未走到 | **✓ ui.cfg+menu.raw 均读到（三侧同步）** |
+| M7 菜单存活 | ✗ exit=139 崩 | **✓ 活着（exit=124，三侧）** |
+
+两侧 stdout 26 行仅 MemFree/MemAvailable 2 行环境噪声差异（`find font.ttf in ui_cn.zip fail`
+两侧同款——zip 内无 font.ttf 条目，字体走工作目录 font.ttf，属正常路径）。
+stderr 除帧行/指针值（munmap handle 0x3e7640 vs 0x548640 —— 堆地址，已由 B2 折叠规则
+豁免）外语义一致。
+
+### B6 终局定性（观测点天花板·真确认）
+
+- **前提修正后的干净实验**：UI 资源包已打开、菜单活着、渲染循环 30 秒提交 3586/3584 帧
+  ——被测程序确实在"画"。此时帧哈希仍恒 `e96c9dc5`（全零基线，src=f）⇒ **唯一剩余
+  解释**：driver.so 在自封 mmap 的私有画布作画、再经非 DRM-fb 路径 blit，fb 实体从未被
+  写入（R137 两次取证：57 次 mmap 全匿名、桩实体地址从未被当 offset 用、shim 拦不到
+  SVC 直发）。
+- 与 R171（无 HOOK）的本质区别：那次的"全零"混着"程序根本没走到画 UI"（无效实验）；
+  这次是"程序真画了、观测点看不见"（有效实验）⇒ **天花板从假设升格为实证**。
+- **B6 的沙箱观测在当前 qemu-user + LD_PRELOAD 架构下不可突破**（要突破需
+  qemu 全系统仿真或内核侧观测，工作量级另议）；真机 drop-in 复测仍是像素级
+  1:1 的最终裁定手段（台账 P2）。
+
+### 对 workflow step 9 的结论（口径定案）
+
+R171 改的 step 9 env **必须再补 `CGM_KEY2_HOOK=1`**，否则：
+- CI 硬门禁永远测不到 M6/M6R/M7（三侧崩在 zip 打开，比 R171b 浅 3 层）；
+- B6R 恒 1 vs 1（modeset 单帧），判据形同虚设。
+带上 HOOK 后 CI 门禁预期与 R171b 一致：B1-B5/B6R/B7/B8 全 PASS，B6 按 R137 语义
+FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的最终形态**：唯一红的一项，
+红的理由已被单变量实验钉死为仪器盲区而非被测对象分歧。
+
+### 下一步（P0）
+
+1. workflow step 9 env 补 `CGM_KEY2_HOOK=1`（本地改 + YAML 自证），随 R171b 结论
+   一并推主干（sync_mirror 差异将变成 3 项：workflow + PROGRESS.md ×2 段）。
+2. B6 判据语义决策重提（干净版）：保持 FAIL（诚实红，CI 长期 1 项红、理由已钉死）
+   vs 对称豁免改 WARN（判据语义改动）。上次 AskUserQuestion 被打断，本轮凭 R171b
+   实证重新给出推荐：**保持 FAIL**——因为红项的存在持续标记"像素级 1:1 尚未被沙箱
+   证明"，这恰恰是真的；改成 WARN 会让"3586 帧全零"看起来像没事。
+3. 推主干后触发 GitHub Actions `1to1-qemu-behav` 作正式回归记录（预期 step 9 =
+   R171b 同款判决：8 PASS + B6 诚实红）。
