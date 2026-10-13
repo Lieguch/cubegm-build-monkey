@@ -225,7 +225,7 @@ grep '<autorun' /sdcard/cubegm/setting.xml
 
 ---
 
-## 十、hcge / fbdev_draw_frame 观测点（视频/音频初始化入口权威清单）
+## 十、DRM/KMS 显示链 + ALSA 音频链观测点（视频/音频初始化入口权威清单）
 
 > **本节来源**：Ghidra 反编译 `FUN_0000d678_InitDisplay.c` 与 `FUN_0000db08_InitSound.c`，
 > 非猜测、非二手文档。每个符号都附源文件行号，可机械复核。
@@ -288,3 +288,17 @@ qemu 的价值在于**启动链连通性 + 软件层行为对齐**；上述硬�
 的产物都必须全数导出这 9 个符号，缺一即亮红。
 但根据 PROGRESS.md §0.0 约束 2/3：**模拟进度达 100% 之前，禁止在任何文档/报告/对话中提及真机验证**；
 达到 100% 后由 agent 主动向用户提出。本节仅为技术备忘，不构成"现在就该上真机"的建议。
+
+### 10.5 命名纠错（R174，2026-10-13）—— 本节原名「hcge / fbdev_draw_frame 观测点」
+
+原名沿用自第 161 轮的 `driver_so.h` 符号族，但**第 162 轮实测证伪**（PROJECT-MEMORY.md 纪律 159）：
+
+| 符号族 | 归属 | 本机 driver.so 实测 |
+|---|---|---|
+| `hcge_*` / `fbdev_*` / `pinmux_*` | **SF3000（MIPS）** 兄弟产品 | **0 个**（`pyelftools` 扫 .dynsym+.symtab 全量，R174 复核仍为 0） |
+| `video_driver_*` / `sound_driver_*` | **本机 RK3036G** rkgame 私有 ABI | 9 个（见 10.1/10.2） |
+| `drmMode*` / `snd_pcm_*` | 本机 driver.so 的外部依赖 | 21 + 19 个 UND，由设备 sysroot 真实 libdrm/libasound 提供 |
+
+**结论**：本机画面路径 = **标准 DRM/KMS**（AddFB2 + SetPlane + PageFlip，见 10.3 的
+DRM_IOCTL 计数判据），不是 hcge 硬件命令队列。R161「画面不走 DRM」的猜测已作废，
+本小节保留记录以防旧结论回潮。

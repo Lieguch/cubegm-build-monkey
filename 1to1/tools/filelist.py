@@ -53,6 +53,16 @@ FILES = [
     # ★ 2026-10-13（R173）：P1-1 folder→core 三源对表产物（report/ 不在 walk 目录，
     #   不显式登记会被静默漏推 —— 同 GAP.md 的坑）。
     ("report/folder_core_map.md",       "1to1/report/folder_core_map.md"),
+    # ★ 2026-10-13（R174）：P0/P1/P2 五项待办产物（同上：report/ 不在 walk 目录）
+    ("report/driver_abi_diff.md",       "1to1/report/driver_abi_diff.md"),
+    ("report/retro_core_t_map.md",      "1to1/report/retro_core_t_map.md"),
+    ("report/r36s_second_reference.md", "1to1/report/r36s_second_reference.md"),
+    ("report/_r174_driver_dynsyms.txt", "1to1/report/_r174_driver_dynsyms.txt"),
+    ("report/_sf2000_core_api.h",       "1to1/report/_sf2000_core_api.h"),
+    ("report/_sf2000_core_api.c",       "1to1/report/_sf2000_core_api.c"),
+    ("report/_sf2000_main.c",           "1to1/report/_sf2000_main.c"),
+    ("report/_r36s_README_md",          "1to1/report/_r36s_README_md"),
+    ("report/_r36s_sync_sd_card_py",    "1to1/report/_r36s_sync_sd_card_py"),
     ("report/_dcl_decoded.txt",         "1to1/report/_dcl_decoded.txt"),
     ("report/_fba_load_factory.asm",    "1to1/report/_fba_load_factory.asm"),
     ("report/_tf_folders.json",         "1to1/report/_tf_folders.json"),

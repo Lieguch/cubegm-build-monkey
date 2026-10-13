@@ -6237,3 +6237,103 @@ FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的�
 3. **P1-2**：madcock/sf2000_multicore 的 retro_core_t 函数表对照（R162 已裁决：仅 57-core 移植进主线时启用）。
 4. **P2**：R36S Wiki 第二参照物（.cpd/setting.xml/config.xml，需真实样本）。
 5. **P2**：B6 天花板突破（需 qemu 全系统仿真或真机 drop-in；真机仍是像素级 1:1 的最终裁定）。
+
+> 追加前 `old_intact=True`（旧文 491033 B / sha 88668cb5838a9e2b…）；由 `tools/append_progress.py` 原子追加。
+# 第 174 轮 · 2026-10-13：五项待办闭环（driver.so ABI 对表 / RUNBOOK 口径纠错 / retro_core_t / R36S 第二参照）+ config.xml 角色分层新发现
+
+### 日期
+
+2026-10-13
+
+### 完成事项
+
+1. **P0-1（driver.so 符号族 diff 对齐）闭环** —— 本轮不引用 R164-R166 旧结论，全部重测：
+   - pyelftools 实测 golden driver.so：**.dynsym DEFINED 61**（FUNC 39 + OBJECT 15 + NOTYPE 7）、
+     **UNDEFINED 65**（libdrm 21 + libasound 19 + libc/pthread 25）、DT_NEEDED 5。
+     全量落盘 `report/_r174_driver_dynsyms.txt`。
+   - 与项目已逆向清单（`tools/driver_stub_coverage.py` 的 ABI_SYMS 9 个）对表：
+     61 - 9 = 52 个非 ABI 符号经逐族查证**全部属 driver.so 内部实现**（gr_* 25 + 线程辅助 3 +
+     OBJECT 状态 15 + 段符号 7 + video_rotation），rkgame 只经 9 ABI 进入 ⇒ 划分正确，非缺口。
+   - 入口链源码实测（全仓扫描）：InitDisplay（dlopen + 6 dlsym + video_drivers_init）/
+     InitSound（2 dlsym）/ Deinit 两侧 / **InitJoystick 不经 driver.so**（sunxi_gpio_init +
+     InitRFJoystick 直走）⇒ driver.so 职责面 = 显示 + 声音。
+   - 交付 `report/driver_abi_diff.md`（75 行）：符号族分族表、9 ABI 消费面逐符号源码行号、
+     假桩覆盖四层验证（静态 9/9 + 三腿自证 + UND 提供方 + 运行时 M3/M4/B6R）。
+   - **桩分层澄清**：设备 sysroot（`golden/device_rootfs_min`）实测**自带真实** libdrm/libasound/
+     **libkms** 三库；三桩的作用是「可观测替换」（记录帧哈希/提交）而非补缺失；
+     libkms 桩为空桩合法（driver.so 无 kms_* UND，只需 SONAME 存在，build_libkms_stub.sh 已证）。
+2. **P0-2（DIAG-RUNBOOK 增补）核实 + 口径纠错**：
+   - §九 autorun 劫持（双属性整标签替换 + 回退步骤）在位；
+   - §十观测点（10.1 视频 6 入口 / 10.2 音频 3 入口 / 10.3 DRM_IOCTL 计数 / 10.4 qemu 限制）在位。
+   - ★ **口径不一致修正**：§十原标题「hcge / fbdev_draw_frame 观测点」用的是 R161 的
+     SF3000（MIPS）符号族 —— R162 已实测证伪（本机 0 个 hcge_*/fbdev_*）、PROJECT-MEMORY
+     纪律 159 已定论「画面走标准 DRM/KMS」。本轮 R174 再次 pyelftools 全量复核仍为 0。
+     修正标题为「DRM/KMS 显示链 + ALSA 音频链观测点」，并追加 §10.5 命名纠错小节
+     （含符号族归属表 + 「R161 猜测已作废」显式记录，防旧结论回潮）。
+3. **P1-1 收尾后的深化发现（config.xml vs DCL 对表）**：
+   - 本机 `cores/config.xml` 实测 18 core；工厂 `default_core_list`（@0x3b0254）10 core。
+     **config-only 12 个**（fbalpha/fbalpha2012/mame2000/pgm/fba/cps2/extend/snes9x/
+     snes9x2010/mgba/vbam/nestopia）；**DCL-only 4 个**（gpsp/prosystem/vrt/dosbox）；共有 6。
+   - **运行时角色分层（源码实测，推翻"config.xml = 主映射"的 R36S 式假设）**：
+     默认加载 = FilePreEmu → GetCoreIndex（DCL 扫表定 Filetype）；
+     filelist.xml = 显式覆盖（135 条）；
+     **config.xml = 交互选择器候选池**（FUN_00021c08_SeletEmuCore.c:135-154 按
+     supported_extensions 匹配 FilenameExt 列候选；调用方 7 处：mui_menu/type/search/
+     recent/shoucang/setting）。
+   - `libemu_fbafast.so` 仅 filelist.xml 出现 1 次（folder 000），两处配置均无 ⇒ 纯显式条目。
+4. **P1-2（madcock/sf2000_multicore retro_core_t 权威对照）闭环**：
+   - 联网核实仓库（GitHub 25★/337 commits，fork 自 gitlab kobily），抓取原文三件
+     （core_api.h 1365 B / core_api.c 17,681 B / main.c 6136 B，落盘 report/_sf2000_*）。
+   - `struct retro_core_t` = **26 个函数指针**（libretro 1.10.x 全 frontend 面），
+     loader 经 `.init.core_entry` 节的 `__core_entry__` 取表。
+   - 逐项对表（`report/retro_core_t_map.md`）：**26 项中 rkgame dlsym 消费 16 个**；
+     未调用 10 个（api_version/get_system_info/get_system_av_info/set_audio_sample/reset/
+     cheat_*/load_game_special/get_memory_*）；**rkgame 独有 4 个厂商扩展**
+     （retro_is_support / retro_set_progress_callback / retro_set_unzip / SetFrameSkip）。
+   - 机制定性：rkgame = 「driver.so 私有 9 ABI 直驱硬件」+「逐符号 dlsym core」两层结构，
+     **非标准 libretro frontend**；存档 = zlib 压缩即时 state（不用 get_memory_* 的 .srm 路径）。
+5. **P2（R36S Wiki 第二参照）闭环**：
+   - 联网核实 `LiamJ74/R36S-V2.6_Wiki`（iCube/cubegm 框架，RK3326，与本机用户态同源），
+     抓 README（21,509 B）+ sync_sd_card.py 落盘 report/_r36s_*。
+   - 匹配性逐项验证（`report/r36s_second_reference.md`）：filelist.xml 格式**逐字符同构** ✓；
+     config.xml 结构同构 ✓；UI 资源同为 ZIP（.zip vs .cpd 命名差异）✓；setting.xml 同框架
+     且本机多 autorun + gamelist 标记位；**allfiles.lst 本机无对应物**（不借用）；
+     屏幕分辨率 640×480 vs 320×240 未对齐（不引入）。
+   - 增量解释：gamelist=1 仅 ui_cn（语言包 = 游戏列表数据提供者，本机特有）；
+     savestatehotkey=3072 + autorestore=03 可配热键。
+6. **R173 推送后的正式回归取证**（GitHub run 38382028547，commit e92b568）：
+   - **GATE_RC=2**（仅 B6 诚实红）—— 与 R172 修复后判决完全一致：
+     B0c 两遍一致 / B1 124vs124 / B2 55/55 / B3·B4 0/0 / B5 log_sha 同 /
+     B6 e96c9dc5 FAIL（R171b 钉死的观测点天花板）/ B6R 1024 vs 2048 PASS /
+     B7 1/1 · B8a 4/4 · B8b 180/180；M0–M7 三侧 ✓ 差集空。
+   - **M6 key2 re-assert 断言三侧命中**（R172 复活的死代码首次真正执行）：
+     `[shim] key2 re-assert on open(/sdcard/cubegm//ui_cn.zip) -> 回读=50 4b 05 06 50 4b 07 08` ×3。
+   - 帧提交断言 1024/2048/1024 均 > 0。
+   - ⇒ FBA_Load sprintf 根修后**无行为劣化**，rebuild 侧与 factory 侧继续同步。
+   - job 日志落盘 `report/ci_r173/_job38382028547.log`（167,607 B / 1898 行）。
+   - 同 commit 的 rkgame-rebuild / toolchain-ab 均 success；1to1-verify failure 为既有红
+     （上一 commit 585de0cd 同红，非本轮引入）。
+
+### 新发现与决策
+
+| # | 发现 | 决策/处置 |
+|---|---|---|
+| ① | DIAG-RUNBOOK §十标题用 SF3000（MIPS）符号族 hcge/fbdev，与纪律 159 定论（本机走 DRM/KMS）**口径不一致** | 已修正标题 + 加 §10.5 纠错小节；教训：R162 追加该节时只改了正文没改标题 ⇒ **追加文档必须连标题一起校准** |
+| ② | config.xml（18 core）与工厂 DCL（10 core）大面积不一致，一度看似"配置漂移" | 源码实测定性：config.xml = 交互选择器候选池（SeletEmuCore 7 个调用方），DCL = 默认扫表路径 ⇒ 两配置服务不同路径，**不一致是设计而非缺陷**；已写入 r36s_second_reference.md §3 |
+| ③ | 设备 sysroot 自带真实 libdrm/libasound/libkms —— "三桩补缺失"的旧叙述不完整 | 修正为「可观测替换」口径；libkms 空桩的合法性有 UND 实测支撑（0 个 kms_*） |
+| ④ | InitJoystick 不经 driver.so（sunxi_gpio + RF joystick 在主程序内） | driver.so 职责面收窄为「显示 + 声音」；P0-1 结论据此划定 |
+| ⑤ | R36S Wiki 的 "config.xml = extension→core 主映射" 描述不适用于本机 | 第二参照只借框架层（启动链/filelist 格式/UI ZIP 结构/setting 字段），不借配置分层数值 |
+
+### 下一步待办
+
+1. **P0**：提交本轮 8 个新/改文件（driver_abi_diff.md / retro_core_t_map.md /
+   r36s_second_reference.md / _r174_driver_dynsyms.txt / _sf2000_*×3 / _r36s_*×2 /
+   DIAG-RUNBOOK.md 修正 / PROGRESS.md R174 存档）推 CNB + GitHub，触发正式回归
+   （预期 rc=2 仅 B6 诚实红，判决不随本轮文档类改动漂移）。
+2. **P1**：`ledger/factory_globals.tsv` 补登 FBA 10 槽区（0x3b012c-0x3b0150，
+   命名 `fba_core_slots[10]`，9+1 槽）—— R173 遗留。
+3. **P1**：57-core 移植启用 retro_core_t 基线时（R162 裁决口径），先补测本机 libemu core
+   导出面（需真实 core 样本，当前 golden 无）。
+4. **P2**：B6 天花板突破（需 qemu 全系统仿真或真机 drop-in；真机仍是像素级 1:1 的最终裁定）。
+5. **P2**：本机屏幕分辨率对表（FBA 输入 320×240 vs R36S 640×480）—— 需 driver.so
+   gr_init 路径取证或 setting.xml 字段实证。
