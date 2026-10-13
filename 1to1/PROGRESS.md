@@ -6419,3 +6419,51 @@ FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的�
 - 消费侧安全：`driver_stub_coverage.py --print-need private` 实跑 rc=0，9 ABI 输出不变。
 - 补登依据 = R173 反汇编（0x2b6d78 sprintf 调用点 r3 跨块携带）+ 逐槽 deref 实证，
   详见 `report/folder_core_map.md` §B2。
+
+> 追加前 `old_intact=True`（旧文 506325 B / sha a9a5bd7b75b82644…）；由 `tools/append_progress.py` 原子追加。
+### R174 最终段（2026-10-14）：CI 第三轮取证 + ★口径更正（「rkgame-rebuild」CI 是 B 线，不是 A 线构建证据）
+
+**① 口径更正（重要，防假绿）**
+
+前两段记录里「rkgame-rebuild（同 commit）success ⇒ FBA_Load 修复在正式构建链无回归」的
+**论据是错的**（结论对、依据错）：
+
+| 误读 | 事实 |
+|---|---|
+| CI 列表里的 `rkgame-rebuild` workflow = A 线构建门禁 | **它是 B 线（`rkgame-rebuild/`，用户 2026-09-22 已定性「废弃的路」）的 `build.yml`**（PROJECT-MEMORY.md §两条线对照表实证：B 线 CI = `build.yml`，workflow name = rkgame-rebuild）。它与 A 线、与 FBA_Load **零交集** |
+| ⇒ A 线构建无回归的证据 | **A 线构建证据 = `1to1-qemu-behav` job 内的「构建 1:1 重建产物」step**（本轮已逐项取证，见 ②） |
+
+教训：workflow 名字与线名相反（PROJECT-MEMORY 已警示「文件名与线名相反，勿混」），
+本轮又踩一次 ⇒ 已把该警示复制到本段，**凡引用 CI 结论必须先确认 workflow 属于哪条线**。
+
+**② A 线构建 + 行为门禁第三轮取证（ddeaced4，run 38438266450，job 115437846560）**
+
+| 层 | 证据 | 结论 |
+|---|---|---|
+| A 线构建 | `XUnzip.o 就绪：39292 B` → `link_full.sh` 产 `build/rkgame.rebuilt.elf` **5,487,524 B** → `dyn_audit` **FAIL 0 / WARN 1**（DT_INIT_ARRAYSZ=0，C 程序无构造子属正常）⇒ PASS | **FBA_Load 修复（R173）在正式构建链无回归** |
+| P3 布局 | 全局符号命中率 **99.0%（193/195）**，账本符号 951 | 与历史持平 |
+| 行为门禁 | **GATE_RC=2**：B0c 55/55 两遍一致 / B1 124vs124 / B2 55/55 / B3·B4 0/0 / B5 d7c86a6f… 同 / B6 e96c9dc5 FAIL（诚实红）/ **B6R 3072 vs 3072** / B7 1/1 / B8a 4/4 / B8b 180/180 / M0–M7 三侧 ✓ 差集空 / M6 key2 三侧命中 | 判决连续第四轮稳定 rc=2 |
+| B 线 CI | `rkgame-rebuild`（B 线 build.yml）success —— **与本项目判据无关** | 不计入 |
+
+日志：`report/ci_r174/_job38438266450.log`（167,580 B / 1897 行）。
+
+**③ 远端卫生（提为用户决策项，本轮不动手）**
+
+GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删除的存量）：
+
+| 内容 | 规模 | 属性 |
+|---|---|---|
+| `rkgame-rebuild/` 整树 | 数百文件 | **B 线**（用户已定性废弃） |
+| `.github/workflows/build.yml` | 1 | B 线 CI（每次 push 仍自动跑） |
+| `__pycache__/*.pyc` | 3 | 构建产物（filelist 明确排除，存量遗留） |
+| `1to1/tools/kr_argcount_pending.txt` 等 | 若干 | 待考证 |
+
+⇒ 「是否清理 B 线存量（含停掉它的 CI）」影响用户历史工作线与 CI 额度，**留待用户决策**；
+本轮只在台账登记，不删远端文件。
+
+**④ 双远端最终状态**
+
+| 远端 | main | 内容 |
+|---|---|---|
+| GitHub | `ddeaced4fe7aff965b576e3d62388a34d6dcdc60` | R174 全部产物（924/924 blob 校验） |
+| CNB | `7f5e372693b7fdac3e15ff6eba69c372855690f0` | 同内容（工作区内网中继，保留 CNB 历史链与 10 个遗留文件） |
