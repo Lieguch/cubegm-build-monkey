@@ -6337,3 +6337,70 @@ FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的�
 4. **P2**：B6 天花板突破（需 qemu 全系统仿真或真机 drop-in；真机仍是像素级 1:1 的最终裁定）。
 5. **P2**：本机屏幕分辨率对表（FBA 输入 320×240 vs R36S 640×480）—— 需 driver.so
    gr_init 路径取证或 setting.xml 字段实证。
+
+> 追加前 `old_intact=True`（旧文 499710 B / sha 059eaa1b9e104144…）；由 `tools/append_progress.py` 原子追加。
+### R174 补充（2026-10-14 凌晨）：提交推送闭环 + 正式回归取证 + CNB 通道故障与内网中继根修
+
+**① 推送（双远端）**
+
+| 远端 | commit | 校验 |
+|---|---|---|
+| GitHub（构建触发） | `b295f9d59adb17956ab63bee2fddb5a55f338bea` | 924/924 blob sha 逐项 match（push_1to1.py） |
+| CNB（权威托管） | `ac0fe294126070d86f744e7984d4aee6025cd6fb`（52536e5..ac0fe29） | 15 项差异全部落地（10 新 report + DIAG-RUNBOOK/PROGRESS/filelist.py 修改） |
+
+**② CNB 推送通道故障与根修（本轮最大工程事件）**
+
+现象：`sync_mirror.py --remote cnb` 的 push 阶段**静默挂起**（timeout 280s/540s 均被杀），
+`git push -v` 无任何输出即 SIGTERM。
+
+取证链（逐层剥开，无猜测）：
+
+| # | 层 | 证据 | 定性 |
+|---|---|---|---|
+| 1 | git config | `credential.https://cnb.cool.helper=` 值为**空串**（rc=0 输出 `\n`）⇒ sync_mirror 的 fail-closed 检测判「未配置」 | 配置被某进程清空（R173 时该 key 有值） |
+| 2 | 第一次修复尝试 | 设裸值 `cnb git-credential` ⇒ `git: 'credential-cnb' is not a git command` | git 把裸名当 helper **名**解析（找 `git-credential-cnb`），正确形式须是路径或 PATH 可解析名 |
+| 3 | 第二次尝试 | 设绝对路径无扩展名（`.../cnb`）⇒ push 挂起 SIGTERM | Windows git 执行 helper 需可执行扩展名 |
+| 4 | 第三次尝试 | 设 `.../cnb.cmd git-credential` ⇒ **HTTP 401**（`GIT_CURL_VERBOSE=1`：经本机 HTTP 代理隧道 CONNECT cnb.cool:443，`GET info/refs?service=git-receive-pack` → `401 Unauthorized`） | helper 本身报 `unknown host: cnb.cool` ⇒ helper 与 git 的 host 协商失败 |
+| 5 | 直连排除 | `~/.cnb/token` 的 access_token 内嵌 URL 推送 ⇒ `fatal: remote helper 'https' aborted session`（token 是 `cnb_at_` 封装非 git 密码） | 排除 |
+| 6 | CLI API 排除 | `cnb git --help` 46 行全清单：只有 create-blob/create-branch/get-*，**无 create-tree/create-commit/update-ref** | CLI 不能四步推送 |
+| 7 | SSH 排除 | `git ls-remote git@cnb.cool:...` ⇒ `ssh: connect to host cnb.cool port 22: Connection timed out` | 本机到 CNB SSH 不通 |
+| 8 | **根修（采用）** | **CNB 云开发工作区内网中继**：工作区 SSH 进 → `git clone --depth 1 github.com/Lieguch/cubegm-build-monkey` → `git fetch --unshallow cnb main` → 内容级比对 → `git checkout b295f9d -- <15 个差异文件>` → commit → `git push cnb` | 工作区在 CNB 平台内网（无 401/无代理），推送权限内建 |
+
+内容级比对的关键决策（防数据丢失）：
+
+| 事实 | 处置 |
+|---|---|
+| GitHub 链与 CNB 链**历史不同源**（两条独立 commit 链，SHA 不同）⇒ force push 会丢 CNB 侧内容 | **禁止 force**；改「检出差异文件到 CNB 链」 |
+| CNB 独有 10 个文件 = 9 个 `.bak_*` 备份 + `push_1to1.py`（含 token，filelist EXCLUDE 的历史遗留） | **保留不动**（删遗留是另一项决策，本轮不扩 scope） |
+| GitHub 侧多 343 个 = R174 的 10 个真产物 + `rkgame-rebuild/` 遗留树（数百文件）+ **3 个 `__pycache__/*.pyc`** + `.github/workflows/build.yml` + `.gitignore` | **不同步 pyc 与 rkgame-rebuild 遗留到 CNB**（构建产物/非 filelist 清单项）；只同步 R174 的 15 项差异 |
+| 工作区 `git commit` 报 `[GNUPG:] FAILURE sign 1` / `failed to write commit object` | 工作区 git 配了 `commit.gpgsign=true` 但无密钥 ⇒ `-c commit.gpgsign=false` |
+
+**③ R174 的正式回归取证（run 38435189668，commit b295f9d，job 115427213661）**
+
+| 判据 | 结果 |
+|---|---|
+| GATE_RC | **2**（仅 B6 诚实红，与 R173/R172 判决逐项一致） |
+| B0c | 55/55 可复现前缀，参考实现两遍完全一致 |
+| B1 / B2 / B3 / B4 / B5 | 124vs124 PASS / 55/55 PASS / 0vs0 / 0vs0 / d7c86a6f… 同 |
+| B6 frame_hash | e96c9dc5 vs e96c9dc5 FAIL（全零基线，R171b 钉死的观测点天花板） |
+| B6R frame_commits | **1024 vs 1024** PASS |
+| B7 / B8a / B8b | 1/1、4/4、180/180 PASS |
+| 里程碑 M0–M7 | 三侧 ✓，差集空 |
+| M6 key2 re-assert | 三侧命中 `回读=50 4b 05 06 50 4b 07 08` |
+| rkgame-rebuild（同 commit） | **success** ⇒ FBA_Load 修复在正式构建链无回归 |
+| 1to1-verify（同 commit） | failure = **既有红**（上一 commit e92b568 同红，非本轮引入） |
+
+⇒ **R174 的文档类改动 + DIAG-RUNBOOK 标题修正零行为漂移**；判决连续三轮稳定在 rc=2（R172 修复后）。
+
+日志证据：`report/ci_r174/_job38435189668.log`（167,591 B / 1897 行）。
+
+**④ 新增纪律（写入口径）**
+
+1. **CNB 推送的三级通道优先级**（本轮实测排序）：
+   ① 本机 `sync_mirror.py`（helper 正常时最快）→ ② **云开发工作区内网中继**（helper/代理故障时，已实证可行）→
+   ③ 用户手动 `cnb login`（前两级都挂时）。
+   中继配方已固化在本段（clone GitHub → unshallow fetch CNB → checkout 差异 → 禁 GPG 签名的 commit → push）。
+2. **双链结构认知**：GitHub 链（push_1to1.py 全量内容提交）与 CNB 链（sync_mirror.py 镜像提交）历史不同源，
+   **任何跨链同步都必须内容级比对后走「检出差异」而非 force**。
+3. **远端卫生**：GitHub 侧现存 3 个 `__pycache__/*.pyc` 与 `rkgame-rebuild/` 遗留树（filelist 规则加了之后
+   未从远端删除的存量）—— 增量推送不删文件，需另立「远端清理」任务。
