@@ -6404,3 +6404,18 @@ FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的�
    **任何跨链同步都必须内容级比对后走「检出差异」而非 force**。
 3. **远端卫生**：GitHub 侧现存 3 个 `__pycache__/*.pyc` 与 `rkgame-rebuild/` 遗留树（filelist 规则加了之后
    未从远端删除的存量）—— 增量推送不删文件，需另立「远端清理」任务。
+
+> 追加前 `old_intact=True`（旧文 505354 B / sha f762cb40835f2047…）；由 `tools/append_progress.py` 原子追加。
+### R174 台账补登记（2026-10-14）：`fba_core_slots` 入 ledger
+
+`ledger/factory_globals.tsv` 补登 `fba_core_slots`（.data @0x3b012c，size 0x28，10 槽）：
+
+| 槽 | 值 | 串 |
+|---|---|---|
+| [0..8] | 0x2ddf6c / 2ddf80 / 2ddf94 / 2ddfa4 / 2ddfb4 / 2ddfc4 / 2ddfd8 / 2ddfec / 2de004 | libemu_neogeo / capcom / pgm / fba / cps2 / extend / fbalpha / fbalpha2012 / mame2000 .so |
+| [9] | 0x2dbcb4 | 空串（终止哨兵） |
+
+- 注释按既有文件惯例放**独立 `#` 行**（主行保持 7 列、parent 为空 —— 已自证全文件 0 个非 7 列主行）。
+- 消费侧安全：`driver_stub_coverage.py --print-need private` 实跑 rc=0，9 ABI 输出不变。
+- 补登依据 = R173 反汇编（0x2b6d78 sprintf 调用点 r3 跨块携带）+ 逐槽 deref 实证，
+  详见 `report/folder_core_map.md` §B2。
