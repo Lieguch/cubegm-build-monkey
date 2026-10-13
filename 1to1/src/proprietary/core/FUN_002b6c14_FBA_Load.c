@@ -56,10 +56,19 @@ gh_u4 FBA_Load(char *param_1)
   screen_w = 0x140;
   screen_x = 0;
   strcpy(fileName,param_1);
+  /* ★ 2026-10-13（P1-1 对表取证定案）：工厂反汇编 0x2b6d6c-0x2b6d78 证实
+   * sprintf 为 **4 参**调用 —— r3 在两处装载当前候选 core 名指针：
+   *   首次入口 0x2b6cc0: ldr r3,[sp,#16]  = core_path[0]（libemu_neogeo.so）
+   *   循环轮次 0x2b6d5c / 0x2b6db0: ldr r3,[r5,#4]!（pre-index 自增）
+   * 之后 0x2b6d6c-0x2b6d74 仅 mov r2,r8(work_path)/r1,r9("%s/cores/%s")/r0,r4(buf)，
+   * **r3 从未被覆盖** ⇒ 第 2 个 %s 的变参 = 当前候选 core 名。
+   * 证据文件：report/_fba_load_factory.asm（云端 objdump 原件）。
+   * 此前重建漏传第 4 参 ⇒ dlopen 路径字符串缺 core 名段（读未定义 r3 残值）= 重建 bug，本轮根修。
+   */
   if (*core_path[0] != '\0') {           /* 原: if (*local_150 != '\0') */
     do {
       while( true ) {
-        sprintf(acStack_128,"%s/cores/%s",work_path);
+        sprintf(acStack_128,"%s/cores/%s",work_path,*ppcVar4);
         handle_emurun = dlopen(acStack_128,2);
         if (handle_emurun != 0) break;
         uVar2 = (gh_u4)dlerror();

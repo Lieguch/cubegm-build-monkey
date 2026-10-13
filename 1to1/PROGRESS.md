@@ -6071,3 +6071,169 @@ FAIL（全零基线·对称·天花板实证）——**这正是"诚实红"的�
    证明"，这恰恰是真的；改成 WARN 会让"3586 帧全零"看起来像没事。
 3. 推主干后触发 GitHub Actions `1to1-qemu-behav` 作正式回归记录（预期 step 9 =
    R171b 同款判决：8 PASS + B6 诚实红）。
+
+> 追加前 `old_intact=True`（旧文 478550 B / sha b35104a9b84002a7…）；由 `tools/append_progress.py` 原子追加。
+## 第 172 轮 · 2026-10-12：CI 新红定案 = **桩自身数据竞争** ⇒ 帧观测点根修（判据语义未动）
+
+### 日期
+
+2026-10-12
+
+### 完成事项
+
+1. **R171b 推主干后的正式回归取回并定案**：GitHub Actions run **38223795416**（commit 9a23552c）
+   在 step 10（硬门禁）以 **exit code 3** 失败 —— **不是**预期的「8 PASS + B6 诚实红（rc=2）」，
+   而是 `behav_diff` 的 **INCONCLUSIVE(3)**。
+2. **取回制品做字节级取证**（`report/ci_r171/`）：
+   - `gh_r171b_job.log` 164,856 B（job 日志；302→Azure blob，**不带** Authorization 才下得来）
+   - `gh_r171b_artifact.zip` 405,741 B（61 项，含三侧 `rundir_*/stderr.txt|events.txt` 原件）
+   - 三侧 stderr：`rundir_factory` 207,243 B / `rundir_control` 207,475 B / `rundir_rebuild` 206,315 B
+   - 逐行比对 factory vs control（**同一份**二进制 sha `8ff3b4b70c253ff7`）：**45+ 行字节不一致**
+3. **根因定位（桩自身竞态，非被测对象分歧）并完成根修**：改 4 处文件，见「新发现与决策」。
+4. **云开发单变量复测**（CNB workspace `cnb-v4g-1k4ng6f3e`，R171b 同款 env + 新桩）：
+   门禁**恢复判定力**，rc=2（仅 B6 诚实红）。
+5. 推 CNB（`9634daf..67db7f3`，3 文件 +218/-63）与 GitHub（`585de0cd`，910/910 blob 校验），
+   触发正式回归 run **38272523398**。
+
+### 字节级证据（决定性）
+
+| 现象 | factory | control | 定性 |
+|---|---|---|---|
+| 帧行总数 | 3562 | 3566 | 调度/竞态 ⇒ 行数不同 |
+| 帧号重复 | `frame#4` ×2、`#6` ×2、`#8` ×2 | 同 | **`g_fb_flips++` 非原子**（两线程同读旧值：lost update） |
+| 行撕裂 | `frame#10 hash=e96c9dc5` | `frame#10 hashe96c9dc5` | **共享 `g_hash_line`：A 格式化→B 覆写→A 的 write 打出残行** |
+| 帧号错位 | 从第 62 行起两侧帧号错开 1（#170 / #171） | 同 | ①的连带 ⇒ events 前缀断裂 |
+
+⇒ B0c 判「可复现前缀 **61/228 < 60%**」⇒ INCONCLUSIVE(3) ⇒ step 10 红。
+
+### 新发现与决策
+
+**① 三处设计缺陷（CNB 云测 227/227 只是运气好撞上慢调度，不是"CI 才出问题"）**
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| ① | 行在**全局** `g_hash_line[256]` 里格式化后 `write(2)` | 并发覆写 ⇒ 残行（`hash=` → `hashe`） |
+| ② | 提交序号 `g_fb_flips++` 非原子 | 帧号重复 / 错位 |
+| ③ | **每帧**打一行（30 s 内 3586 行恒等哈希） | 竞态窗口 ×3586；且把 events 的 `head -200` 窗口**挤成帧行**，真语义事件被挤出 |
+
+**② 根修（4 个文件，不靠运气、不靠"重试/豁免/调阈值"）**
+
+| 文件 | 改动 | 消除的缺陷 |
+|---|---|---|
+| `tools/guest_shim/drm_stub.c` | 行改在**栈上**构造 + 单次 `write(2)`（≤PIPE_BUF ⇒ POSIX 管道写原子） | ① |
+| 同上 | 新增 ARMv7 **ldrex/strex** 原子自增（`fb_atomic_inc`）+ 自旋锁（`fb_lock_take/drop`），把「取号+实体快照+哈希+打行」串行化 | ② |
+| 同上 | **只打有信息量的行**：首帧 / 哈希变化帧 / 每 1024 次提交的 `chk` 检查点 | ③ |
+| 同上 | `dumb_fill` / `drmModeAddFB2` 实体切换进锁，并**不再主动 munmap 旧实体**（GEM 语义 + 消除哈希线程的 UAF）；删除死代码 `g_hash_line` / `drm_stub_last_hash`（全仓 0 消费者） | 并发安全 |
+| `tools/behav_capture.sh` | events 流剔除 `^\[drmstub\] frame#`（沿用既有 `[shim] [sp+N]` 先例）；`FBFRAMES` 由「行数」改为「`frame#N` 最大序号」 | 判据对调度噪声免疫 |
+| `.github/workflows/1to1-qemu-behav.yml` | 门禁 rc 先接住（`set +e` + `GATE_RC=$?`）⇒ **M6 证据断言与"帧提交 > 0"断言必然执行**；再按 rc 严判退出（0 过 / 2 诚实红 / 其余硬失败） | **死代码**：此前门禁非零即整步中断，M6 断言一次都没跑过 |
+
+**③ 两个"死代码"发现（本轮副产物，均已修）**
+- `drm_stub_last_hash()` + `g_hash_line`：全仓 grep **0 消费者**（写的人是给"未来 shim 用"留的钩子，从未接线）。
+- workflow step 9/10 的 M6 证据断言：位于门禁脚本之后，在 `bash -e` 下**只要门禁非零就中断本步** ⇒ 从未执行（run 38223795416 以 rc=3 中断即为实证）。
+
+**④ 判据语义一律未动**（只修仪器，不动判尺）
+- B6 保持 **FAIL**（全零基线 ⇒ 未观测到像素）—— R171b 已单变量钉死的诚实红，继续保留；
+- B6R 判「两侧都 > 0」，不比较精确帧数（帧数本就是 host 调度的函数）；
+- B6/B6R 的取值**不经过 events**（直接从 `stderr.txt` 原文提取）⇒ 剔除帧行是减噪，**不丢证据**。
+
+### 云开发复测结果（新桩，R171b 同款 env）
+
+| 判据 | CI 旧桩（38223795416） | **云开发新桩** |
+|---|---|---|
+| B0c 可复现前缀 | **61/228 ⇒ INCONCLUSIVE(3)** | **53/53 整段可判定 ✓** |
+| B1 exit_code | 未判定 | 124 vs 124 PASS |
+| B2 events | 未判定 | 53/53 PASS |
+| B3/B4 files | 未判定 | 0/0 PASS |
+| B5 log_sha | 未判定 | d7c86a6f… 两侧相同 PASS |
+| **B6 frame_hash** | 未判定 | **e96c9dc5 = 全零基线 FAIL（诚实红保留）** |
+| B6R frame_commits | 未判定 | **2048 vs 2048 PASS**（`chk` 检查点导出，两侧同值） |
+| B7/B8a/B8b | 未判定 | 1/1、4/4、180/180 PASS |
+| 里程碑 M0–M7 | 三侧 ✓ | 三侧 ✓，差集空 |
+| **GATE_RC** | **3** | **2（仅 B6 一项）** |
+
+原始证据（三侧完全一致）：
+
+| 侧 | stderr 行数 | `frame#` 行数 | 帧行内容 |
+|---|---|---|---|
+| factory | **29**（旧 3586） | 3 | `frame#1` / `frame#1024 … chk` / `frame#2048 … chk` |
+| rebuild | **29** | 3 | 同上（逐字节一致） |
+| control | **29** | 3 | 同上（逐字节一致） |
+
+⇒ 噪声降 99.2%（3586→29 行），events 从 227 行降到 53 行且三侧一致，无残行、无重复帧号。
+
+### 下一步待办
+
+1. **P0**：等 GitHub Actions run **38272523398** 结论 —— 预期 rc=2（B6 诚实红），
+   且本轮新增的「M6 key2 re-assert 断言」与「帧提交 > 0 断言」**首次真正执行**。
+2. **P1**：golden folder→core 映射对表收尾（001/003/005-008，数据源 `fileinfo_decoded.txt`）。
+3. **P2（挂起）**：R36S `.cpd` 逆向（需真实样本）；`retro_core_t` 权威对照（R162 已裁决：
+   不引入为主判据，仅 57-core 移植进主线时启用）。
+4. **P2**：B6 天花板突破（需 qemu 全系统仿真或真机 drop-in；真机仍是像素级 1:1 的最终裁定）。
+
+> 追加前 `old_intact=True`（旧文 485224 B / sha 9f8a8fe74390bad0…）；由 `tools/append_progress.py` 原子追加。
+# 第 173 轮 · 2026-10-13：FBA_Load sprintf 缺参定案根修 + P1-1 三源对表固化
+
+### 日期
+
+2026-10-13
+
+### 完成事项
+
+1. **FBA_Load sprintf 缺参疑点取证定案（P1-1 衍生发现 → 本轮根修）**：
+   - 云端 workspace（cnb-vu1-1k4pirqsb，`arm-linux-gnueabihf-objdump`）反汇编
+     `FBA_Load`（0x2b6c14-0x2b6f58，215 行原件回传 `report/_fba_load_factory.asm`，
+     8790 B / sha256 头 43b7fb9456cafe8c）。
+   - **决定性证据链**（sprintf@plt 调用点 0x2b6d78）：
+     - 首次入口 `0x2b6cc0: ldr r3,[sp,#16]` = core_path[0]（libemu_neogeo.so 串指针）；
+     - 循环轮次 `0x2b6d5c / 0x2b6db0: ldr r3,[r5,#4]!`（pre-index 自增）= 下一候选 core 名；
+     - `0x2b6d6c-0x2b6d74` 仅 `mov r2,r8(work_path)` / `mov r1,r9("%s/cores/%s" @0x2ddc28)` /
+       `mov r0,r4(buf)`，**r3 从未被覆盖** ⇒ 第 2 个 `%s` 的变参 = 当前候选 core 名；
+   - **判决**：工厂是 **4 参** `sprintf(buf,"%s/cores/%s",work_path,core_path[i])`。
+     我方重建版只传 work_path ⇒ **重建 bug**（此前"工厂也传 1 参"的假设被推翻）。
+2. **根修**：`src/proprietary/core/FUN_002b6c14_FBA_Load.c:62` 改为
+   `sprintf(acStack_128,"%s/cores/%s",work_path,*ppcVar4)`，附完整证据注释（含指令级依据）。
+3. **修复验证（云端 zig cc，与 CI 同工具链）**：
+   - 语法冒烟：`python3 -m ziglang cc -target arm-linux-gnueabihf -Os -c` → **SMOKE_RC=0**，
+     `/tmp/fba_check.o` 4024 B、error 计数 0；
+   - **DCE 无复发**：`.o` UNDEF 表含 **10/10 `DAT_003b01xx`**（012c/0130/0134/0138/013c/0140/0144/0148/014c/0150）
+     + `DAT_002dbcb4` + `work_path` —— 与 GAP 16.99 的 -O0 基线（11 个工厂数据引用）一致，
+     跨对象步进修复未回退。
+4. **P1-1 三源数据全部固化**（`report/folder_core_map.md`，7.6 KB）：
+   - 源 A：filelist.xml 135 条 folder→core —— **实测三份一致**
+     （`golden/sdcard_min` = `build/_sd4` = `原厂SD卡根目录结构/cubegm`，均 8654 B / 135 条）；
+     原厂**只配了 000/002/004 三个 folder**（000 街机 105 条 / 002 SFC 21 条 / 004 GBA 9 条）；
+   - 源 B1：default_core_list 33 项 @0x3b0254 重解码（本轮修正布局为
+     `[32B ext][4B Filetype][32B core 名内联]`，core 名**内联非指针** ——
+     依据 `FUN_002b5624_GetCoreIndex.c` 的 `*(u32*)(0x3b0274 + i*0x44)` 公式），
+     落盘 `report/_dcl_decoded.txt`；
+   - 源 B2：FBA_Load 10 槽逐槽 deref（9 core + 空串终止哨兵 0x2dbcb4）；
+   - 源 C：TreeFrogUI 86 folder→core（`report/_tf_folders.json`）代表性条目对表完成。
+5. **对表五条结论**（详见 folder_core_map.md）：
+   - 本机 19 个 libemu_*.so 命名体系独立于 libretro，同名直击仅 stella/prosystem 两个；
+   - folder→core 是三层结构（filelist 显式绑定 → DCL 扩展名驱动兜底 → FBA 10 槽遍历）；
+   - BKP/ZIP（cnt=0x10000）无 core 名只置位 —— 与 filelist zip 条目显式指定互补；
+   - 57-core 移植必须保持 9 个街机候选 dlopen 顺序（neogeo→capcom→pgm→fba→cps2→extend→fbalpha→fbalpha2012→mame2000）；
+   - vrt core 仅由 DCL 驱动（佐证 config.xml 缺失 core 走 DCL/dlopen 路径）。
+6. **rodata dump 基址校正（172 轮遗留）**：`src/data/factory_rodata.bin` 基址实为
+   **0x2dbca4**（非 0x2dbca0，dump 头 16B 为 `%s/setting.xml`，与 ELF @0x2d3ca4 逐字节对齐），
+   9 个街机 core 串 VMA 全部对齐（neogeo 0x2ddf6c … mame2000 0x2de004）。
+
+### 新发现与决策
+
+| # | 发现 | 决策/处置 |
+|---|---|---|
+| ① | 工厂 FBA_Load 的 sprintf 是 **4 参**（r3 跨基本块携带候选 core 名）—— Ghidra 反编译在此**丢参数**（伪代码只显示 work_path 一个变参），属于"反编译器输出 ≠ 真实语义"的典型案例 | 已根修源码；**凡 Ghidra 变参调用（printf 族）必须回查反汇编数参数寄存器**，写入口径 |
+| ② | default_core_list 的 core 名是**内联 32B 字符串**而非指针（首版解码按指针 deref 全得 None） | 布局公式以消费方代码（FUN_002b5624 的 `+0x20` 偏移读内联串）为准，不以"像指针的 4B"为准 |
+| ③ | 台账 `ledger/factory_globals.tsv` 在 0x3b012c-0x3b0150 **无条目**（turbo_delay@0x3b0128 与 user_joy_key_mask@0x3b0154 之间的 9+1 槽未登记） | 待补：10 槽是 FBA 候选表，建议命名 `fba_core_slots[10]`（.data @0x3b012c，size 0x28） |
+| ④ | `filelist.xml` 001/003/005-008 无条目 —— 原厂出厂即如此，不是 sdcard_min 裁剪 | 这 6 个 folder 的 ROM 走 DCL 扩展名路径；P1-1 对表以"filelist 3 folder + DCL 33 扩展名"为完整口径 |
+| ⑤ | git 工作区里 `src/proprietary/core/` 大量 `??` 未跟踪文件（FBA_Load.c 等 25 个从未入库） | 下轮提交时一并入库（本轮改动已就绪待推） |
+
+### 下一步待办
+
+1. **P0**：提交本轮改动（FBA_Load.c 根修 + folder_core_map.md + _dcl_decoded.txt +
+   _fba_load_factory.asm + PROGRESS.md R173 存档）推 CNB + GitHub，触发
+   `1to1-qemu-behav` 正式回归（预期仍是 rc=2 仅 B6 诚实红；且 rebuild 侧行为不劣化）。
+2. **P1-1 收尾**：台账补登 `fba_core_slots[10]`（0x3b012c，9+1 槽）。
+3. **P1-2**：madcock/sf2000_multicore 的 retro_core_t 函数表对照（R162 已裁决：仅 57-core 移植进主线时启用）。
+4. **P2**：R36S Wiki 第二参照物（.cpd/setting.xml/config.xml，需真实样本）。
+5. **P2**：B6 天花板突破（需 qemu 全系统仿真或真机 drop-in；真机仍是像素级 1:1 的最终裁定）。

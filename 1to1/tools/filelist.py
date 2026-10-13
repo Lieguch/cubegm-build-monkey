@@ -50,6 +50,13 @@ FILES = [
     ("2026-09-21.md",                  "1to1/2026-09-21.md"),
     ("2026-09-22.md",                  "1to1/2026-09-22.md"),
     ("2026-09-23.md",                  "1to1/2026-09-23.md"),
+    # ★ 2026-10-13（R173）：P1-1 folder→core 三源对表产物（report/ 不在 walk 目录，
+    #   不显式登记会被静默漏推 —— 同 GAP.md 的坑）。
+    ("report/folder_core_map.md",       "1to1/report/folder_core_map.md"),
+    ("report/_dcl_decoded.txt",         "1to1/report/_dcl_decoded.txt"),
+    ("report/_fba_load_factory.asm",    "1to1/report/_fba_load_factory.asm"),
+    ("report/_tf_folders.json",         "1to1/report/_tf_folders.json"),
+    ("report/_tf_cores_full.md",        "1to1/report/_tf_cores_full.md"),
     ("tools/getjoblog.py",             "1to1/tools/getjoblog.py"),
     ("tools/pollreport.py",            "1to1/tools/pollreport.py"),
     ("tools/behav_capture.sh",         "1to1/tools/behav_capture.sh"),

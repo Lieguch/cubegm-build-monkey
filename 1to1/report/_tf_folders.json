@@ -1,0 +1,346 @@
+{
+ "classicube": [
+  "ClassiCube / Minecraft Classic",
+  "classicube_libretro.so"
+ ],
+ "mcpe": [
+  "Minecraft Pocket Edition 0.6.1",
+  "mcpe_libretro.so"
+ ],
+ "openclaw": [
+  "Captain Claw",
+  "openclaw_libretro.so"
+ ],
+ "fds": [
+  "Famicom Disk System (needs `disksys.rom`)",
+  "fceumm_libretro.so"
+ ],
+ "nest": [
+  "NES (accurate)",
+  "nestopia_libretro.so"
+ ],
+ "snes02": [
+  "SNES (2002)",
+  "snes9x2002_libretro.so"
+ ],
+ "gb": [
+  "Game Boy",
+  "gambatte_libretro.so"
+ ],
+ "gbgb": [
+  "Game Boy",
+  "gearboy_libretro.so"
+ ],
+ "gbac": [
+  "GBA (multicore)",
+  "gpsp_multicore_libretro.so"
+ ],
+ "gbav": [
+  "GBA",
+  "vba_next_libretro.so"
+ ],
+ "pokem": [
+  "Pokémon Mini",
+  "pokemini_libretro.so"
+ ],
+ "vb": [
+  "Virtual Boy",
+  "mednafen_vb_libretro.so"
+ ],
+ "gw": [
+  "Game & Watch",
+  "gw_libretro.so"
+ ],
+ "32x": [
+  "Sega 32X (may run slow)",
+  "picodrive_libretro.so"
+ ],
+ "gpgx": [
+  "Mega Drive (accurate)",
+  "genesis_plus_gx_libretro.so"
+ ],
+ "segacd": [
+  "Sega CD / Mega CD (needs BIOS)",
+  "genesis_plus_gx_libretro.so"
+ ],
+ "a26": [
+  "Atari 2600",
+  "stella2014_libretro.so"
+ ],
+ "a5200": [
+  "Atari 5200",
+  "a5200_libretro.so"
+ ],
+ "a78": [
+  "Atari 7800",
+  "prosystem_libretro.so"
+ ],
+ "a800": [
+  "Atari 800/XL/XE",
+  "atari800_libretro.so"
+ ],
+ "lnx": [
+  "Atari Lynx",
+  "handy_libretro.so"
+ ],
+ "atari-st": [
+  "Atari ST",
+  "castaway_libretro.so"
+ ],
+ "pce": [
+  "PC Engine / TurboGrafx-16",
+  "mednafen_pce_fast_libretro.so"
+ ],
+ "pcesgx": [
+  "PC Engine SuperGrafx",
+  "mednafen_supergrafx_libretro.so"
+ ],
+ "pcfx": [
+  "PC-FX",
+  "mednafen_pcfx_libretro.so"
+ ],
+ "pc8800": [
+  "NEC PC-88",
+  "quasi88_libretro.so"
+ ],
+ "ngpc": [
+  "Neo Geo Pocket / Color",
+  "race_libretro.so"
+ ],
+ "geolith": [
+  "Neo Geo AES/MVS",
+  "geolith_libretro.so"
+ ],
+ "wswan": [
+  "WonderSwan / Color",
+  "mednafen_wswan_libretro.so"
+ ],
+ "wsv": [
+  "Watara Supervision",
+  "potator_libretro.so"
+ ],
+ "spec": [
+  "ZX Spectrum",
+  "fuse_libretro.so"
+ ],
+ "zx81": [
+  "ZX81",
+  "81_libretro.so"
+ ],
+ "amstrad": [
+  "Amstrad CPC",
+  "cap32_libretro.so"
+ ],
+ "amstradb": [
+  "Amstrad CPC (CPC+)",
+  "cap32_libretro.so"
+ ],
+ "col": [
+  "ColecoVision",
+  "gearcoleco_libretro.so"
+ ],
+ "thom": [
+  "Thomson MO/TO",
+  "theodore_libretro.so"
+ ],
+ "xmil": [
+  "Sharp X68000",
+  "x68k_libretro.so"
+ ],
+ "amiga": [
+  "Amiga",
+  "uae_libretro.so"
+ ],
+ "Quake": [
+  "Quake",
+  "tyrquake_libretro.so"
+ ],
+ "quake2": [
+  "Quake II (software renderer, heavy; data in `baseq2/`)",
+  "vitaquake2_libretro.so"
+ ],
+ "wolf3d": [
+  "Wolfenstein 3D",
+  "ecwolf_libretro.so"
+ ],
+ "prboom": [
+  "Doom / Doom II / Final Doom / Heretic / Hexen",
+  "prboom_libretro.so"
+ ],
+ "outrun": [
+  "Out Run (arcade)",
+  "cannonball_libretro.so"
+ ],
+ "m2k": [
+  "MAME 2000 (MAME 0.37b5 romset)",
+  "mame2000_libretro.so"
+ ],
+ "cps1": [
+  "Capcom CPS-1 (FB Alpha 2012)",
+  "fbalpha2012_cps1_libretro.so"
+ ],
+ "cps2": [
+  "Capcom CPS-2 (FB Alpha 2012)",
+  "fbalpha2012_cps2_libretro.so"
+ ],
+ "cps3": [
+  "Capcom CPS-3 (FB Alpha 2012, experimental: expect low fps)",
+  "fbalpha2012_cps3_libretro.so"
+ ],
+ "neogeo": [
+  "Neo Geo (FB Alpha 2012)",
+  "fbalpha2012_neogeo_libretro.so"
+ ],
+ "cavestory": [
+  "Cave Story",
+  "nxengine_libretro.so"
+ ],
+ "flashback": [
+  "Flashback",
+  "reminiscence_libretro.so"
+ ],
+ "xrick": [
+  "Rick Dangerous",
+  "xrick_libretro.so"
+ ],
+ "jnb": [
+  "Jump 'n Bump",
+  "jumpnbump_libretro.so"
+ ],
+ "gong": [
+  "Pong clone",
+  "gong_libretro.so"
+ ],
+ "ps1r": [
+  "PlayStation (lightrec JIT)",
+  "pcsx_rearmed_libretro.so"
+ ],
+ "qpsx": [
+  "PlayStation (QPSX MIPS recompiler)",
+  "qpsx_libretro.so"
+ ],
+ "retro8": [
+  "PICO-8 compat",
+  "retro8_libretro.so"
+ ],
+ "lowres-nx": [
+  "LowRes NX",
+  "lowresnx_libretro.so"
+ ],
+ "tic80": [
+  "TIC-80 fantasy console (.tic carts)",
+  "tic80_libretro.so"
+ ],
+ "arduboy": [
+  "Arduboy (default)",
+  "ardens_libretro.so"
+ ],
+ "arduous": [
+  "Arduboy (alt, cycle-accurate)",
+  "arduous_libretro.so"
+ ],
+ "int": [
+  "Mattel Intellivision",
+  "freeintv_libretro.so"
+ ],
+ "fcf": [
+  "Fairchild Channel F",
+  "freechaf_libretro.so"
+ ],
+ "o2em": [
+  "Odyssey² / Videopac",
+  "o2em_libretro.so"
+ ],
+ "vec": [
+  "Vectrex",
+  "vecx_libretro.so"
+ ],
+ "cdg": [
+  "CD+G Karaoke",
+  "pocketcdg_libretro.so"
+ ],
+ "gme": [
+  "Game Music Emu",
+  "gme_libretro.so"
+ ],
+ "Ebook": [
+  "Ebook / document reader (EPUB/MOBI/PDF/CBZ/FB2) - **standalone** binary, MuPDF - 📖 [guide](docs/cores/ebook.md)",
+  "cubegm/ebook"
+ ],
+ "j2me": [
+  "J2ME / MIDP 2.0 (`.jar` / `.jad`)",
+  "j2me_libretro.so"
+ ],
+ "nds": [
+  "Nintendo DS - **standalone**, experimental",
+  "cubegm/dsperate/run_sf3000.sh"
+ ],
+ "snes": [
+  "SNES",
+  "snes9x2005_plus_libretro.so"
+ ],
+ "SFC": [
+  "SNES",
+  "snes9x2005_plus_libretro.so"
+ ],
+ "nes": [
+  "NES",
+  "fceumm_libretro.so"
+ ],
+ "FC": [
+  "NES",
+  "fceumm_libretro.so"
+ ],
+ "NES": [
+  "NES (fast)",
+  "quicknes_libretro.so"
+ ],
+ "GBA": [
+  "GBA",
+  "gpsp_libretro.so"
+ ],
+ "gba": [
+  "GBA",
+  "gpsp_libretro.so"
+ ],
+ "mgba": [
+  "GBA accurate",
+  "mgba_libretro.so"
+ ],
+ "gbaf": [
+  "GBA accurate",
+  "mgba_libretro.so"
+ ],
+ "sega": [
+  "MD/SMS",
+  "picodrive_libretro.so"
+ ],
+ "MD": [
+  "MD/SMS",
+  "picodrive_libretro.so"
+ ],
+ "SMS": [
+  "MD/SMS",
+  "picodrive_libretro.so"
+ ],
+ "gg": [
+  "Game Gear",
+  "gearsystem_libretro.so"
+ ],
+ "GG": [
+  "Game Gear",
+  "gearsystem_libretro.so"
+ ],
+ "gbb": [
+  "GB link",
+  "tgbdual_libretro.so"
+ ],
+ "dblcherrygb": [
+  "GB link",
+  "tgbdual_libretro.so"
+ ],
+ "nesq": [
+  "NES fast",
+  "quicknes_libretro.so"
+ ]
+}
