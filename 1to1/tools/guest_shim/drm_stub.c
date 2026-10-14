@@ -404,8 +404,8 @@ static void drmstub_once_nr(u32 nr)
 static u32 g_fb2_w, g_fb2_h, g_fb2_fmt, g_fb2_pitch;
 static int g_fb2_valid;
 
-/* framebuffer 的实体：与 dumb buffer 分开（前者是"扫描输出后备"，
- *后者才是内核认的 framebuffer）。 */
+/* ★ R176 根修后：framebuffer 实体 = dumb buffer 实体的**引用**（同一块 GEM），
+ * 内核 ADDFB2 语义即如此 —— 见 drmModeAddFB2 根修注释。 */
 static u8 *g_fb2_buf;
 static u32 g_fb2_bytes;
 
@@ -836,39 +836,31 @@ int drmModeAddFB2(int fd, u32 width, u32 height, u32 pixel_format,
     drmstub_once("drmModeAddFB2");
     if (fb_id) *fb_id = FAKE_FB_ID;
 
-    /* ★★★ 真正的观测点：按**调用方给的参数**建 framebuffer（内核语义）。
-     *   内核的 `drm_mode_addfb2` 就是用 w/h/pitch/offset 建 buffer，
-     *   之后 `SetCrtc`/`PageFlip` 扫描的正是它。
-     *   ⇒ 这是唯一"不需要猜 driver.so 私有内存"的可观测点。 */
+    /* ★★★ R176 根修（铁证 = R175 审计 CI 日志）：
+     * 内核 `drm_mode_addfb2` 语义 = **引用**调用方传入的 bo_handle（已有 GEM 对象），
+     * **绝不分配新内存**。旧实现每次新 mmap 一块 `g_fb2_buf`（0x3d324000），
+     * 而画面经 MAP_DUMB 写进 dumb 实体 `g_fb_buf`（0x3d964000）⇒
+     * `fb_commit_hash` 读自建实体 ⇒ 恒 e96c9dc5（全零基线）⇒ B6 假红。
+     * 根修：bo_handles[0] == FAKE_FB_ID（dumb_fill 分配的那块 GEM）⇒ fb 直接引用
+     * 该实体（g_fb2_buf = g_fb_buf），不再 mmap。首帧诊断行 `fb2_buf= fb_buf=`
+     * 会显示两地址相同 —— 这就是本次根修的自证。 */
     {
-        u32 pitch = (pitches && pitches[0]) ? pitches[0] : (width * 4u);
-        u64 need = (u64)pitch * (u64)height;
-        u32 pages;
-        /* ★ 172 轮：与 dumb_fill 同口径 —— 实体切换进锁（与哈希互斥），
-         *   且**不再 munmap 旧实体**（旧实体可能正被另一线程哈希 ⇒ UAF；
-         *   内核语义上旧 GEM 对象也要等 DESTROY_DUMB 才释放）。 */
         fb_lock_take(&g_fb_lock);
-        if (g_fb2_buf != 0) {
-            g_fb2_buf = 0; g_fb2_bytes = 0;
-        }
-        pages = (u32)((need + 4095u) / 4096u);
-        if (pages == 0u) pages = 1u;
-        {
-            long addr = stub_syscall6(STUB_NR_mmap2, 0, (long)(pages * 4096u),
-                                      0x1 | 0x2, 0x02 | 0x20, -1, 0);
-            if (addr > 0 && addr < 0x100000000L) {
-                g_fb2_buf   = (u8 *)addr;
-                g_fb2_bytes = pages * 4096u;
-                g_fb2_w = width; g_fb2_h = height; g_fb2_fmt = pixel_format;
-                g_fb2_pitch = pitch;
-                g_fb2_valid = 1;
-                drmstub_note2("AddFB2", width, height);
-            } else {
-                /* ★ fail-closed：拿不到 framebuffer 就如实报"无 fb"，
-                 *   绝不退而求其次去哈希一块无关内存冒充"画面"。 */
-                g_fb2_valid = 0;
-                drmstub_note2("AddFB2_ALLOC_FAIL", (u32)addr, pitch);
-            }
+        if ((bo_handles != 0) && (bo_handles[0] == FAKE_FB_ID) &&
+            (g_fb_buf != 0) && (g_fb_bytes != 0u)) {
+            g_fb2_buf   = g_fb_buf;                /* ★ 引用，不是新分配 */
+            g_fb2_bytes = g_fb_bytes;              /* 与 MAP_DUMB 映射同块 ⇒ 读到的就是画面 */
+            g_fb2_w = width; g_fb2_h = height; g_fb2_fmt = pixel_format;
+            g_fb2_pitch = (pitches != 0 && pitches[0] != 0u) ? pitches[0] : (width * 4u);
+            g_fb2_valid = 1;
+            drmstub_note2("AddFB2", width, height);
+        } else {
+            /* ★ fail-closed：引不到实体就如实报「无 fb」，绝不新 mmap 一块无关内存
+             *   冒充画面（旧实现的自建实体正是 B6 假红的来源）。 */
+            g_fb2_valid = 0;
+            drmstub_note2("AddFB2_NO_ENTITY",
+                          (bo_handles != 0) ? bo_handles[0] : 0u,
+                          (u32)(unsigned long)g_fb_buf);
         }
         fb_lock_drop(&g_fb_lock);
     }
