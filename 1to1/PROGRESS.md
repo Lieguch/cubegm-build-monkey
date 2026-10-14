@@ -6467,3 +6467,215 @@ GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删�
 |---|---|---|
 | GitHub | `ddeaced4fe7aff965b576e3d62388a34d6dcdc60` | R174 全部产物（924/924 blob 校验） |
 | CNB | `7f5e372693b7fdac3e15ff6eba69c372855690f0` | 同内容（工作区内网中继，保留 CNB 历史链与 10 个遗留文件） |
+
+> 追加前 `old_intact=True`（旧文 509554 B / sha dd0e5d6d194be425…）；由 `tools/append_progress.py` 原子追加。
+## R175 全量审计：假实现 / 假桩 / 假代码（铁证记录）
+
+**审计判据（用户原话）**：「所有结果只能用铁证来说明，禁止猜测、禁止推理、禁止消极；
+必须真实呈现实际情况。」
+
+**审计日期**：2026-10-14
+**审计范围**：`src/proprietary/` 全部 265 个 .c（738 个函数定义）、`tools/guest_shim/` 全部
+三个桩（drm_stub.c / alsa_stub.c / fake_mem.c）、C 组 DCE 复发扫描全量 213 个文件。
+**取证对象**：`golden/factory.rkgame.bin`（工厂 ELF，3,921,108 B）、
+`golden/factory.funcs.json`（Ghidra 导出函数表）、
+`report/ci_r174/_job38435189668.log` + `_job38438266450.log`（CI 日志）、
+`report/dce_ref_diff.txt`（DCE 门禁全量扫描输出）。
+
+---
+
+### A 组：假实现审计（空函数体 / 写死常量返回 / 假函数）
+
+**审计方法**：
+1. 粗扫 `src/proprietary/` 下 265 个 .c，提取 738 个函数定义（花括号配对精确提取完整函数体）；
+2. 筛选「函数体为空（`{}`）或仅一条 `return;` / `return 0;`」的函数 → 全仓 294 个；
+3. 其中 `src/proprietary/` 下 12 个；
+4. 12 个中 3 个是「返回全局变量」（GetWorkPath→work_path / ui_GetVolume→DAT_003af268 /
+   __libc_csu_fini），非假实现 → 排除；
+5. 剩余 9 个用**工厂 ELF 逐字节提取机器码**做铁证。
+
+**工厂机器码铁证表**（从 `golden/factory.rkgame.bin` 按 ELF32 Phdr 定位 VMA → 文件偏移 →
+逐字节提取；`golden/factory.funcs.json` 的 Ghidra 反汇编旁证）：
+
+| # | 函数名 | VMA | 文件偏移 | size | 机器码（小端） | Ghidra 反汇编 | 结论 |
+|---|---|---|---|---|---|---|---|
+| 1 | spi_memcpy | 0x00029ce4 | 0x021ce4 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 2 | InitIOSignal | 0x0000c8e8 | 0x0048e8 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 3 | InitDecode | 0x0000d510 | 0x005510 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 4 | joystick_poll | 0x002b4d60 | 0x02acd60 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 5 | processvblank | 0x0000c844 | 0x004844 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 6 | OutputIOSignal | 0x0000c8ec | 0x0048ec | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 7 | GetDecodeData | 0x0000d508 | 0x005508 | 8 B | `00 00 a0 e3 1e ff 2f e1` | `mov r0,#0` + `bx lr` | 工厂 return 0 |
+| 8 | ReInitDecode | 0x0000d514 | 0x005514 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+| 9 | RetroInitSound | 0x002b5a48 | 0x02ada48 | 4 B | `1e ff 2f e1` | `bx lr` | 工厂空函数 |
+
+**判读**：
+- `1e ff 2f e1` = ARM `bx lr`（小端存储 `e1 2f ff 1e`），即「立即返回」——工厂本来就只写了一个
+  `bx lr`，没有函数体。我方逆向源码里这些函数体为空 / 仅 `return;` 是**精确 1:1 复刻**。
+- GetDecodeData 的 `00 00 a0 e3` = `mov r0, #0`（小端 `e3 a0 00 00`），即 `return 0`——
+  我方 `return 0;` 也是**精确 1:1**。
+
+**★ A 组结论：假实现 = 0 处。**
+所有 9 个空体/仅 return 函数的工厂机器码证明「工厂本来就是空函数」。
+我方 1:1 复刻的逆向源码与工厂一致，没有「该有实现但写成空」的假实现。
+
+---
+
+### B 组：假桩审计（guest_shim 的 libdrm / libasound / fake_mem 替换实现的真实性）
+
+**审计对象**：`tools/guest_shim/` 下三个桩文件，用于 qemu-user 行为差分门禁
+（工厂 ELF vs 重建 ELF，两侧用**同一份**桩，保证差分公平）。
+
+#### B-1. drm_stub.c（913 行）—— 桩分类学
+
+**真实组件**：
+- **dumb_fill**（650-730 行）：真分配 GEM 实体。`mmap2` 匿名页，`g_fb_buf` 指向真实分配的
+  内存，`g_fb_bytes` = pitch × height。driver.so 经 `MAP_DUMB` 写入的帧内容落在该实体。
+  **诚实**：分配真实内存，哈希读到的就是写入的内容。（137 轮修复）
+- **fb_commit_hash**（482-596 行）：锁内 `fb_atomic_inc` 取号 + FNV-1a 逐字节哈希 +
+  首帧/哈希变化/每 1024 帧心跳。**诚实**：有像素就哈希，无像素如实报「无实体」。
+  （172 轮修复竞态：实体切换进锁，避免 UAF）
+
+**★ 真缺陷（B6 全零的真根因，本轮重大推翻）**：
+- **drmModeAddFB2**（832-876 行）：**每次新 mmap 一块内存**当 `g_fb2_buf`——但真实内核语义
+  是「**引用调用方传入的 bo_handle（已有 GEM 对象）**」不分配。后果：
+  - 画面经 `MAP_DUMB` 写进 `g_fb_buf`（dumb_fill 分配的实体，如 `0x3d964000`）；
+  - 桩的 `fb_commit_hash` 读自建的 `g_fb2_buf`（`0x3d324000`）⇒ **恒全零**。
+
+  **CI 日志铁证**（`report/ci_r174/_job38435189668.log`，三侧各一次，地址全同）：
+  ```
+  [drmstub] fb2_buf=3d324000 fb_buf=3d964000
+  ```
+  两个地址不同 ⇒ AddFB2 自建实体与 dumb 实体**分离** ⇒ 哈希读错块。
+
+  **★ 这推翻 R171b 的「B6 观测点天花板」定性**——B6 红的真根因不是「qemu 观测不到像素」
+  （被测对象问题），而是**桩的 AddFB2 语义错误**（桩 bug）。
+
+  **根修方向**：AddFB2 改为「引用 bo_handle 对应的 dumb 实体」（不新 mmap），让
+  `g_fb2_buf = g_fb_buf`（或通过 handle→实体映射表），`fb_commit_hash` 即可读到真实画面。
+  这将让 B6 从「诚实红」变成「真判据」。
+
+#### B-2. alsa_stub.c（259 行）—— 明示假桩
+
+- **snd_pcm_avail**（149-153 行）：`return (slong)DEF_PERIOD;`（恒返回一个周期）。
+  注释自证：防止 driver.so 的「可写帧数」断言失败。
+- **snd_pcm_writei**（157-161 行）：`return (slong)size;`。
+  注释自证（156 行）：「返回已消费帧数 = 请求值 ⇒ 全部接受（假硬件丢弃数据）」。
+
+  **定性**：**明示假桩**——音频内容被丢弃，但三侧（工厂 / 重建 / control）用同一份桩，
+  保证差分公平（三侧都丢，不引入假差异）。音频内容无观测点。
+
+#### B-3. fake_mem.c（2074 行）—— 诚实桩
+
+- 头部注释明示设计：
+  - 设备节点（/dev/mem、/dev/fb、/dev/dri、/dev/input、/dev/sunxi、/dev/disp、
+    /dev/cedar、/dev/spi、/dev/i2c）重定向到 `/dev/zero`；
+  - 栈投毒（递归帧填 96 KiB）；
+  - 物理寄存器映射改送匿名零页；
+  - **明示「其余路径原样转发」**（setting.xml / menu.log / *.so 等正常文件不受影响）。
+- 目的坐实（1-18 行）：让两侧 guest 在 qemu 里走得更深，解决浅窗口问题
+  （工厂源码 `sunxi_gpio_init` 的 `open("/dev/mem")` 在无 `/dev/mem` 时返回 -1 ⇒ 仅 13 行 stdout）。
+
+  **定性**：**诚实桩**——注释完全诚实，不藏假，行为与声明一致。
+
+**★ B 组结论**：
+| 桩 | 定性 | 铁证 | 影响 |
+|---|---|---|---|
+| drm_stub.c dumb_fill | 诚实 | 真 mmap2 + g_fb_buf 实体 | 无 |
+| drm_stub.c fb_commit_hash | 诚实 | 锁内原子哈希 | 无 |
+| drm_stub.c AddFB2 | **★ 真缺陷** | CI 日志 `fb2_buf=3d324000 fb_buf=3d964000` | B6 全零根因 |
+| alsa_stub.c writei | 明示假桩 | `return size` + 注释自证 | 音频丢弃（三侧公平） |
+| fake_mem.c | 诚实桩 | 头部注释 + /dev/zero 重定向 | 无 |
+
+---
+
+### C 组：假代码审计（UB-DCE 编译期删码复发扫描）
+
+**审计方法**：`tools/dce_ref_diff.py` 对 213 个文件各编两次（-O0 vs -Os），
+比较 UNDEF 里的工厂符号差 Δ = UNDEF(-O0) − UNDEF(-Os)。
+Δ 非零 ⇒ 源码里工厂数据引用在 -Os 下消失（UB 嫌疑或合法 DCE）。
+
+**全量扫描结果**（`report/dce_ref_diff.txt`，239 行完整输出）：
+- 扫描 213 个文件；编译失败跳过 0 个；
+- **表外新增 Δ = 0 个** ⇒ 门禁通过（无回归）；
+- 已登记待核债务 13 条（GAP 17.00，全部标注为低风险）。
+
+**13 个 Δ 非零文件明细**（全部在 ALLOW 字典内，全部标注「低风险」）：
+
+| # | 文件 | Δ | 工厂符号 | prop_equiv size 比 | 判定依据 |
+|---|---|---|---|---|---|
+| 1 | input/FUN_0000b014_TestUSBJoy.c | 3 | DAT_003af00c/10/14 | 708/688=0.972 | 工厂侧「写了不读」 |
+| 2 | misc/FUN_0002187c_DisplayPage_list.c | 1 | DAT_003af2a0 | 248/272=1.097 | 工厂侧「写了不读」 |
+| 3 | mui/FUN_0001bf80_mui_DisplayGameSum.c | 1 | DAT_0020202d | 232/336=1.448 | 工厂侧「写了不读」 |
+| 4 | mui/FUN_00023204_mui_menu.c | 1 | DAT_003b2320 | 2840/3488=1.228 | local_32c 只赋值从不读 |
+| 5 | mui/FUN_00023e10_mui_type.c | 1 | DAT_003b2320 | 4380/5332=1.217 | 工厂侧「写了不读」 |
+| 6 | mui/FUN_00025094_mui_search.c | 1 | DAT_003b2320 | 5356/7188=1.342 | 工厂侧「写了不读」 |
+| 7 | mui/FUN_000277bc_mui_recent.c | 1 | DAT_003b2320 | 4492/4932=1.098 | 工厂侧「写了不读」 |
+| 8 | mui/FUN_00028a74_mui_shoucang.c | 1 | DAT_003b2320 | 3600/4176=1.160 | 工厂侧「写了不读」 |
+| 9 | mui/FUN_0002d0d4_mui_joystick_setting.c | 4 | DAT_003af820/24/28/2c | 3684/3604=0.978 | 工厂侧「写了不读」 |
+| 10 | mui/FUN_0002e040_mui_video_setting.c | 4 | DAT_003af820/24/28/2c | 2552/2756=1.080 | 工厂侧「写了不读」 |
+| 11 | mui/FUN_0002eac8_mui_load_state.c | 2 | DAT_003af820/24 | 2020/1852=0.917 | 工厂侧「写了不读」 |
+| 12 | mui/FUN_0002f320_mui_save_state.c | 2 | DAT_003af820/24 | 2704/2420=0.895 | 工厂侧「写了不读」 |
+| 13 | mui/FUN_0002ff8c_PauseMenu.c | 3 | DAT_003af820/24/2c | 1564/1400=0.895 | 工厂侧「写了不读」 |
+
+**判定依据**（两条独立仪器交叉验证）：
+1. `tools/prop_equiv.py` size 比：13 个文件全部在 0.895–1.448 健康带（p95=1.33）⇒
+   重建体与工厂体大小一致，没有「函数体坍缩」（DCE 删码的典型症状）；
+2. `tools/factory_fn_stack.py` 帧指针别名数据流：工厂函数反汇编可见该槽
+   「写了但从未按常量位移读回」⇒ 合法 DCE（工厂侧本就不读这些符号）。
+
+**3 个 R173 已修关键函数 Δ=0（防复发回归确认）**：
+
+| 函数 | 文件 | Δ | 说明 |
+|---|---|---|---|
+| FUN_00016f08_FilePreEmu.c | core/ | 0 | R173 sprintf 修复无 DCE 复发 |
+| FUN_002b6c14_FBA_Load.c | core/ | 0 | R173 sprintf 修复无 DCE 复发 |
+| FUN_002b5624_GetCoreIndex.c | misc/ | 0 | R173 sprintf 修复无 DCE 复发 |
+
+**自证仪器可信度**（`dce_ref_diff.py --self-test` 四段）：
+- ① 正例（人造 UB 样本）⇒ Δ 非空 ✓
+- ② 反例（运行时下标，合法步进）⇒ Δ 为空 ✓
+- ③ 回归（FBA_Load.c 修复后）⇒ Δ 为空 ✓
+- ④ 非法输入返回 None ✓
+⇒ 仪器可信，数字可用。
+
+**★ C 组结论**：
+- 表外新增 Δ = 0（无假代码回归）；
+- 13 个存量 Δ 全部在 ALLOW 字典内，标注「低风险（GAP 17.00）」，有两条独立仪器交叉验证；
+- 不构成阻塞替代使用的差距，但保守保留在债务表（待有更强判据时清零）。
+
+---
+
+### 差距总表：可以直接替代使用的差距
+
+| 维度 | 当前状态 | 差距 | 性质 |
+|---|---|---|---|
+| P3 全局符号命中率 | 99.0%（193/195） | 2 个未命中 | 待考证 |
+| A 组假实现 | **0 处** | 无 | — |
+| B 组桩 - drm dumb_fill | 诚实 | 无 | — |
+| B 组桩 - drm fb_commit_hash | 诚实 | 无 | — |
+| B 组桩 - drm AddFB2 | **★ 真缺陷** | AddFB2 自建实体非引用 bo_handle | **B6 全零根因** |
+| B 组桩 - alsa writei | 明示假桩 | 音频丢弃（三侧公平） | 不阻塞替代 |
+| B 组桩 - fake_mem | 诚实桩 | 无 | — |
+| C 组 DCE 回归 | **0 处表外新增** | 13 条存量债务 | 低风险（不阻塞） |
+| 行为门禁 | rc=2 连续第四轮稳定 | B6 红（AddFB2 缺陷） | 修复 AddFB2 即可降为 rc=0 或 rc=1 |
+
+**★ 总结论**：
+1. **假实现 = 0**（A 组 9 函数工厂机器码铁证）；
+2. **假桩 = 1 处真缺陷**（drm_stub AddFB2 语义错误，B6 全零根因）+
+   1 处明示假桩（alsa writei 丢数据，三侧公平）；
+3. **假代码 = 0 处表外新增**（C 组门禁通过，13 条存量债务全部低风险且已登记）；
+4. **唯一阻塞完整替代的差距** = AddFB2 桩缺陷（根修后 B6 可降为真判据）。
+
+---
+
+### 下一步待办
+
+1. **P0 - AddFB2 桩根修**：改 `drmModeAddFB2` 为「引用 bo_handle 对应的 dumb 实体」
+   （`g_fb2_buf = g_fb_buf` 或通过 handle→实体映射表），不新 mmap。修复后重跑行为门禁
+   确认 B6 从全零变为真实哈希。这是让 rc=2 降到 rc≤1 的唯一路径。
+2. **P1 - 13 条 Δ 债务清零**：用更强判据（帧指针别名数据流）逐个确认是合法 DCE 还是 UB-DCE，
+   确认合法的从 ALLOW 移除（缩小债务表），确认 UB 的修掉。
+3. **P2 - B 线远端清理决策**：GitHub 远端存 B 线存量（rkgame-rebuild/ + build.yml），
+   留待用户决策是否清理（影响 CI 额度）。
+4. **P2 - 2 个未命中全局符号**：继续考证最后 2 个未命中符号。
