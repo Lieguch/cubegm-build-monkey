@@ -94,6 +94,7 @@ LAB_0002e19c:
   memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
          (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,5);
+  /* R178 根修：连续 4 槽还原为显式 struct */
   local_a8 = DAT_003af82c;
   local_9c = DAT_003af820;
   local_ac = DAT_003af828;

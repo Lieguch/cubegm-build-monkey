@@ -50,6 +50,7 @@ LAB_0002d16c:
          (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,6);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
+  /* R178 根修：连续 4 槽 DAT_003af820/24/28/2c 还原为显式 struct */
   local_14c = DAT_003af828;
   local_13c = DAT_003af820;
   local_138 = DAT_003af824;

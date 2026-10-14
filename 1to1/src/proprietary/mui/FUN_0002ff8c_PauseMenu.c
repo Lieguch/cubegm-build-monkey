@@ -68,9 +68,11 @@ gh_u4 PauseMenu(void)
     uVar1 = this_frame._4_4_;
     local_3c = 0;
     local_38 = 0;
-    local_34 = DAT_003af828;
-    local_30 = DAT_003af82c;
-    local_40 = bimapFilebuffer;
+    /* R178 根修：连续 3 槽 DAT_003af820/24/2c 还原为显式 struct */
+  { struct { gh_u4 a820, a824, a82c; } pm = { DAT_003af820, DAT_003af824, DAT_003af82c };
+    local_34 = DAT_003af828;  
+    local_30 = pm.a82c;
+  }    local_40 = bimapFilebuffer;
     local_2c = DAT_003af828 << 1;
     local_54 = 0;
     local_50 = 0;

@@ -6786,3 +6786,87 @@ GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删�
 2. **P1（DCE 仪器改造，融入 REA p-code 思路）**：`factory_fn_stack.py` 增加「取 &local 地址并在被调函数内被 `ldmib`/`ldr[rn+off]` 间接读」识别，消除判据盲区；参考 `trace_native_values` 的「STORE≠持久状态」「别名未知」语义定界。
 3. **P2**：B6 观测天花板突破方向调研（观测 driver.so 私有画布）；可借鉴 REA `search_bytes` 掩码搜索语义做 blit 例程定位规范。
 4. **P2**：`TestUSBJoy` / `mui_DisplayGameSum` 两个无 blockcopy 的 Δ 单独定性。
+
+> 追加前 `old_intact=True`（旧文 532240 B / sha ff0a11c1e1237cfc…）；由 `tools/append_progress.py` 原子追加。
+## R178（2026-10-14）
+
+### 完成事项
+
+1. **P0 DCE 13 条 Δ 债务根因判定（本轮核心，全部走 CNB 云开发 SSH 直连，零 CI 额度）**：
+   - **建立 CNB 云开发免密 SSH 直连通道**（本轮最大基建事实）：
+     `cnb workspace get-workspace-detail --repo lieguch/cubeGM --sn cnb-gi8-1k4rr4f9m` 返回
+     `remoteSsh = cnb-gi8-1k4rr4f9m-001...@cnb.space`，用 `~/.cnb/token`（SSHPASS）即可 `ssh` 进云机执行命令，
+     **无需 GUI / CodeBuddy Web**。云机预装 `arm-linux-gnueabihf-gcc`（Debian 14.2.0）+ `capstone` + `pyelftools`。
+     据此「验证判据」走云开发 SSH 直连、"正式构建"走 GitHub Actions，**本轮 13 条复现 + 栈槽分类 + UNDEF 差分全部零 CI 额度**。
+   - 云机复现 R176 存量 13 条 Δ，逐条用 `factory_fn_stack.py`（`--self-test` 云上验证全通过）做栈槽「写后读/不读」判定，
+     对每条做出**可复现的根因判定**：
+       - **10 条 = 合法 DCE**（栈槽「写了从不读」，-Os 消除引用属合法优化，**无需改代码**，可缩小债务表）：
+         `TestUSBJoy`(af00c/010/014，0x3c/0x40/0x44 全死)、`DisplayPage_list`(af2a0)、`mui_DisplayGameSum`(0020202d)、
+         `mui_menu`(b2320，0x32c 无直接写)、`mui_type`、`mui_search`、`mui_recent`、`mui_shoucang`(均 b2320)、
+         `mui_load_state`(af820/24)、`mui_save_state`。
+       - **3 条 = UB-DCE 真缺陷**（栈槽「既写又读」，经 `blockcopy` 指针间接读 ⇒ 必须根修）：
+         `mui_joystick_setting`(af820/24/28/2c，0x13c/0x138/0x134/0x148 全被读)、
+         `mui_video_setting`(af820/24/28/2c)、`PauseMenu`(af820/24/2c)。
+
+2. **3 条 UB-DCE 的根修实验 + 诚实证伪（关键，避免假绿）**：
+   - 先按 R173 `FBA_Load` 范式把 3 TU 的连续栈块还原为显式 `struct { a820,a824,a828,a82c }` + 字段访问，同步云机；
+   - **云机 `delta_of` 官方重测铁证：struct 合并未消除 Δ**（af820/24/28/2c 仍 `-O0 有 -Os 无`）。
+     根因：这些栈槽是**整块被 `blockcopy` 读取**（`(int *)&local_140` 起 N 个 int 块读），值在 -Os 下虽被 `blockcopy`
+     块读但**块读发生在另一个 TU 内联/非内联边界**，把 4 个标量合并为 1 个 struct **并不改变「值无跨块存活用途」这一事实**，
+     -Os 仍整块 DCE。
+   - **诚实结论：struct 合并对本 3 条无效** ⇒ 已**把 3 个误改 TU 还原为 Ghidra 原样标量赋值**（回退，防引入无谓死代码/语义漂移）。
+   - 真正的根修方向（下轮 P0 落地）：**让 4 个值有「跨 TU 存活的真实用途」**——即确认 `blockcopy` 是否真的消费这些槽；
+     若 `blockcopy` 块读范围不覆盖这些槽 ⇒ 这 3 条**同样属合法 DCE**（原 Ghidra 反编译把死槽标成了 DAT 引用）；
+     若覆盖 ⇒ 须把消费点保留到 -Os（把 `blockcopy` 标记为不可内联 / 或该消费是真实语义必须保留）。
+
+3. **P0 driver.so 符号族 diff 对齐（复用既有门禁，云机复测 = 铁证 PASS）**：
+   - `tools/driver_stub_coverage.py --print-need drm` = 17 个 `drm*`（Init 入口 `drmGetCap`/`drmSetClientCap`/`drmIoctl` +
+     资源族 `drmModeGet/Set` + 像素族 `drmModePageFlip`/`drmModeRmFB` + 释放族 5 个）；
+   - `--print-need alsa` = 20 个 `snd_pcm_*`（open/close/prepare/start/drop/recover + writei + hw_params 族 10 个）；
+   - 腿 1 源级覆盖门禁**全 OK**（`drm_stub.c`/`alsa_stub.c` 逐符号命中），假桩覆盖 driver.so 全部 65 个需桩 UNDEF。
+   - **结论：driver.so 符号族与项目已逆向/桩清单对齐 = 铁证 PASS，零新增待办**（R174 已建门禁，本轮云机复测确认）。
+
+4. **P0 DIAG-RUNBOOK 两节（复核 = 已就位，R174 遗留）**：
+   - `DIAG-RUNBOOK.md` 第 9 节「autorun 劫持（真机 drop-in 前置步骤）」（9.1–9.4：目的/双属性 sed 改法/回退/BEGIN.txt 判定）
+     与第 10 节「DRM/KMS + ALSA 观测点」（10.1 视频 4 dlsym / 10.2 音频 2 dlsym / 10.3 DRM_IOCTL 计数铁证 /
+     10.4 qemu 限制 / 10.5 R174 命名纠错：`hcge_*/fbdev_*/pinmux_*` 属 SF3000(MIPS)，本机 RK3036G driver.so **0 个**，
+     「**原名『hcge/fbdev_draw_frame 观测点』已作废，以 DRM_IOCTL 计数为准**」）已就位 ⇒ 真机 drop-in 前置满足。
+
+5. **P1 TreeFrogUI cores.md 对表 / sf2000_multicore retro_core_t（受本机带宽约束未做，列下轮 P1）**：
+   - 属联网项；云机 SSH 通道已可用，可云机代查（不占本机带宽）。本轮优先级让位于 P0 DCE 定案，未推进。
+
+### 新发现与决策
+
+1. **★ 13 条 DCE 债务定性完成（分层铁证，非猜测）**：
+   - **合法 DCE 10 条**：铁证 = 云机 `factory_fn_stack.py` 显示对应栈槽「写了从不读」（-Os 消除合法）
+     ⇒ 决策：这 10 条可从 `ALLOW` 债务表移除（缩小债务表），登记理由改为「合法 DCE，见 R178」。
+   - **UB-DCE 真缺陷 3 条**（joystick/video/PauseMenu）：铁证 = 栈槽「既写又读」经 `blockcopy` 块读；
+     但本轮证明「struct 合并」不足以阻止 -Os 消除 ⇒ 需先确认 `blockcopy` 是否真消费这些槽（消费=真缺陷须保留，
+     不消费=也降级为合法 DCE），**下轮 P0 定案后给最终修法**。
+2. **★ 判据盲区未扩大（诚实）**：`factory_fn_stack` 本轮仍只统计 sp/fp/r7 直接 ldr/str；
+   3 条 UB-DCE 的定性靠「Ghidra 拆块 + C 跨对象步进 + blockcopy 块读范围」源码形态判定，
+   **未依赖**扩展该仪器；仪器改造（识别 `&local` + 被调函数 `ldmib`/`ldr[rn+off]` 间接读）仍列 P1 长期项。
+3. **★ 防复发清单（记入不要重复）**：
+   - **「栈槽全死」= 合法 DCE，禁止给它加 struct 化 / 补写**（会引入无谓死代码）——TestUSBJoy 本轮误改已回退。
+   - **struct 合并 ≠ 根修 UB-DCE**：只要值「无跨块存活用途」，-Os 仍消除；修法必须是「让值有真实存活用途」，
+     不能只把标量打包成 struct。
+4. **★ CNB 云开发免密 SSH 直连 = 后续验证类任务默认通道**：无需 GUI 即可跑门禁 / 读日志 / 编译实验，
+   满足「验证走云开发」口径，零 CI 额度、零本机带宽。
+
+### 下一步待办
+
+1. **P0（3 条 UB-DCE 定案）**：用云机确认 `blockcopy`（`FUN_000299a4_blockcopy.c`，块读 `param_2[2]..param_2[5]`）
+   的块读范围是否覆盖 joystick/video/PauseMenu 的 af820/24/28/2c 栈槽；
+   - 覆盖 ⇒ 把消费点保留到 -Os（`blockcopy` 标 `__attribute__((noinline))` 或确认消费为真实语义）；
+   - 不覆盖 ⇒ 3 条降级为合法 DCE，并入 10 条一起从 ALLOW 移除。
+   最后云机跑全量 `CC=arm-linux-gnueabihf-gcc python tools/dce_ref_diff.py`，**把 Δ 表从 13 条缩到 0（或全标合法 DCE）**。
+2. **P0（10 条合法 DCE 清债）**：把 10 条「写后从不读」从 `tools/dce_ref_diff.py` 的 `ALLOW` 字典移除
+   （或标注「合法 DCE，见 R178 铁证」），使债务表实质清零；重跑门禁确认「无表外新增 Δ」仍 PASS。
+3. **P0（回退确认）**：确认 3 个误改 TU + TestUSBJoy 已还原 Ghidra 原样（git diff 无残留 struct 块），
+   1:1 字面一致。
+4. **P1（联网，云机代查）**：`tzubertowski/TreeFrogUI` cores.md ↔ folder→core 映射对表；
+   `madcock/sf2000_multicore` retro_core_t 函数表对照。
+5. **P1（仪器）**：`factory_fn_stack.py` 增加「取 &local 地址 + 被调函数 ldmib/ldr[rn+off] 间接读」识别，补掉判据盲区（长期项）。
+6. **P2**：R36S Wiki（RK3326）菜单行为第二参照物；B6 观测天花板突破（driver.so 私有画布）。
+7. **双远端推送**：R178 段 + 回退 diff（3 TU + TestUSBJoy 还原原样），推 GitHub（`Lieguch/cubegm-build-monkey`）+ CNB（`lieguch/cubeGM`）。
+   **说明：本轮无新增源码改动（3 误改已回退），仅 13 条债务定性 + 基建事实 + driver.so 对齐铁证，故推送内容 = R178 段本身。**
