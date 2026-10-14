@@ -6731,3 +6731,58 @@ GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删�
 2. **P1**：改进 DCE 判据仪器，识别「取 `&local` 地址 + 被调函数 `ldmib`/`ldr[rn+off]` 间接读」形态，消除判据盲区、防复发。
 3. **P2**：B6 观测天花板突破方向调研（观测 driver.so 私有画布）。
 4. **P2**：`TestUSBJoy` / `mui_DisplayGameSum` 两个无 blockcopy 的 Δ 单独定性。
+
+> 追加前 `old_intact=True`（旧文 526779 B / sha 6d38231812bd1a92…）；由 `tools/append_progress.py` 原子追加。
+## R177（2026-10-14）
+
+### 完成事项
+
+1. **学习 REA 技能（morluto/rea）并完成全文研读**：
+   - 经 GitHub REST API 确认仓库真实存在（描述「Reverse engineer anything with agents, from app behavior down to native binaries」），
+     并拉取 9 份核心文档原文到 `scratch_rea/`（SKILL.md / native-and-artifacts / evidence-workflows / runtime-observation /
+     connection-and-recovery / native-investigation / binary-diagnostics / reverse-engineering-tools / ghidra-provider）。
+   - 确认 REA = **MCP 服务器 + CLI**（npm 包 `rea-agents`，Node 22.x/24.x/26+），定位是「逆向工具**编排层**」，
+     下游接 Hopper / Ghidra / IDA / objdump / Rizin / pwntools / gdb 等，侧重点是**证据链管理与带 limitations 的结论**。
+
+2. **对原厂 rkgame 是否可用 REA 做逆向 → 判定为「工具不可用，方法论可借鉴」**（铁证见下）。
+
+### 新发现与决策
+
+1. **★ REA 对 rkgame 的「直接反编译」当前没有帮助 —— 环境 + 目标双重不匹配（决定性事实）**：
+
+   | 维度 | REA 支持面（文档原文） | rkgame 实际情况 | 结论 |
+   |---|---|---|---|
+   | 目标架构 | `binary-diagnostics.md` 第 11 行：离线 ELF 布局诊断**只验证 Linux x64 / ELF64 x86-64 小端 EXEC/DYN/REL**，需 pwntools 4.15.0 + pyelftools 0.33 + Unicorn 2.1.2 隔离环境；第 116 行「对其他 OS/架构不成立支持声明」 | `golden/factory.rkgame.bin` = **ARM32 (armv7 hard-float) ELF**，3,921,108 B | 不匹配 |
+   | Windows 平台 Ghidra | `native-investigation.md` 第 489–494 行：Windows P0 **只 admitted x86/x86-64 PE、DOS MZ、raw NMOS 6502**；「其他 raw CPU family 在 Windows 不支持」 | 在 Windows 上分析 ARM32 ELF | 不匹配 |
+   | 项目自有能力 | — | 既有 `ghidra-arm-decompile` skill 已在 Windows 上实现 rkgame **812/812 函数 100% 反编译**（`golden/ghidra-perfn.tar.gz` 含 812 个 .c）+ `golden/factory.funcs.json` 835 项函数金标准 | REA 在此目标上做不到的，自建工具已完成 |
+
+   据此判：**不安装、不落地 REA 工具链**（`npx rea-agents` 会下载 npm 包，既违反第 8 条带宽约束，又对 ARM32 目标无收益）；
+   本机 `rea` 未安装、Node 22.22.2 虽满足版本下限，但落地收益为零。
+
+2. **★ REA 的可借鉴处是方法论，共三点（可直接并入自有门禁，无需装 REA）**：
+   - **证据三分法**：REA 全程强制区分 observation（观察）/ inference（推断）/ unknown（未知），并显式保留 limitations 与 coverage。
+     这与用户长期要求的分层标注（已实测 / 未实测推断 / 无证据）同源；项目门禁已在 docstring 写「self-test 先自证再信数」，
+     REA 提供了把该纪律**固化进报告格式**的更严谨范式。
+   - **p-code value-flow 判据**：`native-investigation.md` 的 `trace_native_values`（Ghidra p-code def-use 跨调用组合，且明确
+     「STORE 不证明持久状态」「别名效应未知」）**正好命中 R176 遗留的 P1 盲区**——`tools/factory_fn_stack.py` 需要识别
+     「取 &local 地址 + 被调函数 `ldmib`/`ldr[rn+off]` 间接读」形态。REA 的「别把 store 当成可观测持久状态」与
+     GAP 16.99「跨对象步进 = UB」是同一认知，可作为改造该仪器的设计参照（不抄代码、只接思路）。
+   - **字节掩码搜索规范**：`ghidra-provider.md` 的 `search_bytes`（`??` 通配 + mask 位选择 + start/end 边界 +
+     「match 不跨 block 边界」「未初始化块跳过仍显式列出」的精确语义），可作为日后在 driver.so 私有画布定位 blit 例程、
+     或对定长常量/指令序列定位时的门禁规范参照。
+
+3. **结论（如实分层，不夸大）**：
+   - 工具层：REA 对 rkgame 直接逆向**无增量**（ARM32 ELF 不在其任何 provider 的验证面内）。
+   - 方法层：三点（证据三分、p-code value-flow、字节掩码搜索）有增量，其中 **p-code value-flow 直接对应 DCE 盲区 P1 待办**。
+   - 决策：不引入 REA 工具链；把三点拆成 R176 遗留待办的具体化改造（见下）。
+
+4. **顺带复核（无改动）**：`tools/factory_fn_stack.py` 硬编码的 SYMTAB 路径 `D:/output/rkgame/decompiled/01-static/symtab.txt`
+   仍存在（125,912 B），故该仪器当前可用、无路径漂移。
+
+### 下一步待办
+
+（沿用 R176 待办，补充 REA 借鉴带来的新增项）
+1. **P0（真阻塞，不变）**：CNB 云开发编译实验重判 13 条 DCE —— 逐文件确认「被 blockcopy 间接读的槽」在 -Os 下是否被消除；被消除的按 R173 `FBA_Load` 范式（把 Ghidra 拆开的连续栈块合并为显式 struct）修复。
+2. **P1（DCE 仪器改造，融入 REA p-code 思路）**：`factory_fn_stack.py` 增加「取 &local 地址并在被调函数内被 `ldmib`/`ldr[rn+off]` 间接读」识别，消除判据盲区；参考 `trace_native_values` 的「STORE≠持久状态」「别名未知」语义定界。
+3. **P2**：B6 观测天花板突破方向调研（观测 driver.so 私有画布）；可借鉴 REA `search_bytes` 掩码搜索语义做 blit 例程定位规范。
+4. **P2**：`TestUSBJoy` / `mui_DisplayGameSum` 两个无 blockcopy 的 Δ 单独定性。
