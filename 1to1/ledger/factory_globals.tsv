@@ -748,11 +748,14 @@ m_statetab	003aff7c	00000090	.data	l	O
 KEY_Table	003b000c	00000040	.data	g	O	
 P1_Table	003b004c	000000dc	.data	g	O	
 turbo_delay	003b0128	00000004	.data	l	O	
-# R174 补登：fba_core_slots = FBA_Load 的 10 槽候选 core 指针表
+# R174 补登：FBA_Load 的 10 槽候选 core 指针表（语义别名 "fba_core_slots"）
 #   （R173 反汇编 0x2b6d78 sprintf 调用点 + 逐槽 deref 实证，见 report/folder_core_map.md §B2）
 #   [0..8] = libemu_neogeo/capcom/pgm/fba/cps2/extend/fbalpha/fbalpha2012/mame2000.so 串指针
 #   [9] = 0x2dbcb4 空串终止哨兵；消费方 FUN_002b6c14_FBA_Load.c sprintf 第 4 参 *ppcVar4
-fba_core_slots	003b012c	00000028	.data	g	O	
+# ★ R176 根修：符号名必须与工厂/Ghidra 权威名一致（ghidra_types.tsv 5128 行 = DAT_003b012c），
+#   ELF 里对应符号即 DAT_003b012c（值 0x3b012c 完全一致）。R174 曾误用语义名 fba_core_slots
+#   ⇒ verify_layout 按名字匹配找不到 ⇒ 误报「全局缺失」（P3 99.0% 的 2 个未命中之一）。
+DAT_003b012c	003b012c	00000028	.data	g	O	
 user_joy_key_mask	003b0154	00000100	.data	g	O	
 default_core_list	003b0254	00001a90	.data	g	O	
 fps0	003b1ce4	00000004	.data	g	O	
