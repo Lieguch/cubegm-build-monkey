@@ -6679,3 +6679,55 @@ GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删�
 3. **P2 - B 线远端清理决策**：GitHub 远端存 B 线存量（rkgame-rebuild/ + build.yml），
    留待用户决策是否清理（影响 CI 额度）。
 4. **P2 - 2 个未命中全局符号**：继续考证最后 2 个未命中符号。
+
+> 追加前 `old_intact=True`（旧文 522585 B / sha a1a10f03847e89d3…）；由 `tools/append_progress.py` 原子追加。
+## R176（2026-10-14）
+
+### 完成事项
+
+1. **AddFB2 桩根修推送 + CI 复测闭环**：
+   - `tools/guest_shim/drm_stub.c` 的 `drmModeAddFB2` 已根修（引用 bo_handle 对应 dumb 实体，不再新 mmap），
+     云端 `arm-linux-gnueabihf-gcc` 冒烟编译 rc=0。
+   - GitHub run `38491464394`（head_sha `8a4b17cb`，job `115617392315`）跑完，**首帧诊断行自证成功**：
+     `[drmstub] fb2_buf=3e2c4000 fb_buf=3e2c4000` —— 两地址相同，旧值 `3d324000 vs 3d964000` 的「自建实体分离」已消除。
+
+2. **P3 全局符号命名根修 + 双远端推送**：
+   - `ledger/factory_globals.tsv` 把语义别名 `fba_core_slots` 改回工厂/Ghidra 权威名 `DAT_003b012c`
+     （对齐 ELF `.symtab` 与 `ghidra_types.tsv` 5128 行）。
+   - 重跑 `verify_layout.py`：全局命中率 99.5%（194/195），缺失仅剩 2 个 linker 保留局部符号
+     （`__do_global_dtors_aux_fini_array_entry` / `_GLOBAL_OFFSET_TABLE_`），结论 PASS。
+   - GitHub 补推 `5c467132`（含 factory_globals.tsv），CNB `2ee993a`，两端与本地 blob 校验一致。
+
+### 新发现与决策
+
+1. **B6 判据结论修正（推翻 R175 预期）**：
+   - R175 预期「改 AddFB2 即可让 B6 降为真判据」。本轮复测 **B6 仍全零**（两侧均 `e96c9dc5`）。
+   - 本机用 Python 逐字节复算 fnv1a，确认 `e96c9dc5` = **6,553,600 字节（1280×1280×4）全零缓冲的固有哈希**。
+   - 根因分层定案：AddFB2 根修消除了「自建实体读错块」（假红根因）；但更深的真相是
+     **driver.so 从不在 dumb buffer 上作画** —— 其 mmap 为自定义 SVC（绕 glibc），
+     CI strace 57 次 mmap 全 `fd=-1` 匿名页 ⇒ driver.so 走自己私有 blit 画布，
+     标准 DRM GEM 路径（dumb_fill→MAP_DUMB→AddFB2）上的 buffer 恒零。
+   - 结论：**B6 从「假红」变为「诚实红（观测天花板）」**，不是实现缺陷。
+     B1–B5、B6R（frame_commits 1024 vs 1024）、B7、B8 全 PASS，M0–M7 里程碑三侧完全同步、exit=124 一致。
+   - 决策：B6 不阻塞替代；观测天花板突破（观测 driver.so 私有画布）列为后续方向。
+
+2. **★ DCE 13 条判据盲区（本轮最重要发现）**：
+   - R175 用 `tools/factory_fn_stack.py` 判「该槽写不读 ⇒ 合法 DCE」。
+     本轮反汇编发现判据**盲区**：该工具只统计「sp/fp + 常量位移」**直接** ldr/str；
+     但 `blockcopy` 用 `ldmib r6 {r0,ip}` 读 `[r6+4]`/`[r6+8]`（r6 = `&local_bc` 参数），
+     是**指针间接块读**，基址寄存器不是 sp/fp ⇒ 被统计跳过。
+   - 铁证（`mui_load_state` @0x2eac8）：`local_b8 = DAT_003af820` 写 [sp,#0x68]，
+     `local_bc` 写 [sp,#0x64]；`blockcopy`(0x299a4) `ldmib r6{r0,ip}` 读 [r6+4]=[sp+0x68]=local_b8
+     ⇒ 该槽**被 blockcopy 间接读取**，R175「写了不读」是误判。
+   - 根因：Ghidra 把原厂连续栈 struct 拆成独立标量；C 源码取 `&local_bc`（单个标量地址）传 blockcopy，
+     C 别名规则**不保护相邻标量** ⇒ -Os 会消除相邻 `local_b8/local_b4` 的写 ⇒ UB-DCE 真缺陷。
+   - 影响范围：13 条债务中 11 条含 `blockcopy`/`blockadaptive`/`mui_blockcopy` 调用
+     （`TestUSBJoy`、`mui_DisplayGameSum` 例外，另查）。
+   - 决策：13 条从「低风险」升级为「疑似 UB-DCE 真缺陷」，需云上编译实验逐一定性后修复。
+
+### 下一步待办
+
+1. **P0（真阻塞）**：CNB 云开发编译实验重判 13 条 DCE —— 逐文件确认「被 blockcopy 间接读的槽」在 -Os 下是否被消除；被消除的按 R173 `FBA_Load` 范式（把 Ghidra 拆开的连续栈块合并为显式 struct）修复。
+2. **P1**：改进 DCE 判据仪器，识别「取 `&local` 地址 + 被调函数 `ldmib`/`ldr[rn+off]` 间接读」形态，消除判据盲区、防复发。
+3. **P2**：B6 观测天花板突破方向调研（观测 driver.so 私有画布）。
+4. **P2**：`TestUSBJoy` / `mui_DisplayGameSum` 两个无 blockcopy 的 Δ 单独定性。
