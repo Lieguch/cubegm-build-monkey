@@ -23,18 +23,10 @@ gh_u4 mui_video_setting(void)
   gh_uint uVar10;
   char *pcVar11;
   char *pcVar12;
-  gh_u4 local_b8;
-  gh_u4 local_b4;
-  gh_u4 local_b0;
-  int local_ac;
-  int local_a8;
-  int local_a4;
-  void *local_a0;
-  int local_9c;
-  int local_98;
-  int local_94;
-  int local_90;
-  int local_8c;
+  /* R179 根修：-0xb8..-0x8c 是 blockcopy(param_2,param_1) 的 12 个连续 int 参数槽
+   * （与 joystick 同构）。数组化让 &blk[6] 逃逸覆盖 param_1、&blk[0] 覆盖 param_2，
+   * -Os 不再消除 af820/24/28/2c 写入。 */
+  int blk[12];   /* [0..5]=param_2(local_b8..a4)  [6..11]=param_1(local_a0..8c) */
   int local_88 [4];
   int local_78;
   int local_74;
@@ -94,20 +86,20 @@ LAB_0002e19c:
   memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
          (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,5);
-  /* R178 根修：连续 4 槽还原为显式 struct */
-  local_a8 = DAT_003af82c;
-  local_9c = DAT_003af820;
-  local_ac = DAT_003af828;
-  local_98 = DAT_003af824;
-  local_94 = DAT_003af820 + DAT_003af828;
-  local_90 = DAT_003af824 + DAT_003af82c;
-  local_a4 = DAT_003af828 << 1;
-  local_b8 = (gh_u4)bimapFilebuffer;
-  local_a0 = DAT_003af29c;
-  local_8c = DAT_003af2a0 << 1;
-  local_b4 = 0;
-  local_b0 = 0;
-  blockcopy((int *)&local_a0,(int *)&local_b8);
+  /* R179 根修：12 槽数组化，槽名→blk 索引（见声明处注释） */
+  blk[4]  = DAT_003af82c;                  /* local_a8 = param_2[4] */
+  blk[7]  = DAT_003af820;                  /* local_9c = param_1[1] */
+  blk[3]  = DAT_003af828;                  /* local_ac = param_2[3] */
+  blk[8]  = DAT_003af824;                  /* local_98 = param_1[2] */
+  blk[9]  = DAT_003af820 + DAT_003af828;   /* local_94 = param_1[3] */
+  blk[10] = DAT_003af824 + DAT_003af82c;   /* local_90 = param_1[4] */
+  blk[5]  = DAT_003af828 << 1;             /* local_a4 = param_2[5] */
+  blk[0]  = (int)bimapFilebuffer;          /* local_b8 = param_2[0]（源基址）*/
+  blk[6]  = (int)DAT_003af29c;             /* local_a0 = param_1[0]（目标基址）*/
+  blk[11] = DAT_003af2a0 << 1;             /* local_8c = param_1[5] */
+  blk[1]  = 0;                             /* local_b4 = param_2[1] */
+  blk[2]  = 0;                             /* local_b0 = param_2[2] */
+  blockcopy(&blk[6],&blk[0]);
   OutRect._8_4_ = 0;
   OutRect._16_4_ = 0x500;
   OutRect._12_4_ = 0;

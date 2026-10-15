@@ -78,32 +78,19 @@ INC = os.path.join(ROOT, 'src', 'compat')
 #   ① 重建源码里「只赋值、从不读」⇒ 大概率合法 DCE（见 #4 的 local_32c）；
 #   ② 重建源码里「被跨对象步进读」⇒ UB-DCE，是真缺陷（见已修的 core/FUN_002b6c14_FBA_Load.c）。
 ALLOW = {
-    'src/proprietary/input/FUN_0000b014_TestUSBJoy.c':
-        (('DAT_003af00c', 'DAT_003af010', 'DAT_003af014'), '低风险（GAP 17.00）：prop_equiv size 比 TestUSBJoy 708/688=0.972 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/misc/FUN_0002187c_DisplayPage_list.c':
-        (('DAT_003af2a0',), '低风险（GAP 17.00）：prop_equiv size 比 DisplayPage_list 248/272=1.097 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0001bf80_mui_DisplayGameSum.c':
-        (('DAT_0020202d',), '低风险（GAP 17.00）：prop_equiv size 比 mui_DisplayGameSum 232/336=1.448 OK；工厂侧该槽属「写了不读」'),
+    # R179 铁证：下面 5 条 b2320 组是「栈槽只写一次、工厂反汇编**从不读回**」的真·合法 DCE，
+    # 其余 8 条原债务（joystick/video/PauseMenu/load_state/save_state/DisplayPage_list/TestUSBJoy/
+    # DisplayGameSum）经工厂反汇编复核属 UB-DCE 真缺陷，已根修（数组化/块拷），从本表移除。
     'src/proprietary/mui/FUN_00023204_mui_menu.c':
-        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_menu 2840/3488=1.228 OK；且 local_32c 只赋值从不读；工厂侧该槽属「写了不读」'),
+        (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(-0x32c/sp#420) 只 str 一次、全函数无 ldr 读回'),
     'src/proprietary/mui/FUN_00023e10_mui_type.c':
-        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_type 4380/5332=1.217 OK；工厂侧该槽属「写了不读」'),
+        (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(sp#340) 只 str 一次、无 ldr 读回'),
     'src/proprietary/mui/FUN_00025094_mui_search.c':
-        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_search 5356/7188=1.342 OK；工厂侧该槽属「写了不读」'),
+        (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(sp#340) 只 str 一次、无 ldr 读回'),
     'src/proprietary/mui/FUN_000277bc_mui_recent.c':
-        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_recent 4492/4932=1.098 OK；工厂侧该槽属「写了不读」'),
+        (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(sp#860) 只 str 一次、无 ldr 读回'),
     'src/proprietary/mui/FUN_00028a74_mui_shoucang.c':
-        (('DAT_003b2320',), '低风险（GAP 17.00）：prop_equiv size 比 mui_shoucang 3600/4176=1.160 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0002d0d4_mui_joystick_setting.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 mui_joystick_setting 3684/3604=0.978 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0002e040_mui_video_setting.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af828', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 mui_video_setting 2552/2756=1.080 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0002eac8_mui_load_state.c':
-        (('DAT_003af820', 'DAT_003af824'), '低风险（GAP 17.00）：prop_equiv size 比 mui_load_state 2020/1852=0.917 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0002f320_mui_save_state.c':
-        (('DAT_003af820', 'DAT_003af824'), '低风险（GAP 17.00）：prop_equiv size 比 mui_save_state 2704/2420=0.895 OK；工厂侧该槽属「写了不读」'),
-    'src/proprietary/mui/FUN_0002ff8c_PauseMenu.c':
-        (('DAT_003af820', 'DAT_003af824', 'DAT_003af82c'), '低风险（GAP 17.00）：prop_equiv size 比 PauseMenu 1564/1400=0.895 OK；工厂侧该槽属「写了不读」'),
+        (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(sp#428) 只 str 一次、无 ldr 读回'),
 }
 FACTORY_PREFIX = ('DAT_', 'UNK_')
 

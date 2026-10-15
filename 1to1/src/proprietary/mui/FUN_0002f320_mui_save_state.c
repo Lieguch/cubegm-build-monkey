@@ -25,18 +25,12 @@ gh_u4 mui_save_state(void)
   int local_dc;
   size_t local_d8;
   int local_d4 [6];
-  void *local_bc;
-  int local_b8;
-  int local_b4;
-  int local_b0;
-  int local_ac;
-  int local_a8;
-  void *local_a4;
-  gh_uint local_a0;
-  gh_uint local_9c;
-  gh_uint local_98;
-  gh_uint local_94;
-  int local_90;
+  /* R179 根修：-0xbc..-0x90 是 blockcopy/blockadaptive/popwindows 共用的 12 个连续 int 参数槽。
+   * Ghidra 拆成 12 独立标量 ⇒ &local_a4/&local_bc 跨对象块读 = UB ⇒ -Os 消除 af820/af824 写入。
+   * 数组化让块读调用(&blk[6]=param_1,&blk[0]=param_2)地址逃逸覆盖整段，活槽保留。
+   * [0]=local_bc [1]=local_b8 [2]=local_b4 [3]=local_b0 [4]=local_ac [5]=local_a8
+   * [6]=local_a4 [7]=local_a0 [8]=local_9c [9]=local_98 [10]=local_94 [11]=local_90 */
+  int blk[12];
   char acStack_8c [104];
   
   DAT_003af27c = 0;
@@ -66,19 +60,19 @@ joined_r0x0002f3e8:
          (gh_uint)*(gh_ushort *)((int)piVar8 + 6) * (gh_uint)*(gh_ushort *)(piVar8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,3);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,7);
-  local_b0 = DAT_003af828;
-  local_a0 = DAT_003af820;
-  local_9c = DAT_003af824;
-  local_98 = DAT_003af820 + DAT_003af828;
-  local_a8 = DAT_003af828 << 1;
-  local_ac = DAT_003af82c;
-  local_94 = DAT_003af824 + DAT_003af82c;
-  local_a4 = DAT_003af29c;
-  local_bc = bimapFilebuffer;
-  local_90 = DAT_003af2a0 << 1;
-  local_b8 = 0;
-  local_b4 = 0;
-  blockcopy((int *)&local_a4,(int *)&local_bc);
+  blk[3]  = DAT_003af828;                 /* local_b0 = param_2[3] */
+  blk[7]  = DAT_003af820;                 /* local_a0 = param_1[1] */
+  blk[8]  = DAT_003af824;                 /* local_9c = param_1[2] */
+  blk[9]  = DAT_003af820 + DAT_003af828;  /* local_98 = param_1[3] */
+  blk[5]  = DAT_003af828 << 1;            /* local_a8 = param_2[5] */
+  blk[4]  = DAT_003af82c;                 /* local_ac = param_2[4] */
+  blk[10] = DAT_003af824 + DAT_003af82c;  /* local_94 = param_1[4] */
+  blk[6]  = (int)DAT_003af29c;            /* local_a4 = param_1[0]（目标基址）*/
+  blk[0]  = (int)bimapFilebuffer;         /* local_bc = param_2[0]（源基址）*/
+  blk[11] = DAT_003af2a0 << 1;            /* local_90 = param_1[5] */
+  blk[1]  = 0;                            /* local_b8 = param_2[1] */
+  blk[2]  = 0;                            /* local_b4 = param_2[2] */
+  blockcopy(&blk[6],&blk[0]);
   do {
     while( true ) {
       uVar1 = (gh_u4)GetWorkPath();
@@ -107,20 +101,20 @@ LAB_0002f4e0:
     fread(pvVar5,1,__size,pFVar3);
     fclose(pFVar3);
     uncompress(__ptr,&local_d8,pvVar5,__size);
-    local_b0 = DAT_003af828;
-    local_9c = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
-    local_a4 = DAT_003af29c;
-    local_a0 = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;
-    local_ac = DAT_003af82c;
-    local_a8 = DAT_003af828 << 1;
-    local_90 = DAT_003af2a0 << 1;
+    blk[3]  = DAT_003af828;                 /* local_b0 = param_2[3] */
+    blk[8]  = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;  /* local_9c = param_1[2] */
+    blk[6]  = (int)DAT_003af29c;            /* local_a4 = param_1[0]（目标基址）*/
+    blk[7]  = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;      /* local_a0 = param_1[1] */
+    blk[4]  = DAT_003af82c;                 /* local_ac = param_2[4] */
+    blk[5]  = DAT_003af828 << 1;            /* local_a8 = param_2[5] */
+    blk[11] = DAT_003af2a0 << 1;            /* local_90 = param_1[5] */
     iVar9 = iVar9 + 1;
-    local_98 = local_a0 + 0xa0;
-    local_94 = local_9c + 0xa0;
-    local_bc = __ptr;
-    local_b8 = iVar2;
-    local_b4 = iVar2;
-    blockadaptive((int *)&local_a4,(int *)&local_bc);
+    blk[9]  = blk[7] + 0xa0;                /* local_98 = param_1[3]（= local_a0+0xa0）*/
+    blk[10] = blk[8] + 0xa0;                /* local_94 = param_1[4]（= local_9c+0xa0）*/
+    blk[0]  = (int)__ptr;                   /* local_bc = param_2[0]（源基址）*/
+    blk[1]  = iVar2;                        /* local_b8 = param_2[1] */
+    blk[2]  = iVar2;                        /* local_b4 = param_2[2] */
+    blockadaptive(&blk[6],&blk[0]);
     free(pvVar5);
     free(__ptr);
   } while (iVar9 != 6);
@@ -232,24 +226,24 @@ LAB_0002f780:
         }
         if ((uVar6 == 0x2000) && (bVar7)) {
           if (local_d4[iVar9] != 0) {
-            local_a0 = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x26);
-            local_90 = DAT_003af2a0 << 1;
-            local_a4 = (void *)((int)DAT_003af2b8 + DAT_003af2b8[0x24]);
-            local_9c = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9a);
-            local_98 = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x27);
-            local_94 = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9e);
-            popwindows((gh_u4 *)&local_a4);
+            blk[7]  = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x26);              /* local_a0 */
+            blk[11] = DAT_003af2a0 << 1;                                        /* local_90 */
+            blk[6]  = (int)((int)DAT_003af2b8 + DAT_003af2b8[0x24]);            /* local_a4 */
+            blk[8]  = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9a);        /* local_9c */
+            blk[9]  = (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 0x27);             /* local_98 */
+            blk[10] = (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 0x9e);        /* local_94 */
+            popwindows((gh_u4 *)&blk[6]);
             mui_ReadJoystick();
             diff_prev = 0;
             m_time0 = GetTicks();
             while (iVar2 = mui_ReadJoystick(), iVar2 != 0x2000) {
               if (iVar2 == 0x4000) {
-                popoffwindows((gh_u4 *)&local_a4);
+                popoffwindows((gh_u4 *)&blk[6]);
                 goto LAB_0002f794;
               }
               mui_WaitNMI();
             }
-            popoffwindows((gh_u4 *)&local_a4);
+            popoffwindows((gh_u4 *)&blk[6]);
           }
           uVar1 = (gh_u4)GetWorkPath();
           sprintf(acStack_8c,"%sstates",uVar1);
@@ -282,19 +276,19 @@ LAB_0002f780:
               fsync(iVar2);
               fclose(pFVar3);
               free(pvVar5);
-              local_bc = bimapFilebuffer;
-              local_b0 = DAT_003af828;
-              local_a4 = DAT_003af29c;
-              local_a0 = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;
-              local_9c = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;
-              local_ac = DAT_003af82c;
-              local_90 = DAT_003af2a0 << 1;
-              local_98 = local_a0 + 0xa0;
-              local_a8 = DAT_003af828 << 1;
-              local_94 = local_9c + 0xa0;
-              local_b8 = 0;
-              local_b4 = 0;
-              blockadaptive((int *)&local_a4,(int *)&local_bc);
+              blk[0]  = (int)bimapFilebuffer;    /* local_bc = param_2[0]（源基址）*/
+              blk[3]  = DAT_003af828;            /* local_b0 = param_2[3] */
+              blk[6]  = (int)DAT_003af29c;       /* local_a4 = param_1[0]（目标基址）*/
+              blk[7]  = (iVar9 % 3) * 0xa8 + *(gh_ushort *)(DAT_003af2b8 + 0x1e) + 4;      /* local_a0 = param_1[1] */
+              blk[8]  = (iVar9 / 3) * 0xa8 + *(gh_ushort *)((int)DAT_003af2b8 + 0x7a) + 4;  /* local_9c = param_1[2] */
+              blk[4]  = DAT_003af82c;            /* local_ac = param_2[4] */
+              blk[11] = DAT_003af2a0 << 1;       /* local_90 = param_1[5] */
+              blk[9]  = blk[7] + 0xa0;           /* local_98 = param_1[3]（= local_a0+0xa0）*/
+              blk[5]  = DAT_003af828 << 1;       /* local_a8 = param_2[5] */
+              blk[10] = blk[8] + 0xa0;           /* local_94 = param_1[4]（= local_9c+0xa0）*/
+              blk[1]  = 0;                       /* local_b8 = param_2[1] */
+              blk[2]  = 0;                       /* local_b4 = param_2[2] */
+              blockadaptive(&blk[6],&blk[0]);
             }
             pause_ret = 0;
             return 0;

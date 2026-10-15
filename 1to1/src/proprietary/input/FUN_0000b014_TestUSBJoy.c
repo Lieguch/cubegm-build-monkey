@@ -21,16 +21,18 @@ void TestUSBJoy(void)
   short local_14c;
   gh_u1 local_14a;
   gh_u1 local_149;
-  int local_148 [5];
-  gh_u4 uStack_134;
-  gh_u4 uStack_130;
-  gh_u4 uStack_12c;
+  /* R179 根修：-0x148..-0x12c 是连续 8 个 int（[0..3]=joystick fd、[4..7]=版本串指针）。
+   * Ghidra 把 [4..7] 拆成 local_148[4] + uStack_134/130/12c 三个标量，
+   * strcat(local_148[iVar6+4]) 越界读 [5..7]（实为 uStack_134/130/12c）= UB ⇒ -Os 消除 af00c/010/014。
+   * 工厂铁证：`stm r7,{r0..r3}` 在 -0x138 起连续写 4 字，即 [4..7] 是一个连续的版本指针表。
+   * 数组化 local_148[8]（折叠 uStack_134/130/12c 为 [5..7]），越界读变界内读，活槽保留。 */
+  int local_148 [8];
   char local_128 [260];
   
   local_148[4] = DAT_003af008;
-  uStack_134 = DAT_003af00c;
-  uStack_130 = DAT_003af010;
-  uStack_12c = DAT_003af014;
+  local_148[5] = DAT_003af00c;
+  local_148[6] = DAT_003af010;
+  local_148[7] = DAT_003af014;
   scr_h_size = 0x1e0;
   scr_v_size = 0x110;
   scr_data = malloc(0x3fc00);

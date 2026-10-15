@@ -22,18 +22,13 @@ gh_u4 PauseMenu(void)
   gh_u2 *__ptr;
   gh_u2 *puVar9;
   void *local_70;
-  gh_u2 *local_58;
-  gh_u4 local_54;
-  gh_u4 local_50;
-  int local_4c;
-  int local_48;
-  int local_44;
-  gh_u2 *local_40;
-  int local_3c;
-  int local_38;
-  int local_34;
-  int local_30;
-  int local_2c;
+  /* R179 根修：-0x58..-0x2c 是 blockadaptive/blockcopy 共用的 12 个连续 int 参数槽。
+   * Ghidra 拆成 12 独立标量 ⇒ &local_40/&local_58 跨对象块读 = UB ⇒ -Os 消除 af820/24/2c 写入。
+   * 数组化让两个块读调用(&blk[6],&blk[0])的地址逃逸覆盖整段，活槽被保留。
+   * 物理布局由工厂反汇编 str 序列逐槽锁定（sp+32..sp+76，见 R179 段）：
+   *   [0]=local_58 [1]=local_54 [2]=local_50 [3]=local_4c [4]=local_48 [5]=local_44
+   *   [6]=local_40 [7]=local_3c [8]=local_38 [9]=local_34 [10]=local_30 [11]=local_2c */
+  int blk[12];
   
   ChangeSeting = 0;
   if (use_rgb_8888 == 0) {
@@ -66,31 +61,29 @@ gh_u4 PauseMenu(void)
     }
     uVar2 = this_frame._8_4_;
     uVar1 = this_frame._4_4_;
-    local_3c = 0;
-    local_38 = 0;
-    /* R178 根修：连续 3 槽 DAT_003af820/24/2c 还原为显式 struct */
-  { struct { gh_u4 a820, a824, a82c; } pm = { DAT_003af820, DAT_003af824, DAT_003af82c };
-    local_34 = DAT_003af828;  
-    local_30 = pm.a82c;
-  }    local_40 = bimapFilebuffer;
-    local_2c = DAT_003af828 << 1;
-    local_54 = 0;
-    local_50 = 0;
+    blk[7] = 0;                            /* local_3c = param_1[1]（blockadaptive 段）*/
+    blk[8] = 0;                            /* local_38 = param_1[2]（blockadaptive 段）*/
+    blk[9] = DAT_003af828;                 /* local_34 = param_1[3]（blockadaptive 段）*/
+    blk[10] = DAT_003af82c;                /* local_30 = param_1[4]（blockadaptive 段）*/
+    blk[6] = (int)bimapFilebuffer;         /* local_40 = param_1[0]（目标基址）*/
+    blk[11] = DAT_003af828 << 1;           /* local_2c = param_1[5]（stride）*/
+    blk[1] = 0;                            /* local_54 = param_2[1] */
+    blk[2] = 0;                            /* local_50 = param_2[2] */
     if (rotation == 0) {
-      local_4c = this_frame._4_4_;
-      local_48 = this_frame._8_4_;
-      local_44 = this_frame._12_4_;
-      local_58 = (gh_u2 *)this_frame._0_4_;
+      blk[3] = this_frame._4_4_;
+      blk[4] = this_frame._8_4_;
+      blk[5] = this_frame._12_4_;
+      blk[0] = (int)(gh_u2 *)this_frame._0_4_;
     }
     else if (rotation == 1) {
-      local_48 = this_frame._4_4_;
-      local_4c = this_frame._8_4_;
+      blk[4] = this_frame._4_4_;
+      blk[3] = this_frame._8_4_;
       if (this_frame._4_4_ == 0) {
-        local_44 = this_frame._8_4_ << 1;
-        local_58 = __ptr;
+        blk[5] = this_frame._8_4_ << 1;
+        blk[0] = (int)__ptr;
       }
       else {
-        local_44 = this_frame._8_4_ * 2;
+        blk[5] = this_frame._8_4_ * 2;
         puVar5 = (gh_u2 *)(this_frame._0_4_ + this_frame._4_4_ * 2 + -2);
         puVar9 = (gh_u2 *)(this_frame._0_4_ + -2);
         puVar7 = __ptr;
@@ -107,19 +100,19 @@ gh_u4 PauseMenu(void)
             } while (puVar7 != puVar4);
           }
           puVar5 = puVar5 + -1;
-          local_58 = __ptr;
+          blk[0] = (int)__ptr;
         } while (puVar9 != puVar5);
       }
     }
     else if (rotation == 3) {
-      local_48 = this_frame._4_4_;
-      local_4c = this_frame._8_4_;
+      blk[4] = this_frame._4_4_;
+      blk[3] = this_frame._8_4_;
       if (this_frame._4_4_ == 0) {
-        local_44 = this_frame._8_4_ << 1;
-        local_58 = __ptr;
+        blk[5] = this_frame._8_4_ << 1;
+        blk[0] = (int)__ptr;
       }
       else {
-        local_44 = this_frame._8_4_ * 2;
+        blk[5] = this_frame._8_4_ * 2;
         iVar3 = this_frame._4_4_ * (this_frame._8_4_ + 0x7fffffff);
         puVar9 = (gh_u2 *)(this_frame._0_4_ + iVar3 * 2);
         puVar5 = (gh_u2 *)(this_frame._0_4_ + (this_frame._4_4_ + iVar3) * 2);
@@ -137,13 +130,13 @@ gh_u4 PauseMenu(void)
             } while (puVar4 != puVar7);
           }
           puVar9 = puVar9 + 1;
-          local_58 = __ptr;
+          blk[0] = (int)__ptr;
         } while (puVar5 != puVar9);
       }
     }
     else if (rotation == 2) {
-      local_4c = this_frame._4_4_;
-      local_48 = this_frame._8_4_;
+      blk[3] = this_frame._4_4_;
+      blk[4] = this_frame._8_4_;
       iVar3 = this_frame._8_4_ * this_frame._4_4_;
       if (iVar3 != 0) {
         puVar5 = (gh_u2 *)(this_frame._0_4_ + (iVar3 + 0x7fffffff) * 2 + 2);
@@ -155,23 +148,23 @@ gh_u4 PauseMenu(void)
           puVar7 = puVar9;
         } while (puVar9 != __ptr + iVar3 + -0x80000000);
       }
-      local_44 = uVar1 << 1;
-      local_58 = __ptr;
+      blk[5] = uVar1 << 1;
+      blk[0] = (int)__ptr;
     }
-    blockadaptive((int *)&local_40,(int *)&local_58);
-    local_58 = bimapFilebuffer;
-    local_3c = DAT_003af820;
-    local_4c = DAT_003af828;
-    local_38 = DAT_003af824;
-    local_34 = DAT_003af820 + DAT_003af828;
-    local_48 = DAT_003af82c;
-    local_44 = DAT_003af828 << 1;
-    local_30 = DAT_003af824 + DAT_003af82c;
-    local_40 = DAT_003af29c;
-    local_2c = DAT_003af2a0 << 1;
-    local_54 = 0;
-    local_50 = 0;
-    blockcopy((int *)&local_40,(int *)&local_58);
+    blockadaptive((int *)&blk[6],(int *)&blk[0]);
+    blk[0] = (int)bimapFilebuffer;
+    blk[7] = DAT_003af820;
+    blk[3] = DAT_003af828;
+    blk[8] = DAT_003af824;
+    blk[9] = DAT_003af820 + DAT_003af828;
+    blk[4] = DAT_003af82c;
+    blk[5] = DAT_003af828 << 1;
+    blk[10] = DAT_003af824 + DAT_003af82c;
+    blk[6] = (int)DAT_003af29c;
+    blk[11] = DAT_003af2a0 << 1;
+    blk[1] = 0;
+    blk[2] = 0;
+    blockcopy((int *)&blk[6],(int *)&blk[0]);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
     mui_ReadJoystick();

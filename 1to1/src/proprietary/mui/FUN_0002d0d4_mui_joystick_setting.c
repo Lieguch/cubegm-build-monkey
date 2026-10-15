@@ -23,18 +23,12 @@ gh_u4 mui_joystick_setting(void)
   int iVar10;
   gh_uint local_194;
   gh_uint local_190;
-  gh_u4 local_158;
-  gh_u4 local_154;
-  gh_u4 local_150;
-  int local_14c;
-  int local_148;
-  int local_144;
-  void *local_140;
-  int local_13c;
-  int local_138;
-  int local_134;
-  int local_130;
-  int local_12c;
+  /* ★ R179 根修（FBA_Load 同构）：-0x158..-0x12c 是 blockcopy(param_2,param_1) 的
+   * 连续 12 个 int 参数槽。Ghidra 拆成 12 个独立标量 ⇒ `&local_140`/`&local_158`
+   * 跨对象块读 = UB ⇒ -Os 整块消除 af820/af824/af828/af82c 的写入（R176-R178 的 4 槽 UB-DCE）。
+   * 数组化让地址逃逸覆盖全部槽：blockcopy(&blk[6],&blk[0]) 后 [6..11] 收 param_1、
+   * [0..5] 收 param_2，块读范围 ldmib 恰覆盖活槽。 */
+  int blk[12];   /* [0..5]=param_2 槽(local_158..144)  [6..11]=param_1 槽(local_140..12c) */
   char local_128 [260];
   
   DAT_003af27c = 0;
@@ -50,21 +44,21 @@ LAB_0002d16c:
          (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,6);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
-  /* R178 根修：连续 4 槽 DAT_003af820/24/28/2c 还原为显式 struct */
-  local_14c = DAT_003af828;
-  local_13c = DAT_003af820;
-  local_138 = DAT_003af824;
-  local_134 = DAT_003af820 + DAT_003af828;
-  local_144 = DAT_003af828 << 1;
-  local_148 = DAT_003af82c;
-  local_130 = DAT_003af824 + DAT_003af82c;
-  local_140 = DAT_003af29c;
-  local_12c = DAT_003af2a0 << 1;
-  local_158 = (gh_u4)bimapFilebuffer;
+  /* R179 根修：12 槽数组化，槽名→blk 索引对照（见声明处注释） */
+  blk[3]  = DAT_003af828;                  /* local_14c = param_2[3] */
+  blk[7]  = DAT_003af820;                  /* local_13c = param_1[1] */
+  blk[8]  = DAT_003af824;                  /* local_138 = param_1[2] */
+  blk[9]  = DAT_003af820 + DAT_003af828;   /* local_134 = param_1[3] */
+  blk[5]  = DAT_003af828 << 1;             /* local_144 = param_2[5] */
+  blk[4]  = DAT_003af82c;                  /* local_148 = param_2[4] */
+  blk[10] = DAT_003af824 + DAT_003af82c;   /* local_130 = param_1[4] */
+  blk[6]  = (int)DAT_003af29c;             /* local_140 = param_1[0]（目标缓冲基址）*/
+  blk[11] = DAT_003af2a0 << 1;             /* local_12c = param_1[5]（stride）*/
+  blk[0]  = (int)bimapFilebuffer;          /* local_158 = param_2[0]（源缓冲基址）*/
   puVar8 = (gh_uint *)(InputDeviceInfo + 0x6c);
-  local_154 = 0;
-  local_150 = 0;
-  blockcopy((int *)&local_140,(int *)&local_158);
+  blk[1]  = 0;                             /* local_154 = param_2[1] */
+  blk[2]  = 0;                             /* local_150 = param_2[2] */
+  blockcopy(&blk[6],&blk[0]);
   OutRect._8_4_ = 0;
   OutRect._12_4_ = 0;
   iVar6 = 1;
