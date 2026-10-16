@@ -5846,3 +5846,23 @@ R182 给它补上该判据（`--indirect`，默认开；`--no-indirect` 可 A/B�
 4. **不要重复**：① 同一份报告里同一概念只能有一个叫法（本轮把栏头「块读实参」统一成
    「间接读实参」）；② 扩展指针跟踪前先问「新 tracked 的值有没有可能来自别的帧」——
    这是 callee 侧中转能否安全启用的判据。
+
+---
+
+## 纪律 170（2026-10-16，R186）：符号「定义/引用」属性只能信 ELF 动态段，不能信 `.symtab` 名字面
+
+1. **R186 证伪了纪律 154 的关键前提**：「driver.so 的 mmap 是自封定义（`.symtab` 有 `mmap@@GLIBC_2.4`，
+   直接发 SVC 绕过 glibc）」—— 静态铁证：
+   - `DT_JMPREL` 条目 `[40] r_offset(GOT)=0x170ac symbol='mmap' shndx=UNDEF`；
+   - `.dynsym[76] 'mmap' val=0 shndx=UNDEF`（DT_SYMTAB=0x464 / DT_STRTAB=0xc74 权威路径）；
+   - `report/_undef_all.txt:482` 含 `mmap`。
+   ⇒ `mmap` 是**外部引用**（UNDEF），走标准 PLT 懒绑定（`0x1a50 → GOT 0x170ac`），
+   **可被 LD_PRELOAD 拦截**。「`mmap@@GLIBC_2.4`」是**引用** glibc 2.4 mmap 的版本化符号，不是定义。
+2. **不要重复**：① 判「某符号是否可被 interpose / 是否自封 SVC」时，**先看 ELF 动态段
+   （UNDEF + DT_JMPREL ⇒ 走 PLT ⇒ 可拦）**，再看反汇编调用点，二者一致才定案；
+   ② **只信 `.symtab` 的版本化名字面**下「自封定义」结论 = 错（它引用语义不是定义语义）；
+   ③ 扫 `svc` 指令判「是否直发 syscall」必须按 **PT_LOAD RX 段**（program header 权威）扫，
+   不能按 `.text` section header —— 该 DSO 的 `.text` offset 是坏的（0x1bc4），按 section 扫得到 0 条假象。
+3. **连带修正**：纪律 154「画面观测天花板」的前提已不成立 ⇒ B6 全零的根因不是「driver 私有画布
+   绕过 glibc」，而是「桩单实体 vs driver 4 个 dumb buffer 的实体错位」或「桩 handle 撞号」两个候选，
+   需云开发运行时裁决（见 R186 待办）。
