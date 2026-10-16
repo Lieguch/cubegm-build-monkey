@@ -623,7 +623,7 @@ def main():
             hdr.append('【★ 引用次数下降】—— 这些符号在 -Os 下被少引用了（待核清单，'
                        '已按工厂侧旁证分栏）：')
             hdr.append('')
-            hdr.append('  ── 栏 A：工厂侧**有**块读实参 ⇒ 疑似 UB-DCE（真缺陷候选，%d 个）──'
+            hdr.append('  ── 栏 A：工厂侧**有**间接读实参 ⇒ 疑似 UB-DCE（真缺陷候选，%d 个）──'
                        % len(colA))
             if colA:
                 hdr.append('     %-64s %s' % ('文件', '下降的符号×次数'))
@@ -636,7 +636,7 @@ def main():
             else:
                 hdr.append('     （无）')
             hdr.append('')
-            hdr.append('  ── 栏 B：工厂侧**无**块读实参 ⇒ 疑似合法 CSE/常量折叠（%d 个）──'
+            hdr.append('  ── 栏 B：工厂侧**无**间接读实参 ⇒ 疑似合法 CSE/常量折叠（%d 个）──'
                        % len(colB))
             if colB:
                 hdr.append('     %-64s %s' % ('文件', '下降的符号×次数'))

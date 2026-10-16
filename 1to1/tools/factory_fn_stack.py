@@ -52,8 +52,9 @@
 
 已知限制（诚实声明）
 ------------------
-* 指针经**两个以上**栈槽中转 / 经运算（非 add 立即数）派生时，本工具保守"杀死"
-  ⇒ 漏报（不会误报）。
+* 指针经**两个以上**栈槽中转已支持（R185：`str→ldr` 链在调用方与被调函数两侧都生效）；
+  但经 `stm/ldm` 寄存器列表中转、或经非立即数运算（`add rX,rY,rZ` 两个未知量）派生时，
+  本工具保守"杀死" ⇒ 漏报（不会误报）。
 * 被调函数边界取自 symtab；不在 symtab 的目标用「扫到第一条 bx lr / pop{pc}」的
   启发式跨度，并在输出里标注 `size 启发式`。
 * 只做**一层**被调函数分析（块读函数自身不再传帧地址出去；要分析它时直接 --fn 它）。
@@ -301,8 +302,13 @@ def walk_ptr(insns, init=None, callee=False):
                 off[dst] = (off[src] + (imm if kind == 'add' else -imm)) if off.get(src) is not None else None
                 yield ins, off, mem
                 continue
-        # ---- 栈槽中转（仅调用方模式）：str rX,[sp,#S] / ldr rX,[sp,#S]
-        if not callee and mn in ('str', 'strb', 'strh', 'strd', 'ldr', 'ldrb', 'ldrh', 'ldrd'):
+        # ---- 栈槽中转：str rX,[sp,#S] / ldr rX,[sp,#S]
+        #   ★ R185：被调函数模式也启用（原仅调用方）。语义仍然安全 —— mem[] 里只会有
+        #     「从已知参数指针派生出的地址」：被调函数自己的 `add rX,sp,#imm` 早就被
+        #     「帧基址建立（仅调用方模式）」分支杀死，所以 callee 模式下 mem 的值
+        #     全部源自 param 指针 ⇒ 让「参数指针被存进被调函数自己的栈槽再取回」
+        #     这种形态也能被跟踪（此前漏报）。
+        if mn in ('str', 'strb', 'strh', 'strd', 'ldr', 'ldrb', 'ldrh', 'ldrd'):
             m = RE_STR_MEM.match(full)
             if m:
                 src, disp = m.group(2), (int(m.group(4), 0) if m.group(4) else 0)
@@ -656,6 +662,41 @@ def self_test():
     if resB:
         chk('B：实参 r1=sp+0x40', resB[0]['args'].get('r1'), 0x40)
         chk('B：间接读槽 = {0x44,0x48,0x54}', sorted(resB[0]['slots']), [0x44, 0x48, 0x54])
+
+    # 合成 caller C：实参经**两个**栈槽中转（add→str→ldr→str→ldr→bl）
+    callerC = (b'\x40\x00\x8d\xe2'      # add r0, sp, #0x40
+               b'\x08\x00\x8d\xe5'      # str r0, [sp, #8]
+               b'\x08\x10\x9d\xe5'      # ldr r1, [sp, #8]
+               b'\x0c\x10\x8d\xe5'      # str r1, [sp, #0xc]
+               b'\x0c\x20\x9d\xe5'      # ldr r2, [sp, #0xc]
+               + _bl_bytes(0x2000, 0x1014))
+    cC = ['%s %s' % (i.mnemonic, i.op_str) for i in md.disasm(callerC, 0x1000)]
+    print('   合成 callerC: ' + ' | '.join(cC))
+    chk('callerC[3] = str r1, [sp, #0xc]', cC[3], 'str r1, [sp, #0xc]')
+    chk('callerC[4] = ldr r2, [sp, #0xc]', cC[4], 'ldr r2, [sp, #0xc]')
+    chk('callerC[5] = bl #0x2000', cC[5], 'bl #0x2000')
+    resC = analyse_indirect(callerC, 0x1000, fake_resolve, fake_fetch)
+    chk('C：两跳栈槽中转也能检测到', len(resC), 1)
+    if resC:
+        chk('C：实参 r2=sp+0x40', resC[0]['args'].get('r2'), 0x40)
+        chk('C：间接读槽 = {0x44,0x48,0x54}', sorted(resC[0]['slots']), [0x44, 0x48, 0x54])
+
+    # 合成 callee D：参数指针被存进**被调函数自己的**栈槽再取回（R185 新增覆盖）
+    #   mov r6, r0 / str r6, [sp, #0x10] / ldr r6, [sp, #0x10] /
+    #   ldmib r6, {r1, r2} / ldr r7, [r6, #0x14] / bx lr
+    calleeD = (b'\x00\x60\xa0\xe1'      # mov r6, r0
+               b'\x10\x60\x8d\xe5'      # str r6, [sp, #0x10]
+               b'\x10\x60\x9d\xe5'      # ldr r6, [sp, #0x10]
+               b'\x06\x00\x96\xe9'      # ldmib r6, {r1, r2}
+               b'\x14\x70\x96\xe5'      # ldr r7, [r6, #0x14]
+               b'\x1e\xff\x2f\xe1')     # bx lr
+    d_txt = ['%s %s' % (i.mnemonic, i.op_str) for i in md.disasm(calleeD, 0x3000)]
+    print('   合成 calleeD: ' + ' | '.join(d_txt))
+    chk('calleeD[1] = str r6, [sp, #0x10]', d_txt[1], 'str r6, [sp, #0x10]')
+    chk('calleeD[2] = ldr r6, [sp, #0x10]', d_txt[2], 'ldr r6, [sp, #0x10]')
+    sD, iD, _ = callee_reads(calleeD, 0x3000, {'r0': 0x40})
+    chk('D：被调函数侧栈槽中转 ⇒ 槽 = {0x44,0x48,0x54}', sorted(sD), [0x44, 0x48, 0x54])
+    chk('D：无寄存器索引读', iD, False)
 
     # 反例：实参不是帧地址（mov r0,r5，r5 未知）⇒ 0 个间接读结论
     caller_neg = (b'\x40\x20\x8d\xe5'      # str r2,[sp,#0x40]
