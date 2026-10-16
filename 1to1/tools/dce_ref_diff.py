@@ -55,18 +55,22 @@ reloc_count = `.rel.text` / `.rel.data*` 里指向该 UNDEF 符号的重定位�
 Δcount > 0 ⇒ 该符号在 -Os 下被少引用了若干次 —— 与「集合级 Δ」互补：
 集合级回答「符号还在不在」，次数级回答「引用少没少」。二者都必须为空才算清白。
 
-自证（`--self-test`，先自证再信数）
-----------------------------------
-* 正例：人造「拆局部量 + 跨对象步进」样本 ⇒ Δ 必须非空
-* 反例：人造「同一个数组内正常步进」样本 ⇒ Δ 必须为空
-* 回归：真实文件 `core/FUN_002b6c14_FBA_Load.c` 修复后 ⇒ Δ 必须为空（防复发）
+★★ R182 增补：工厂侧旁证（`factory_blockread_hint`，默认开）
+---------------------------------------------------------
+Δ 只是"待核清单"：符号消失既可能是 UB-DCE 真缺陷，也可能是合法 DCE。
+本版把 `tools/factory_fn_stack.py`（R182 的 `--indirect` 判据）接进来：对每个
+Δ>0 的文件，按文件名解析出对应**工厂函数**，跑「被调函数间接读」分析，把块读
+调用点与覆盖槽直接附在 Δ 报告上（`<<工厂块读: …>>`）。
+* 旁证**永不改变门禁结论**（不新增 hard-fail、不放宽任何一条）—— 它只把
+  「必须回工厂反汇编逐槽数」这一步自动化。
+* 文件名不匹配 / 无 symtab / 无 ELF / 分析异常 ⇒ 返回 None（优雅降级，绝不外抛）。
+* `--no-factory-hint` 可关（A/B 用）。
 
 自证（`--self-test`，先自证再信数）
 ----------------------------------
 * 正例：人造「拆局部量 + 跨对象步进」样本 ⇒ Δ 必须非空
 * 反例：人造「同一个数组内正常步进」样本 ⇒ Δ 必须为空
 * 回归：真实文件 `core/FUN_002b6c14_FBA_Load.c` 修复后 ⇒ Δ 必须为空（防复发）
-
 用法
 ----
     CC="<zig> cc" python tools/dce_ref_diff.py            # 全量扫描（集合级）
@@ -116,6 +120,12 @@ ALLOW = {
         (('DAT_003b2320',), '合法 DCE（见 R179）：工厂反汇编 local_32c 槽(sp#428) 只 str 一次、无 ldr 读回'),
 }
 FACTORY_PREFIX = ('DAT_', 'UNK_')
+
+# ARM32 重定位类型（ELF32 ARM ABI）：movw/movt 成对出现算**一次**物化（R183）
+#   MOVW_ABS_NC=43 / MOVT_ABS=44 / MOVW_PREL_NC=45 / MOVT_PREL=46 /
+#   THM_MOVW_ABS_NC=47 / THM_MOVT_ABS=48
+R_MOVW = (43, 44, 45, 46, 47, 48)
+R_MOVT = (44, 46, 48)
 
 # 仅用于分诊排序的"UB 形态"提示：
 #   形态 A = 取**局部标量**的地址（Ghidra 拆出来的 local_XXX / uStack_XXX / acStack_XXX …）
@@ -176,11 +186,13 @@ def undef_factory(obj):
 
 
 def reloc_counts(obj):
-    """读 ELF32 .o 的 SHT_REL 节，返回 {工厂符号名: 重定位条目数}。
+    """读 ELF32 .o 的 SHT_REL 节，返回 {工厂符号名: **物化点**数}。
 
     这是**出现次数级**判据的原料（见文件头「集合级判据的盲区」）。
     只数 `sh_type == SHT_REL(9)` 的节（ARM32 .o 用 REL，不用 RELA）；
     符号名取自 .symtab，只保留 FACTORY_PREFIX 前缀的 UNDEF 符号。
+    ★ 返回的是**物化点**数而非裸 reloc 数：movw/movt 成对算一次（R183，
+      否则 -O0/-Os 的码生成策略差会被误报成"引用消失"，见 `_count_sites`）。
     """
     if not os.path.exists(obj) or os.path.getsize(obj) < 64:
         return None
@@ -209,7 +221,7 @@ def reloc_counts(obj):
             continue
         n = tb[no:tb.index(b'\x00', no)].decode('ascii', 'replace')
         syms.append(n if (shnd == 0 and n.startswith(FACTORY_PREFIX)) else None)
-    out = {}
+    raw = {}                               # sym -> [(r_offset, r_type), ...]
     for s in sh:
         if s[1] != 9:                       # SHT_REL
             continue
@@ -219,12 +231,42 @@ def reloc_counts(obj):
         for i in range(len(blob) // 8):
             r_off, r_info = struct.unpack_from('<II', blob, i * 8)
             sym = r_info >> 8
+            rtype = r_info & 0xff
             if sym >= len(syms):
                 continue
             n = syms[sym]
             if n is None:
                 continue
-            out[n] = out.get(n, 0) + 1
+            raw.setdefault(n, []).append((r_off, rtype))
+    return _count_sites(raw)
+
+
+def _count_sites(raw):
+    """把重定位归一成「物化点」数（R183 修：消掉码生成策略差）。
+
+    ★ 为什么必须归一并（R183 云机实测）：`-O0` 用 `movw+movt` **两条** reloc
+      物化一个符号地址，`-Os` 用字面量池 `.word` **一条**。不归一时，
+      「每条真实引用」在 -O0/-Os 之间恒定差 1 ⇒ 次数级判据把**码生成策略差**
+      误报成「引用消失」（两个不同符号各引用一次也报 -1，假阳）。
+    ★ 归一规则：同符号、地址相差 4 的 movw/movt 对算**一个**物化点；
+      其余每条 reloc 算一个点。这样 -O0 与 -Os 的「每次真实引用」都记 1。
+    """
+    out = {}
+    for n, lst in raw.items():
+        by_addr = {}
+        for off, t in lst:
+            by_addr.setdefault(off, []).append(t)
+        used = set()
+        cnt = 0
+        for off in sorted(by_addr):
+            if off in used:
+                continue
+            used.add(off)
+            cnt += 1
+            nxt = by_addr.get(off + 4)
+            if nxt and any(t in R_MOVW for t in by_addr[off]) and any(t in R_MOVT for t in nxt):
+                used.add(off + 4)          # movw/movt 成对 ⇒ 已算 1 点，吃掉 +4 那条
+        out[n] = cnt
     return out
 
 
@@ -268,6 +310,93 @@ def delta_count_of(src, tmpd):
     if a is None or c is None:
         return None, None
     return a, c
+
+
+def _load_ffs():
+    """加载同目录的 factory_fn_stack（R182 起用作 Δ 的工厂侧旁证）。
+    任何失败都返回 None —— 旁证缺失**不得**影响门禁本身。"""
+    try:
+        import factory_fn_stack as ffs
+        return ffs
+    except Exception:
+        pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import factory_fn_stack as ffs
+        return ffs
+    except Exception:
+        return None
+
+
+# 我方 TU 文件名 → 工厂函数名：FUN_0002eac8_mui_load_state.c → mui_load_state
+#   （GCC 分片后缀 .isra.19 / .constprop.0 / .part.0 / .cold 要剥掉，否则 symtab 查不到）
+RE_FN_FILE = re.compile(r'^FUN_[0-9a-fA-F]+_(.+?)\.c$')
+RE_GCC_PART = re.compile(r'\.(isra|constprop|part|cold|clone)(\.\d+)?$')
+
+
+def _factory_fn_name(rel):
+    base = os.path.basename(rel)
+    m = RE_FN_FILE.match(base)
+    if not m:
+        return None
+    name = m.group(1)
+    prev = None
+    while prev != name:                      # 可能多重后缀（.isra.0.constprop.0）
+        prev = name
+        name = RE_GCC_PART.sub('', name)
+    return name or None
+
+
+def factory_blockread_hint(rel):
+    """工厂侧旁证（R182）：该 TU 对应的工厂函数里，哪些栈槽被块读函数间接读。
+
+    用途：Δ 只是"待核清单"，本条把工厂侧的槽覆盖情况直接附在 Δ 报告上 ——
+    若 Δ 符号落在被 `blockcopy`/`blockadaptive`/`mui_blockcopy`/`popwindows`/
+    `popoffwindows` 间接读的槽里 ⇒ 是真缺陷（UB-DCE，GAP 18.01）；
+    若工厂侧**没有任何**块读实参落在这些槽 ⇒ 支持"合法 DCE"的判定。
+
+    **永不抛异常、永不改变门禁结论**：文件名不匹配 / 无 symtab / 无 ELF /
+    分析异常一律返回 None（旁证缺失 ≠ 通过，也不 ≠ 失败）。
+    """
+    try:
+        fn = _factory_fn_name(rel)
+        if not fn:
+            return None
+        ffs = _load_ffs()
+        if ffs is None:
+            return None
+        syms = ffs.parse_symtab()
+        if not syms or fn not in syms:
+            return None
+        addr, size = syms[fn]
+        elf = ffs.Elf32(ffs.FACTORY)
+        off = elf.v2f(addr)
+        if off is None:
+            return None
+        code = elf.b[off:off + size]
+        a2 = ffs.by_addr(syms)
+
+        def _fetch(a, s):
+            o = elf.v2f(a)
+            return elf.b[o:o + s] if o is not None else b''
+
+        res = ffs.analyse_indirect(code, addr, lambda t: a2.get(t), _fetch)
+        parts = []
+        for r in res:
+            if r.get('unresolved'):
+                parts.append('@0x%x→%s(边界不可解析⇒不得判死)' % (r['call'], r['name']))
+                continue
+            if r.get('indexed'):
+                parts.append('@0x%x→%s(索引读⇒不得判死)' % (r['call'], r['name']))
+            if r['slots']:
+                parts.append('@0x%x→%s[%s]' % (
+                    r['call'], r['name'],
+                    ' '.join('sp+0x%x' % s for s in sorted(r['slots']))))
+        return ('工厂块读: ' + ' ; '.join(parts)) if parts else None
+    except Exception:
+        return None
 
 
 def self_test():
@@ -370,8 +499,9 @@ int occ(void){
         True)
 
     # ⑦ 反例：两个**不同**符号各引用一次、运行时下标 ⇒ 次数级 Δ 必须为空（防新判据误报）
-    #    （注意：同一符号引用两次是合法 CSE，-Os 会合并成一次加载 ⇒ 次数下降但语义不变。
-    #     这正是 --count 只能当分诊清单、不能当硬门禁的原因，见文件头。）
+    #    （R183 修：-O0 用 movw+movt 两条 reloc 物化一个符号、-Os 用字面量池一条 ⇒
+    #     不归一时连"每条真实引用"都恒定差 1，假阳。已由 `_count_sites` 按
+    # 「movw/movt 成对算一个物化点」归一，本条因此**真的**必须为空。）
     occn = os.path.join(tmpd, 'occn.c')
     with open(occn, 'w') as fh:
         fh.write('''#include "globals.h"
@@ -388,6 +518,42 @@ int occn(int i){
         if (m0 is not None and m1 is not None) else '编译失败',
         True)
 
+    # ⑧ ★ 工厂侧旁证（R182）：TU 文件名 → 工厂函数名 的提取 + 优雅降级
+    chk('⑧ 文件名→工厂函数名（常规）',
+        _factory_fn_name('src/proprietary/mui/FUN_0002eac8_mui_load_state.c'),
+        'mui_load_state')
+    chk('⑧ 文件名→工厂函数名（剥 .isra.N 分片）',
+        _factory_fn_name('src/proprietary/mui/FUN_0001b240_mui_outputxy_length.isra.19.c'),
+        'mui_outputxy_length')
+    chk('⑧ 文件名→工厂函数名（剥 .constprop.N）',
+        _factory_fn_name('src/proprietary/x/FUN_0000d678_InitDisplay.constprop.0.c'),
+        'InitDisplay')
+    chk('⑧ 非 FUN_ 文件名 → None（不得瞎猜）',
+        _factory_fn_name('src/proprietary/misc/blockcopyish.c'), None)
+    # 旁证函数必须**永不抛异常**：在/不在有 symtab 的环境里都只能返回 None 或 str
+    for probe in ('src/proprietary/mui/FUN_0002eac8_mui_load_state.c',
+                  'src/proprietary/misc/FUN_000299a4_blockcopy.c',
+                  'tools/not-a-tu.c'):
+        try:
+            r = factory_blockread_hint(probe)
+            chk('⑧ 旁证不抛异常且类型合法 %s' % os.path.basename(probe),
+                (r is None or isinstance(r, str)), True)
+        except Exception as e:               # pragma: no cover - 真抛了就是缺陷
+            chk('⑧ 旁证不抛异常 %s' % probe, 'raised %s' % e, True)
+    # 环境齐备（symtab + 工厂 ELF）时加验一条已知答案：mui_load_state 必有 blockcopy 块读
+    ffs = _load_ffs()
+    if ffs is not None and os.path.exists(ffs.FACTORY) and ffs.parse_symtab():
+        h = factory_blockread_hint('src/proprietary/mui/FUN_0002eac8_mui_load_state.c')
+        chk('⑧ 已知答案：mui_load_state 旁证含 blockcopy',
+            (h is not None and 'blockcopy' in h), True)
+        h2 = factory_blockread_hint('src/proprietary/mui/FUN_00023204_mui_menu.c')
+        # b2320 槽在 mui_menu 里是 sp#420 = sp+0x1a4（R179 实测）。该函数确实向
+        # filelist_run_game / FindZipItemA 传帧地址，但都不覆盖 0x1a4 ⇒ 合法 DCE 仍成立。
+        chk('⑧ 已知答案：mui_menu 旁证**不覆盖** b2320 槽(sp+0x1a4)',
+            ('sp+0x1a4' in (h2 or '')), False)
+    else:
+        print('   （⑧ 环境缺 symtab/工厂 ELF ⇒ 已知答案两腿跳过，仅验优雅降级）')
+
     print()
     print('   自证结论：%s' % ('全部通过 —— 仪器可用' if ok else '★ 有 FAIL —— 仪器不可信'))
     return ok
@@ -399,8 +565,11 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--count', action='store_true',
                     help='出现次数级判据：Δcount = reloc_count(-O0) − reloc_count(-Os)')
+    ap.add_argument('--no-factory-hint', action='store_true',
+                    help='关闭工厂侧块读旁证（R182；旁证永不改变门禁结论，只影响报告信息量）')
     ap.add_argument('--out', help='报告输出路径')
     a = ap.parse_args()
+    factory_hint = not a.no_factory_hint
 
     if a.self_test and not self_test():
         return 2
@@ -470,10 +639,14 @@ def main():
         d = sorted(aa - cc)
         allow = set(ALLOW.get(rel, ([], ''))[0])
         real = [x for x in d if x not in allow]
+        hint = ub_hint(p) if d else False
+        fh = factory_blockread_hint(rel) if (d and factory_hint) else None
         if real:
-            hits.append((rel, real, ub_hint(p)))
-        lines.append('%-70s Δ=%-3d %s%s' % (rel, len(d), '[UB?] ' if (d and ub_hint(p)) else '      ',
-                                            ' '.join(d[:10])))
+            hits.append((rel, real, hint, fh))
+        lines.append('%-70s Δ=%-3d %s%s%s' % (
+            rel, len(d), '[UB?] ' if hint else '      ',
+            ' '.join(d[:10]),
+            ('  <<' + fh + '>>') if fh else ''))
 
     hdr = ['=' * 96,
            'DCE 引用差门禁（Δ = UNDEF(-O0) 减去 UNDEF(-Os) 的工厂符号）',
@@ -484,12 +657,21 @@ def main():
     if hits:
         hdr.append('【★ 表外新增 Δ】—— 这些文件里的工厂数据引用在 -Os 下消失了（硬失败）：')
         hdr.append('   %-66s %-6s %s' % ('文件', 'UB?', 'Δ 符号'))
-        for rel, d, hint in hits:
+        for rel, d, hint, fh in hits:
             hdr.append('   %-66s %-6s %s' % (rel, '★' if hint else '-', ' '.join(d)))
         hdr.append('')
         hdr.append('   ★ 带 [UB?] 的优先查：源码里有「取局部标量地址 + p = p + n」形态，')
         hdr.append('     这是 C 未定义行为，-Os 会据此删除后续槽的写入（GAP 16.99）。')
         hdr.append('')
+        fh_hits = [(rel, fh) for rel, _d, _h, fh in hits if fh]
+        if fh_hits:
+            hdr.append('   ★★ 工厂侧旁证（factory_fn_stack.py --indirect，R182）：')
+            for rel, fh in fh_hits:
+                hdr.append('      %s' % rel)
+                hdr.append('        %s' % fh)
+            hdr.append('      ⇒ Δ 符号若落在上述被块读函数间接读的槽里 = **真缺陷（UB-DCE）**；')
+            hdr.append('        旁证为空（工厂侧这些槽无块读实参）才支持"合法 DCE"判定。')
+            hdr.append('')
     else:
         hdr.append('【结论】无表外新增 Δ ⇒ 通过（存量债务见下表）')
         hdr.append('')
@@ -497,6 +679,15 @@ def main():
     hdr.append('   %-66s %s' % ('文件', '理由'))
     for rel in sorted(ALLOW):
         hdr.append('   %-66s %s' % (rel, ALLOW[rel][1]))
+        fh = factory_blockread_hint(rel) if factory_hint else None
+        if fh:
+            # 只陈述事实 + 判定规则，不自动下"需复核"结论：
+            # 工厂侧有块读实参 ≠ 该条登记错 —— 要看 Δ 符号写入的**槽**是否被覆盖。
+            hdr.append('     %s' % fh)
+            hdr.append('     ⇒ 判定规则：Δ 符号写入的栈槽若在上列被读槽中 = 真缺陷（UB-DCE）；'
+                       '不在其中 ⇒ 仍支持"合法 DCE"登记')
+        elif factory_hint:
+            hdr.append('     工厂侧无块读实参 ⇒ 支持"合法 DCE"登记')
     hdr.append('')
     hdr.append('【全部明细】（Δ=0 也列出，便于看出扫描确实跑到了）')
     txt = '\n'.join(hdr + lines) + '\n'
