@@ -5745,3 +5745,53 @@ qemu 里程碑一律**降级为参考**。
 5. **对齐方向的语义**：沙箱内"两侧同构 find fail"才是 1:1 的正确状态——
    "rebuild 能找到而工厂找不到"本身即结构差的证据，修复方向是复刻工场的 fail，
    不是让工厂"能找到"。
+
+---
+
+## 纪律 165（2026-10-15，R180/R181）：块读参数槽死写门禁 `verify_blk12.py` —— 仪器自身的三处缺陷
+
+**背景**：GAP 18.01-18.04 的根修手法是"把 Ghidra 拆散的 12 个标量参数槽还原成 `int blk[12]` 数组、
+让地址逃逸覆盖整段"。`dce_ref_diff.py` 的**集合级 Δ 有盲区**：若工厂符号在本 TU 别处仍被引用，
+死写被 -Os 消除不改变符号在场性 ⇒ Δ 为空、门禁放行。R180 用它连抓 4 条漏网
+（DisplayThumbnail / SeletEmuCore / mui_recent / mui_shoucang），R181 建 `verify_blk12.py`
+（不依赖符号集合、直接锚定实参基址数栈槽）复测时，**仪器自身又暴露三处缺陷**：
+
+1. **固定 12 行回看窗口太短（假阴）**：`mui_shoucang` 的 `add r0,sp,#24` 距 `bl popwindows`
+   有 **22 行**（中间夹 6 个 `str` 参数槽填充）⇒ 窗口看不到基址，误报"需人工看汇编"。
+   **修法**：改**势精度寄存器跟踪**（`add r0,sp,#imm` / `mov r0,rX` 记录最近定义，
+   遇标签/分支/调用即失效），取消固定窗口。
+2. **固定窗口还会假阳**：跨基本块的 `add r0,sp,#x` 被误当本次实参 ⇒ 同上，势精度是更彻底的解法。
+3. **两组参数槽连数 12 会把 param_2 的 6 槽算到 param_1 头上**（把已修好的文件误报为死写）
+   ⇒ r0/r1 **各自起 6 槽分别判**。
+4. `mov r1, sp`（偏移 0，`DisplayPage_list` 的 param_2 基址）不被识别 ⇒ MOV 正则补 `sp|fp`。
+5. **结果**：12 个块读调用方 TU 在 `-Os` 下全部 PASS（popwindows / popoffwindows /
+   mui_joystick_setting / mui_video_setting / PauseMenu / mui_load_state / mui_save_state /
+   DisplayPage_list / mui_DisplayThumbnail / SeletEmuCore / mui_recent / mui_shoucang）。
+6. **不要重复**：① 仪器报"解析不到"先怀疑**窗口太短**，不要直接当"需人工看汇编"；
+   ② 两组参数的校验**必须分组**；③ `mov rX, sp` 是合法基址设置方式（偏移 0），必须覆盖。
+
+---
+
+## 纪律 166（2026-10-16，R182）：工厂侧块读判据 —— 地址经栈槽中转 + APCS 别名
+
+**背景**：R178/R179/R180 三轮误判的根因是 `factory_fn_stack.py` 不认"被调函数经指针间接读"。
+R182 给它补上该判据（`--indirect`，默认开；`--no-indirect` 可 A/B），
+并用 10 个 UB-DCE 案例 + 3 个阴性对照验证判别力。
+
+1. **工厂取块读实参的真实形态 = 地址经栈槽中转**：
+   `add ip, sp, #0x4c` → `str ip, [sp, #0x18]` → （隔 0x130 字节）→ `ldr r1, [sp, #0x18]` → `bl blockcopy`。
+   ⇒ 只跟踪寄存器会**整条漏掉**；必须同时跟踪「槽里存的是哪个帧地址」
+   （store 时记录、load 时取回、被数据值覆写即失效）。
+2. **被调函数把参数搬到 r4/r6/r7 再用**（`mov r6,r0` → `ldmib r6,{r0,ip}`）是五个块读函数的
+   一致形态 ⇒ 被调函数侧也要做指针传播（初值 = 参数基址），不能只认 r0–r3。
+3. **capstone 五个坑（R182 全踩过）**：① `op_str` **不含助记符**（匹配前要拼）；
+   ② 立即数是 `#0x40` **十六进制**（只认 `#\d+` 会把 `add ip,sp,#0x4c` 漏判成"杀死寄存器"）；
+   ③ `bl` 目标 capstone **已解析成绝对地址**（不要再 `<<2`，否则差 4 倍、resolve 全落空）；
+   ④ `ldmia` 被归一成 `ldm`；⑤ **APCS 别名** `ip`=r12 / `sb`=r9 / `fp`=r11 / `sp`=r13
+   不被 `r\d+` 匹配（`add ip, sp, #0x4c` 是工厂真实指令）。
+4. **判别力必须配阴性对照**：b2320 组（mui_menu/type/search）在新判据下死槽数**零变化**（1/4/7），
+   而 mui_load_state 13→3 / mui_save_state 9→2 / mui_recent 10→5 / mui_shoucang 7→2
+   —— 证明翻转只发生在真有块读处，不是"把一切写成活的"。
+5. **不要重复**：① 「写了从不读」的结论必须同时过产物侧（`verify_blk12.py`）与工厂侧
+   （`factory_fn_stack.py --indirect`）两把尺子；② 仪器正则先确认 capstone 的**真实输出形态**再写
+   （本轮 5 个自身缺陷全是"想当然"造成的）。
