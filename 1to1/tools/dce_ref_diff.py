@@ -60,9 +60,12 @@ reloc_count = `.rel.text` / `.rel.data*` 里指向该 UNDEF 符号的重定位�
 Δ 只是"待核清单"：符号消失既可能是 UB-DCE 真缺陷，也可能是合法 DCE。
 本版把 `tools/factory_fn_stack.py`（R182 的 `--indirect` 判据）接进来：对每个
 Δ>0 的文件，按文件名解析出对应**工厂函数**，跑「被调函数间接读」分析，把块读
-调用点与覆盖槽直接附在 Δ 报告上（`<<工厂块读: …>>`）。
+调用点与覆盖槽直接附在 Δ 报告上（`<<工厂间接读: …>>`；`*` = 块读族高风险）。
 * 旁证**永不改变门禁结论**（不新增 hard-fail、不放宽任何一条）—— 它只把
   「必须回工厂反汇编逐槽数」这一步自动化。
+* 命名诚实（R184）：它覆盖**所有**经帧地址实参间接读的被调函数（strupr /
+  mxmlElementGetAttr / extract_basepath / 块读族…），不只五个块读函数；
+  块读族成员带 `*` = 高风险（Ghidra 拆 12-int 参数槽的高发区）。
 * 文件名不匹配 / 无 symtab / 无 ELF / 分析异常 ⇒ 返回 None（优雅降级，绝不外抛）。
 * `--no-factory-hint` 可关（A/B 用）。
 
@@ -385,16 +388,20 @@ def factory_blockread_hint(rel):
         res = ffs.analyse_indirect(code, addr, lambda t: a2.get(t), _fetch)
         parts = []
         for r in res:
+            star = '*' if r['name'] in ffs.BLOCKREAD_FAMILY else ''
             if r.get('unresolved'):
-                parts.append('@0x%x→%s(边界不可解析⇒不得判死)' % (r['call'], r['name']))
+                parts.append('@0x%x→%s%s(边界不可解析⇒不得判死)' % (r['call'], r['name'], star))
                 continue
             if r.get('indexed'):
-                parts.append('@0x%x→%s(索引读⇒不得判死)' % (r['call'], r['name']))
+                parts.append('@0x%x→%s%s(索引读⇒不得判死)' % (r['call'], r['name'], star))
             if r['slots']:
-                parts.append('@0x%x→%s[%s]' % (
-                    r['call'], r['name'],
+                parts.append('@0x%x→%s%s[%s]' % (
+                    r['call'], r['name'], star,
                     ' '.join('sp+0x%x' % s for s in sorted(r['slots']))))
-        return ('工厂块读: ' + ' ; '.join(parts)) if parts else None
+        # ★ 命名诚实（R184）：本旁证覆盖**所有**经帧地址实参间接读的被调函数
+        #   （strupr / mxmlElementGetAttr / extract_basepath / 块读族…），不只五个块读函数；
+        #   块读族成员带 `*` 标记 = 高风险（Ghidra 拆 12-int 参数槽的高发区）。
+        return ('工厂间接读: ' + ' ; '.join(parts)) if parts else None
     except Exception:
         return None
 
@@ -590,6 +597,7 @@ def main():
 
     if a.count:
         # ---------------- 出现次数级扫描（与集合级互补，见文件头 GAP 18.01）----------------
+        # R184：每个待核文件都挂工厂侧旁证，并按「工厂侧有无块读实参」分两栏
         for p in files:
             rel = os.path.relpath(p, ROOT).replace(os.sep, '/')
             aa, cc = delta_count_of(p, tmpd)
@@ -597,25 +605,50 @@ def main():
                 skipped.append(rel)
                 continue
             drop = {k: v - cc.get(k, 0) for k, v in aa.items() if cc.get(k, 0) < v}
+            fh = factory_blockread_hint(rel) if (drop and factory_hint) else None
             if drop:
-                hits.append((rel, drop))
-                lines.append('%-70s Δcount: %s' % (rel, ' '.join(
-                    '%s×%d' % (k, v) for k, v in sorted(drop.items()))))
+                hits.append((rel, drop, fh))
+                lines.append('%-70s Δcount: %s%s' % (
+                    rel, ' '.join('%s×%d' % (k, v) for k, v in sorted(drop.items())),
+                    ('  <<' + fh + '>>') if fh else ''))
         hdr = ['=' * 96,
-               'DCE 出现次数级门禁（Δcount = reloc_count(-O0) − reloc_count(-Os)）',
+               'DCE 出现次数级门禁（Δcount = 物化点(-O0) − 物化点(-Os)）',
                '=' * 96,
                '扫描 %d 个文件；编译失败跳过 %d 个；★ 引用次数下降的文件 %d 个'
                % (len(files), len(skipped), len(hits)),
                '（与集合级 Δ 互补：集合级回答"符号还在不在"，次数级回答"引用少没少"）', '']
         if hits:
-            hdr.append('【★ 引用次数下降】—— 这些符号在 -Os 下被少引用了（待核清单）：')
-            hdr.append('   %-66s %s' % ('文件', '下降的符号×次数'))
-            for rel, d in hits:
-                hdr.append('   %-66s %s' % (rel, ' '.join(
-                    '%s×%d' % (k, v) for k, v in sorted(d.items()))))
+            colA = [h for h in hits if h[2]]      # 工厂侧有块读实参 ⇒ 疑似 UB-DCE
+            colB = [h for h in hits if not h[2]]  # 工厂侧无块读实参 ⇒ 疑似合法
+            hdr.append('【★ 引用次数下降】—— 这些符号在 -Os 下被少引用了（待核清单，'
+                       '已按工厂侧旁证分栏）：')
             hdr.append('')
-            hdr.append('   ★ 次数下降既可能是 (a) UB-DCE 真缺陷，也可能是 (b) 合法 CSE/常量折叠。')
-            hdr.append('     判定必须回到工厂反汇编（tools/factory_fn_stack.py）逐槽数读/写。')
+            hdr.append('  ── 栏 A：工厂侧**有**块读实参 ⇒ 疑似 UB-DCE（真缺陷候选，%d 个）──'
+                       % len(colA))
+            if colA:
+                hdr.append('     %-64s %s' % ('文件', '下降的符号×次数'))
+                for rel, d, fh in colA:
+                    hdr.append('     %-64s %s' % (rel, ' '.join(
+                        '%s×%d' % (k, v) for k, v in sorted(d.items()))))
+                    hdr.append('       %s' % fh)
+                    hdr.append('       ⇒ 判定规则：Δ 符号写入的栈槽若在上列被读槽中 = 真缺陷；'
+                               '不在其中 = 合法（次数下降来自 CSE/常量折叠）')
+            else:
+                hdr.append('     （无）')
+            hdr.append('')
+            hdr.append('  ── 栏 B：工厂侧**无**块读实参 ⇒ 疑似合法 CSE/常量折叠（%d 个）──'
+                       % len(colB))
+            if colB:
+                hdr.append('     %-64s %s' % ('文件', '下降的符号×次数'))
+                for rel, d, _fh in colB:
+                    hdr.append('     %-64s %s' % (rel, ' '.join(
+                        '%s×%d' % (k, v) for k, v in sorted(d.items()))))
+            else:
+                hdr.append('     （无）')
+            hdr.append('')
+            hdr.append('   ★ 次数下降的三个来源：(a) UB-DCE 真缺陷（-Os 删掉被块读函数间接读的槽写入）；')
+            hdr.append('     (b) 合法 CSE/常量折叠；(c) 残余的码生成策略差（已由「物化点」归一大幅消减）。')
+            hdr.append('   ★ 本门禁**恒返回 0**：它是分诊清单，不是硬门禁；硬门禁是上面的集合级 Δ。')
             hdr.append('')
         else:
             hdr.append('【结论】无引用次数下降 ⇒ 通过')
