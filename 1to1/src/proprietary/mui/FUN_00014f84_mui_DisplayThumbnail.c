@@ -17,18 +17,23 @@ void mui_DisplayThumbnail(void)
   int iVar3;
   gh_u1 *puVar4;
   gh_u4 local_38c;
-  void *local_388;
-  int local_384;
-  int local_380;
-  int local_37c;
-  int local_378;
-  int local_374;
-  int local_370;
-  int local_36c;
-  int local_368;
-  int local_364;
-  int local_360;
-  int local_35c;
+  /* ★ R180 根修（GAP 18.02，与 R173 FBA_Load / R179 八条同构）：
+   * -0x388..-0x35c 是 mui_blockcopy(param_1=&local_370, param_2=&local_388) 的
+   * **连续 12 个 int 参数槽**。Ghidra 把它们拆成 12 个独立标量，于是 C 层
+   * `&local_370` / `&local_388` 只让**首元素**的地址逃逸；`mui_blockcopy` 却按
+   * `int*` 索引 param_1[1..5] / param_2[1..5]（= local_36c..35c / local_384..374）。
+   * 按 C 标准这是跨对象访问（UB）⇒ `-Os` 判定后 11 个槽为死存储并整段删除。
+   * 实测铁证（云机 arm-linux-gnueabihf-gcc 14.2）：
+   *   -O0：`bl mui_blockcopy` 前 13 条栈 str（12 槽全写）
+   *   -Os：调用前仅 2 条 str（`str r4,[r1]`=param_2[0]、`str r3,[sp,#20]`=param_1[0]）
+   *        ⇒ 其余 10 槽是栈垃圾 ⇒ 缩略图 blit 用错 stride/src/dst，行为发散。
+   * 集合级 Δ 门禁**放行了本条**：af29c/af2a0/af6b8/af6bc/af6c0/af6c4 在本函数
+   * 的 memcpy 循环里仍被引用 ⇒ 符号未消失 ⇒ Δ=[]（GAP 18.01 盲区，已由
+   * dce_ref_diff.py --count 出现次数级判据堵住）。
+   * 数组化让地址逃逸覆盖整段：mui_blockcopy(&blk[6],&blk[0]) 后
+   * [6..11] 收 param_1、[0..5] 收 param_2，-Os 不再消除任何一个槽。
+   * 回退：本段整体还原为 12 个标量声明 + 原调用即可。 */
+  int blk[12];
   gh_u1 auStack_358 [128];
   gh_u1 auStack_2d8 [128];
   char acStack_258 [128];
@@ -70,19 +75,19 @@ void mui_DisplayThumbnail(void)
     }
     __ptr = malloc(local_30);
     UnzipItem(iVar1,local_38c,__ptr,0,3);
-    local_37c = DAT_003af6c0;
-    local_36c = DAT_003af6b8;
-    local_378 = DAT_003af6c4;
-    local_368 = DAT_003af6bc;
-    local_364 = DAT_003af6b8 + DAT_003af6c0;
-    local_374 = DAT_003af6c0 << 1;
-    local_370 = (int)DAT_003af29c;
-    local_35c = DAT_003af2a0 << 1;
-    local_360 = DAT_003af6bc + DAT_003af6c4;
-    local_388 = __ptr;
-    local_384 = iVar2;
-    local_380 = iVar2;
-    mui_blockcopy((int *)&local_370,(int *)&local_388);
+    blk[3] = DAT_003af6c0;                 /* local_37c = param_2[3] 源高 */
+    blk[7] = DAT_003af6b8;                 /* local_36c = param_1[1] 目标左 */
+    blk[4] = DAT_003af6c4;                 /* local_378 = param_2[4] 源行数 */
+    blk[8] = DAT_003af6bc;                 /* local_368 = param_1[2] 目标上 */
+    blk[9] = DAT_003af6b8 + DAT_003af6c0;  /* local_364 = param_1[3] */
+    blk[5] = DAT_003af6c0 << 1;            /* local_374 = param_2[5] 源 stride */
+    blk[10] = DAT_003af6bc + DAT_003af6c4; /* local_360 = param_1[4] */
+    blk[6] = (int)DAT_003af29c;            /* local_370 = param_1[0] 目标基址 */
+    blk[11] = DAT_003af2a0 << 1;           /* local_35c = param_1[5] 目标 stride */
+    blk[0] = (int)__ptr;                   /* local_388 = param_2[0] 源基址 */
+    blk[1] = iVar2;                        /* local_384 = param_2[1] 源左 */
+    blk[2] = iVar2;                        /* local_380 = param_2[2] 源上 */
+    mui_blockcopy(&blk[6],&blk[0]);
     free(__ptr);
     DAT_003af280 = DAT_003af280 + 1;
 LAB_00015128:

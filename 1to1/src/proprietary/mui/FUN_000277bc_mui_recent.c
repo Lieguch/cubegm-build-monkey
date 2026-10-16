@@ -34,12 +34,21 @@ void mui_recent(void)
   gh_uint local_670;
   int local_664;
   FILE *local_644;
-  int local_628;
-  gh_uint local_624;
-  gh_uint local_620;
-  gh_uint local_61c;
-  gh_uint local_618;
-  int local_614;
+  /* ★ R180 根修（GAP 18.04，与 R179/R180 其余 11 条同构）：
+   * -0x628..-0x610 是 popwindows/popoffwindows 的**连续 6 个 int 参数槽**
+   * （Ghidra 拆成 local_628/624/620/61c/618/614 六个标量，下一个就是 acStack_610）。
+   * popwindows 读 param_1[0..4]（`local_58 = *param_1` + param_1[1..4]），
+   * C 层 `&local_628` 只让**首元素**地址逃逸 ⇒ 按 C 标准对另外 5 个标量的
+   * 索引访问是 UB ⇒ `-Os` 把 local_624/620/61c/618/614 判为死存储并**整段删除**。
+   * 实测铁证（云机 arm-linux-gnueabihf-gcc 14.2）：
+   *   -Os：`add r0, sp, #44` 后只有 `str r3, [sp, #44]` **一条**存储
+   *        ⇒ popwindows 读到的 x/y/w/h/stride 五个字段全是栈垃圾
+   *        ⇒ 最近玩过列表的弹出动画用错矩形，行为发散。
+   * 集合级 Δ 同样放行：local_628/624/620/61c/618 都引用 DAT_003af28c，
+   * 而该符号在本 TU 别处仍被引用 ⇒ 符号未消失 ⇒ Δ=[]（GAP 18.01）。
+   * 数组化后地址逃逸覆盖整段，-Os 不再消除任何一个槽。
+   * 回退：还原为 6 个标量声明 + `popwindows(&local_628)` 即可。 */
+  int blk[6];
   char acStack_610 [100];
   gh_byte abStack_5ac [128];
   pthread_t apStack_52c [64];
@@ -209,13 +218,13 @@ LAB_000284a8:
       }
       DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
       iVar13 = DAT_003af394 + 0xb;
-      local_628 = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];
-      local_624 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);
-      local_614 = DAT_003af2a0 << 1;
-      local_620 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
-      local_61c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);
-      local_618 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
-      popwindows(&local_628);
+      blk[0] = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];   /* local_628 = param_1[0] 基址 */
+      blk[1] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);   /* local_624 = [1] x */
+      blk[5] = DAT_003af2a0 << 1;                                    /* local_614 = [5] stride */
+      blk[2] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);  /* local_620 = [2] y */
+      blk[3] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);   /* local_61c = [3] w */
+      blk[4] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);  /* local_618 = [4] h */
+      popwindows((gh_u4 *)blk);
       mui_ReadJoystick();
       diff_prev = 0;
       m_time0 = GetTicks();
@@ -232,14 +241,14 @@ LAB_000284a8:
             fsync(iVar6);
             fclose(pFVar4);
           }
-          popoffwindows(&local_628);
+          popoffwindows((gh_u4 *)blk);
           DisplayThumbnailflag = DisplayThumbnailflag | 2;
           goto LAB_00027864;
         }
         if (iVar13 == 0x4000) break;
         mui_WaitNMI();
       }
-      popoffwindows(&local_628);
+      popoffwindows((gh_u4 *)blk);
       DisplayThumbnailflag = DisplayThumbnailflag | 2;
       goto LAB_00027a50;
     }
@@ -310,13 +319,13 @@ LAB_00027ca0:
         }
         DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
         iVar13 = DAT_003af394 + 10;
-        local_628 = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];
-        local_624 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);
-        local_614 = DAT_003af2a0 << 1;
-        local_620 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);
-        local_61c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);
-        local_618 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);
-        popwindows(&local_628);
+        blk[0] = (int)DAT_003af28c + DAT_003af28c[iVar13 * 4];   /* local_628 = param_1[0] 基址 */
+        blk[1] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 2);   /* local_624 = [1] x */
+        blk[5] = DAT_003af2a0 << 1;                                    /* local_614 = [5] stride */
+        blk[2] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 10);  /* local_620 = [2] y */
+        blk[3] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar13 * 4 + 3);   /* local_61c = [3] w */
+        blk[4] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar13 * 0x10 + 0xe);  /* local_618 = [4] h */
+        popwindows((gh_u4 *)blk);
         mui_ReadJoystick();
         diff_prev = 0;
         m_time0 = GetTicks();
@@ -352,7 +361,7 @@ LAB_00027ca0:
           if (iVar11 == 0x4000) break;
           mui_WaitNMI();
         }
-        popoffwindows(&local_628);
+        popoffwindows((gh_u4 *)blk);
         DisplayThumbnailflag = DisplayThumbnailflag | 2;
 LAB_00027a50:
         if (iVar20 == DAT_003af278) {
@@ -581,7 +590,7 @@ LAB_000285dc:
   iVar6 = fileno(local_644);
   fsync(iVar6);
   fclose(local_644);
-  popoffwindows(&local_628);
+  popoffwindows((gh_u4 *)blk);
   DisplayThumbnailflag = DisplayThumbnailflag | 2;
   goto LAB_00027864;
 }

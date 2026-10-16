@@ -40,6 +40,27 @@ GCC/clang 允许假定「越界指针不被解引用」，于是把**后续槽�
 ★ 为什么是 UNDEF：工厂数据/代码符号在 .o 里必然是 UNDEF（由 .set 别名供应），
   所以 UNDEF 集合就是「这个 TU 引用了哪些工厂符号」的精确清单。
 
+★★ 集合级判据的盲区（R180 实证，GAP 18.01）
+-----------------------------------------
+`Δ = set(-O0) − set(-Os)` 只能发现「**整个符号**在 -Os 下消失」。但若同一个符号
+在本 TU 的**别处仍然被引用**（例如 `mui_DisplayThumbnail` 的 `DAT_003af29c`
+既在 memcpy 循环里用、又在块读参数槽里用），死写被消除**不会**改变符号的在场性
+⇒ Δ 为空，门禁放行，而 -Os 产物里那 12 个槽的写入已经没了。
+
+因此本工具在 `--count` 模式下追加**出现次数级（occurrence-level）**判据：
+
+    Δcount(sym) = reloc_count(-O0, sym) − reloc_count(-Os, sym)
+
+reloc_count = `.rel.text` / `.rel.data*` 里指向该 UNDEF 符号的重定位条目数。
+Δcount > 0 ⇒ 该符号在 -Os 下被少引用了若干次 —— 与「集合级 Δ」互补：
+集合级回答「符号还在不在」，次数级回答「引用少没少」。二者都必须为空才算清白。
+
+自证（`--self-test`，先自证再信数）
+----------------------------------
+* 正例：人造「拆局部量 + 跨对象步进」样本 ⇒ Δ 必须非空
+* 反例：人造「同一个数组内正常步进」样本 ⇒ Δ 必须为空
+* 回归：真实文件 `core/FUN_002b6c14_FBA_Load.c` 修复后 ⇒ Δ 必须为空（防复发）
+
 自证（`--self-test`，先自证再信数）
 ----------------------------------
 * 正例：人造「拆局部量 + 跨对象步进」样本 ⇒ Δ 必须非空
@@ -48,11 +69,13 @@ GCC/clang 允许假定「越界指针不被解引用」，于是把**后续槽�
 
 用法
 ----
-    CC="<zig> cc" python tools/dce_ref_diff.py            # 全量扫描
+    CC="<zig> cc" python tools/dce_ref_diff.py            # 全量扫描（集合级）
+    CC="<zig> cc" python tools/dce_ref_diff.py --count    # 全量扫描（出现次数级，GAP 18.01）
     CC="<zig> cc" python tools/dce_ref_diff.py --self-test
-    CC="<zig> cc" python tools/dce_ref_diff.py --limit 20  # 只扫前 N 个（调试）
 
 退出码：0 = 无 Δ（或全在 ALLOW 里）；2 = 存在未登记的 Δ
+`--count` 模式**恒返回 0**：它是分诊清单（次数下降既可能是缺陷也可能是合法 CSE），
+不是硬门禁；硬门禁仍是上面的集合级 Δ。二者都为空才算清白。
 """
 import argparse
 import os
@@ -152,6 +175,59 @@ def undef_factory(obj):
     return out
 
 
+def reloc_counts(obj):
+    """读 ELF32 .o 的 SHT_REL 节，返回 {工厂符号名: 重定位条目数}。
+
+    这是**出现次数级**判据的原料（见文件头「集合级判据的盲区」）。
+    只数 `sh_type == SHT_REL(9)` 的节（ARM32 .o 用 REL，不用 RELA）；
+    符号名取自 .symtab，只保留 FACTORY_PREFIX 前缀的 UNDEF 符号。
+    """
+    if not os.path.exists(obj) or os.path.getsize(obj) < 64:
+        return None
+    b = open(obj, 'rb').read()
+    if b[:4] != b'\x7fELF':
+        return None
+    e_shoff, = struct.unpack_from('<I', b, 0x20)
+    ents, shn, shx = struct.unpack_from('<HHH', b, 0x2e)
+    sh = [struct.unpack_from('<10I', b, e_shoff + i * ents) for i in range(shn)]
+    names = []
+    st = sh[shx]
+    for s in sh:
+        t = b[st[4] + s[0]:]
+        names.append(t[:t.index(b'\x00')].decode('ascii', 'replace'))
+    if '.symtab' not in names or '.strtab' not in names:
+        return None
+    S = names.index('.symtab')
+    T = names.index('.strtab')
+    tb = b[sh[T][4]:sh[T][4] + sh[T][5]]
+    syms = []
+    for i in range(sh[S][5] // 16):
+        o = sh[S][4] + i * 16
+        no, va, sz, info, oth, shnd = struct.unpack_from('<IIIBBH', b, o)
+        if not no:
+            syms.append(None)
+            continue
+        n = tb[no:tb.index(b'\x00', no)].decode('ascii', 'replace')
+        syms.append(n if (shnd == 0 and n.startswith(FACTORY_PREFIX)) else None)
+    out = {}
+    for s in sh:
+        if s[1] != 9:                       # SHT_REL
+            continue
+        if s[5] == 0:
+            continue
+        blob = b[s[4]:s[4] + s[5]]
+        for i in range(len(blob) // 8):
+            r_off, r_info = struct.unpack_from('<II', blob, i * 8)
+            sym = r_info >> 8
+            if sym >= len(syms):
+                continue
+            n = syms[sym]
+            if n is None:
+                continue
+            out[n] = out.get(n, 0) + 1
+    return out
+
+
 def compile_one(src, opt, out):
     cc = os.environ.get('CC', 'arm-linux-gnueabihf-gcc').split()
     cmd = cc + cflags(opt) + [src, '-o', out]
@@ -171,6 +247,24 @@ def delta_of(src, tmpd):
         return None, None            # 编译失败 → 交给别的门禁管
     a = undef_factory(o0)
     c = undef_factory(os_)
+    if a is None or c is None:
+        return None, None
+    return a, c
+
+
+def delta_count_of(src, tmpd):
+    """出现次数级：返回 ({sym: n0}, {sym: n1})，n0=-O0 次数、n1=-Os 次数。"""
+    o0 = os.path.join(tmpd, 'a.o')
+    os_ = os.path.join(tmpd, 'b.o')
+    for p in (o0, os_):
+        if os.path.exists(p):
+            os.remove(p)
+    ok0 = compile_one(src, '-O0', o0)
+    ok1 = compile_one(src, '-Os', os_)
+    if not ok0 or not ok1:
+        return None, None
+    a = reloc_counts(o0)
+    c = reloc_counts(os_)
     if a is None or c is None:
         return None, None
     return a, c
@@ -244,9 +338,55 @@ char *neg(int i){
             (sorted(a - c) == []) if (a is not None and c is not None) else '编译失败',
             True)
 
-    # ④ 反例：非法输入必须返回 None（不能把失败当"无 Δ"）
+    # ⑤ 反例：非法输入必须返回 None（不能把失败当"无 Δ"）
     chk('反例  不存在的文件 → 视为不可判（None）',
         delta_of(os.path.join(tmpd, 'nope.c'), tmpd)[0], None)
+
+    # ⑥ ★ 出现次数级（occurrence-level）判据自证 —— 堵「集合级掩盖」盲区（GAP 18.01）
+    #    样本：DAT_003b0140 既在**活**处被读、又在**死写**处被存。
+    #    预期：集合级 Δ 为空（符号仍在场 ⇒ 老判据放行），
+    #          次数级 Δ 非空（死写被消除 ⇒ 新判据抓住）。
+    occ = os.path.join(tmpd, 'occ.c')
+    with open(occ, 'w') as fh:
+        fh.write('''#include "globals.h"
+int occ(void){
+  int local_150;
+  int local_14c[2];
+  int acc = (int)DAT_003b0140;      /* 活引用：保证符号在 -Os 后仍在场 */
+  local_150 = (int)DAT_003b0140;    /* 死写：从不读 ⇒ -Os 消除 */
+  local_14c[0] = (int)DAT_003b0134;
+  local_14c[1] = 0;
+  return acc + local_14c[0];
+}
+''')
+    a, c = delta_of(occ, tmpd)
+    n0, n1 = delta_count_of(occ, tmpd)
+    chk('⑥-集合级  活引用+死写 → Δ 为空（老判据放行）',
+        (sorted(a - c) == []) if (a is not None and c is not None) else '编译失败',
+        True)
+    chk('⑥-次数级  活引用+死写 → Δcount 非空（新判据抓住）',
+        ({k: v for k, v in n0.items() if n1.get(k, 0) < v} != {})
+        if (n0 is not None and n1 is not None) else '编译失败',
+        True)
+
+    # ⑦ 反例：两个**不同**符号各引用一次、运行时下标 ⇒ 次数级 Δ 必须为空（防新判据误报）
+    #    （注意：同一符号引用两次是合法 CSE，-Os 会合并成一次加载 ⇒ 次数下降但语义不变。
+    #     这正是 --count 只能当分诊清单、不能当硬门禁的原因，见文件头。）
+    occn = os.path.join(tmpd, 'occn.c')
+    with open(occn, 'w') as fh:
+        fh.write('''#include "globals.h"
+int occn(int i){
+  int s[2];
+  s[0] = (int)DAT_003b0140;
+  s[1] = (int)DAT_003b0134;
+  return s[i];
+}
+''')
+    m0, m1 = delta_count_of(occn, tmpd)
+    chk('⑦-次数级  两个不同符号各一次(运行时下标) → Δcount 为空',
+        ({k: v for k, v in m0.items() if m1.get(k, 0) < v} == {})
+        if (m0 is not None and m1 is not None) else '编译失败',
+        True)
 
     print()
     print('   自证结论：%s' % ('全部通过 —— 仪器可用' if ok else '★ 有 FAIL —— 仪器不可信'))
@@ -257,6 +397,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--self-test', action='store_true')
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--count', action='store_true',
+                    help='出现次数级判据：Δcount = reloc_count(-O0) − reloc_count(-Os)')
     ap.add_argument('--out', help='报告输出路径')
     a = ap.parse_args()
 
@@ -276,6 +418,49 @@ def main():
     lines = []
     hits = []
     skipped = []
+
+    if a.count:
+        # ---------------- 出现次数级扫描（与集合级互补，见文件头 GAP 18.01）----------------
+        for p in files:
+            rel = os.path.relpath(p, ROOT).replace(os.sep, '/')
+            aa, cc = delta_count_of(p, tmpd)
+            if aa is None:
+                skipped.append(rel)
+                continue
+            drop = {k: v - cc.get(k, 0) for k, v in aa.items() if cc.get(k, 0) < v}
+            if drop:
+                hits.append((rel, drop))
+                lines.append('%-70s Δcount: %s' % (rel, ' '.join(
+                    '%s×%d' % (k, v) for k, v in sorted(drop.items()))))
+        hdr = ['=' * 96,
+               'DCE 出现次数级门禁（Δcount = reloc_count(-O0) − reloc_count(-Os)）',
+               '=' * 96,
+               '扫描 %d 个文件；编译失败跳过 %d 个；★ 引用次数下降的文件 %d 个'
+               % (len(files), len(skipped), len(hits)),
+               '（与集合级 Δ 互补：集合级回答"符号还在不在"，次数级回答"引用少没少"）', '']
+        if hits:
+            hdr.append('【★ 引用次数下降】—— 这些符号在 -Os 下被少引用了（待核清单）：')
+            hdr.append('   %-66s %s' % ('文件', '下降的符号×次数'))
+            for rel, d in hits:
+                hdr.append('   %-66s %s' % (rel, ' '.join(
+                    '%s×%d' % (k, v) for k, v in sorted(d.items()))))
+            hdr.append('')
+            hdr.append('   ★ 次数下降既可能是 (a) UB-DCE 真缺陷，也可能是 (b) 合法 CSE/常量折叠。')
+            hdr.append('     判定必须回到工厂反汇编（tools/factory_fn_stack.py）逐槽数读/写。')
+            hdr.append('')
+        else:
+            hdr.append('【结论】无引用次数下降 ⇒ 通过')
+            hdr.append('')
+        hdr.append('【全部明细】')
+        txt = '\n'.join(hdr + lines) + '\n'
+        sys.stdout.write(txt)
+        if a.out:
+            os.makedirs(os.path.dirname(a.out), exist_ok=True)
+            open(a.out, 'w', encoding='utf-8').write(txt)
+        if skipped:
+            print('\n  （跳过 = 编译失败，不属于本门禁职责）')
+        return 0
+
     for p in files:
         rel = os.path.relpath(p, ROOT).replace(os.sep, '/')
         aa, cc = delta_of(p, tmpd)

@@ -25,33 +25,45 @@ int SeletEmuCore(gh_byte *param_1)
   gh_ushort *puVar9;
   gh_ushort *puVar10;
   gh_bool bVar11;
-  int local_158 [6];
-  void *local_140;
-  gh_u4 local_13c;
-  gh_u4 local_138;
-  gh_u4 local_134;
-  gh_u4 local_130;
-  gh_u4 local_12c;
+  /* ★ R180 根修（GAP 18.03，与 R173 FBA_Load / R179 八条 / R180 DisplayThumbnail 同构）：
+   * -0x158..-0x12c 是 mui_blockcopy 的**连续 12 个 int 参数槽**：
+   *   · -0x158..-0x140 = local_158[6]     （param_2 组，Ghidra 已正确识别为数组）
+   *   · -0x140..-0x12c = local_140/local_13c/local_138/local_134/local_130/local_12c
+   *                                                （param_1 组，被 Ghidra 拆成 6 个标量）
+   * 即 param_1 = param_2 + 6 个 int。C 层 `&local_140` 只让**首元素**地址逃逸，
+   * 而 mui_blockcopy 按 `int*` 读 param_1[1..5]（= local_13c..12c）或
+   * param_2[1..5]（后 3 个调用点参数交换时）⇒ 跨对象访问（UB）⇒
+   * `-Os` 把 local_13c/138/134/130/12c 五个槽判定为死存储并**整段删除**。
+   * 实测铁证（云机 arm-linux-gnueabihf-gcc 14.2，tools/verify_blk12.py）：
+   *   -O0：调用#1 前写 17 个槽（含 540/420/1080 三个常量）
+   *   -Os：调用#1 前只写  9 个槽；#3/#4/#5 各只写 2 个槽
+   *        ⇒ 0x21c/0x1a4/0x438 在 -Os 里**完全消失**（只余循环边界 cmp）
+   *        ⇒ mui_blockcopy 的 dst/src stride 与偏移读到栈垃圾 ⇒ 选核界面 blit 错位。
+   * 集合级 Δ 门禁同样放行本条：这些槽写的是**常量**（0/0x21c/0x1a4/0x438），
+   * 不引用任何 DAT_* 符号 ⇒ 永远不进 Δ（GAP 18.01 的又一变体）。
+   * 数组化后地址逃逸覆盖整段，-Os 不再消除任何一个槽。
+   * 回退：还原为上面 7 行声明 + 原调用形式即可。 */
+  int blk[12];
   char acStack_128 [260];
   
   iVar1 = FilePreEmu(param_1);
   iVar3 = DAT_003af2a0;
   iVar8 = (int)DAT_003af29c;
   __ptr = malloc(0x6ebe0);
-  local_158[5] = iVar3 << 1;
+  blk[5] = iVar3 << 1;                /* local_158[5] = param_2[5] 源 stride */
   iVar7 = 0;
-  local_158[2] = 0x96;
-  local_13c = 0;
-  local_134 = 0x21c;
-  local_138 = 0;
-  local_12c = 0x438;
-  local_158[4] = 0x23a;
-  local_158[1] = 0x172;
-  local_130 = 0x1a4;
-  local_158[3] = 0x38e;
-  local_158[0] = iVar8;
-  local_140 = __ptr;
-  mui_blockcopy((int *)&local_140,(int *)local_158);
+  blk[2] = 0x96;                      /* local_158[2] = param_2[2] 源上 */
+  blk[7] = 0;                         /* local_13c    = param_1[1] 目标左 */
+  blk[9] = 0x21c;                     /* local_134    = param_1[3] */
+  blk[8] = 0;                         /* local_138    = param_1[2] 目标上 */
+  blk[11] = 0x438;                    /* local_12c    = param_1[5] 目标 stride */
+  blk[4] = 0x23a;                     /* local_158[4] = param_2[4] 源行数 */
+  blk[1] = 0x172;                     /* local_158[1] = param_2[1] 源左 */
+  blk[10] = 0x1a4;                    /* local_130    = param_1[4] */
+  blk[3] = 0x38e;                     /* local_158[3] = param_2[3] 源高 */
+  blk[0] = iVar8;                     /* local_158[0] = param_2[0] 源基址 */
+  blk[6] = (int)__ptr;                /* local_140    = param_1[0] 目标基址 */
+  mui_blockcopy(&blk[6],&blk[0]);
   iVar4 = DAT_003af2a0;
   puVar9 = (gh_ushort *)(iVar8 + (iVar3 * 0x96 + 0x172) * 2 + -2);
   do {
@@ -112,8 +124,8 @@ LAB_00021d94:
   }
   mui_outputxy_t(DAT_003af29c,0x1b2,0xa2,0x22,0xfc1f,"Select a emulator core library");
   __ptr_00 = malloc(0x6ebe0);
-  local_140 = __ptr_00;
-  mui_blockcopy((int *)&local_140,(int *)local_158);
+  blk[6] = (int)__ptr_00;
+  mui_blockcopy(&blk[6],&blk[0]);
   pcVar2 = stpcpy(acStack_128,work_path);
   builtin_strncpy(pcVar2,"cores/config.xml",0x11);
   __stream = fopen(acStack_128,"r");
@@ -174,8 +186,8 @@ LAB_00022128:
   if (uVar5 < 0x40 || bVar11) {
     if (uVar5 == 8) {
 LAB_00022214:
-      local_140 = __ptr;
-      mui_blockcopy(local_158,(int *)&local_140);
+      blk[6] = (int)__ptr;
+      mui_blockcopy(&blk[0],&blk[6]);
       ForceFlashCount = 0;
       dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
       free(__ptr);
@@ -197,8 +209,8 @@ LAB_00022214:
   else {
     if (uVar5 == 0x2000) goto LAB_00022214;
     if (uVar5 == 0x4000) {
-      local_140 = __ptr;
-      mui_blockcopy(local_158,(int *)&local_140);
+      blk[6] = (int)__ptr;
+      mui_blockcopy(&blk[0],&blk[6]);
       ForceFlashCount = 0;
       dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
       free(__ptr);
@@ -224,8 +236,8 @@ code_r0x000221a0:
   if (iVar4 + iVar3 < iVar8 + -1) {
     iVar3 = iVar3 + 1;
 LAB_00022148:
-    local_140 = __ptr_00;
-    mui_blockcopy(local_158,(int *)&local_140);
+    blk[6] = (int)__ptr_00;
+    mui_blockcopy(&blk[0],&blk[6]);
     EmuCore_list(iVar4,iVar3,iVar8);
     ForceFlashCount = 0;
     dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);

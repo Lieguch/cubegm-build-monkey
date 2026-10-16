@@ -27,12 +27,20 @@ void mui_shoucang(void)
   gh_uint local_4cc;
   int local_4c0;
   pthread_t pStack_4ac;
-  int local_4a8;
-  gh_uint local_4a4;
-  gh_uint local_4a0;
-  gh_uint local_49c;
-  gh_uint local_498;
-  int local_494;
+  /* ★ R180 根修（GAP 18.04，与 R179/R180 其余 11 条同构）：
+   * -0x4a8..-0x490 是 popwindows/popoffwindows 的**连续 6 个 int 参数槽**
+   * （Ghidra 拆成 local_4a8/4a4/4a0/49c/498/494 六个标量，下一个就是 acStack_490）。
+   * popwindows 读 param_1[0..4]，C 层 `&local_4a8` 只让**首元素**地址逃逸
+   * ⇒ 对其余 5 个标量的索引访问是 UB ⇒ `-Os` 判死存储并**整段删除**。
+   * 实测铁证（云机 arm-linux-gnueabihf-gcc 14.2）：
+   *   -Os：`add r0, sp, #20` 后只有 `str r3, [sp, #20]` **一条**存储
+   *        ⇒ popwindows 读到的 x/y/w/h/stride 五个字段全是栈垃圾。
+   * 集合级 Δ 同样放行：这些槽都引用 DAT_003af28c/DAT_003af2a0，符号在场 ⇒ Δ=[]。
+   * 数组化后地址逃逸覆盖整段，-Os 不再消除任何一个槽。
+   * 回退：还原为 6 个标量声明 + `popwindows(&local_4a8)` 即可。
+   * 注意：本文件的 `local_32c`（DAT_003b2320）是 R179 已定性的**真·合法 DCE**
+   *       （工厂反汇编该槽只 str 一次、无 ldr 读回），**不要**动它。 */
+  int blk[6];
   char acStack_490 [100];
   char acStack_42c [256];
   gh_u4 local_32c;
@@ -195,13 +203,13 @@ LAB_00028c34:
     }
     DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
     iVar7 = DAT_003af394 + 0xb;
-    local_4a8 = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];
-    local_4a4 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);
-    local_494 = DAT_003af2a0 << 1;
-    local_4a0 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
-    local_49c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);
-    local_498 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
-    popwindows(&local_4a8);
+    blk[0] = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];   /* local_4a8 = param_1[0] 基址 */
+    blk[1] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);   /* local_4a4 = [1] x */
+    blk[5] = DAT_003af2a0 << 1;                                    /* local_494 = [5] stride */
+    blk[2] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);  /* local_4a0 = [2] y */
+    blk[3] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);   /* local_49c = [3] w */
+    blk[4] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);  /* local_498 = [4] h */
+    popwindows((gh_u4 *)blk);
     mui_ReadJoystick();
     diff_prev = 0;
     m_time0 = GetTicks();
@@ -223,7 +231,7 @@ LAB_00028c34:
           DAT_003af2b4 = (gh_u1 *)0x0;
         }
         uVar11 = 0;
-        popoffwindows(&local_4a8);
+        popoffwindows((gh_u4 *)blk);
         uVar10 = 0;
         uVar12 = 0;
         DAT_003af278 = 0;
@@ -234,7 +242,7 @@ LAB_00028c34:
       if (iVar7 == 0x4000) break;
       mui_WaitNMI();
     }
-    popoffwindows(&local_4a8);
+    popoffwindows((gh_u4 *)blk);
     DisplayThumbnailflag = DisplayThumbnailflag | 2;
     goto LAB_00028c5c;
   }
@@ -307,13 +315,13 @@ LAB_00028eac:
       }
       DisplayThumbnailflag = DisplayThumbnailflag & 0xfffffffd;
       iVar7 = DAT_003af394 + 10;
-      local_4a8 = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];
-      local_4a4 = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);
-      local_494 = DAT_003af2a0 << 1;
-      local_4a0 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);
-      local_49c = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);
-      local_498 = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);
-      popwindows(&local_4a8);
+      blk[0] = (int)DAT_003af28c + DAT_003af28c[iVar7 * 4];   /* local_4a8 = param_1[0] 基址 */
+      blk[1] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 2);   /* local_4a4 = [1] x */
+      blk[5] = DAT_003af2a0 << 1;                                    /* local_494 = [5] stride */
+      blk[2] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 10);  /* local_4a0 = [2] y */
+      blk[3] = (gh_uint)*(gh_ushort *)(DAT_003af28c + iVar7 * 4 + 3);   /* local_49c = [3] w */
+      blk[4] = (gh_uint)*(gh_ushort *)((int)DAT_003af28c + iVar7 * 0x10 + 0xe);  /* local_498 = [4] h */
+      popwindows((gh_u4 *)blk);
       mui_ReadJoystick();
       diff_prev = 0;
       m_time0 = GetTicks();
@@ -324,7 +332,7 @@ LAB_00028eac:
           uVar10 = 0;
           uVar12 = 0;
           shoucang(&file_info_list + DAT_003af27c * 0x404);
-          popoffwindows(&local_4a8);
+          popoffwindows((gh_u4 *)blk);
           DAT_003af278 = 0;
           DAT_003af27c = 0;
           DisplayThumbnailflag = DisplayThumbnailflag | 2;
@@ -333,7 +341,7 @@ LAB_00028eac:
         if (iVar7 == 0x4000) break;
         mui_WaitNMI();
       }
-      popoffwindows(&local_4a8);
+      popoffwindows((gh_u4 *)blk);
       DisplayThumbnailflag = DisplayThumbnailflag | 2;
 LAB_00028c5c:
       if (uVar12 == DAT_003af278) {
