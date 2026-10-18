@@ -242,11 +242,53 @@ static u32 ioc_size(unsigned long r) { return (u32)((r >> 16) & 0x3fffu); }
  *   通过 `drm_stub_fb_address()` 取这块 buffer 的真实地址。
  * 桩导出该弱符号，shim 用 `dlsym(RTLD_DEFAULT, ...)` 取（取不到就退回原匿名页路径，
  * 不影响旧行为）。 */
-static u8  *g_fb_buf;          /* 帧缓冲实体（mmap 出来的真实内存）      */
+static u8  *g_fb_buf;          /* 最后一次 CREATE_DUMB 的实体（兼容 shim 的 drm_stub_fb_address）*/
 static u32  g_fb_bytes;        /* 实体大小 = pitch * height（内核语义）  */
 static u32  g_fb_pitch;        /* 每行字节数（内核回填值，须被尊重）    */
 static u32  g_fb_w, g_fb_h, g_fb_bpp;
 static u32  g_fb_flips;        /* PageFlip 次数 = 真实硬件的帧提交次数    */
+
+/* ★★★ 2026-10-17（R188 根修）：「单实体」→「handle→实体表」。
+ *   R188 云开发运行时铁证裁决候选 B 成立：driver 一次 modeset 建立 **4 个 dumb buffer**
+ *   （RG16×3 + AR24×1，尺寸全 1280×1280），桩把它们的 handle 全回填成 FAKE_FB_ID=1
+ *   ⇒ MAP_DUMB 入参 handle 全 1、AddFB2 的 bo_handles[0] 全 1 ⇒ 桩只能引用「最后一次」实体
+ *   （AR24），而 driver 实际 blit 到 RG16 ⇒ fb_commit_hash 读错块 ⇒ 恒 e96c9dc5（全零基线）。
+ *   内核语义（drm_mode_create_dumb）：每个 CREATE_DUMB 产出**新 GEM handle（单调递增）**，
+ *   各自独立的实体；MAP_DUMB(handle) 返回**该** handle 的 offset；ADDFB2 的 bo_handles[0]
+ *   精确引用**那个** handle 的实体。桩必须复刻这个「一对多」模型。
+ *   ⇒ 表：g_dumb[] 存每个 handle 的实体（独立 mmap，互不覆盖）；handle 从 1 递增。
+ *     向后兼容：g_fb_buf 仍指向「最后一次」实体（shim 的 drm_stub_fb_address 依赖它判断接管）。 */
+typedef struct {
+    u32 handle;                  /* GEM handle（= 分配序号，从 1 递增）*/
+    u8 *addr;                    /* 实体地址（独立 mmap）*/
+    u32 bytes;                   /* 实体字节数 = pitch*height */
+    u32 pitch;                   /* 每行字节数 */
+    u32 w, h, bpp;               /* 尺寸与位深（诊断用）*/
+    u32 used;                    /* 1 = 槽已被占用 */
+} dumb_entity_t;
+
+#define DUMB_MAX 8
+static dumb_entity_t g_dumb[DUMB_MAX];
+static u32 g_dumb_handle_next;   /* 下一个要分配的 handle = 已分配数 + 1（首个为 1）*/
+
+/* ---- R188：handle→实体 查表 / 分配槽（零 libc，纯数组线性扫描）---- */
+/* 返回 handle 对应的实体（含位深/尺寸/地址）；未命中 ⇒ 0。 */
+static dumb_entity_t *dumb_lookup(u32 handle)
+{
+    int i;
+    for (i = 0; i < DUMB_MAX; i++) {
+        if (g_dumb[i].used && g_dumb[i].handle == handle) return &g_dumb[i];
+    }
+    return 0;
+}
+
+/* 返回第一个空闲槽下标；满 ⇒ -1（调用方 fail-closed）。 */
+static int dumb_alloc_slot(void)
+{
+    int i;
+    for (i = 0; i < DUMB_MAX; i++) if (!g_dumb[i].used) return i;
+    return -1;
+}
 
 /* ★★ 2026-10-12（第 172 轮）根修：删除共享行缓冲 `g_hash_line`。
  *   旧设计把行格式化进**全局**缓冲再 write(2)；两个线程并发提交时，
@@ -367,6 +409,30 @@ static void drmstub_once(const char *tag)
     drmstub_note2(tag, 0u, 0u);
 }
 
+/* ★ R189：打 6 个 u32 的入参快照（SetPlane/PageFlip 的几何参数）。
+ * note2 只带 2 个值，而"driver 从哪块画布、取哪个子矩形呈现"需要 fb/plane/src_*/crtc_*
+ * 全部 6 个才能定位。line[96] 容纳 "tag + 6×9 字符"（tag ≤ 12 + 空格 + 6×(8+1) = 65）足够。 */
+static void drmstub_note6(const char *tag, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
+{
+    char line[96];
+    char *q = line;
+    const char *pre = "[drmstub] ";
+    int i;
+    for (i = 0; pre[i]; i++) q[i] = pre[i];
+    q += i;
+    for (i = 0; tag[i]; i++) q[i] = tag[i];
+    q += i;
+    *q++ = ' ';
+    q = put_hex8(q, a); *q++ = ' ';
+    q = put_hex8(q, b); *q++ = ' ';
+    q = put_hex8(q, c); *q++ = ' ';
+    q = put_hex8(q, d); *q++ = ' ';
+    q = put_hex8(q, e); *q++ = ' ';
+    q = put_hex8(q, f);
+    *q = '\n';
+    stub_syscall3(STUB_NR_write, 2, (long)line, (long)(q - line + 1));
+}
+
 static void drmstub_once_nr(u32 nr)
 {
     /* ioctl 号覆盖 256 种 ⇒ 用 4×64 的位图记录"哪种 nr 到过" */
@@ -479,7 +545,7 @@ static void fb_lock_drop(volatile u32 *lk)
  *      ⇒ 全零场景每侧 stderr 由 3586 行降到 ≈4 行：任何调度交织下字节级可复现，
  *         且 events 的 200 行窗口还给真正的语义事件（判据范围变宽，不是变窄）
  */
-static void fb_commit_hash(void)
+static void fb_commit_hash(u32 fb)
 {
     char line[128];
     char *q = line;
@@ -493,13 +559,31 @@ static void fb_commit_hash(void)
     int  have_px = 0;
     int  emit = 0;
     int  is_chk = 0;
+    int  fb_valid = 0;
 
     fb_lock_take(&g_fb_lock);
 
     /* ★ 原子取号：任何交织下每条提交拿到唯一且单调的序号（旧实现 `++` 会丢更新）*/
     flip  = fb_atomic_inc(&g_fb_flips);
-    src   = g_fb2_valid ? g_fb2_buf : 0;   /* 只有内核 fb 实体才算"画面" */
-    bytes = g_fb2_bytes;
+
+    /* ★★ R188 第二层根修：呈现点按 fb 精确引用实体（不再恒读「最后一次 AddFB2」的实体）。
+     * 内核语义：AddFB2 分配的 fb_id 引用 bo_handle 的 GEM 实体；SetCrtc/PageFlip 用该 fb_id
+     * 呈现**那个**实体。旧实现 fb_id 恒 FAKE_FB_ID=1 ⇒ 呈现点无法分辨 driver 呈现哪个实体
+     * ⇒ 只能读 g_fb2_buf（最后一次 AddFB2 = AR24 全零）⇒ B6 frame hash 恒 e96c9dc5。
+     * 新实现：fb != 0 ⇒ dumb_lookup(fb) 查「handle→实体表」哈希对应实体（driver blit 的目标）；
+     *   fb == 0（ioctl 建 fb / 未带 fb id 的兜底）⇒ 退回当前的 g_fb2 实体（旧行为）。 */
+    if (fb != 0u) {
+        dumb_entity_t *e = dumb_lookup(fb);
+        if (e != 0 && e->addr != 0 && e->bytes != 0u) {
+            src = e->addr; bytes = e->bytes; fb_valid = 1;
+        } else {
+            src = 0; bytes = 0u; fb_valid = 0;   /* fail-closed：查不到实体 = 如实报"无" */
+        }
+    } else {
+        src   = g_fb2_valid ? g_fb2_buf : 0;   /* 只有内核 fb 实体才算"画面" */
+        bytes = g_fb2_bytes;
+        fb_valid = g_fb2_valid;
+    }
 
     /* ★ 首个提交打一行「我读到的槽值」：与 shim 的「画布登记」日志对照，
      *   一次就能分清是"shim 没登记"还是"登记了但桩读不到"。 */
@@ -552,8 +636,14 @@ static void fb_commit_hash(void)
         q = put_hex8(q, hash);
         for (i = 0; dim[i]; i++) q[i] = dim[i];
         q += i;
-        /* dim=WxHxBPP（只给 w/h/bpp 三个十进制位，pitch 已在哈希覆盖范围内）*/
-        { const u32 vs[3] = { g_fb2_w, g_fb2_h, (g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) * 8 }; int k;
+        /* dim=WxHxpitch（三个十进制位）。
+        * ★ R187 根修：原来第三位是 (g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) * 8
+        *   （由 pitch 反算 bpp）——**除数是变量 g_fb2_w**，-nostdlib 下编译器只能
+        *   生成 `__aeabi_uidiv` 调用 ⇒ 桩从「0 未定义符号」退化为「1 未定义」，
+        *   破坏 build_libdrm_stub.sh 注释里白纸黑字的「产物完全自洽（0 未定义符号）」。
+        *   诊断要的信息 pitch 本身就携带（bpp 只是它的导出量），直接打 pitch 即可，
+        *   不必做除法。常数除法（/10u、%10u）会被编译器优化成乘法逆元，无此问题。 */
+        { const u32 vs[3] = { g_fb2_w, g_fb2_h, g_fb2_pitch }; int k;
           for (k = 0; k < 3; k++) {
             char nb[12]; int m = 0; u32 v = vs[k];
             if (!v) nb[m++] = '0';
@@ -571,7 +661,7 @@ static void fb_commit_hash(void)
         *q++ = 'r';
         *q++ = 'c';
         *q++ = '=';
-        *q++ = g_fb2_valid ? 'f' : 'n';
+        *q++ = fb_valid ? 'f' : 'n';
         if (is_chk) { *q++ = ' '; *q++ = 'c'; *q++ = 'h'; *q++ = 'k'; }
     }
     /* ★ fail-closed：写完必须留终止符。若行已满，截断并显式标记
@@ -597,6 +687,47 @@ void *drm_stub_fb_address(void) { return (void *)g_fb_buf; }
 
 __attribute__((visibility("default")))
 unsigned int drm_stub_fb_size(void) { return g_fb_bytes; }
+
+/* ★★★ 2026-10-17（R189 第三层根修）：按地址反查 handle→实体表。
+ *
+ * 根因（R188 云开发运行时已铁证「候选 B」成立，见 PROGRESS R188）：
+ *   driver 一次 modeset 建 **4 个 dumb buffer**（RG16×3 + AR24×1，尺寸全 1280×1280），
+ *   桩给它们 4 个互不相同的 handle（1/2/3/4），MAP_DUMB 各自回填自己的实体地址
+ *   （40c47000 / 41287000 / 418c7000 / 41f07000）。
+ *   driver 的 `drm_create_surface`（@0x4604）走 `mmap@plt`（**不是**自封定义那条 SVC 路径），
+ *   用 `MAP_SHARED|PROT_READ|PROT_WRITE + fd=DRM fd + offset=MAP_DUMB 回填的实体地址` 调 glibc mmap
+ *   ⇒ 会被 shim 的 LD_PRELOAD 拦截。
+ *   但 shim 旧实现只认 `drm_stub_fb_address()` == g_fb_buf（最后一次 AR24 实体 41f07000），
+ *   ⇒ 前 3 块 RG16 实体的 offset 匹配不上 → shim 返回 0 → 退回匿名页
+ *   ⇒ driver 把画面 blit 到**匿名页**，桩的实体恒零 ⇒ frame#1 hash 恒 b5449dc5（全零 RG16 的 FNV-1a）。
+ *
+ * 内核语义（drm_gem_mmap）：MAP_DUMB(handle) 返回的 offset 就是**那个** GEM buffer 的地址，
+ * mmap(fd, offset) 必须映射回**同一块** buffer。这一对接口让 shim 能「按 off 反查任意一块实体」，
+ * 而不是只能认最后一块。 */
+__attribute__((visibility("default")))
+void *drm_stub_fb_lookup_by_addr(unsigned long addr)
+{
+    int i;
+    if (addr == 0ul) return 0;
+    for (i = 0; i < DUMB_MAX; i++) {
+        dumb_entity_t *e = &g_dumb[i];
+        if (e->used && e->addr != 0 && (unsigned long)e->addr == addr)
+            return e->addr;
+    }
+    return 0;
+}
+
+__attribute__((visibility("default")))
+unsigned int drm_stub_fb_size_by_addr(unsigned long addr)
+{
+    int i;
+    for (i = 0; i < DUMB_MAX; i++) {
+        dumb_entity_t *e = &g_dumb[i];
+        if (e->used && e->addr != 0 && (unsigned long)e->addr == addr)
+            return e->bytes;
+    }
+    return 0u;
+}
 
 
 /* ★ 退出时打一行**汇总**：让"一次帧提交都没发生"这种失败**不可能静默**。
@@ -641,8 +772,40 @@ static void drm_stub_report(void)
     *q++ = (char)('0' + (g_fb2_h / 1000u % 10u));
     *q++ = (char)('0' + (g_fb2_h / 100u % 10u));
     *q++ = 'x';
-    *q++ = (char)('0' + ((g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) / 10u));
-    *q++ = (char)('0' + ((g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1)) % 10u));
+    /* ★ R187 根修（同 556 行）：第三位原为 pitch/w 反算 bpp，除数是变量 ⇒ __aeabi_uidiv。
+    *   直接打 pitch 前两位十进制（0x7D0=2000 ⇒ "20"），信息不丢、自洽性保住。 */
+    *q++ = (char)('0' + ((g_fb2_pitch / 10u) % 10u));
+    *q++ = (char)('0' + (g_fb2_pitch % 10u));
+    *q = '\n';
+    stub_syscall3(STUB_NR_write, 2, (long)line, (long)(q - line + 1));
+}
+
+/* ★ R187 诊断埋点：每次 CREATE_DUMB 都打「第 N 次 → w/h/bpp/实体地址」。
+ * 用途：CNB 云开发运行时裁决候选 A/B（见 PROGRESS R186）。
+ *   driver 的 gr_init 会在一次 modeset 里建立**多个** dumb buffer：
+ *   3 个 RG16（RGB565，bpp=16，轮转呈现用）+ 1 个 AR24（ARGB8888，bpp=32）。
+ *   桩现在只用**单个** g_fb_buf，且每次 CREATE_DUMB 都覆盖它 ⇒ 只能留最后一次。
+ *   若 blit 落点（RG16 实体，前 N 次）≠ g_fb_buf（最后一次=AR24），
+ *   则候选 A（实体错位）成立。此埋点把每次实体地址序列打印出来即可裁决。 */
+static u32 g_dumb_seq;
+
+static void dumb_entity_note(u32 seq, u32 w, u32 h, u32 bpp, u32 addr)
+{
+    char line[96];
+    char *q = line;
+    const char *pre = "[drmstub] dumb#";
+    int i;
+    for (i = 0; pre[i]; i++) q[i] = pre[i];
+    q += i;
+    { char nb[12]; int k = 0; u32 v = seq;                 /* 序号（十进制）*/
+      if (!v) nb[k++] = '0';
+      while (v) { nb[k] = (char)('0' + (v % 10u)); v /= 10u; k++; }
+      while (k) *q++ = nb[--k];
+    }
+    *q++ = ' '; *q++ = 'w'; *q++ = '=';  q = put_hex8(q, w);
+    *q++ = ' '; *q++ = 'h'; *q++ = '=';  q = put_hex8(q, h);
+    *q++ = ' '; *q++ = 'b'; *q++ = 'p'; *q++ = 'p'; *q++ = '='; q = put_hex8(q, bpp);
+    *q++ = ' '; *q++ = 'a'; *q++ = 'd'; *q++ = 'd'; *q++ = 'r'; *q++ = '='; q = put_hex8(q, addr);
     *q = '\n';
     stub_syscall3(STUB_NR_write, 2, (long)line, (long)(q - line + 1));
 }
@@ -672,56 +835,61 @@ static void dumb_fill(unsigned long req, void *arg)
     pitch = w * rowbytes;
     bytes = (u64)pitch * (u64)h;
 
+    /* ★★★ R188 根修：handle 从 1 **单调递增**（不再恒 FAKE_FB_ID=1）。
+     *   内核 drm_mode_create_dumb 每次分配一个**新** GEM handle；driver 一次 modeset 建 4 个
+     *   dumb buffer，桩必须给它们 4 个**互不相等**的 handle，MAP_DUMB/ADDFB2 才能按 handle
+     *   精确引用各自的实体（旧实现恒 1 ⇒ 撞号 ⇒ 只能留最后一次 ⇒ B6 读错块）。 */
+    u32 handle = FAKE_FB_ID + g_dumb_handle_next;   /* 首个=1，随后 2/3/4… */
+    g_dumb_handle_next += 1u;
+
     p[0] = h;                                     /* 原样保留输入 */
     p[1] = w;
     p[2] = bpp;
     p[3] = 0u;                                    /* flags */
-    p[4] = FAKE_FB_ID;                            /* handle（输出）*/
+    p[4] = handle;                                /* handle（输出）：单调递增，互不相等 */
     p[5] = pitch;                                 /* pitch = w * ceil(bpp/8)（输出）*/
     if (sz >= 32u)      *(u64 *)(void *)((u8 *)arg + 24) = bytes;
     else if (sz >= 28u) *(u64 *)(void *)((u8 *)arg + 20) = bytes;
 
-    /* ★★★ 真实持有实体（第 137 轮）：内核在这里分配 GEM buffer，
-     *   后续 MAP_DUMB 的 offset 就指向它 ⇒ 按需真正分配，**尺寸 = pitch*height**。
-     *   之前完全不分配（画面落进 shim 的匿名零页），导致帧内容既无实体也无观测。
-     *   重复 CREATE_DUMB（重新 modeset）⇒ 释放旧实体再分配，保持"一块活动 framebuffer"。*/
+    /* ★★★ R188 根修：实体记入 handle→实体表（每 handle 一块**独立** mmap，互不覆盖）。
+     *   旧实现「覆盖式复用 g_fb_buf」崩掉了「多 dumb buffer」内核语义 ⇒ B6。 */
     {
         u32 need = (u32)bytes;
-        /* ★ 172 轮：实体切换进锁 —— 与 fb_commit_hash 的「快照+哈希」互斥，
-         *   否则另一线程可能拿到"新指针 + 旧尺寸"（错配 ⇒ 越界读）或读到半初始化的字段。 */
         fb_lock_take(&g_fb_lock);
-        /* ★ 172 轮：不再主动 munmap 旧实体。两处理由：
-         *   ① 语义：内核 GEM 对象的生命周期归 handle —— CREATE_DUMB 产出的是**新**对象，
-         *      旧对象要等 DESTROY_DUMB 才释放；在这里主动 munmap 不属于它的语义。
-         *   ② 竞态：已发布过的实体可能正被另一线程哈希（fnv1a 逐字节读），
-         *      munmap 之后继续读 = UAF（宿主段错误，且症状与被测对象无关）。
-         *      ⇒ 去掉主动释放后，"发布过的指针"永远有效，与内核语义一致。
-         *      （30s 沙箱里 modeset 次数是个位数，遗留页面的量与 4 GB 地址空间相比可忽略）*/
-        if (g_fb_buf != 0) {
-            g_fb_buf = 0;      /* 旧实体不再作为"活动"实体，但内存保留（见上）*/
-            g_fb_bytes = 0;
+
+        int slot = dumb_alloc_slot();
+        if (slot < 0) {
+            /* fail-closed：表满（理论上不会，driver 最多建 4 个）⇒ 不假装成功 */
+            fb_lock_drop(&g_fb_lock);
+            drmstub_note2("dumb_TABLE_FULL", handle, need);
+            return;
         }
-        /* pages = ceil(need/4096)；mmap2 的 pgoffset 以**页**为单位 */
+
         u32 pages = (need + 4095u) / 4096u;
         if (pages == 0u) pages = 1u;
         {
-            /* ARM EABI：r2=prot(3=READ|WRITE)  r3=flags(MAP_PRIVATE|MAP_ANONYMOUS)
-             *            r4=fd(-1 匿名)       r5=pgoffset(0) */
             long addr = stub_syscall6(STUB_NR_mmap2, 0, (long)(pages * 4096u),
                                       0x1 | 0x2,        /* prot = PROT_READ|PROT_WRITE */
                                       0x02 | 0x20,      /* flags = MAP_PRIVATE|MAP_ANONYMOUS */
                                       -1, 0);
             if (addr > 0 && addr < 0x100000000L) {
+                /* 写入表（独立实体，不覆盖上一次）*/
+                g_dumb[slot].used   = 1;
+                g_dumb[slot].handle = handle;
+                g_dumb[slot].addr   = (u8 *)addr;
+                g_dumb[slot].bytes  = pages * 4096u;
+                g_dumb[slot].pitch  = pitch;
+                g_dumb[slot].w = w; g_dumb[slot].h = h; g_dumb[slot].bpp = bpp;
+
+                /* 向后兼容：g_fb_buf 仍指向「最后一次」实体（shim 的 drm_stub_fb_address 依赖）*/
                 g_fb_buf = (u8 *)addr;
                 g_fb_bytes = pages * 4096u;
                 g_fb_pitch = pitch;
                 g_fb_w = w; g_fb_h = h; g_fb_bpp = bpp;
+
+                dumb_entity_note(++g_dumb_seq, w, h, bpp, (u32)addr);   /* 实体地址序列 */
             } else {
-                /* ★ fail-closed：拿不到实体就不假装有画面。
-                 *   后续 fb_commit_hash 会如实报"无实体"，而不是给一个假哈希。
-                 *   同时**立刻打一行**——否则"分配失败"会被"画面是黑"掩盖
-                 *   （这正是本轮踩的坑：分配失败后一路静默，帧哈希恒 `--`）。 */
-                g_fb_bytes = 0;
+                /* fail-closed：拿不到实体就不占表槽、不假装有画面 */
                 drmstub_note2("mmap2_FAIL", (u32)addr, need);
             }
         }
@@ -761,12 +929,16 @@ int drmIoctl(int fd, unsigned long request, void *arg)
         return 0;
     case 0xb3u:                                   /* DRM_IOCTL_MODE_MAP_DUMB：{u32 handle; u32 pad; u64 offset;} */
         if (arg) {
+            u32 in_handle = *(u32 *)(void *)arg;   /* ★ R187：zfill 前先抓输入 handle */
             zfill(arg, ioc_size(request));
-            /* ★ 真实语义：offset 必须让后续 `mmap(fd, offset)` 映射到**那块 buffer**
-             *   （内核里就是 GEM buffer 的 vma）。我们把地址直接回填，
-             *   shim 的 mmap 拦截见到此值就把映射接到桩的实体上（见 ① 段说明）。
-             *   若实体尚未建立（不该发生）⇒ 如实回 0，让上层自己 mmap 失败。 */
-            *(u64 *)(void *)((u8 *)arg + 8) = (u64)(unsigned long)g_fb_buf;
+            /* ★★★ R188 根修：offset 必须回填**该 handle** 的实体地址（查表）。
+             *   内核：MAP_DUMB(handle) 返回**那个** GEM buffer 的 offset，mmap(fd,offset)
+             *   映射到同一块 buffer。旧实现恒回填 g_fb_buf（最后一次实体）⇒ 4 个 handle
+             *   全指向最后一块 ⇒ driver mmap 到错的实体 ⇒ 画面与哈希实体脱节（B6）。 */
+            dumb_entity_t *e = dumb_lookup(in_handle);
+            u8 *ent = (e != 0) ? e->addr : 0;
+            *(u64 *)(void *)((u8 *)arg + 8) = (u64)(unsigned long)ent;
+            drmstub_note2("MAP_DUMB", in_handle, (u32)(unsigned long)ent);
         }
         return 0;
     case 0xb4u:                                   /* DRM_IOCTL_MODE_DESTROY_DUMB */
@@ -776,10 +948,10 @@ int drmIoctl(int fd, unsigned long request, void *arg)
             u32 *p = (u32 *)arg;
             p[0] = FAKE_FB_ID;
         }
-        fb_commit_hash();                          /* 与 drmModeAddFB2 同点（内核里是同一件事）*/
+        fb_commit_hash(0u);                        /* 建 fb 无呈现 fb_id：退回 g_fb2 兜底（driver 主线走高层的 drmModeAddFB2）*/
         return 0;
     case 0xbdu:                                   /* DRM_IOCTL_MODE_SETCRTC（内核里 nr=0xbd）*/
-        fb_commit_hash();
+        fb_commit_hash(0u);                        /* ioctl 路径未解 fb_id：退回 g_fb2 兜底（driver 主线走高层的 drmModeSetCrtc）*/
         if (arg) zfill(arg, ioc_size(request));
         return 0;
     case 0xb9u:                                   /* DRM_IOCTL_MODE_ADDFB（老接口）*/
@@ -787,7 +959,7 @@ int drmIoctl(int fd, unsigned long request, void *arg)
             u32 *p = (u32 *)arg;
             p[0] = FAKE_FB_ID;
         }
-        fb_commit_hash();
+        fb_commit_hash(0u);                        /* 建 fb 无呈现 fb_id：退回 g_fb2 兜底 */
         return 0;
     default:
         if (arg) zfill(arg, ioc_size(request));    /* 零填 + 成功（确定、不崩）*/
@@ -834,26 +1006,31 @@ int drmModeAddFB2(int fd, u32 width, u32 height, u32 pixel_format,
                   u32 *fb_id, u32 flags)
 {
     drmstub_once("drmModeAddFB2");
-    if (fb_id) *fb_id = FAKE_FB_ID;
 
-    /* ★★★ R176 根修（铁证 = R175 审计 CI 日志）：
+    /* ★★★ R188 根修（在 R176 基础上**按 handle 精确引用**）：
      * 内核 `drm_mode_addfb2` 语义 = **引用**调用方传入的 bo_handle（已有 GEM 对象），
-     * **绝不分配新内存**。旧实现每次新 mmap 一块 `g_fb2_buf`（0x3d324000），
-     * 而画面经 MAP_DUMB 写进 dumb 实体 `g_fb_buf`（0x3d964000）⇒
-     * `fb_commit_hash` 读自建实体 ⇒ 恒 e96c9dc5（全零基线）⇒ B6 假红。
-     * 根修：bo_handles[0] == FAKE_FB_ID（dumb_fill 分配的那块 GEM）⇒ fb 直接引用
-     * 该实体（g_fb2_buf = g_fb_buf），不再 mmap。首帧诊断行 `fb2_buf= fb_buf=`
-     * 会显示两地址相同 —— 这就是本次根修的自证。 */
+     * **绝不分配新内存**。R176 根修只做了「bo_handles[0]==FAKE_FB_ID ⇒ 引用 g_fb_buf」。
+     * 但 FAKE_FB_ID 撞号 + g_fb_buf 只留最后一次实体 ⇒ 4 个 dumb buffer 里 ADDFB2 只能
+     * 引用到最后一块（AR24）。R188 改为**查 handle→实体表**：bo_handles[0] 是哪个 handle，
+     * 就引用**那个**实体（RG16 轮转实体各自的地址），fb_commit_hash 才读到真正的画面。 */
     {
+        u32 bo_h0 = (bo_handles != 0) ? bo_handles[0] : 0u;   /* ★ R187：进锁前抓 handle */
+        /* ★ R188 第二层根修：fb_id = bo_handle（唯一、单调），呈现点据此反查实体。
+         * 旧实现 fb_id 恒 FAKE_FB_ID=1 ⇒ 4 个 framebuffer 共用同一 fb_id，
+         * SetCrtc/PageFlip(fb=1) 无法分辨呈现哪个实体。内核里 fb_id 是 AddFB2
+         * 分配、供 Driver 回传给呈现点的句柄，唯一是它的基本契约（不是可撞号的常量）。 */
+        if (fb_id) *fb_id = bo_h0;
         fb_lock_take(&g_fb_lock);
-        if ((bo_handles != 0) && (bo_handles[0] == FAKE_FB_ID) &&
-            (g_fb_buf != 0) && (g_fb_bytes != 0u)) {
-            g_fb2_buf   = g_fb_buf;                /* ★ 引用，不是新分配 */
-            g_fb2_bytes = g_fb_bytes;              /* 与 MAP_DUMB 映射同块 ⇒ 读到的就是画面 */
+        dumb_entity_t *e = dumb_lookup(bo_h0);
+        if (e != 0) {
+            g_fb2_buf   = e->addr;               /* ★ 引用**该 handle**的实体，不是新分配 */
+            g_fb2_bytes = e->bytes;              /* 与 MAP_DUMB 映射同块 ⇒ 读到的就是画面 */
             g_fb2_w = width; g_fb2_h = height; g_fb2_fmt = pixel_format;
-            g_fb2_pitch = (pitches != 0 && pitches[0] != 0u) ? pitches[0] : (width * 4u);
+            g_fb2_pitch = (pitches != 0 && pitches[0] != 0u) ? pitches[0] : e->pitch;
             g_fb2_valid = 1;
             drmstub_note2("AddFB2", width, height);
+            /* ★ R188：bo_handles[0] → 引用的**该**实体地址（不再是最后一次 g_fb_buf）。 */
+            drmstub_note2("AddFB2_h", bo_h0, (u32)(unsigned long)e->addr);
         } else {
             /* ★ fail-closed：引不到实体就如实报「无 fb」，绝不新 mmap 一块无关内存
              *   冒充画面（旧实现的自建实体正是 B6 假红的来源）。 */
@@ -874,12 +1051,11 @@ int drmModeSetCrtc(int fd, u32 crtc, u32 fb, u32 x, u32 y,
 {
     drmstub_once("drmModeSetCrtc");
     (void)fd; (void)x; (void)y; (void)connectors; (void)count; (void)mode;
-    /* ★ SETCRTC = 把 fb 绑到 crtc 上扫描输出 —— 这是**无页翻转时的帧呈现路径**
-     *   （很多嵌入式栈只做 modeset，不做 page flip）。
-     *   实测（2026-10-04 第 137 轮）：`driver.so` 走的就是这条，
-     *   原先只在 PageFlip 打哈希 ⇒ 提交数恒 0、帧内容不可观测。 */
-    fb_commit_hash();
-    (void)crtc; (void)fb;
+    /* ★ R188 埋点：呈现点传入的 fb 值 + 当前 g_fb2 实体，用于确定「呈现用哪个 fb」*/
+    drmstub_note2("SetCrtc_fb", fb, (u32)(unsigned long)g_fb2_buf);
+    /* ★ SETCRTC = 把 fb 绑到 crtc 上扫描输出 —— 这是**无页翻转时的帧呈现路径** */
+    fb_commit_hash(fb);
+    (void)crtc;
     return 0;
 }
 
@@ -887,19 +1063,28 @@ int drmModeSetPlane(int fd, u32 plane, u32 crtc, u32 fb, u32 flags,
                     i32 crtc_x, i32 crtc_y, u32 crtc_w, u32 crtc_h,
                     i32 src_x, i32 src_y, u32 src_w, u32 src_h)
 {
-    (void)fd; (void)plane; (void)crtc; (void)fb; (void)flags;
+    (void)fd; (void)plane; (void)crtc; (void)flags;
     (void)crtc_x; (void)crtc_y; (void)crtc_w; (void)crtc_h;
     (void)src_x; (void)src_y; (void)src_w; (void)src_h;
-    fb_commit_hash();
+    drmstub_note2("SetPlane_fb", fb, (u32)(unsigned long)g_fb2_buf);
+    /* ★ R189 全入参快照：plane_id / fb / src_x / src_y / src_w / src_h。
+     *   目的：driver 用 plane 从画布取子矩形时，src_* 是"画面来源几何"的唯一线索
+     *   （16.16 定点数，src_w/h 通常 = 画布宽高 << 16）。若 src_* 指向非桩实体尺寸，
+     *   即证明像素在 driver 私有画布而非桩实体。 */
+    drmstub_note6("SetPlane_geom", plane, fb,
+                  (u32)src_x, (u32)src_y, (u32)src_w, (u32)src_h);
+    fb_commit_hash(fb);
     return 0;
 }
 
 int drmModePageFlip(int fd, u32 crtc, u32 fb, u32 flags, void *user_data)
 {
     drmstub_once("drmModePageFlip");
-    (void)fd; (void)crtc; (void)fb; (void)flags; (void)user_data;
-    /* ★ 帧提交点 = 真实硬件把这一帧送去扫描 out 的时刻 ⇒ 哈希在这里取才对应"一帧画面"。
-     * 之前这里什么都不做 ⇒ 画面内容无任何可观测点。 */
-    fb_commit_hash();
+    (void)fd; (void)crtc; (void)flags; (void)user_data;
+    drmstub_note2("PageFlip_fb", fb, (u32)(unsigned long)g_fb2_buf);
+    /* ★ R189：crtc / fb / flags 全入参，确认翻转路径呈现哪个 fb。 */
+    drmstub_note6("PageFlip_geom", crtc, fb, (u32)(unsigned long)user_data, 0u, 0u, 0u);
+    /* ★ 帧提交点 = 真实硬件把这一帧送去扫描 out 的时刻 ⇒ 哈希在这里取才对应"一帧画面"。 */
+    fb_commit_hash(fb);
     return 0;
 }
