@@ -7376,3 +7376,413 @@ GitHub 远端现存非 A 线内容（filelist 规则之后未被增量推送删�
    `AddFB2` 按 `bo_handles[0]` 引用对应实体、`fb_commit_hash` 哈希「当前 cur 轮转到的实体」。
 3. **P2（降级为可选）**：R36S Wiki 第二参照物（`report/r36s_second_reference.md` 已基本完成，待补充）。
 4. **双远端推送**：R186 段（无源码改动，仅 PROGRESS 记录 + 静态取证结论），推 GitHub + CNB。
+
+## R187（2026-10-17）
+
+### 一、日期
+
+2026-10-17（本机 Windows；零 CI 额度、零带宽 —— 纯本机 zig cc 交叉编译 + 手写 ELF 解析自证）
+
+### 二、完成事项
+
+1. **P0——部署桩重编，修复两处静默退化（B6 裁决的前置条件）**：
+
+   **★ 退化 ①：诊断通道在 -O1 下静默死亡**
+   - R187 埋点串 `[drmstub] dumb#`（`dumb_entity_note` @drm_stub.c:667，供云开发裁决候选 A/B 的
+     「每次 CREATE_DUMB 实体地址序列」）在 **-O1** 产物里**全文件 0 个**（被优化器折叠/消除）；
+     -Oz 产物里独立存活于 .rodata。
+   - 后果：若沿用 -O1 上云开发，跑出来的日志**根本没有 dumb# 序列** ⇒ A/B 裁决因「无数据」
+     沦为又一次假绿。**这是"看似可忽略的构建级别差异"直接废掉一个 P0 实验设计性的实例。**
+
+   **★ 退化 ②：自洽性破坏（0 未定义 → 1 未定义）**
+   - 源码 3 处 `(g_fb2_pitch / (g_fb2_w ? g_fb2_w : 1))`（由 pitch 反算 bpp）是**变量除法**
+     ⇒ `-nostdlib` 下编译器只能生成 `__aeabi_uidiv` 调用 ⇒ 桩带上 1 个未定义符号。
+   - A/B 定位过程：
+     * 最小复现 `v % 10u; v /= 10u`（**常数** 10）**不引入** uidiv ⇒ 排除「% 本身」；
+     * 把 3 处变量除数全部替换为常数后 `__aeabi_uidiv` 立即消失 ⇒ **确证根因是除数为变量**。
+   - 旧桩（9/27, 14224 B）0 未定义；新桩本轮修前 1 未定义。
+
+2. **根修（3 处）**：
+   - `tools/guest_shim/drm_stub.c:556`：`vs[3]` 第三位从「pitch/w*8」改为直接打 `g_fb2_pitch`
+     （bpp 只是 pitch 的导出量，诊断信息不丢）；
+   - `tools/guest_shim/drm_stub.c:650-651`：同理改为 `pitch/10u` 与 `pitch%10u`（常数除法）；
+   - `tools/build_libdrm_stub.sh`：`-O1` → `-Oz`，注释里写明**不可改回 -O1 的三条理由**
+     （体积 8.5K vs 37K / dumb# 存活 / 0 未定义两侧成立）。
+
+3. **新桩自证（产物级，非源码级）**：`report/drmstublib/libdrm.so.2`
+   - `sha256=e601f48b096b039e…` · `8480 B`（旧桩 14224 B）· `svc=6` · `dumb#`串**存活**；
+   - 17 符号需求（`driver_stub_coverage.py --print-need drm`）：**0 缺失**；
+   - 未定义符号：**0 个**（完全自洽，与旧桩持平）；
+   - 比旧桩多导出 `drm_stub_fb_address` / `drm_stub_fb_size`（shim 分支 1 依赖，R187 前缺失）。
+
+### 三、新发现与决策
+
+1. **★ 构建级别是接口契约，不是风格选择**：桩/壳这类 `-nostdlib` 产物的**构建级别**直接决定
+   ①埋点串是否在产物里存活 ②是否引入 `__aeabi_*` 运行时依赖。改之前必须对**产物二进制**做
+   字符串与符号检查（不是看源码）。已落 PROJECT-MEMORY 纪律 171。
+2. **「完全自洽（0 未定义）」是每轮重编后都要验证的不变量**：它写在脚本注释里，曾经是事实，
+   但源码演进（加诊断输出）后悄悄失效 —— 这类「注释里的不变量」必须配**产物级验证**
+   （解析 `.dynsym` 中 `st_shndx == 0` 的条目数），不能信任声明。
+3. **给 -nostdlib 桩加诊断输出的约束**：不要引入变量除法；十进制用 `% 10u`（常数，
+   编译器转乘法逆元）或直接复用现成的 `put_hex8`。
+
+### 四、下一步待办
+
+1. **P0（不变，R186 遗留）**：CNB 云开发跑带三桩的 `tools/ci_qemu_behav.sh`
+   （`CGM_DRM_STUB=1` + `CGM_KEY2_HOOK=1`）裁决候选 A/B —— 现在 dumb# 埋点已在产物里存活，
+   可以采到「每次 CREATE_DUMB 的实体地址序列」了。裁决后按结果做「单实体 → handle→实体表」根修。
+2. **P2**：R36S Wiki 第二参照物补充。
+3. **双远端推送**：R187 段（源码改动：drm_stub.c 2 处 + build_libdrm_stub.sh 1 处）推 GitHub + CNB。
+
+## R188（2026-10-17）
+
+### 一、日期
+
+2026-10-17（CNB 云开发工作区 cnb-vd0-1k54jqs1f；arm-gcc 14.2.0 + zig 0.17.0 双链并行取证）
+
+### 二、完成事项
+
+1. **★ 纠正 R187 两处假结论（均为「工具差异」被误读成「优化级差异」）**：
+   - **假阴性 ①（诊断串被 -O1 消除）**：云工作区里 `strings` 命令**根本不存在**（`which strings` →
+     `strings not found`）。R187 用 `strings|grep|wc -l` 判「dumb# 在 -O1 下 0 个」是**假阴性**：
+     命令报错被 `2>/dev/null` 吞掉、stdout 恒空 ⇒ `wc -l` 恒 0。改用 `grep -a -F` 直搜二进制 +
+     `objdump -s .rodata` 铁证：**GCC 的 O1/Os/O2/O3 全部在 .rodata 明文留存**
+     dumb#/frame#/SUMMARY/MAP_DUMB/AddFB2_h/mmap2_FAIL（地址 0x13f4 处即 `stub] dumb#.mmap`）。
+   - **假结论 ②（GCC 认 -Oz）**：GCC **无 `-Oz` 优化级**（只有 clang/zig 有），GCC 静默把 `-Oz`
+     当作 `-Os`（`sha256sum` 证明 `/tmp/drm_Oz.so` 与 `/tmp/drm_Os.so` 逐字节相同）。
+2. **★ 揪出 R187 真正埋下的雷（GCC 链 -Oz→-Os 引入 2 个未定义符号）**：
+   - 现象：GCC 链构建的 drm 桩 69960 B，`.dynsym` 有 `U __aeabi_uidivmod` + `U __aeabi_idivmod`
+     （2 个未定义）；而 R187 在本机 zig 链测得「0 未定义」是对的。
+   - 根因（工具链语义差，非源码问题）：GCC 在 `-Os`(=它的 -Oz) 下把 `v%10 + v/=10` 同时用到的
+     十进制转换**合并成 EABI libcall**（`blx __aeabi_uidivmod@plt`）/ 有符号版同理；zig/clang 的
+     `-Oz` 则把常数除法内联成乘法逆元。而桩 `-nostdlib` 不链 libgcc_s，设备侧这俩符号只在
+     `libgcc_s.so.1`（@@GCC_3.5）⇒ **该桩在真机/设备 sysroot 加载即缺符号**。
+   - 三档实测未定义数：`-O1=0`、`-O2=0`、`-Os(=GCC 的 -Oz)=2`。
+3. **根修 A（`tools/build_libdrm_stub.sh`）—— 优化级按编译器分支**：
+   - `case "$CC" in *zig*) OPT="-Oz";; *) OPT="-O2";; esac`：zig/clang 用 `-Oz`（8344 B、0 未定义、
+     串存活），GCC 用 `-O2`（69504 B、0 未定义、17 导出、dumb# 存活，均已实证）。
+   - 修正注释里 R187 的「-Oz 恒成立、不可改回 -O1」两条错误结论，写清「诊断串不是优化级问题，
+     是 strings 缺失的假阴性」+「GCC 无 -Oz、-Os 会引入 divmod libcall」。
+4. **根修 B（`tools/build_libdrm_stub.sh`）—— 未定义符号 fail-closed 门禁**：
+   - R187 纪律 171「每轮重编后验证 0 未定义」此前**只写在注释里**，产物悄悄多了未定义符号没有任何
+     拦截 ⇒ 本轮上云 GCC 才靠手动 `nm -D` 撞见。现解析 `.dynsym` 中 `grep ' U '` 条目数，非 0 立刻
+     `exit 1` 并打印肇事符号清单。此即「注释里的不变量必须配产物级验证」的兑现。
+5. **★ P0 判决性裁决：候选 A/B 双双成立，B6 全零根因锁定（不再靠静态硬猜）**。单侧跑原厂 factory +
+   zig 三桩 + zig shim，抓到的运行时铁证（`report/drmstublib` 桩 8344 B zig 版）：
+   - `dumb#1..4` 实体序列：**4 块全是 1280×1280**，bpp 依次 16/16/16/32，地址 40c46000 / 41286000 /
+     418c6000 / 41f06000（第 4 块 = AR24，桩 `g_fb_buf` 最终只留它）。
+   - `MAP_DUMB` 4 次 handle **全是 `00000001`**（候选 B「handle 撞号」铁证）。
+   - `AddFB2_h` 4 次 bo_h0 全 `00000001`、g_fb_buf 随每次 CREATE_DUMB 后移 40c46000→…→41f06000。
+   - 首帧诊断 `fb2_buf=41f06000 fb_buf=41f06000` + `frame#1 hash=e96c9dc5 dim=1280x1280x5120 src=f`
+     （5120 = 1280×4 = AR24 的 pitch；e96c9dc5 = R176 已知的「全零基线哈希」）。
+   - ⇒ **候选 B 成立**：桩把 4 个 dumb buffer 全回填成 `handle=FAKE_FB_ID=1`，AddFB2 的
+     `bo_handles[0]==FAKE_FB_ID` 恒真，永远引用「最后一次」实体；**候选 A 亦成立**：driver blit 到
+     RG16 三块（bpp16），哈希却读 AR24（bpp32）⇒ 读错块。二者是同一个缺陷的两面：
+     **桩用「单实体 g_fb_buf」表达「多 dumb buffer + 多 fb」的内核语义**，物理上不可能同时正确。
+   - `[shim] fb_lookup HIT` 零行 ⇒ 分支 1 没拦到（driver 的 dumb mmap offset 不是桩回填地址），
+     与本轮桩的「单实体」缺陷自洽（真正的 mmap 落点不等于 g_fb_buf）。
+
+### 三、新发现与决策
+
+1. **B6 根因定性从「观测天花板」降级为「桩的 dumb buffer 实体模型错误（多对一坍缩）」**：
+   正确模型是「handle→实体表」，桩当前是「单实体 + FAKE_FB_ID 撞号」。根修方向（R186 todo#1）：
+   `单实体 → handle→实体表`、`MAP_DUMB` 按 handle 回填对应 offset、`AddFB2` 按 bo_handles[0] 精确引用
+   对应实体、`fb_commit_hash` 哈希「当前 cur 轮转到的 RG16 实体」。
+2. **「字符串存活」与「未定义符号数」的验证必须 fix 到命令行存在性**：`strings` 在 Ubuntu 的
+   binutils 包里（云工作区只装了 `binutils-arm-linux-gnueabihf` 交叉版，宿主 `strings` 缺席）。
+   判「串是否在产物里」一律用 `grep -a -F`（POSIX，恒在）；判「未定义」一律 `arm-*-nm -D`。
+3. **跨工具链同源源码必须双链各自自证**：R187 只在本机 zig 链验证「0 未定义」，把结论推到 GCC
+   链是越界（GCC 的 -Os 语义与 zig 的 -Oz **不同**）。纪律：任何「优化级 / 链接标志」结论，
+   必须**链级**给出（zig 与 GCC 各自跑一遍），不得拿一条链的产物代表另一条。
+4. **裁决跑法的关键简化**：候选 A/B 只关乎 driver.so（闭源、同一份）建立的 dumb buffer 序列，
+   与主程序用工厂还是重建产物**无关** ⇒ 单侧跑 factory 即可裁决，不必依赖不在库的
+   `build/rkgame.rebuilt.elf`。shim/三桩必须 zig 钉 2.29（宿主 GCC glibc 2.41 会引入
+   `__isoc23_strtol@GLIBC_2.38`，设备 2.29 加载即崩——实测 readelf 版本信息确认）。
+
+### 四、下一步待办
+
+1. **P0（根修，方向已定）**：把桩从「单实体 + FAKE_FB_ID 撞号」升级为「handle→实体表」——
+   ① 每次 CREATE_DUMB 新建实体记入 `handle→实体` 表（表项 = 独立 mmap，不再覆盖 g_fb_buf）；
+   ② `MAP_DUMB` 按入参 handle 查表回填**对应实体的 offset**；③ `drmModeAddFB2` 按
+   `bo_handles[0]` 查表引用对应实体做 `g_fb2_buf`；④ `fb_commit_hash` 哈希「当前 fb 引用的实体」。
+   根修后重跑裁决脚本，判据：dumb#1..3 的 RG16 实体出现非零哈希（画面不再 e96c9dc5 恒零）。
+2. **P2（降级可选）**：R36S Wiki 第二参照物补充。
+3. **双远端推送**：R187 源改 + R188 源改（build_libdrm_stub.sh）一并推 GitHub + CNB（根修验证通过后）。
+
+## R189（2026-10-18）
+
+### 一、日期
+
+2026-10-18（CNB 云开发工作区 `cnb-rip-1k566asmi`，zig 0.17.0；旧工作区 `cnb-vd0-1k54jqs1f` 因 10 分钟无心跳被回收后重启）
+
+### 二、完成事项
+
+1. **★ 第三层根修方向被运行证据推翻（本轮最重要的发现，纠正自己上一轮的推断）**：
+   - 上一轮据 `driver.so` 反汇编（`drm_create_surface@0x4604`：`mov r3,#1` flags=MAP_SHARED、
+     `mov r2,#3` prot=RW、`bl mmap@plt`）推断「driver 会以 `MAP_SHARED + offset=桩实体地址`
+     调 mmap，只差 shim 单实体不认」。本轮按此实施了 shim 侧第三层修复
+     （`drm_stub_fb_lookup_by_addr` / `drm_stub_fb_size_by_addr` + `shim_drm_fb_lookup` 按 off 反查表）。
+   - **重跑裁决结果：`[shim] fb_lookup HIT` 依然零行，`frame#1 hash=b5449dc5` 仍为全零基线**。
+   - ⇒ 反汇编结论与实际运行行为**不一致**：driver 根本没有发出 `MAP_SHARED` 的 mmap。
+2. **★ 决定性取证：driver.so 的 mmap 符号归属（`nm` 实测，终结 R137 的错机制描述）**：
+   - `arm-linux-gnueabihf-nm golden/sdcard_min/driver.so | grep -iw mmap` ⇒
+     **`U mmap@@GLIBC_2.4`**（`.dynsym` 同为 `U mmap@GLIBC_2.4`）。
+   - 即 driver.so 的 `mmap` 是**从 libc 导入的未定义符号**，不是 R137 注释所称的
+     「自封定义（`.symtab` 有 `mmap@@GLIBC_2.4`，不是 UNDEF）」——**那条机制描述是错的**
+     （`@@` 后缀只表示"绑定的版本化符号"，`U` 才是归属；两者可同时出现在 .symtab 与 .dynsym）。
+   - 正确推论：driver 调 `mmap` ⇒ 走 glibc 包装 ⇒ **应当**被 LD_PRELOAD 的 shim 拦截。
+3. **★ 但埋点证明它没进 shim：`ANON_WR` 诊断埋点零行（本轮核心实验）**：
+   - 在 `fake_mem.c` 的匿名可写分支（`fd < 0 && MAP_ANONYMOUS && PROT_WRITE`）加入口埋点，
+     打**每一次**进入（前 24 次）。
+   - 重跑结果：**`(无 ANON_WR 行)`**。
+   - 同时 strace 显示 driver 侧确有 `mmap2(NULL,3276800,PROT_RW,MAP_PRIVATE|MAP_ANONYMOUS,-1,0)` ×6。
+   - ⇒ 闭环结论：**strace 看到的匿名 mmap 不经过本 shim**。
+     - 其中 4 次同尺寸（3276800/6553600）是**桩自己**在 `dumb_fill` 里用
+       `stub_syscall6(STUB_NR_mmap2, ...)`（内联汇编直发 syscall）分配的实体
+       ⇒ 天然绕过 glibc 包装，shim 看不到；
+     - 剩下 2 次是 driver 侧画布，走的是不经 glibc `mmap` 包装的路径
+       （`drm_create_surface` 内直接 `svc`，或经 `libkms.so.1` 内部）⇒ shim 同样看不到。
+   - **⇒ R137 的旧结论在效果上成立（driver 画布绕过 shim），但机制描述错了。**
+4. **源码改动（均已在云端 md5 核对一致）**：
+   - `tools/guest_shim/drm_stub.c`：新增两个导出符号 `drm_stub_fb_lookup_by_addr(addr)` /
+     `drm_stub_fb_size_by_addr(addr)`（线性扫 `g_dumb[]` 实体表，按地址返回实体与 bytes），
+     为 shim 提供「按 offset 反查任意一块实体」的内核语义等价接口。**本接口本身正确且必要**
+     （MAP_DUMB 的 offset 语义就是"该 handle 的实体地址"），保留。
+   - `tools/guest_shim/fake_mem.c`：
+     - `shim_drm_probe` 增探上述两个符号；`shim_drm_fb_lookup` 优先按 off 反查实体表，
+       命中任一实体即返回（按该实体 bytes 做长度检查，fail-closed）。
+     - 新增 `ANON_WR` 入口埋点（匿名可写分支，前 24 次）。
+     - **修一个自己引入的坑**：`HIT2` 埋点原用 `%zu`，而 `note()` 的自实现格式化器
+       只支持 `%s/%p/%d/%u/%x/%c`（**无 `%zu`**）⇒ 会走 `default` 分支输出乱码。
+       已改为 `(unsigned int)len` + `%u`。
+   - `tools/_b6_adjudge.sh`：补 `ANON_WR` 与 `canvas` 抓取段（原 `grep 'fb_lookup HIT'`
+     已能覆盖 HIT2，无需改）。
+
+### 三、新发现与决策
+
+1. **B6 全零根因三层模型的第三层结论被推翻，重新定性**：
+   - 第一层（handle 撞号）已修；第二层（呈现点读错实体）已修；
+   - **第三层不是「shim 单实体接不住 driver 的 MAP_SHARED mmap」**——
+     driver 从不发 MAP_SHARED mmap，桩实体的 offset 从未被任何 mmap 使用。
+   - **真正的剩余根因：driver 的画面像素写在自己不经 shim 的画布里，桩的实体恒零。**
+     这与 R176/R188 观察到的「桩实体零字节、hash 恒全零基线」完全自洽。
+2. **观测点必须换，不能继续在 shim 的 mmap 拦截上加码**：
+   - shim 能拦的只有"经 glibc 包装的 libc 调用"；driver 的画布分配不经此路。
+   - 候选观测点（下一步待办）：
+     (a) **libkms.so.1**：driver 的 `DT_NEEDED` 含 `libkms.so.1`，strace 显示它被真实加载
+         （`/arm-root-device/usr/lib/libkms.so.1`）。若 driver 的画布 blit 经 libkms 转
+         `drmModeAddFB2`/`drmModeSetPlane`，则桩在**这两个入口**已能观测到"呈现哪个 fb"，
+         但**观测不到像素内容**（像素在 driver 私有画布）。
+     (b) **driver 侧的 blit 目标地址**：driver 最终要把画布 blit 到某处才能被 AddFB2 引用。
+         若它 blit 到**桩的实体地址**（40c47000 等），则实体本应有像素——但实测零，
+         说明 blit 目标不是桩实体。
+     (c) **`drmModeSetPlane` / `PageFlip` 的 src_x/src_y/src_w/src_h**：若 driver 用
+         plane 从画布取子矩形，桩可从 plane 参数反推画布几何，但仍读不到像素。
+     (d) **换判据**：承认"qemu-user 沙箱内无法观测 driver 私有画布像素"，
+         把 B6 的判据从"frame hash 非零"改为**可证的结构性判据**
+         （如：dumb#1..4 的 bpp/尺寸序列与真机一致、AddFB2 引用精确、SetCrtc 的 fb 正确）。
+3. **R137 的"自封定义"错结论必须留档**（防再犯）：`U mmap@@GLIBC_2.4` 与
+   "`.symtab` 里有 `mmap@@GLIBC_2.4`"是同一事实的两种读法，我当时把"有版本化符号"误读成
+   "非 UNDEF"。判据：**归属看 `U`/`T`/`t` 字母，不看 `@@` 后缀**。
+4. **`note()` 格式符白名单**：`%s/%p/%d/%u/%x/%c`。新增埋点一律先用白名单内的，
+   `size_t` 显式转 `unsigned int`（本轮已因此出错一次）。
+
+### 四、下一步待办
+
+1. **P0（换观测点，方向已定）**：确认 driver 的 blit 目标到底是哪块内存。
+   具体做法：在 `drm_stub.c` 的 `drmModeAddFB2` / `drmModeSetPlane` / `drmModePageFlip`
+   入口打印**全部入参**（含 fb_id、crtc_id、plane_id、src_x/y/w/h、crtc_x/y/w/h），
+   与 strace 的时序对照，定位 driver 声明的"画面来源"。若 plane 的 src 几何指向
+   非桩实体地址，即可证明像素在 driver 私有画布。
+2. **P0（判据重构预案）**：若确认沙箱内不可观测 driver 私有画布像素，
+   则把 B6 判据从"frame hash 非零"改为结构性判据（见三.2.d），
+   并在 PROGRESS 里明确"这是观测能力边界，不是实现缺陷"。
+3. **P1**：逐项比 `tzubertowski/TreeFrogUI` 的 `cores.md` 文件夹→core 映射（未开始）。
+4. **P2**：R36S Wiki 第二参照物补充。
+5. **双远端推送**：R187/R188/R189 源改一并推 GitHub + CNB（判据重构定案后）。
+
+## R190（2026-10-18）
+
+### 一、日期
+
+2026-10-18（CNB 云开发工作区 `cnb-rip-1k566asmi`，zig 0.17.0）
+
+### 二、完成事项
+
+1. **★ B6 观测路径被完全钉死：driver 只用 `drmModeSetCrtc`，从不用 SetPlane/PageFlip**：
+   - 在 `drm_stub.c` 新增 `drmstub_note6()`（打 6 个 u32 入参快照，`line[96]` 容纳
+     "tag + 6×9 字符" 足够），并在 `drmModeSetPlane` / `drmModePageFlip` 入口打印全入参。
+   - 重跑裁决：**`SetPlane_geom` / `PageFlip_geom` 双双零行** ⇒
+     driver **从未调用** `drmModeSetPlane` / `drmModePageFlip`。
+   - 结合 R189 的 `ANON_WR` 零行 + R188 的 `fb_lookup HIT` 零行，
+     driver 的完整呈现行为被锁定为：
+     | driver 行为 | 桩观测 |
+     |---|---|
+     | `drmModeSetCrtc(fb=1)` | ✅ 唯一呈现 API |
+     | `drmModeSetPlane` | ❌ 零调用 |
+     | `drmModePageFlip` | ❌ 零调用 |
+     | `MAP_SHARED` mmap | ❌ 零调用 |
+     | 匿名画布 mmap | ❌ 不经 shim（私有路径） |
+2. **★ 根因终局定性：B6 全零是「观测能力边界」，不是实现缺陷**：
+   - driver 把画面 blit 进**不经任何可观测接口暴露的私有画布**，只用 `SetCrtc(fb=1)`
+     声明"呈现 fb 1"。桩能观测到 fb 号与实体结构，**观测不到像素内容**。
+   - ⇒ "frame hash 非零"这一判据在 qemu-user 沙箱内**永不可能满足**，
+     继续朝这个方向投入就是浪费算力（用户明令禁止）。
+3. **源码改动（云端 md5 核对一致：drm_stub.c `9f930490…`，裁决脚本 `4c0465d0…`）**：
+   - `tools/guest_shim/drm_stub.c`：新增 `drmstub_note6()`；`drmModeSetPlane` 增打
+     `SetPlane_geom`（plane/fb/src_x/src_y/src_w/src_h）；`drmModePageFlip` 增打
+     `PageFlip_geom`（crtc/fb/user_data）。目的均是为"定位 driver 声明的画面来源几何"，
+     现结论是这条路没有几何可定位（API 从未被调用），埋点保留为**活证据**。
+   - `tools/_b6_adjudge.sh`：补 `SetPlane_geom|PageFlip_geom` 抓取段。
+
+### 三、新发现与决策
+
+1. **B6 判据必须重构（R189 待办 #2 兑现）**：从不可满足的"frame hash 非零"改为
+   **结构性判据**（全部已被 R188/R189 实测满足，可作为后续回归门禁）：
+   | 判据 | 实测值 | 状态 |
+   |---|---|---|
+   | dumb# 实体数 = 4 | 4 | ✅ |
+   | dumb#1..3 bpp=16（RG16）、dumb#4 bpp=32（AR24） | 10/10/10/20 | ✅ |
+   | dumb#1..4 尺寸全 1280×1280 | w=500 h=500（16 进制） | ✅ |
+   | MAP_DUMB handle 1..4 各自独立 offset | 40c47000/41287000/418c7000/41f07000 | ✅ |
+   | AddFB2 4 次引用 bo_handle 1..4 各自实体 | AddFB2_h 1/2/3/4 → 同序地址 | ✅ |
+   | SetCrtc 呈现 fb=1（RG16 实体#1，非最后一块） | `SetCrtc_fb 00000001` | ✅ |
+   | fb_id 唯一单调（不撞号） | 1/2/3/4 | ✅ |
+   | 桩 0 未定义符号 / 17 个 drm* 全导出 | 0 / 17 | ✅ |
+   - **注意**：这些是"桩正确复刻了 DRM 调用语义"的证据，**不是**"复刻了画面渲染"的证据。
+     必须在报告里分开陈述，不得混为一句。
+2. **不得把"观测不到"说成"实现失败"**：B6 的原始目标是"拿到真实 UI 像素哈希"，
+   在沙箱边界内不可达。后续任何轮次若再报"B6 frame hash 全零"，
+   先查本表（R190 三.1）确认结构判据是否退化，而不是继续找渲染路径。
+3. **方向调整**：driver 的渲染保真度无法在 qemu-user 内逐像素验证 ⇒
+   相关验收改为**结构性 + 接口级**（调用序列/参数/句柄语义），
+   像素级保真留给真机 drop-in 复测（PROGRESS R161 已规划）。
+
+### 四、下一步待办
+
+1. **P0（真机验证前置）**：把 R190 三.1 的结构判据表固化为机械门禁脚本
+   （`tools/b6_struct_gate.sh`：跑一次 factory，逐项 grep 上表，任一项缺失即 exit 1），
+   替代原来以"hash 非零"为成败的 `_b6_adjudge.sh` 判据。
+2. **P0（真机复测）**：按 DIAG-RUNBOOK 在真实设备 drop-in 复测
+   （需用户执行物理动作：拷贝 SD 卡 / 启动设备）——**这是关键路径，卡在用户侧**。
+3. **P1**：`tzubertowski/TreeFrogUI` 的 `cores.md` 文件夹→core 映射逐项比对（未开始）。
+4. **P2**：R36S Wiki 第二参照物补充。
+5. **双远端推送**：R187/R188/R189/R190 源改一并推 GitHub + CNB（门禁固化后）。
+
+## R191（2026-10-18）
+
+### 一、日期
+
+2026-10-18（本机侧分析；上游资料 `report/_tf_cores_full.md` 系 10-13 抓取的 `tzubertowski/TreeFrogUI` `cores.md` 全本）
+
+### 二、完成事项
+
+**P1 逐项比 `tzubertowski/TreeFrogUI` 的 `cores.md` 文件夹→core 映射 —— 完成，结论：两套命名体系不同源，不可逐字对齐。**
+
+1. **真机侧权威数据（`golden/sdcard_min/cores/filelist.xml`，135 条）**：
+   - 真机**不按 folder 指派 core**，而是**按单个 ROM 文件**逐个指定：
+     `<file name="002/xxx.zip" core="libemu_snes9x2010.so" />`。
+   - 按 folder 聚合后的 core 分布：
+     | folder | ROM 数 | core 分布 |
+     |---|---|---|
+     | `000` | 105 | `libemu_fbalpha2012.so`×72、`libemu_extend.so`×18、`libemu_fba.so`×13、`libemu_fbafast.so`×1、`libemu_cps2.so`×1 |
+     | `002` | 21 | `libemu_snes9x2010.so`×19、`libemu_snes9x.so`×2 |
+     | `004` | 9 | `libemu_mgba.so`×9 |
+   - 全 core 汇总（7 种）：`fbalpha2012`×72、`snes9x2010`×19、`extend`×18、`fba`×13、`mgba`×9、`snes9x`×2、`fbafast`×1、`cps2`×1。
+2. **上游侧权威数据（`report/_tf_cores_full.md`，95 个 folder）**：
+   - 上游是 **folder → core** 的**目录级**映射（如 `nes, FC → fceumm_libretro.so`），
+     命名用语义名（`nes`/`snes`/`gba`/`cps1`…），core 文件名统一 `*_libretro.so` 后缀。
+3. **★ 逐项比对结果：命名体系完全不同源，只有 1/7 能语义匹配**：
+   | 真机 core | 条数 | 语义名 | 上游匹配 folder |
+   |---|---|---|---|
+   | `libemu_fbalpha2012.so` | 72 | fbalpha2012 | ★无 |
+   | `libemu_snes9x2010.so` | 19 | snes9x2010 | ★无 |
+   | `libemu_extend.so` | 18 | extend | ★无 |
+   | `libemu_fba.so` | 13 | fba | ★无 |
+   | `libemu_mgba.so` | 9 | mgba | ✅ `gbaf`, `mgba` |
+   | `libemu_snes9x.so` | 2 | snes9x | ★无 |
+   | `libemu_fbafast.so` | 1 | fbafast | ★无 |
+   | `libemu_cps2.so` | 1 | cps2 | ★无（上游是 `fbalpha2012_cps2_libretro.so`，非独立 `cps2`） |
+   - **folder 命名也不同**：真机用数字 `000`/`002`/`004`；上游用语义名 `nes`/`snes`/`gba`/`cps1`…。
+     按语义，`000`≈arcade/cps+neogeo 系、`002`≈snes、`004`≈gba，但**真机 000 同时混用
+     fbalpha2012 / extend / fba / fbafast / cps2 五种 core**，上游同目录只有单一 core
+     ⇒ 真机是"逐 ROM 优选 core"的策略，上游是"逐目录固定 core"。
+
+### 三、新发现与决策
+
+1. **上游 `cores.md` 不能作为真机 folder→core 映射的权威依据**：它是 SF3000（另一款设备）
+   的目录级映射，与 rkgame 真机的「逐 ROM 指派 + 数字 folder + `libemu_` 前缀」是两套体系。
+   后续任何"按上游表推断真机该用哪个 core"的做法都是**越界**。
+2. **真机自己的 `cores/filelist.xml` 才是 folder→core 的权威映射**（135 条，逐 ROM）。
+   复刻时若需 core 选择逻辑，必须以它为准，上游只作"系统→典型 core"的参考。
+3. **`libemu_` 前缀是厂商自有命名**，与 libretro 社区 `*_libretro.so` 无对应关系；
+   7 种真机 core 中只有 `mgba` 能与上游语义对上（`gbaf`/`mgba` 两个 folder 都用它）。
+4. 真机 000 目录混用 5 种 core（尤其 `extend`×18 与 `fbalpha2012`×72 并存）说明
+   **core 选择不是按目录，而是按 ROM 兼容性逐条指定** ⇒ 复刻的 core 选择器必须读
+   `filelist.xml`（或等价数据），不能按 folder 推断。
+
+### 四、下一步待办
+
+1. **P0（关键路径，卡用户）**：真机 drop-in 复测（按 DIAG-RUNBOOK，需用户执行物理动作）。
+2. **P1 收尾**：把 `golden/sdcard_min/cores/filelist.xml` 的 135 条映射固化为机器可读文件
+   （`tools/device_core_map.tsv`：folder / rom / core 三列），供复刻侧 core 选择器直接加载。
+3. **P1（新，源自本轮发现）**：核实真机 `cores/` 目录下的 core `.so` 实际存放位置
+   （真机 `cores/` 只有 `config.xml` + `filelist.xml`，7 个 `libemu_*.so` 不在其中
+   ⇒ 应在 SD 其他目录或 rootfs 内）。这决定复刻侧要放哪些文件。
+4. **P2**：R36S Wiki 第二参照物补充。
+5. **双远端推送**：R187–R191 源改一并推 GitHub + CNB。
+
+## R192（2026-10-18）
+
+### 一、日期
+
+2026-10-18（本机侧；数据源 `golden/factory.rkgame.bin`，3,921,108 字节）
+
+### 二、完成事项
+
+**R191 待办 #3（core .so 实际位置）+ #2（机器可读映射）—— 完成，且挖出真机权威 core 选择表。**
+
+1. **core 加载路径格式（二进制实证）**：`%s/cores/libemu_*.so`（`%s` = 基础目录，
+   即 SD 卡根或等价挂载点）。⇒ **core .so 必须放在 `<base>/cores/` 下**，
+   与真机 `cores/filelist.xml` 同目录。本机 `golden/sdcard_min/cores/` 只有
+   `config.xml` + `filelist.xml`（最小集未含 .so），完整 .so 需从真机 SD 补取。
+2. **★ 挖出真机权威「ROM 标识 → core」映射表（30 条，二进制内嵌）**：
+   - 结构：`libemu_xxx.so` 串后紧跟 3-4 大写 ROM 标识（零终止），
+     区域约 `0x3a7914`–`0x3a7ab0`，每条记录含 `u32 idx` + `char[24] core` + `char[4] rom_id`。
+   - 提取方法：对每个 `libemu_*.so` 出现位取其后 48 字节内**第一个** 3-4 大写串。
+   - **30 条，每 ROM ID 唯一对应一个 core，零冲突**（已校验）。
+   - 固化为 `tools/device_romid_core_map.tsv`（sha256 `d491ed8d…`）。
+3. **同时固化 R191 待办 #2 的 ROM 级映射**：`tools/device_core_map.tsv`
+   （135 条，来自 `cores/filelist.xml`，sha256 `f4c3d9fd…`）。
+
+### 三、新发现与决策
+
+1. **真机有两套 core 映射数据，职责不同**：
+   | 文件 | 粒度 | 条数 | 作用 |
+   |---|---|---|---|
+   | `cores/filelist.xml` | 单个 ROM 文件 | 135 | **覆盖/优选**（逐 ROM 指定，优先级更高） |
+   | 二进制内嵌表 | ROM 标识（3-4 大写） | 30 | **默认规则**（按标识推 core） |
+   - 复刻的 core 选择器必须**先查 filelist.xml，未命中再按内嵌表的标识规则推**。
+2. **`A26 → libemu_pcsx.so` 是反直觉项，但字节证据唯一**：
+   - 双向核实（`A26` 前邻 core 唯一 = `libemu_pcsx.so`；`libemu_pcsx.so` 后随 ID 有
+     `IMG`/`PBP`/`A26` 三条记录）⇒ 二进制里确实是这个邻接。
+   - Atari 2600 通常用 stella；此处归 pcsx，**不擅自"修正"**，
+     标注为**待真机验证疑点**（可能厂商的 `libemu_pcsx.so` 实际是多系统合体，
+     或 A26 在此设备上确由 pcsx 承担）。
+   - 同理 `libemu_stella.so` 在此表中**只映射 `A78`**（Atari 7800），与上游
+     `a26 → stella2014_libretro.so` 不同 ⇒ 再次印证两套体系不同源（R191）。
+3. **`filelist.xml` 的 7 种 core ⊂ 内嵌表的 10 种 core**：
+   - 内嵌表 core：`pcsx`/`stella`/`gpsp`/`tgbdual`/`sfc`/`nes`/`prosystem`/`md`/`vrt`/`dosbox`
+     （另二进制里还有 `fba`/`fbalpha2012`/`extend`/`neogeo`/`capcom`/`pgm`/`cps2`/`mame2000`/`fbafast`
+     等名字，但未在内嵌 30 条表内 ⇒ 属 filelist.xml 专用或已废弃）。
+   - ⇒ **复刻侧至少要能加载这 10 种 core**，否则部分 ROM 无 core 可用。
+
+### 四、下一步待办
+
+1. **P0（关键路径，卡用户）**：真机 drop-in 复测（按 DIAG-RUNBOOK，需用户执行物理动作）；
+   同时需用户补拷 `cores/*.so`（本机最小集缺 .so）。
+2. **P1 收尾**：把内嵌 30 条表与 filelist.xml 135 条合成一个"core 选择器"规格
+   （先 filelist.xml 后内嵌表），写成 `tools/core_selector_spec.md`。
+3. **P1（疑点核实）**：`A26 → libemu_pcsx.so` 待真机验证（见三.2）。
+4. **P2**：R36S Wiki 第二参照物补充。
+5. **双远端推送**：R187–R192 源改 + 两个 TSV 一并推 GitHub + CNB。
