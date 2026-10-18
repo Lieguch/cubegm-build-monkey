@@ -1,0 +1,136 @@
+folder	rom	core
+000	1944.zip	libemu_fbalpha2012.so
+000	1944ad.zip	libemu_fbalpha2012.so
+000	1944d.zip	libemu_fbalpha2012.so
+000	1944j.zip	libemu_fbalpha2012.so
+000	8bpm.zip	libemu_fbalpha2012.so
+000	aceattaca.zip	libemu_fbalpha2012.so
+000	acitya.zip	libemu_fbalpha2012.so
+000	altbeast5.zip	libemu_fbalpha2012.so
+000	bayroute.zip	libemu_fbalpha2012.so
+000	bayroutej.zip	libemu_fbalpha2012.so
+000	bgaregga.zip	libemu_fbalpha2012.so
+000	blockgal.zip	libemu_extend.so
+000	bloxeed.zip	libemu_fbalpha2012.so
+000	bwcasino.zip	libemu_fbalpha2012.so
+000	cltchitr.zip	libemu_fbalpha2012.so
+000	cltchitrd.zip	libemu_extend.so
+000	cltchitrj.zip	libemu_fbalpha2012.so
+000	cotton.zip	libemu_fbalpha2012.so
+000	cottonu.zip	libemu_fbalpha2012.so
+000	ddcrew1.zip	libemu_fbalpha2012.so
+000	ddcrewu.zip	libemu_fbalpha2012.so
+000	ddux.zip	libemu_fbalpha2012.so
+000	eswat.zip	libemu_fbalpha2012.so
+000	eswatj.zip	libemu_fbalpha2012.so
+000	eswatu.zip	libemu_fbalpha2012.so
+000	flashgal.zip	libemu_extend.so
+000	fpoint.zip	libemu_fbalpha2012.so
+000	fpoint1.zip	libemu_fbalpha2012.so
+000	fstarfrc.zip	libemu_fbalpha2012.so
+000	fx.zip	libemu_extend.so
+000	galaxyfg.zip	libemu_fba.so
+000	ganryu.zip	libemu_fba.so
+000	garoubl.zip	libemu_fba.so
+000	garoup.zip	libemu_fbalpha2012.so
+000	gensitou.zip	libemu_extend.so
+000	ginkun.zip	libemu_fbalpha2012.so
+000	goldnaxe1.zip	libemu_fbalpha2012.so
+000	goldnaxe3.zip	libemu_fbalpha2012.so
+000	goldnaxej.zip	libemu_fbalpha2012.so
+000	goldnaxeu.zip	libemu_fbalpha2012.so
+000	hellfire.zip	libemu_extend.so
+000	herodku.zip	libemu_fbafast.so
+000	jack.zip	libemu_extend.so
+000	jack2.zip	libemu_extend.so
+000	jack3.zip	libemu_extend.so
+000	joinem.zip	libemu_extend.so
+000	kizuna.zip	libemu_fba.so
+000	kof96.zip	libemu_fbalpha2012.so
+000	legend.zip	libemu_extend.so
+000	madgear.zip	libemu_fbalpha2012.so
+000	madgearj.zip	libemu_fbalpha2012.so
+000	magdrop2.zip	libemu_cps2.so
+000	matrimbl.zip	libemu_fba.so
+000	mazinger.zip	libemu_fbalpha2012.so
+000	metlsavr.zip	libemu_fbalpha2012.so
+000	mia.zip	libemu_fbalpha2012.so
+000	mmaze.zip	libemu_extend.so
+000	mmaze2.zip	libemu_extend.so
+000	mrflea.zip	libemu_fbalpha2012.so
+000	mvp.zip	libemu_fbalpha2012.so
+000	mvpj.zip	libemu_fbalpha2012.so
+000	myangel2.zip	libemu_extend.so
+000	naname.zip	libemu_fbalpha2012.so
+000	ninjamas.zip	libemu_fba.so
+000	nitd.zip	libemu_fba.so
+000	overtop.zip	libemu_fba.so
+000	passshtj.zip	libemu_fbalpha2012.so
+000	ponpoko.zip	libemu_fbalpha2012.so
+000	ponpokov.zip	libemu_fbalpha2012.so
+000	preisle2.zip	libemu_fba.so
+000	quartet.zip	libemu_extend.so
+000	rbff1.zip	libemu_fba.so
+000	rbffspec.zip	libemu_fba.so
+000	rocktrv2.zip	libemu_extend.so
+000	samsho2.zip	libemu_fba.so
+000	samsho4.zip	libemu_fba.so
+000	sfw.zip	libemu_extend.so
+000	shadowwa.zip	libemu_fbalpha2012.so
+000	shinobi1.zip	libemu_fbalpha2012.so
+000	shinobi2.zip	libemu_fbalpha2012.so
+000	skyadvntu.zip	libemu_extend.so
+000	skywolf.zip	libemu_fbalpha2012.so
+000	skywolf2.zip	libemu_fbalpha2012.so
+000	spacecho.zip	libemu_fbalpha2012.so
+000	spacegun.zip	libemu_fbalpha2012.so
+000	speakres.zip	libemu_fbalpha2012.so
+000	sprglbpg.zip	libemu_fbalpha2012.so
+000	sprglobp.zip	libemu_fbalpha2012.so
+000	ssideki4.zip	libemu_fbalpha2012.so
+000	stratvox.zip	libemu_fbalpha2012.so
+000	suprleag.zip	libemu_fbalpha2012.so
+000	tetris.zip	libemu_fbalpha2012.so
+000	tetris1.zip	libemu_fbalpha2012.so
+000	tetris2.zip	libemu_fbalpha2012.so
+000	tetris3.zip	libemu_fbalpha2012.so
+000	tetrsark.zip	libemu_fbalpha2012.so
+000	theglobp.zip	libemu_fbalpha2012.so
+000	tknight.zip	libemu_fbalpha2012.so
+000	truxton2.zip	libemu_fbalpha2012.so
+000	viewpoin.zip	libemu_fbalpha2012.so
+000	vliner.zip	libemu_fbalpha2012.so
+000	vlinero.zip	libemu_fbalpha2012.so
+000	wb31.zip	libemu_fbalpha2012.so
+000	wb33.zip	libemu_fbalpha2012.so
+000	wb34.zip	libemu_fbalpha2012.so
+002	Batman - Revenge of the Joker (USA) (Proto).zip	libemu_snes9x2010.so
+002	Battle Soccer - Field no Hasha (Japan).zip	libemu_snes9x2010.so
+002	Habu Meijin no Omoshiro Shougi (Japan).zip	libemu_snes9x2010.so
+002	Kishin Douji Zenki - Tenchi Meidou (Japan).zip	libemu_snes9x.so
+002	Marvelous - Mouhitotsu no Takara-jima (Japan).zip	libemu_snes9x2010.so
+002	PGA European Tour (Europe).zip	libemu_snes9x2010.so
+002	PGA European Tour (USA).zip	libemu_snes9x2010.so
+002	PGA Tour 96 (Europe).zip	libemu_snes9x2010.so
+002	PGA Tour 96 (USA) (Rev 1).zip	libemu_snes9x2010.so
+002	PGA Tour 96 (USA).zip	libemu_snes9x2010.so
+002	Pachi-Slot Monogatari - PAL Kougyou Special (Japan).zip	libemu_snes9x2010.so
+002	Power Piggs of the Dark Age (Europe) (Beta).zip	libemu_snes9x2010.so
+002	Rin Kaihou Kudan no Igo Taidou (Japan).zip	libemu_snes9x2010.so
+002	Ring ni Kakero (Japan) (NP).zip	libemu_snes9x2010.so
+002	Rise of the Robots (Europe).zip	libemu_snes9x2010.so
+002	Shougi Saikyou (Japan).zip	libemu_snes9x2010.so
+002	Shougi Saikyou II - Jissen Taikyoku Hen (Japan).zip	libemu_snes9x2010.so
+002	Soul Blade (World) (Unl) (Pirate).zip	libemu_snes9x2010.so
+002	Super Bomberman 2 (Europe).zip	libemu_snes9x2010.so
+002	Takemiya Masaki Kudan no Igo Taishou (Japan).zip	libemu_snes9x2010.so
+002	Targa (Europe) (Proto).zip	libemu_snes9x.so
+004	Bubble Dragon New and Old Edition.zip	libemu_mgba.so
+004	Desert Strike Advance(US).zip	libemu_mgba.so
+004	Elevator war.zip	libemu_mgba.so
+004	NHL 2002(US).zip	libemu_mgba.so
+004	Ninja criminal police.zip	libemu_mgba.so
+004	Postman Pat and Green Rocket.zip	libemu_mgba.so
+004	Rockman Zero4.zip	libemu_mgba.so
+004	Sponge Barber - Movie Edition.zip	libemu_mgba.so
+004	Star Wars - Jedi Power Battles(EU).zip	libemu_mgba.so
