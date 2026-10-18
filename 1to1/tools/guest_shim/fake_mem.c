@@ -1586,12 +1586,16 @@ static void *sys_mmap2(void *addr, size_t len, int prot, int flags,
  */
 typedef void       *(*cgm_fb_addr_fn)(void);
 typedef unsigned int (*cgm_fb_size_fn)(void);
+typedef void       *(*cgm_fb_lookup_by_addr_fn)(unsigned long);
+typedef unsigned int (*cgm_fb_size_by_addr_fn)(unsigned long);
 
 static int shim_drm_probe_done;
 static cgm_fb_addr_fn shim_fb_addr_fn;
 static cgm_fb_size_fn shim_fb_size_fn;
+static cgm_fb_lookup_by_addr_fn shim_fb_lookup_fn;
+static cgm_fb_size_by_addr_fn shim_fb_size_by_addr_fn;
 
-/* 一次性探测桩的三个导出符号（取不到就全部为 0 ⇒ 桩不在）。
+/* 一次性探测桩的导出符号（取不到就全部为 0 ⇒ 桩不在）。
  * 抽成独立函数是因为「接管 dumb 映射」与「画布登记」两处都要用到 size。 */
 static void shim_drm_probe(void)
 {
@@ -1603,8 +1607,10 @@ static void shim_drm_probe(void)
         dlsym_fn = dlsym;
     }
     if (dlsym_fn == 0) return;
-    shim_fb_addr_fn = (cgm_fb_addr_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_address");
-    shim_fb_size_fn = (cgm_fb_size_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_size");
+    shim_fb_addr_fn  = (cgm_fb_addr_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_address");
+    shim_fb_size_fn  = (cgm_fb_size_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_size");
+    shim_fb_lookup_fn = (cgm_fb_lookup_by_addr_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_lookup_by_addr");
+    shim_fb_size_by_addr_fn = (cgm_fb_size_by_addr_fn)(unsigned long)dlsym_fn((void *)0, "drm_stub_fb_size_by_addr");
 }
 
 /* 桩回填的帧缓冲字节数（= pitch × height）；桩不在或尚未 CREATE_DUMB ⇒ 0。 */
@@ -1630,6 +1636,35 @@ static void *shim_drm_fb_lookup(unsigned long off, size_t len)
 
     if (fb_addr == 0 || fb_size == 0) return 0;      /* 未启用桩：原样退回 */
 
+    /* ★★★ R189 第三层根修：优先按 off 反查「handle→实体表」。
+     *   旧实现只认 `fb_addr()` == g_fb_buf（最后一次 AR24 实体），前 3 块 RG16 实体的
+     *   offset 在此被拒 ⇒ driver 的 MAP_SHARED mmap 退回匿名页 ⇒ 桩实体恒零。
+     *   新实现：桩导出 `drm_stub_fb_lookup_by_addr`/`drm_stub_fb_size_by_addr`，
+     *   线性扫 g_dumb[] 表，off 命中**任意一块**实体（不只最后一块）就直接返回，
+     *   并按其各自 bytes 做长度检查（内核语义：mmap 映射回同一块 GEM）。 */
+    if (off != 0ul && shim_fb_lookup_fn != 0) {
+        void *ent = shim_fb_lookup_fn(off);
+        if (ent != 0) {
+            unsigned int ebytes = (shim_fb_size_by_addr_fn != 0)
+                                  ? shim_fb_size_by_addr_fn(off) : 0u;
+            if (ebytes == 0u || len <= (size_t)ebytes) {
+                /* ★ R189 诊断埋点：证明 shim 按地址命中了**多实体中的一块**。
+                 *   与 drm_stub 的 dumb#/MAP_DUMB 地址序列对照，确认哪个 handle 被接住。
+                 *   注意：note() 只支持 %s/%p/%d/%u/%x/%c（**无 %zu**），len 必须转 unsigned int。 */
+                {
+                    static int hit2_logged;
+                    if (hit2_logged < 8) {
+                        hit2_logged++;
+                        note("[shim] fb_lookup HIT2 off=%p len=%u ent=%p bytes=%u\n",
+                             (void *)off, (unsigned int)len, ent, ebytes);
+                    }
+                }
+                return ent;
+            }
+            /* 长度不一致 ⇒ fail-closed，落到下面的单实体旧逻辑（同样会因 con 而退回）*/
+        }
+    }
+
     base = fb_addr();
     if ((unsigned long)base == 0) return 0;          /* 桩在，但还没 CREATE_DUMB */
     if (base != (void *)(unsigned long)off) return 0;/* 不是那块帧缓冲：原样退回 */
@@ -1639,6 +1674,18 @@ static void *shim_drm_fb_lookup(unsigned long off, size_t len)
      * 不一致说明我们与桩的约定错位 ⇒ **fail-closed**（不接管），
      * 而不是"照样接管一片大小不对的内存"。 */
     if (bytes == 0 || len > (size_t)bytes) return 0;
+
+    /* ★ R187 诊断埋点：分支 1 命中日志（证明 shim 是否真的拦到 dumb 映射）。
+     * 只打前 8 次，避免刷屏；每次含 offset（即桩回填的实体地址）与 len，
+     * 与 drm_stub.c 的 dumb#/MAP_DUMB 地址序列对照即可确认「哪个 handle 被谁的 offset 接住」。 */
+    {
+        static int hit_logged;
+        if (hit_logged < 8) {
+            hit_logged++;
+            note("[shim] fb_lookup HIT off=%p len=%zu -> %p\n",
+                 (void *)off, len, base);
+        }
+    }
     return base;
 }
 
@@ -1831,6 +1878,26 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
     if (fd < 0 && (flags & MAP_ANONYMOUS) && (prot & PROT_WRITE)) {
         void *p = sys_mmap2(addr, len, prot, flags, -1, uoff);
         if (p != MAP_FAILED) {
+            /* ★★★ R189 决定性诊断埋点（2026-10-18）：
+             *   R189 strace 铁证：driver 在每次 MAP_DUMB 后紧跟一次
+             *   `mmap(NULL, 同size, PROT_RW, MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, 0)`，
+             *   且**全程零 MAP_SHARED**。同时 `nm` 证明 driver.so 的 mmap 是
+             *   `U mmap@@GLIBC_2.4`（**libc 导入，非自封定义**）⇒ 必然经过 glibc 包装
+             *   ⇒ **必然被本 shim 拦截**。
+             *   但 R188 实测 `fb_lookup HIT` 零行、且 canvas 登记也零行
+             *   ⇒ 必须确认「这些匿名映射到底进没进本分支」。
+             *   本埋点打**每一次**进入（前 24 次，避免刷屏）：
+             *     · 有行 ⇒ 走 shim，canvas 机制可用，缺的只是「尺寸判据/入口条件」；
+             *     · 零行 ⇒ driver 的画布 mmap 不经本 shim（另有路径），
+             *       则 R137 的"自封定义"结论以另一种形式成立，必须换观测点。 */
+            {
+                static int anon_logged;
+                if (anon_logged < 24) {
+                    anon_logged++;
+                    note("[shim] ANON_WR mmap#%u len=%u -> %p\n",
+                         (unsigned int)anon_logged, (unsigned int)len, p);
+                }
+            }
             shim_canvas_note(p, len);
             return p;
         }
