@@ -59,6 +59,8 @@ KEYWORDS = {
     'size_t', 'ssize_t',
     'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
     'int8_t', 'int16_t', 'int32_t', 'int64_t',
+    # ★ 与 src_transcript_parity.py 合并为**同一份**时补进来的（它原来独有这三个）
+    'typedef', '_Noreturn', 'default',
 }
 
 # ★★ 必须捕获**前导下划线**：mangled 名以 `_` 开头，而 `_?` 会把 `_` 吃掉、只捕获到 `Znwj`

@@ -1,100 +1,30 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
+# ours=bf4d4461ed84f5d73f37547be5f54a489fc4bfce749ea56f7597edc4ece84d6c
 # ruler=d3c1a9d2751fd5b1df50d02162ec8fcc9f108e388c95364dbeb4683d6f4a40a9
-# ours=7a3687130e4a255e99456cf91adb1fe25f9bc2cbc62588ce9f3b34e3916eeca5
-# rebaseline: R209: scan_varargs/scan_symbol_delta 判据修复后口径变更
+# rebaseline: R211: 改由门禁环境(CI)自身的测量机械重建——R210 在 CNB 云开发 rebaseline 因环境判别力不同(不可判45 vs 5/REFDEAD34 vs 0)误删 5 项；同时回退 strupr 的 (islower)(..) 破坏性改动
+# ★ 本台账由 tools/ledger_from_report.py 从**门禁环境自己的**测量报告机械重建（不人工挑选）—— 见文件头注释里的事故经过。
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
-# ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
-Core_Load
 DisplayPage_list
 DrawFrame
-FBA_Load
-GBC_Load
-GetConfig
-GetInputInfo
-GetJoystickConfig
-GetTick
-GetTicks
-Gpsp_Load
-InitJoystick
-InitKeyMapping0fEmuType
-IsShoucang
-JoystickTest
-LoadDefaultState
-LoadMenuLog
-Load_Proc1
-Load_Proc2
 MP3InitDecoder
-NES_Load
-PCSX_Load
-PauseMenu
-Pico_Load
-RARCH_LOG
-RARCH_LOG_V
-ReadJoystick
-ReadJoystickProc
-ReadJoystickThread
-SaveDefaultState
-SaveKeyMappingConfigFile
-SaveMenuLog
-Snes_Load
-TGB_Load
-TestLibz0
 TestRun
 TestUSBJoy
-UpdateROM
-VRT_Load
 WaitNMI
-XintiaoThread
-_Z12inflateInit2P10z_stream_s
 _Z17FormatZipMessageUjPcj
-autorun
-dir_serial_list
-dispmeninfo
-filelist_run_game
-get_items_from_file
-get_items_from_zipfile
-getticks
-gpsp_unzip
+_ZN6TUnzip5CloseEv
+get_item_from_line
 locale_charset
-main
-main_Menu
 mui_DisplayInputBuffer
-mui_DisplayThumbnail
-mui_InitFont
-mui_LoadConfig
-mui_LoadSetting
-mui_LoadUIResource
-mui_ReadJoystick
-mui_Undisplay
-mui_game_exit
-mui_joystick_setting
-mui_menu
-mui_recent
-mui_run_game
-mui_search
-mui_setting
-mui_shoucang
-mui_type
+mui_DisplayLine_t
 mui_video_setting
-mxmlIndexReset
-myStrrstr
 outputblankxy
+outputxy1
 progress
-prosystem_Load
-retro_load_state
-retro_save_state
-run_process
-sfc_init
-shoucang
-stbtt__cff_int
-stbtt__tesselate_cubic
-stella_Load
-sunxi_gpio_init
-timer_thread
-ui_deinit
-xintiao
+stbtt__get_subrs
+stbtt__tesselate_curve
+strtrim
 xmp3_AllocateBuffers
 xmp3_FDCT32

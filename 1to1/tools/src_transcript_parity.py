@@ -72,14 +72,15 @@ if GHIDRA is None:
     sys.exit(2)              # ★ fail-closed：跳过 ≠ 通过
 
 RE_FN = re.compile(r'^(FUN_[0-9a-f]{8}_.+?)\.c$')
-RE_CALL = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(')
-# C 关键字与常见非函数构造，避免误当成"调用"
-KEYWORDS = {
-    'if', 'for', 'while', 'switch', 'return', 'sizeof', 'do', 'else', 'case',
-    'defined', 'typedef', 'struct', 'union', 'enum', 'static', 'const', 'volatile',
-    'unsigned', 'signed', 'int', 'char', 'long', 'short', 'float', 'double', 'void',
-    '_Noreturn', 'inline', 'register', 'goto', 'break', 'continue', 'default',
-}
+# ★★ 2026-10-19（R211）：**调用正则与关键字表只准有一份** —— 从 scan_call_counts 导入。
+#   病灶（用户铁律「同一规则禁止写两处」的又一次复发）：
+#     本文件原本自己抄了一份 `RE_CALL = r'\b([A-Za-z_]\w*)\s*\('`。
+#     而 `strupr` 为了产出与工厂同形的调用，必须写成 `(islower)(x)`（括号抑制
+#     <ctype.h> 宏展开，否则会变成 `__ctype_b_loc` ⇒ 真实行为回退，见 R211）。
+#     被括号包住的被调者只有**改过的**正则认得 ⇒ 两份正则一改一不改 ⇒
+#     `scan_call_counts` 判 PASS 而本工具判「调用总数变少」⇒ CI s33 红。
+#   ⇒ 正解：删掉这里的副本，单一真源在 scan_call_counts（含类型名黑名单）。
+from scan_call_counts import CALL_RE as RE_CALL, KEYWORDS  # noqa: E402
 
 
 def strip_comments_strings(t):

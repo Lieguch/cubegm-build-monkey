@@ -8854,3 +8854,94 @@ cores/refctx/stbtt/loadstate）。
 3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
 4. **P1**：修复 CNB sync 的 401 问题（token 可能需要刷新）。
 5. **P2**：L4 合入设计 + evdev inotify 增强。
+
+---
+
+## R211（2026-10-19）—— ★ 抓到我自己引入的真实回退；棘轮台账改由「门禁环境自身」机械重建
+
+> 本段为增量追加。R210 在 CNB 云开发 rebaseline 出的台账（91 项）在 CI 上反而判
+> 「★新增 6 项发散」。本轮定位到两个根因，并**纠正了 R209 里我亲手引入的一处真实回退**。
+
+### 一、完成事项
+
+1. **定位 R210 云端 rebaseline 失效的根因**（不是玄学，是两个可核对的数字）：
+   | 项 | CNB 云开发（R210） | GitHub Actions（门禁） |
+   |---|---|---|
+   | 产物 sha | `7a368713…`（5,312,132 B） | `c815a147…`（5,491,560 B） |
+   | 发散 | 46 | 10 |
+   | 不可判（TRUNC/REFDEAD/DEADEQ） | 45 | 12 |
+   | REFDEAD | 34 | 0 |
+   ⇒ 云端环境的观测力明显弱于 CI，且产物都不同；用它 rebaseline ⇒ 把「不可判」误写成
+   「已收敛」，又把 CI 判发散的 5 项删掉 ⇒ CI 报 ★新增。
+2. **回退 R209 我自己引入的真实回退**（棘轮 + 仪器自证双双抓到）：
+   `src/proprietary/misc/FUN_00016ebc_strupr.c` 里我把 `(islower)(uVar2)` 改成 `islower(uVar2)`。
+   glibc `<ctype.h>` 把 `islower` 定义成宏（`__isctype` → `__ctype_b_loc`），
+   **括号包住函数名才会抑制宏展开**。改掉括号 ⇒ 我们侧变成调 `__ctype_b_loc`，
+   而工厂二进制调的是 `islower` 函数本体（CI 实测
+   `strupr [core] calls_ext F=['islower','islower','islower'] O=['__ctype_b_loc']`）
+   ⇒ `strupr` 新增 DIVERGE，且 `diff_exec --self-test` 的反例
+   「NULL 输入时两侧同样读崩 ⇒ 不得被判成发散」直接 FAIL（s35）。
+3. **正解改在仪器侧**（而不是动源码）：`tools/scan_call_counts.py`
+   - `CALL_RE` 支持 **`(名字)(实参)`** 这种"被括号包住的被调者"；
+   - 把 Ghidra 类型名（`byte`/`uint`/`ushort`/`bool`/`undefined4`…与 `gh_*`/`*_t`）加入
+     黑名单 —— 否则新正则会把 `(byte)(x)` 这类**强制类型转换**当调用，
+     凭空造出 **27 项**假"漏调用"（本地实测复现，加入黑名单后归零）。
+4. **消除「同一规则写两处」**：`tools/src_transcript_parity.py` 原本自抄了一份
+   `RE_CALL` + `KEYWORDS`。第 3 点只改了 `scan_call_counts`
+   ⇒ s33 立刻转红（`FUN_00016ebc_strupr G调用 3 / O调用 2`）。
+   修法：删掉副本，改为 `from scan_call_counts import CALL_RE as RE_CALL, KEYWORDS`，
+   关键字表取并集（补 `typedef` / `_Noreturn` / `default`）。
+5. **新增 `tools/ledger_from_report.py`（台账机械重建器）**：
+   - 输入 = **门禁环境自己**产出的 `report/diff_exec.txt` + `report/_rows.json`
+     （CI 的 `1to1-p2a-report` artifact 里两者都有）；
+   - 按 `diff_exec.ledger_update` 的同一公式 `keep = diverging ∪ undecidable` 输出；
+   - 自带 **11 条自证**（含「解析出的集合必须与报告汇总行自洽，否则拒绝写台账」）；
+   - 原子写（`.tmp` + 回读校验 + `os.replace`）。
+   ⇒ 台账由 91 项改回 **21 项**（发散 9 ∪ 不可判 12），`ours=bf4d4461…`（CI 产物 sha）。
+6. **新增运维工具**（都是这次被"看不到全貌"坑出来的）：
+   `tools/_fulllog.py`（全量 job 日志 —— 旧 `getjoblog.py` 第 47 行硬截断只打 2400 字符）、
+   `tools/_getartifact.py`（artifact 下载，需 NoRedirect + 无 auth 跟 Location）、
+   `tools/_q_jobs.py` / `_getfile.py` / `_q_runs.py`。
+7. **本地复验**：`scan_call_counts --root . --ledger …` PASS（0 漏调用）；
+   `src_transcript_parity` PASS（无丢调用）；`lint_ci_reach` PASS（12 处全豁免，无新增）。
+
+### 二、新发现与决策
+
+1. ★★ **铁律增补：`diff_exec` 棘轮台账只允许来自「门禁环境自身」的测量。**
+   原因：云开发与 CI 的观测力不同 ⇒ 云端 rebaseline 会把"不可判"误写成"已收敛"。
+   今后 rebaseline 一律走 `ledger_from_report.py` + CI artifact，**不在云开发里 `--rebaseline`**。
+   （具体环境差：`capstone 5.0.9`(云) vs `5.0.7`(CI)、`ziglang`/`bootlin63` 版本差异导致产物不同 ——
+    差异**未完全定位**到唯一变量，故按"在哪判就在哪记账"规避，而不是去对齐环境。）
+2. **CI 触发路径坑**：`1to1-verify` / `1to1-qemu-behav` 的 `on.push.paths` 都含 `!1to1/*.md`
+   ⇒ **只改 `PROGRESS.md` 的 commit 不会触发它们**（`3af64e9c` 就是例子，只有 `rkgame-rebuild` 跑了）。
+   纪律重申：**文档改动与代码改动一起推**。
+3. **`(islower)(x)` 这类括号写法是必须的，不是风格问题** —— 凡是 `<ctype.h>` 的
+   `isalpha/isspace/islower/toupper…`，要产出"调 libc 函数本体"就必须写成被括号包住的形式。
+   已写进 `strupr.c` 的源码注释，防止后人再"顺手改掉"。
+4. **剩余真实待收敛（CI 权威分类，共 9 项发散）**：
+   | 档 | 数量 | 函数 | 处置 |
+   |---|---|---|---|
+   | REAL（该追） | 3 | `DrawFrame` / `_Z17FormatZipMessageUjPcj` / `locale_charset` | 逐个攻 |
+   | ABI（寄存器布局，非语义） | 2 | `stbtt__get_subrs` / `stbtt__tesselate_curve` | 不动源码 |
+   | NOISE（只在双侧早死组发散） | 2 | `get_item_from_line` / `strtrim` | **别改源码** |
+   | UNDECIDABLE（无跑完组） | 2 | `_ZN6TUnzip5CloseEv` / `xmp3_FDCT32` | 先补沙箱/模型 |
+5. **REAL 三项的初步定性**（★ 分层：已实测 / 推断 / 无证据 —— 这里除标注外均为**推断，待 CI 验证**）：
+   - `DrawFrame`（已实测的现象）：我们侧多读一次 `rotation_buff`(0x003cfa94)。
+     推断：源码顶部 `puVar1 = rotation_buff;` 在 clang 下未 DCE，而工厂 GCC 在
+     `soft_rotation==0` 的快速路径上不留这个死载入。
+   - `_Z17FormatZipMessageUjPcj`（已实测）：我们侧多调 `strlen` + 多读 `lasterrorU`(0x003b221c)。
+     推断：clang 把 `if (param_1==1) param_1 = lasterrorU;` 做了 if-conversion（推测式载入）。
+   - `locale_charset`（已实测）：工厂侧读 `asso_values+256`，我们侧没有。
+     推断：沙箱 `nl_langinfo` 模型在工厂侧返回的指针落在真实 `.data`
+     ⇒ **属仪器侧（libc 模型）问题，不该改源码**。
+
+### 三、下一步待办
+
+1. **P0**：推送本轮（台账 21 项 + `scan_call_counts` / `src_transcript_parity` 两处仪器修复
+   + `strupr` 回退）后监控 CI —— 预期 `1to1-verify` 的 s33 / s36 / s45 全部 PASS。
+2. **P0**：逐项攻 REAL 3。先做 `DrawFrame`：去掉顶部 `puVar1 = rotation_buff;`，
+   改在三个使用点直接取 `rotation_buff`（语义不变，只消掉那个死载入），用 CI 报告验证是否收敛。
+3. **P1**：`locale_charset` 走**补 libc 模型**（`nl_langinfo` 应两侧都返回沙箱 scratch 串），
+   不改源码。
+4. **P1**：修复 `sync_mirror.py --remote cnb` 的 401。
+5. **P2**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST` / `SRAM_SELFTEST` 块）。
