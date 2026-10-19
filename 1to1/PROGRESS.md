@@ -8786,3 +8786,71 @@ cores/refctx/stbtt/loadstate）。
 3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
 4. **P1**：`sync_mirror.py --remote cnb` 同步本轮 md/修复（代码托管通道）。
 5. **P2**：L4 合入设计 + evdev inotify 增强。
+
+---
+
+## R210（2026-10-19）—— ★ diff_exec rebaseline 完成，1:1 门禁级联解除
+
+> 本段为增量追加。R209 的 9 处根修全部 CI 验证生效后，唯一剩余阻塞 = diff_exec
+> ruler 口径不一致（fail-closed exit 3）及其级联（inline_move_audit 缺 _rows.json exit 11）。
+> 本轮在 CNB 云开发对正式产物执行 --rebaseline，一次性解除全部级联。
+
+### 一、完成事项
+
+1. **CNB 云开发正式产物重编**（workspace `cnb-0sm-1k59lifs0`）：
+   - 安装 unicorn/capstone/pyelftools 依赖（`/usr/local/bin/python3` + uv 站点包）。
+   - 上传本机 `cache_tc/bootlin63.tar.bz2`（63,685,320 B，sha256 `4e3a63...`）到云端
+     （云端从 toolchains.bootlin.com 下载因大小不符失败——`63697608 ≠ 63685320`）。
+   - `fetch_bootlin63.sh` 解压通过；`build_upstream.sh` 编 25 个上游 .o；
+   - `link_audit.sh` 编 214 个专有 .o（213+1 新增）；
+   - `link_full.sh` 链接成功：`build/rkgame.rebuilt.elf` 5,312,132 B，
+     sha256 `7a3687130e4a255e99456cf91adb1fe25f9bc2cbc62588ce9f3b34e3916eeca5`。
+2. **diff_exec --rebaseline 执行成功**：
+   ```
+   python3 tools/diff_exec.py --batch --steps 3000 \
+     --out report/diff_exec.txt --dump-rows report/_rows.json \
+     --ledger tools/diff_exec_pending.txt \
+     --rebaseline --reason "R209: scan_varargs/scan_symbol_delta 判据修复后口径变更"
+   ```
+   - 新台账 ruler = `d3c1a9d2...`（当前尺子口径）
+   - 被测产物 sha = `7a3687130e4a255e`（云开发正式重编产物）
+   - 台账 91 项（发散 46 + 不可判 45）
+   - **收敛移除 9 项**：FilePreEmu / SeletEmuCore / get_item_from_line / get_value_from_items /
+     mui_DisplayLine_t / outputxy1 / stbtt__get_subrs / stbtt__tesselate_curve / strtrim
+   - `_rows.json` 已产出（3156 行）
+3. **inline_move_audit 级联解除**：
+   - `inline_move.py --self-test`：18 条全过 ✓
+   - `inline_move_audit.py report/_rows.json --verify-meta`：PASS ✓
+   - 汇总：PASS 698 / DIVERGE 46 / TRUNC 6 / DEADEQ 5 / REFDEAD 34 / SKIP 0 / INFO 587
+   - 真·搬家（FULL）= 3 个（DrawSelectBar / UnDrawSelectBar / __libc_csu_init）
+4. **台账同步并推送**：
+   - `scp` 拉取 rebaseline 后的 `diff_exec_pending.txt`（100 行）到本机。
+   - `push_1to1.py` 推送 GitHub（commit `2661edaa`，1 blob 上传，962/962 校验命中）。
+5. **云开发工作区已停止**（`cnb workspace workspace-stop --sn cnb-0sm-1k59lifs0`）。
+
+### 二、新发现与决策
+
+1. **CNB 云开发 bootlin63 下载失败根因**：toolchains.bootlin.com 返回的 Content-Length
+   = 63697608 B，但脚本期望 63685320 B（差 12288 B）。推测服务器内容更新了（小版本差异）。
+   **修法**：从本机 scp 上传已有的正确 tar（sha256 校验通过），跳过云端下载。
+   **后续**：可更新 `fetch_bootlin63.sh` 的期望大小，或改为"只做 bzip2 -t 完整性校验"。
+2. **CNB 云开发 Python 环境分裂**：`/usr/local/bin/python3`（系统）与
+   `/root/.local/share/uv/python/cpython-3.12.15-linux-x86_64-gnu/bin/python3`（uv）
+   是两个不同的 Python，pip 装到 uv 的 site-packages 但系统 python 的 sys.path
+   包含 uv 的 site-packages ⇒ 实际可用。但 `ziglang` 包只在 uv 路径下，
+   需 `export PATH=.../ziglang:$PATH` 让 `cgm_cc_probe.sh` 找到 zig。
+3. **L2 权威基线更新**：旧基线（§0.44）= PASS 759 / DIVERGE 18 / TRUNC 5。
+   新基线 = PASS 698 / DIVERGE 46 / TRUNC 6 / DEADEQ 5 / REFDEAD 34。
+   数字变化原因：R209 的判据修复（scan_varargs/scan_symbol_delta）改变了尺子口径 ⇒
+   ruler 变 ⇒ rebaseline 后 DIVERGE 集合重新计算。**这不是回归**——46 个 DIVERGE
+   里包含了旧基线中被 ruler 不一致遮盖的发散项，需要逐项定性。
+
+### 三、下一步待办
+
+1. **P0**：推送 `2661edaa` 后监控 CI 结果——预期 `1to1-verify` 的 s35/s36/s45 全部 PASS
+   （ruler 一致 + _rows.json 就绪 + inline_move_audit PASS）。
+2. **P0**：逐项收敛 46 个 DIVERGE——用 `report/diff_exec.txt` + `report/_rows.json`
+   做类别归约（`diverge_cluster.py --top 12`），定位根因类别，逐类消除。
+3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
+4. **P1**：修复 CNB sync 的 401 问题（token 可能需要刷新）。
+5. **P2**：L4 合入设计 + evdev inotify 增强。
