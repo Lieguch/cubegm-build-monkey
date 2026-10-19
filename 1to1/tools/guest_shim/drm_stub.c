@@ -410,8 +410,9 @@ static void drmstub_once(const char *tag)
 }
 
 /* ★ R189：打 6 个 u32 的入参快照（SetPlane/PageFlip 的几何参数）。
- * note2 只带 2 个值，而"driver 从哪块画布、取哪个子矩形呈现"需要 fb/plane/src_*/crtc_*
- * 全部 6 个才能定位。line[96] 容纳 "tag + 6×9 字符"（tag ≤ 12 + 空格 + 6×(8+1) = 65）足够。 */
+ * note2 只带 2 个值，而"driver 从哪块画布、取哪个子矩形呈现"需要 fb/plane 外加
+ * src_x/src_y/src_w/src_h 与 crtc_x/crtc_y 共 6 项才能定位。
+ * line[96] 容纳 "tag + 6×9 字符"（tag ≤ 12 + 空格 + 6×(8+1) = 65）足够。 */
 static void drmstub_note6(const char *tag, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
 {
     char line[96];

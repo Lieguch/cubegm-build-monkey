@@ -83,15 +83,23 @@ def demangle(name):
 
 
 def public_api(d):
-    """过滤出上游库的公有 API（去掉 isra/part/constprop 等内联重命名）。"""
+    """过滤出上游库的公有 API（去掉 isra/part/constprop 等内联重命名）。
+
+    ★ 2026-10-19 根修：先 split 取 base，再做 isra 过滤。
+      原逻辑（先过滤 isra 再取 base）会把工厂的 `stbtt__cff_index_get.isra.2`
+      **整行丢弃**，而重建侧同名 base 被报成「我们多出」——假阳。
+      正确逻辑：先 `nm.split('.')[0]` 取 base（此时 isra 后缀已消除），
+      再做 isra 正则过滤（此时不可能匹配到带后缀的符号），
+      但**两侧用同一个 base 配对**。
+    """
     out = {}
     for k, v in d.items():
         nm = demangle(k)
         if not any(nm.startswith(p) for p in LIB_PREFIXES):
             continue
-        if re.search(r'\.(isra|part|constprop|cold|clone)\.\d+', nm):
-            continue
         base = nm.split('.')[0]
+        if re.search(r'\.(isra|part|constprop|cold|clone)\.\d+', base):
+            continue
         out[base] = v
     return out
 

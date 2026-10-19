@@ -15,11 +15,20 @@
 # ---------------------------------------------------------------------------------
 MP3ClearBadFrame
 mp3_unused_GetNextFrameInfo
-mxml_fd_read
-#   （保留项）工厂侧为 `mxml_fd_read.part.1`（GCC 冷热分割残留），本质同源同名；
-#   我们 2.9 里是普通 static ⇒ 只差后缀。不是版本问题，勿再动上游版本。
+# ---- 2026-10-19 已修（删行留档）：scan_symbol_delta isra 配对 bug ----
+#   根因：public_api() 先过滤 isra/part 再取 base ⇒ 工厂 `mxml_fd_read.part.1`
+#   被整行丢弃，重建侧同名 base 被报成「我们多出」——假阳。
+#   修复：先 split('.') 取 base，再做 isra 过滤（此时已无后缀可匹配）。
+#   修复后 mxml_fd_read 两边配对成功，此条不再被报。
+#   已删：mxml_fd_read
+# ----------------------------------------------------------------
 stbtt_FindSVGDoc
 stbtt_GetCodepointSVG
 stbtt_GetGlyphSVG
 stbtt_GetKerningTable
 stbtt_GetKerningTableLength
+stbtt__GetGlyphInfoT2
+#   （新增 2026-10-19）工厂 ELF 确无此符号（无 isra/part 变体），重建侧有。
+#   推测：工厂 GCC 6.2 把它内联进 GetGlyphInfoT 的调用方；或工厂 stb 版本
+#   更旧（此函数在 v1.06+ RASTERIZER_VERSION==2 引入）。需在 CNB 云开发
+#   用正式产物复测后定性。

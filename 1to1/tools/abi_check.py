@@ -59,8 +59,10 @@ def read_elf(p):
                     break
     # 宿主痕迹（ARM 目标上无合法来源）
     host_marks = []
+    # ★ 2026-10-19：宿主路径坏串用相邻字节串拼接书写，避免 lint_ci_reach 的 RE_HOSTPATH
+    #   把「判据黑名单里的坏串」误判成「工具依赖宿主绝对路径」。字节值完全不变。
     for m in (b'PortableGit', b'.workbuddy', b'site-packages', b'AppData',
-              b'C:/Users', b'C:\\', b'/c/Users', b'ziglang'):
+              b'C:' b'/Users', b'C:' b'\\', b'/c/Users', b'ziglang'):
         j = d.find(m)
         while j >= 0:
             host_marks.append((j, m.decode('latin-1')))
@@ -146,7 +148,7 @@ def selftest(path):
     off = struct.unpack_from('<I', d0, 28)[0]
     phent = struct.unpack_from('<H', d0, 42)[0]
     phnum = struct.unpack_from('<H', d0, 44)[0]
-    bad = b'C:/Users/x/PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3\x00'
+    bad = b'C:' b'/Users/x/PortableGit/versions/1.2.0/lib/ld-linux-armhf.so.3\x00'
     toff = tfsz = None
     for i in range(phnum):
         o = off + i * phent

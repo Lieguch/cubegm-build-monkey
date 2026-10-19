@@ -188,6 +188,26 @@ def has_varargs_epilogue_free(d, S, va, limit=64):
             for nx in words[i + 1:i + 9]:
                 if (nx & 0x0F000000) == 0x0B000000:                          # BL
                     return True
+    # D：va_start 的 clang「三连 str」形态（2026-10-19 mxml_error 机器码铁证）。
+    #   根因：mxml_error 序言里 va_start(ap, fmt) 被 clang 编成三条**独立 str**：
+    #       str r1,[sp,#N]  str r2,[sp,#N+4]  str r3,[sp,#N+8]
+    #   这是「真构造了 va_list 保存区」的机器码等价。但判据 C 的窗口抓不到它——
+    #   因为变参取址是 `add r3, lr, #imm`（Rn=lr≠sp，lr 已 = sp+base），且与 vsnprintf 的
+    #   BL 之间隔着 `_mxml_global()` 调用 + `if (!format) return` 空指针检查 ⇒ 距离 > 8 条。
+    #   两个过窄点叠加 ⇒ mxml_error 被**假阳**成「丢了变参序言」。
+    #   放宽安全性：序言里恰好把 r1/r2/r3 存到三个连续栈槽的非变参函数会被判为「有变参序言」，
+    #   属**可接受放宽**（本门禁是人工核对性质，宁多列不可漏——见模块 docstring）。
+    #   反例（判别力锚）：真丢变参的形态（`mov r0,r1; b 目标` 尾调用，根本不存 r1/r2/r3）
+    #   不可能产生这组三连 str ⇒ 不会被本判据误放行。
+    slots = {}
+    for ins in words:
+        if (ins & 0xFFFF0000) == 0xE58D0000:            # STR Rd, [sp, #imm]（pre-indexed, up）
+            rd = (ins >> 12) & 0xF
+            if rd in (1, 2, 3):
+                slots.setdefault(rd, ins & 0xFFF)
+    a = slots.get(1); b = slots.get(2); c = slots.get(3)
+    if a is not None and b == a + 4 and c == a + 8:
+        return True
     return False
 
 

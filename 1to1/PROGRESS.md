@@ -8667,3 +8667,42 @@ cores/refctx/stbtt/loadstate）。
 5. **P2**：L4 合入设计（`L4-evdev-sram-design.md` §5 门禁）：待 L2 收敛 + L3 真机复测后，
    方可将 evdev/SRAM 编进交付版主链，并在 diff_exec 显式豁免登记。
 6. **P2**：evdev 增 inotify 热插拔（草稿已留注释；当前 P1 版为轮询重扫）。
+
+---
+
+## R208（2026-10-19）—— ★ P0 修复：1:1 重建链接失败根因（DAT_003af00c/010/014 缺失）已根修并推送
+
+> 本段为增量追加。本轮先于 R207 所有待办，发现并根修一个让「1:1 路线两条门禁」同时红掉的硬阻塞。
+
+### 一、完成事项
+
+1. **发现 R205「GitHub CI 待构建」系过时认知**：GitHub `rkgame-rebuild`（rewrite 路线）10-18 已 success（head `1ee7fd9f`=R189-R192）；但 1:1 路线的 `1to1-qemu-behav` 与 `1to1-verify` **两条门禁均 failure** ⇒ 才是当前真实阻塞。
+2. **定位两条门禁共同的根因 = 同一处链接失败**（下载 CI job 日志逐行取证）：
+   ```
+   ld.lld: error: undefined symbol: DAT_003af00c / DAT_003af010 / DAT_003af014
+   >>> referenced by FUN_0000b014_TestUSBJoy.c  (build/obj/.../TestUSBJoy.o)
+   >>> did you mean: DAT_003af314 (defined in factory_local.o)
+   ```
+3. **根因链（全铁证）**：
+   - R179 把 `TestUSBJoy.c` 的 `local_148[4..7]`（版本串指针表）数组化后，**重新暴露了对 `DAT_003af008/00c/010/014` 这 4 个 `.data` 低地址符号的引用**（此前 UB 越界读被 `-Os` 优化消除 ⇒ 隐式"链过"）。
+   - 生成器 `gen_data_module.py` 的 `--missing` 输入 `_undef_all.txt` 在**上次生成时尚未含这 4 符号** ⇒ 已推送的 `factory_image.S` 只定义 `DAT_003af008`，漏了 `00c/010/014`。
+   - 本地 10-19 07:47 已用生成器重生成 `factory_image.S`（含 3 个 `.set` 别名 + `DAT_003b012c` size 0x28 修正）；dry-run 复算**逐字节一致** ⇒ 可复现、非手写 hack。
+4. **静态校验反证**：全仓 `_undef_all.txt` 的 175 个 `DAT_/PTR_/UNK_` 数据别名，**只有这 3 个缺失**；`DAT_0020202d` 是 Ghidra 把 `"-  \0"`（0x0020202d）误读成指针的假符号（源码注释已声明、不在链接 UNDEF）。
+5. **推送修复**：`push_1to1.py` 已把重生成的 `factory_image.S`（含 3 缺失符号）推上 GitHub `main`（`7f2f49f`），34 blob 上传 / 962 全校验命中 ⇒ 自动触发 `1to1-qemu-behav` + `1to1-verify` + `rkgame-rebuild`。
+
+### 二、新发现与决策
+
+1. **本机 `git status` 的 `?? src/**` 是常态（不追踪 src/）**：真正源码通道 = `sync_mirror.py`（清单复用 `filelist.py`）。本轮用 `git blob sha1` 对比盘清：本地≠远端 main 的文件共 **10 个**（`factory_image.S` / `PROGRESS.md` / `PROJECT-MEMORY.md` / `DIAG-RUNBOOK.md` / `stale_artifact_gate.py` / `fidelity_audit.py` / `fetch_armhf_sysroot.py` / `core_selector_spec.md` / `build_libdrm_stub.sh` / `build_libkms_stub.sh`）。
+2. **`factory_data.bin` 本地(10-19 07:47 重生成)≠远端**：这是 `factory_image.S` 的伴生产物（`.incbin` 引用），必须随 `factory_image.S` 一起推送，否则远端 `.S` 引用的 bin 是旧哈希 ⇒ 已随 push 一并同步。
+3. **CI log 下载域的 robust 法**：`getjoblog.py` 的「NoRedirect + Bearer→无 auth 追 Location」能绕过 FastGithub 对 `*.actions.githubusercontent.com` 的拦截，成功下载 job 日志全文（本轮落 `build/_exp/ci_logs/`）。
+4. **L2「18 发散」收敛的前置**：必须先让 1:1 链接通过、拿到无陈旧缓存的正式产物 `rkgame.rebuilt.elf`，才能在其上重跑 `diff_exec --batch` 权威基线（本机 `e5ea3579` 是 R204 陈旧缓存污染产物，不能作基线）。
+
+### 三、下一步待办
+
+1. **P0（进行中）**：监控 `7f2f49f` 的 3 条 workflow 结果（后台 `ci_watch.py` 45s 轮询）。
+   - 若 `1to1-qemu-behav`+`1to1-verify` 转绿 ⇒ 链接阻塞解除，产物就绪。
+   - 若仍红 ⇒ 取新日志继续收敛（可能还有第 4 个缺失符号之外的隐患，如 `DAT_0020202d` 若真被链接引用）。
+2. **P0**：产物就绪后，CNB 云开发对正式产物重跑 `diff_exec --batch --steps 3000`，产出与当前 sha 绑定的权威 L2 基线，再逐项收敛 18 个 DIVERGE。
+3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
+4. **P1**：`sync_mirror.py --remote cnb` 同步本轮 md/草稿/生成产物（代码托管通道）。
+5. **P2**：L4 合入设计（`L4-evdev-sram-design.md` §5 门禁）与 evdev inotify 增强。

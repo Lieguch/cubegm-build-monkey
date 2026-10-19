@@ -21,8 +21,8 @@ gh_u4 mui_video_setting(void)
   gh_uint uVar8;
   gh_uint uVar9;
   gh_uint uVar10;
-  char *pcVar11;
-  char *pcVar12;
+  const char *pcVar11;
+  const char *pcVar12;
   /* R179 根修：-0xb8..-0x8c 是 blockcopy(param_2,param_1) 的 12 个连续 int 参数槽
    * （与 joystick 同构）。数组化让 &blk[6] 逃逸覆盖 param_1、&blk[0] 覆盖 param_2，
    * -Os 不再消除 af820/24/28/2c 写入。 */
