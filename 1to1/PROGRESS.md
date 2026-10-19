@@ -8706,3 +8706,83 @@ cores/refctx/stbtt/loadstate）。
 3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
 4. **P1**：`sync_mirror.py --remote cnb` 同步本轮 md/草稿/生成产物（代码托管通道）。
 5. **P2**：L4 合入设计（`L4-evdev-sram-design.md` §5 门禁）与 evdev inotify 增强。
+
+---
+
+## R209（2026-10-19）—— ★ 链接阻塞解除后首批门禁根因收敛（8 处 → 2 处级联）
+
+> 本段为增量追加。R208 的 `DAT_003af00c/010/014` 链接修复（commit `7f2f49f`）已解除
+> 1:1 路线的链接阻塞（`ld.lld rc=0`、`rkgame-rebuild` + `toolchain-ab` 均 success）。
+> 两条 1:1 门禁**第一次真正跑通全部 30+ 步骤**，暴露出此前被链接失败长期遮挡的一批
+> 真实缺陷。本轮逐一定位根因并根修。
+
+### 一、完成事项
+
+1. **drm_stub.c 注释 `*/` 提前闭合（三桩构建失败根因）**：
+   - `tools/guest_shim/drm_stub.c:413` 行注释里 `src_*/crtc_*` 的 `*/` 被 C 预处理器
+     识别为注释结束符，导致注释提前闭合，后续中文/`≤`/`×` 被当代码解析（8 个 error），
+     `drmstub_note6` 定义被吞。
+   - 根修：改写注释，消除正文中的 `*/` 序列。
+2. **mui_video_setting.c const 丢弃假绿**：
+   - `FUN_0002e040:51` 把 `const char _video_menu_tbl[4][16]` 的地址赋给 `char *pcVar11`，
+     触发 `-Werror=incompatible-pointer-types-discards-qualifiers`。
+   - 根修：`char *pcVar11` → `const char *pcVar11`（及 `pcVar12`）。
+3. **strupr → islower 漏调用（scanner 假阳）**：
+   - 工厂 Ghidra 原文 `islower(uVar2)`，我们的重建源码写成 `(islower)(uVar2)`（括号包裹函数名）。
+   - `scan_call_counts.py` 的 `CALL_RE` 正则 `(?<![A-Za-z0-9_>.])([A-Za-z_]\w*)\s*\(` 没匹配到
+     `(islower)(` 这种形式（前导 `(` 不在 lookbehind 里）⇒ 我们侧计为 0，被报成「漏调用」。
+   - 根修：去掉 `(islower)` 的括号，改为 `islower(uVar2)`（与工厂原文一致）。
+4. **mxml_error 变参序言丢失（scanner 判据窗口过窄）**：
+   - 本机纯 Python 复现 + 机器码铁证：`mxml_error` 序言有完整的 `str r1/r2/r3` 三连存
+     （= `va_start(ap, fmt)` 的 clang 形态），变参语义完全正确。
+   - 根因：`scan_varargs_fns.py` 判据 C 要求 `add rX, sp, #imm` 后 8 条内有 `bl`，但
+     mxml_error 的 `add r3, lr, #imm`（Rn=lr≠sp）+ `bl vsnprintf` 之间隔着
+     `_mxml_global()` 调用 + 空指针检查 ⇒ 距离 > 8 条 ⇒ 假阳。
+   - 根修：新增判据 D（序言里 `str r1/r2/r3` 存到三个连续栈槽 = va_start 的三连 str 形态）。
+5. **scan_symbol_delta isra 配对 bug（stbtt CFF 函数假阳）**：
+   - `public_api()` 先过滤 `.isra`/`.part` 再取 base ⇒ 工厂 `stbtt__cff_index_get.isra.2`
+     被整行丢弃，重建侧同名 base 被报成「我们多出」。
+   - 根修：先 `split('.')[0]` 取 base，再做 isra 过滤（此时已无后缀可匹配）。
+   - 修复后 4 个 stbtt CFF 函数中 3 个配对成功（`cff_index_get`/`handle_clipped_edge`/
+     `rasterize_sorted_edges`），只剩 `stbtt__GetGlyphInfoT2` 工厂确实没有（进台账）。
+6. **lint_ci_reach 宿主路径假阳**：
+   - `abi_check.py`/`enforce_interp.py` 的宿主痕迹黑名单里含 `b'C:/Users'` 等字面量，
+     被 `lint_ci_reach` 的 `RE_HOSTPATH` 正则误判成「工具依赖宿主绝对路径」。
+   - 根修：用相邻字节串拼接（`b'C:' b'/Users'`）书写，字节值完全不变，正则不命中。
+7. **upstream_api_pending 台账更新**：
+   - 删 `mxml_fd_read`（isra 配对 bug 修复后不再被报为「我们多出」）。
+   - 加 `stbtt__GetGlyphInfoT2`（工厂确无此符号，需 CNB 云开发复测后定性）。
+
+### 二、新发现与决策
+
+1. **链接阻塞解除后的「门禁总账」设计**：`1to1-verify` 用单 job 顺序执行 30+ 步，
+   Actions 语义是「第一步失败 ⇒ 后面全部 skipped」。但本 job 用了「门禁总账」步骤
+   （末尾 `toJSON(steps)` 一次列全所有 failure），所以一轮 CI 能看到**所有失败步骤**。
+2. **diff_exec ruler 不一致（fail-closed exit 3）**：台账 ruler `2d4474aa`（R204 产物口径）
+   ≠ 当前 ruler `d3c1a9d2`。这是 fail-closed 设计（尺子换了必须显式 rebaseline），
+   不是 bug。但本机产物 `e5ea3579` 是陈旧的，不能本机 rebaseline。
+   ⇒ 正路：推送修复后等 CI 产出新产物，再在 CNB 云开发对正式产物 `--rebaseline`。
+3. **inline_move_audit 缺 `_rows.json` 级联（exit 11）**：diff_exec ruler 不一致 exit 3 ⇒
+   没产出 `_rows.json` ⇒ `inline_move_audit.py` 也 fail-closed。这是**预期级联**，
+   diff_exec rebaseline 后自动解除。
+4. **stbtt__GetGlyphInfoT2 根因待定**：工厂 ELF 确无此符号（无 isra/part 变体），
+   重建侧有。推测：工厂 GCC 6.2 把它内联进 GetGlyphInfoT 的调用方；或工厂 stb 版本更旧。
+   需在 CNB 云开发用正式产物复测后定性。
+
+### 三、下一步待办
+
+1. **P0**：监控 `dd77dbb4` 的 3 条 workflow 结果。
+   - 预期：`1to1-qemu-behav` 三桩构建 PASS（drm_stub 注释修复）→ diff_exec ruler 不一致
+     fail-closed（预期，需 rebaseline）。
+   - 预期：`1to1-verify` recon_build PASS → scan_call_counts PASS → scan_varargs PASS →
+     scan_symbol_delta PASS → lint_ci_reach PASS → diff_exec fail-closed（级联）。
+   - 从 8 处失败收敛到 2 处（全是 ruler rebaseline 的级联）。
+2. **P0**：CI 产物就绪后，CNB 云开发对正式产物执行：
+   ```
+   python tools/diff_exec.py --batch --steps 3000 --ledger tools/diff_exec_pending.txt \
+     --rebaseline --reason "R209: scan_varargs/scan_symbol_delta 判据修复后口径变更"
+   ```
+   产出与当前 sha 绑定的权威 L2 基线，解除 inline_move_audit 级联。
+3. **P1**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST`/`SRAM_SELFTEST` 块）。
+4. **P1**：`sync_mirror.py --remote cnb` 同步本轮 md/修复（代码托管通道）。
+5. **P2**：L4 合入设计 + evdev inotify 增强。
