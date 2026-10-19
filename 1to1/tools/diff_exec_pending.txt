@@ -1,30 +1,100 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ruler=2d4474aa9767ec26ec66e460eea79d6b2cf06a983c253bff2cc123c7033bf90e
-# ours=1f09f15b540904724100f8c6407ff59ce04d2ef5557bbab63b98b2a8df297a47
+# ruler=d3c1a9d2751fd5b1df50d02162ec8fcc9f108e388c95364dbeb4683d6f4a40a9
+# ours=7a3687130e4a255e99456cf91adb1fe25f9bc2cbc62588ce9f3b34e3916eeca5
+# rebaseline: R209: scan_varargs/scan_symbol_delta 判据修复后口径变更
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
+Core_Load
 DisplayPage_list
-FilePreEmu
+DrawFrame
+FBA_Load
+GBC_Load
+GetConfig
+GetInputInfo
+GetJoystickConfig
+GetTick
+GetTicks
+Gpsp_Load
+InitJoystick
+InitKeyMapping0fEmuType
+IsShoucang
+JoystickTest
+LoadDefaultState
+LoadMenuLog
+Load_Proc1
+Load_Proc2
 MP3InitDecoder
-SeletEmuCore
+NES_Load
+PCSX_Load
+PauseMenu
+Pico_Load
+RARCH_LOG
+RARCH_LOG_V
+ReadJoystick
+ReadJoystickProc
+ReadJoystickThread
+SaveDefaultState
+SaveKeyMappingConfigFile
+SaveMenuLog
+Snes_Load
+TGB_Load
 TestLibz0
 TestRun
 TestUSBJoy
+UpdateROM
+VRT_Load
 WaitNMI
+XintiaoThread
+_Z12inflateInit2P10z_stream_s
 _Z17FormatZipMessageUjPcj
-get_item_from_line
-get_value_from_items
+autorun
+dir_serial_list
+dispmeninfo
+filelist_run_game
+get_items_from_file
+get_items_from_zipfile
+getticks
+gpsp_unzip
 locale_charset
+main
+main_Menu
 mui_DisplayInputBuffer
-mui_DisplayLine_t
+mui_DisplayThumbnail
+mui_InitFont
+mui_LoadConfig
+mui_LoadSetting
+mui_LoadUIResource
+mui_ReadJoystick
+mui_Undisplay
+mui_game_exit
+mui_joystick_setting
+mui_menu
+mui_recent
+mui_run_game
+mui_search
+mui_setting
+mui_shoucang
+mui_type
 mui_video_setting
-outputxy1
+mxmlIndexReset
+myStrrstr
+outputblankxy
 progress
-stbtt__get_subrs
-stbtt__tesselate_curve
-strtrim
+prosystem_Load
+retro_load_state
+retro_save_state
+run_process
+sfc_init
+shoucang
+stbtt__cff_int
+stbtt__tesselate_cubic
+stella_Load
+sunxi_gpio_init
+timer_thread
+ui_deinit
+xintiao
 xmp3_AllocateBuffers
 xmp3_FDCT32
