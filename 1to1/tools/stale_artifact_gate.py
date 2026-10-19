@@ -19,25 +19,34 @@
   `diff_exec.py` 里已有 `tools/check_obj_fresh.py`，本门禁是**补上 upstream 侧**
   （旧脚本只查 `build/obj`，正是漏掉本次元凶的原因）。
 
+★ 2026-10-18（R205）根修「假红」（与假绿同族，都必须根除）：
+  旧实现把配对写成「整个 obj 目录 × 单个源目录」，但 `build/upstream/` **混装 4 个库
+  25 个 .o**（stb_*/mxml_*/mp3_*/libiconv_*）⇒ 每个库都拿**别的库的 .o** 去比 mtime：
+  stb 源(10-04) 最新时其余 24 个 .o(10-01) 全被判"陈旧" ⇒ 门禁**永远 FAIL（假红）**。
+  改法：按 .o **文件名前缀**路由到各自源目录，每个 .o 只和它自己的库比。
+
 用法: python3 tools/stale_artifact_gate.py [--fix-hint]
 退出: 0 = 全部新鲜 / 2 = 有陈旧对象
 """
 import argparse
 import os
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# ★ 参与构建的目录 → (对象目录, 源目录)。**必须与构建脚本同源**：
-#   build/obj       ← tools/link_audit.sh:19  SRCDIR=src/proprietary
-#   build/upstream  ← tools/build_upstream.sh 各组件循环
-PAIRS = [
-    ('build/obj', 'src/proprietary'),
-    ('build/upstream', 'src/upstream/mp3'),
-    ('build/upstream', 'src/upstream/mxml'),
-    ('build/upstream', 'src/upstream/stb'),
-    ('build/upstream', 'src/upstream/libiconv17'),
-    ('build/upstream', 'src/upstream/xunzip'),
+# ★ 2026-10-18（R205）：obj 目录 → 归属解析规则。
+#   三元组 = (obj目录, 前缀→源 映射, 默认源)。前缀映射 None ⇒ 整目录走默认源（单一源）。
+#   必须与构建脚本同源：build_upstream.sh 各组件 -o 输出名 / link_audit.sh:19 SRCDIR。
+OBJ_SRC_RULES = [
+    ('build/obj', None, 'src/proprietary'),
+    ('build/upstream', [
+        ('stb_',       'src/upstream/stb'),
+        ('mxml_',      'src/upstream/mxml'),
+        ('mp3_',       'src/upstream/mp3'),
+        ('libiconv_',  'src/upstream/libiconv17'),
+    ], None),
+    ('src/upstream/xunzip', None, 'src/upstream/xunzip'),
 ]
 
 
@@ -59,54 +68,77 @@ def newest_src_mtime(src_dir):
     return newest, newest_f
 
 
+def check_group(objd, src_dir, obj_files, stale_out):
+    """对 obj 目录里一组 .o，与 src_dir 最新源 mtime 比对，报告陈旧。"""
+    src_m, src_f = newest_src_mtime(src_dir)
+    if not src_m:
+        return
+    old = []
+    for name in obj_files:
+        p = os.path.join(ROOT, objd, name)
+        try:
+            m = os.path.getmtime(p)
+        except OSError:
+            continue
+        if m < src_m:
+            old.append((name, m))
+    tag = '%-28s ← %-24s' % (objd, src_dir)
+    if old:
+        print('  ★陈旧 %s : %d/%d 个 .o 早于 %s'
+              % (tag, len(old), len(obj_files), src_f))
+        for f, m in old[:5]:
+            print('        %-44s %s' % (f, time.strftime('%m-%d %H:%M', time.localtime(m))))
+        if len(old) > 5:
+            print('        ...（另 %d 个）' % (len(old) - 5))
+        stale_out.append((objd, src_dir, len(old)))
+    else:
+        print('  ✓新鲜 %-28s ← %-24s（%d .o）' % (objd, src_dir, len(obj_files)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--fix-hint', action='store_true', help='打印修复命令')
     a = ap.parse_args()
 
-    print('== stale_artifact_gate（第 151 轮引入）==')
-    print('  判据：.o 的 mtime 必须**不早于**其源目录里最新的源文件')
+    print('== stale_artifact_gate（第 151 轮引入 / R205 修假红）==')
+    print('  判据：.o 的 mtime 必须**不早于**其归属源目录里最新的源文件')
     stale = []
-    for objd, srcd in PAIRS:
+    for objd, prefix_map, default_src in OBJ_SRC_RULES:
         obj_abs = os.path.join(ROOT, objd)
         if not os.path.isdir(obj_abs):
             print('  [缺目录] %s' % objd)
             continue
-        src_m, src_f = newest_src_mtime(srcd)
-        if not src_m:
+        obs = sorted(f for f in os.listdir(obj_abs) if f.endswith('.o'))
+        if not obs:
+            print('  [无 .o] %s' % objd)
             continue
-        old = []
-        for f in sorted(os.listdir(obj_abs)):
-            if not f.endswith('.o'):
-                continue
-            p = os.path.join(obj_abs, f)
-            try:
-                m = os.path.getmtime(p)
-            except OSError:
-                continue
-            if m < src_m:
-                old.append((f, m))
-        tag = '%-18s ← %-24s' % (objd, srcd)
-        if old:
-            print('  ★陈旧 %s : %d/%d 个 .o 早于 %s'
-                  % (tag, len(old), len([f for f in os.listdir(obj_abs)
-                                         if f.endswith('.o')]),
-                     src_f))
-            for f, m in old[:5]:
-                print('        %-44s %s' % (f, __import__('time').strftime(
-                    '%m-%d %H:%M', __import__('time').localtime(m))))
-            if len(old) > 5:
-                print('        ...（另 %d 个）' % (len(old) - 5))
-            stale.append((objd, srcd, len(old)))
+        if prefix_map is None:
+            check_group(objd, default_src, obs, stale)
         else:
-            print('  ✓新鲜 %s' % tag)
+            buckets = {}
+            unknown = []
+            for name in obs:
+                src = None
+                for prefix, s in prefix_map:
+                    if name.startswith(prefix):
+                        src = s
+                        break
+                if src is None:
+                    unknown.append(name)
+                else:
+                    buckets.setdefault(src, []).append(name)
+            for src_dir, files in sorted(buckets.items()):
+                check_group(objd, src_dir, files, stale)
+            for name in unknown:
+                print('  !! 未识别前缀：%s（不在构建脚本输出名内，请核对）' % name)
+                stale.append((objd, '?' + name, 1))
 
     print('')
     if stale:
-        print('★FAIL：%d 个对象目录含陈旧 .o ⇒ 判据会被污染' % len(stale))
+        print('★FAIL：%d 个对象组含陈旧 .o ⇒ 判据会被污染' % len(stale))
         if a.fix_hint:
             print('')
-            print('  修复（按依赖顺序）：')
+            print('  修复（按依赖顺序，云开发/CI 上执行）：')
             print('    sh tools/cnb_env.sh          # 或下面两条，等价')
             print('    CC="<zig> cc" sh tools/build_upstream.sh build/upstream')
             print('    OPT=-Os sh tools/link_audit.sh /tmp/la.txt')

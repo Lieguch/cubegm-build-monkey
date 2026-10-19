@@ -1,0 +1,53 @@
+core_name	core_file	extension
+FCEUmm	libemu_nes.so	NES
+FCEUmm	libemu_nes.so	FDS
+FCEUmm	libemu_nes.so	UNIF
+FCEUmm	libemu_nes.so	UNF
+MEStopia	libemu_nestopia.so	NES
+PCSX ReARMed	libemu_pcsx.so	BIN
+PCSX ReARMed	libemu_pcsx.so	IMG
+PCSX ReARMed	libemu_pcsx.so	MDF
+PCSX ReARMed	libemu_pcsx.so	PBP
+PCSX ReARMed	libemu_pcsx.so	ISO
+PCSX ReARMed	libemu_pcsx.so	TOC
+Snes9x	libemu_snes9x.so	SMC
+Snes9x	libemu_snes9x.so	SFC
+Snes9x	libemu_snes9x.so	SWC
+Snes9x	libemu_snes9x.so	FIG
+Snes9x 2005	libemu_sfc.so	SMC
+Snes9x 2005	libemu_sfc.so	FIG
+Snes9x 2005	libemu_sfc.so	SFC
+Snes9x 2005	libemu_sfc.so	GD3
+Snes9x 2005	libemu_sfc.so	GD7
+Snes9x 2005	libemu_sfc.so	DX2
+Snes9x 2005	libemu_sfc.so	BSX
+Snes9x 2005	libemu_sfc.so	SWC
+Snes9x 2010	libemu_snes9x2010.so	SMC
+Snes9x 2010	libemu_snes9x2010.so	FIG
+Snes9x 2010	libemu_snes9x2010.so	SFC
+Snes9x 2010	libemu_snes9x2010.so	GD3
+Snes9x 2010	libemu_snes9x2010.so	GD7
+Snes9x 2010	libemu_snes9x2010.so	DX2
+Snes9x 2010	libemu_snes9x2010.so	BSX
+Snes9x 2010	libemu_snes9x2010.so	SWC
+Stella	libemu_stella.so	A26
+Stella	libemu_stella.so	BIN
+TGB Dual	libemu_tgbdual.so	GB
+TGB Dual	libemu_tgbdual.so	GBC
+TGB Dual	libemu_tgbdual.so	SGB
+VBA-M	libemu_vbam.so	GBA
+fbalpha	libemu_fbalpha.so	ZIP
+fbalpha	libemu_fbalpha.so	7Z
+fbalpha2012	libemu_fbalpha2012.so	ZIP
+libemu_cps2.so	libemu_cps2.so	ZIP
+libemu_extend.so	libemu_extend.so	ZIP
+libemu_fba.so	libemu_fba.so	ZIP
+libemu_pgm.so	libemu_pgm.so	ZIP
+mame2000	libemu_mame2000.so	ZIP
+mgba	libemu_mgba.so	GBA
+mgba	libemu_mgba.so	GB
+mgba	libemu_mgba.so	GBC
+picodrive	libemu_md.so	BIN
+picodrive	libemu_md.so	GEN
+picodrive	libemu_md.so	SMD
+picodrive	libemu_md.so	MD

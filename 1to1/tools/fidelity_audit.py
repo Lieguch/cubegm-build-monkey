@@ -50,7 +50,7 @@ def parse(p):
         k = d.index(b'\x00', st + s[0])
         return d[st + s[0]:k].decode('utf-8', 'replace')
 
-    secs = [(name(s), s[3], s[5], s[1]) for s in S]
+    secs = [(name(s), s[3], s[5], s[1], s[4]) for s in S]  # (name, sh_addr, sh_size, sh_type, sh_offset)
     loads = [(i, x) for i, x in enumerate(P) if x[0] == 1]
     gstack = [x for x in P if x[0] == 0x6474e551]
     dyn = {}
@@ -96,19 +96,23 @@ print('            factory = %s' % os.path.relpath(FACTORY, ROOT))
 print('=' * 104)
 
 # ---------------- 刻度 A：工厂镜像引用数 ----------------
-fimg = [(n, a, z) for n, a, z, t in T['secs'] if n.startswith('.fimg') and z]
-own_text = next(((a, a + z) for n, a, z, t in T['secs'] if n == '.text'), None)
+fimg = [(n, a, z) for n, a, z, t, o in T['secs'] if n.startswith('.fimg') and z]
+own_text = next(((a, a + z) for n, a, z, t, o in T['secs'] if n == '.text'), None)
+# ★ 2026-10-18（R203 修复）：.text 的 sh_addr（虚地址 0x4e1000）≠ 文件偏移 sh_offset。
+#   文件扫描必须用 sh_offset，否则把虚地址当文件偏移读 ⇒ unpack_from 越界崩溃
+#   （原 bug traceback：offset 5400052 超出 5400052 字节文件）。
+text_file_off = next((o for n, a, z, t, o in T['secs'] if n == '.text'), None)
 print()
 print('## 刻度 A —— 工厂镜像引用数（目标 0）')
 if not fimg:
     print('   .fimg_* 不存在 ⇒ 刻度 A 已达成（产物不含工厂镜像）')
     refs_total = 0
-elif own_text:
+elif own_text and text_file_off is not None:
     lo = min(a for _, a, _ in fimg)
     hi = max(a + z for _, a, z in fimg)
     refs = {}
     a0, a1 = own_text
-    for off in range(a0, a1 - 3, 4):
+    for off in range(text_file_off, text_file_off + (a1 - a0) - 3, 4):
         w = struct.unpack_from('<I', T['d'], off)[0]
         if lo <= w < hi:
             for n2, a2, z2 in fimg:
@@ -117,11 +121,14 @@ elif own_text:
                     break
     refs_total = sum(refs.values())
     tot_fimg = sum(z for _, _, z in fimg)
-    tot_own = sum(z for n, a, z, t in T['secs']
+    tot_own = sum(z for n, a, z, t, o in T['secs']
                   if n in ('.text', '.rodata', '.data', '.bss', '.plt', '.ARM.exidx'))
     print('   .fimg_* 合计 %d B（%.2f MB）' % (tot_fimg, tot_fimg / 1048576.0))
     print('   自有核心节合计 %d B（%.2f MB）' % (tot_own, tot_own / 1048576.0))
     print('   ⇒ ★ **引用数 = %d**  （收敛目标：0）' % refs_total)
+    print('   ⚠ 上值=逐字 4 字节扫描的**原始命中**。Thumb-2 代码的 ldm.w/stm.w/adds 等')
+    print('     16 位半字会拼出落入 .fimg 区间的 uint32 ⇒ **假阳性**。定真值请跑')
+    print('     `tools/_r203_refctx.py` 二次反汇编（R203 实测 4 处全假阳性 ⇒ 真实引用 0）。')
     for k, c in sorted(refs.items(), key=lambda kv: -kv[1]):
         print('        %-26s × %d' % (k, c))
     print('   ⇒ 工厂机器码以 OBJECT 形态存在：FUNC 符号 %d 个，OBJECT 符号 %d 个' %

@@ -302,3 +302,46 @@ qemu 的价值在于**启动链连通性 + 软件层行为对齐**；上述硬�
 **结论**：本机画面路径 = **标准 DRM/KMS**（AddFB2 + SetPlane + PageFlip，见 10.3 的
 DRM_IOCTL 计数判据），不是 hcge 硬件命令队列。R161「画面不走 DRM」的猜测已作废，
 本小节保留记录以防旧结论回潮。
+
+---
+
+## 十一、evdev 即插即用手柄 + SRAM 电池存档观测点（L4 目的 2 专用）
+
+> 本节对应 `report/L4-evdev-sram-design.md`（第 207 轮）。**注意**：这两项是目的 2 的
+> 「有意偏离」，合入交付版主体前，本节的观测点**先编进诊断版 `rkgame.diag`** 供真机预热。
+
+### 11.1 evdev 观测点（热插拔手柄）
+
+现有 wrap 已覆盖 `open` / `ioctl` / `read` / `close`，无需新符号，只约定 trace.log 判据：
+
+| 观测 | trace.log 留痕 | 判读 |
+|---|---|---|
+| 枚举节点 | `IO open "/dev/input/eventN"`（可能多次 open+close，扫能力） | 每次 `EVIOCGBIT` 判定前必有对应 open |
+| 能力查询 | `IO ioctl fd=N req=0x80184520…` —— **req 高字节 = `'E'`(0x45)**（EVIOC 族 type），`0x20+ev`（EV_KEY=0x21/EV_ABS=0x23） | 手柄判定（BTN_SOUTH+ABS）是否发生 |
+| 名字匹配 | `IO ioctl … req=0x80484506`（EVIOCGNAME） | 是否真按名匹配、还是裸按 N 硬编 |
+| 读事件 | `IO read fd=N …` 长度 **16**（evdev），对比 joydev 的 8 | **16 = evdev 生效；8 = 仍走旧 joydev** |
+| 热插拔 | 拔出后 `access(eventN)` 失败 → close；插入后重新 open | 无 inotify 时靠轮询重扫，周期=读线程 15ms |
+
+★ 判据口诀：**`req 高字节=0x45` + `read len=16` 同时出现 ⇒ evdev 热插拔链路已接通**；
+只有 `read len=8` ⇒ 还在 joydev，evdev 未合入。
+
+### 11.2 SRAM 观测点（电池存档）
+
+| 观测 | 留痕 | 判读 |
+|---|---|---|
+| memory 接口解析 | `DL dlsym "retro_get_memory_data" -> 0x…` / `retro_get_memory_size` | dlsym 非 NULL ⇒ core 已提供 SRAM（第 207 轮实测 20/20 枚 core 都导出） |
+| `.srm` 落盘 | `IO fopen "…/saves/000/xxx.srm" mode=wb` + `IO fwrite` | 存档动作是否触发 |
+| `.srm` 回读 | `IO fopen "…/xxx.srm" mode=rb` + `IO fread` | 载档动作是否触发、读进 SRAM 视图 |
+| 无电池存档 | 仅 dlsym 成功 + 无 fopen/fwrite（size=0 跳过） | **不误报**：dlsym 成功但无落盘 = 该 ROM 无 SRAM，属正常 |
+
+★ 建议：`sram_save`/`sram_load` 内主动 `RARCH_LOG("SRAM save %s size=%u", path, n)`，
+裸数据半径（SRAM 大小）据此可见 —— 这是"新增代码"，可安全加观测（不碰原厂逻辑）。
+
+### 11.3 已知限制
+
+1. evdev 端**依赖**设备内核是否带 evdev/joydev 两个驱动（kernel 4.4 通常都有）；万一某手柄
+   只出现在 `/dev/input/jsN`（joydev）而 eventN 缺失，evdev 路径会退回"扫不到" ——
+   trace.log 里 `open eventN` 全失败可定位。
+2. `EVIOCGBIT` 的手柄判定（BTN_SOUTH+ABS）是跨手柄通用测试（libmanette/SDL 同款），
+   但罗技/8bitdo 等的**轴范围标识**各不相同，最终映射仍须走 `joystick.zip` 的 VID:PID 校准
+   （`GetJoystickConfig.c`），evdev 只替换"发现/读事件"这一层。

@@ -36,6 +36,20 @@ mkdir -p "$OUT"
 . "$(cd "$(dirname "$0")" && pwd)/cgm_cc_probe.sh" \
     || { echo "!! 编译器探测失败（见 cgm_cc_probe.sh 的说明）" >&2; exit 13; }
 
+# ★★ R187 根修：zig 必须显式给 `-target`，否则按宿主编译产出 Windows COFF
+#   （报错 `lld-link: undefined symbol: _DllMainCRTStartup`，症状与病因无关，极易误读）。
+#   build_libdrm_stub.sh 早有同一块，本文件此前漏写（"同一规则两处写"漂移），
+#   ⇒ 云开发工作区只装 ziglang 时 libkms 桩编译必炸，而场景 C 的 driver.so 加载
+#   **硬依赖 libkms.so.1**（DT_NEEDED）⇒ 这是 B6 云开发裁决的前置路径根修。
+TARGET="arm-linux-gnueabihf.2.29"
+case "$CC" in
+  *zig*)
+     case "$CC" in
+       *-target*) ;;                                    # 调用方已指定，尊重
+       *) CC="$CC -target $TARGET" ;;
+     esac ;;
+esac
+
 SRC="$OUT/_libkms_stub.c"
 printf '/* 空 TU：只求产出合法 ARM 共享对象（无符号、无代码） */\n' > "$SRC"
 

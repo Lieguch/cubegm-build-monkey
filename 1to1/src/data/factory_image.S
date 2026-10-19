@@ -2300,13 +2300,22 @@ __f_bss_pad_base:
 	.set types.7806, __f_data_rel_ro_local_base + 0x8fc
 	.size types.7806, 0x18
 
-/* .data：173 个符号 */
+/* .data：176 个符号 */
 	.globl __dso_handle
 	.set __dso_handle, __f_data_base + 0x4
 	.size __dso_handle, 0x0
 	.globl DAT_003af008
 	.set DAT_003af008, __f_data_base + 0x8
 	.size DAT_003af008, 0x0
+	.globl DAT_003af00c
+	.set DAT_003af00c, __f_data_base + 0xc
+	.size DAT_003af00c, 0x0
+	.globl DAT_003af010
+	.set DAT_003af010, __f_data_base + 0x10
+	.size DAT_003af010, 0x0
+	.globl DAT_003af014
+	.set DAT_003af014, __f_data_base + 0x14
+	.size DAT_003af014, 0x0
 	.globl running
 	.set running, __f_data_base + 0x18
 	.size running, 0x4
@@ -2753,7 +2762,7 @@ __f_bss_pad_base:
 	.size turbo_delay, 0x4
 	.globl DAT_003b012c
 	.set DAT_003b012c, __f_data_base + 0x112c
-	.size DAT_003b012c, 0x0
+	.size DAT_003b012c, 0x28
 	.globl DAT_003b0130
 	.set DAT_003b0130, __f_data_base + 0x1130
 	.size DAT_003b0130, 0x0

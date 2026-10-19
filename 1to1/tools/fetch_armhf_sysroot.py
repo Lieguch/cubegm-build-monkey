@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""fetch_armhf_sysroot.py — 从 ports.ubuntu.com 直接取 armhf 运行库并解包成 sysroot。
+"""fetch_armhf_sysroot.py — 从 Ubuntu ports 镜像直接取 armhf 运行库并解包成 sysroot。
 
 ★ 为什么不走 apt
 ----------------
@@ -25,7 +25,9 @@ import sys
 import time
 import urllib.request
 
-BASE = 'http://ports.ubuntu.com/ubuntu-ports'
+# ★ 2026-10-19（R206）：CNB 云开发到 ports.ubuntu.com 太慢，启动链验证超时（28min）。
+#   换国内镜像（约束 8：下载慢换镜像源）。默认清华，可 CGM_UBUNTU_PORTS 覆盖。
+BASE = os.environ.get('CGM_UBUNTU_PORTS', 'http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports')
 SUITE = 'jammy'
 COMPONENTS = ('main', 'universe')
 

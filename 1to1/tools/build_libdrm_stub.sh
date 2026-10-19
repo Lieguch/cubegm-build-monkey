@@ -63,10 +63,29 @@ winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else pr
 # -fno-unwind-tables / -fno-asynchronous-unwind-tables：不加会因 .ARM.exidx 引用
 #            `__aeabi_unwind_cpp_pr0/pr1`，而 `-nostdlib` 不提供它们 ⇒ 留下 2 个未定义符号。
 #            加上后产物**完全自洽（0 未定义符号）**，不依赖任何库。
+# ★★ 优化级是「按编译器分支」的接口契约（2026-10-17 云端 GCC 14.2.0 实证，**纠正 R187 的
+#   「-Oz 恒成立、不可改回 -O1」两条结论**）：
+#     ① 诊断串根本不是优化级问题：云工作区里 `strings` 命令**不存在**（`strings not found`），
+#        R187 用 `strings|grep|wc -l` 判「dumb# 被 -O1 折叠消除」是**假阴性**（报错被吞、
+#        stdout 恒空 ⇒ 恒为 0）。改用 `grep -a -F` 直搜二进制：GCC 的 O1/Os/O2/O3 **全部**在
+#        .rodata 留存 dumb#/frame#/SUMMARY/MAP_DUMB/AddFB2_h。
+#     ② GCC **不认 -Oz**（无此优化级，静默当作 -Os）。而 -Os 在 `-nostdlib` 下会把多处
+#        `v%10 + v/=10` 十进制转换合并成 `__aeabi_uidivmod`/`__aeabi_idivmod` libcall
+#        ⇒ **2 个未定义符号**（zig/clang 的 -Oz 内联成乘法逆元 ⇒ 0 未定义，所以 R187 在本机
+#        zig 下测得"0 未定义"是对的，但那结论不能推到 GCC 链）。设备侧这俩符号只在
+#        `libgcc_s.so.1`（@@GCC_3.5），而 -nostdlib 桩不含它 ⇒ 桩加载即缺符号。
+#     ③ 实测三档在 GCC 链下的未定义数：-O1=0、-O2=0、-Os(=GCC 的 -Oz)=2。
+#        ⇒ **分支选择**：zig/clang 用 `-Oz`（8.5 KB、0 未定义、串存活）；
+#           GCC 用 `-O2`（69.5 KB、0 未定义、17 导出、dumb# 存活，均已实证）。
+case "$CC" in
+  *zig*) OPT="-Oz" ;;
+  *)     OPT="-O2" ;;   # GCC/其他：无 -Oz；-O2 内联常数除法 ⇒ 0 未定义
+esac
+echo "  [libdrm 桩] OPT=$OPT"
 # -Wl,-soname：必须与 driver.so 的 DT_NEEDED 完全一致（libdrm.so.2）；
 #            SONAME 缺失会让 DT_NEEDED 的解析在某些 loader 上退化成"按文件名匹配"。
 # shellcheck disable=SC2086
-$CC -shared -fPIC -nostdlib -O1 -w \
+$CC -shared -fPIC -nostdlib $OPT -w \
     -fno-unwind-tables -fno-asynchronous-unwind-tables \
     -Wl,-soname,libdrm.so.2 \
     "$(winpath "$SRC")" -o "$(winpath "$OUT/libdrm.so.2")"
@@ -101,4 +120,19 @@ if [ -n "$NM" ]; then
         exit 1
     fi
     echo "  自证：$(printf '%s' "$NEED" | wc -w) 个 drm* 全部导出 ✓"
+
+    # ★★ R187/R188 根修落成**产物级 fail-closed 门禁**：未定义符号数必须为 0。
+    #   事故（2026-10-17 云 GCC）：「-O1/-Oz 差异」被连栽两轮——先是 R187 用本机 zig 断言
+    #   `-Oz ⇒ 0 未定义`，随后上云 GCC 发现 -Os(=它的 -Oz) 反而引入 __aeabi_uidivmod/idivmod
+    #   2 个未定义（GCC 把 v%10+v/10 合并成 libcall，zig 内联成乘法逆元）。
+    #   这条不变量此前**只写在注释里**，产物一旦悄悄多了未定义符号没有任何拦截 ⇒ 这就是
+    #   「注释里的不变量必须配产物级验证」的兑现：解析 .dynsym 里 st_shndx==0 的条目数，
+    #   非 0 立即响亮失败，不许带着缺符号的桩上云/真机（加载即崩，且症状与病因无关）。
+    undef="$($NM -D "$OUT/libdrm.so.2" 2>/dev/null | grep -c ' U ' || true)"
+    case "$undef" in ''|*[!0-9]*) undef=0 ;; esac
+    if [ "$undef" != "0" ]; then
+        echo "  ★ 未定义符号 $undef 个（-nostdlib 桩必须 0，否则加载即崩）：$($NM -D "$OUT/libdrm.so.2" 2>/dev/null | grep ' U ' | head -8)" >&2
+        exit 1
+    fi
+    echo "  自证：0 未定义符号 ✓（完全自洽，不依赖 libgcc_s/libc）"
 fi
