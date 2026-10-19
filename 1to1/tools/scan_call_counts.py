@@ -47,11 +47,30 @@ KEYWORDS = {
     'not', 'static', 'const', 'unsigned', 'signed', 'void', 'int', 'char', 'long',
     'short', 'float', 'double', 'struct', 'union', 'enum', 'extern', 'register',
     'volatile', 'inline', 'restrict',
+    # ★★ 2026-10-19（R211）：Ghidra / 我们自带的**类型名**必须一并列入。
+    #   为什么（随 R211 的 CALL_RE 改动一并出现，是同一处根因的另一半）：
+    #     新正则认得 `(名字)(` 之后，工厂侧大量 **强制类型转换** `(byte)(x)` /
+    #     `(uint)(x)` / `(undefined4)(x)` 会被当成"调用 byte/uint/undefined4"，
+    #     而我们侧写 `(gh_byte)` ⇒ 计数 0 ⇒ 凭空造出 27 项假"漏调用"。
+    #   类型名不是函数，列入黑名单才是正解（与 DEF_RE 的类型词表同源口径）。
+    'byte', 'ubyte', 'sbyte', 'uint', 'ulong', 'ushort', 'uchar', 'bool', 'code',
+    'undefined1', 'undefined2', 'undefined4', 'undefined8',
+    'gh_byte', 'gh_uint', 'gh_int', 'gh_ulong', 'gh_ushort', 'gh_uchar',
+    'size_t', 'ssize_t',
+    'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+    'int8_t', 'int16_t', 'int32_t', 'int64_t',
 }
 
 # ★★ 必须捕获**前导下划线**：mangled 名以 `_` 开头，而 `_?` 会把 `_` 吃掉、只捕获到 `Znwj`
 #   ⇒ canon() 判定不出 `_Z` 前缀 ⇒ 归一化整体失效（实测踩坑，8 项误报仍在）。
-CALL_RE = re.compile(r'(?<![A-Za-z0-9_>.])([A-Za-z_]\w*)\s*\(')
+#
+# ★★★ 2026-10-19（R211）：必须同时认得 **`(名字)(实参)` 这种"被括号包住的被调者"**。
+#   为什么（这是真缺陷，不是格式洁癖）：`<ctype.h>` 把 `islower`/`isalpha` 定义成宏，
+#   我们要产出"调 libc 函数本体"就只能写 `(islower)(x)`（括号抑制宏展开）。
+#   旧正则不认 ⇒ 我们侧计数 0、工厂侧 1 ⇒ 被误报成"漏调用"。
+#   R209 的**错误修法**是改源码（去掉括号）⇒ 宏展开成 `__ctype_b_loc` ⇒ 真实行为回退，
+#   被 diff_exec 棘轮当场抓到（`strupr` 新增发散）。正解就是改这里的正则。
+CALL_RE = re.compile(r'(?<![A-Za-z0-9_>.])([A-Za-z_]\w*)\s*\)?\s*\(')
 
 # 形如 `gh_u4 f(...)` / `void f(...)` / `undefined4 f(...)` 的行 = 定义或声明
 DEF_RE = re.compile(
