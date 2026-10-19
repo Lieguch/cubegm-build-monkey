@@ -27,7 +27,15 @@ import urllib.request
 
 # ★ 2026-10-19（R206）：CNB 云开发到 ports.ubuntu.com 太慢，启动链验证超时（28min）。
 #   换国内镜像（约束 8：下载慢换镜像源）。默认清华，可 CGM_UBUNTU_PORTS 覆盖。
-BASE = os.environ.get('CGM_UBUNTU_PORTS', 'http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports')
+# ★★ 2026-10-19（R209）：清华镜像对 GitHub Actions 的 Azure IP 段间歇性 403 Forbidden。
+#   加备选镜像列表：清华 403 时自动回退到 ports.ubuntu.com 官方源（更慢但可达）。
+_PRIMARY = os.environ.get('CGM_UBUNTU_PORTS', 'http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports')
+_FALLBACKS = [
+    'http://ports.ubuntu.com/ubuntu-ports',           # 官方源（慢但可达）
+    'http://archive.ubuntu.com/ubuntu-ports',         # 官方 archive
+]
+BASE_CANDIDATES = [_PRIMARY] + [f for f in _FALLBACKS if f != _PRIMARY]
+BASE = BASE_CANDIDATES[0]
 SUITE = 'jammy'
 COMPONENTS = ('main', 'universe')
 
@@ -54,15 +62,32 @@ def fetch(url, timeout=120, retries=3):
 
 
 def index_packages(suite=SUITE):
-    """→ {pkg_name: (filename, version)} ；后出现的覆盖先出现的（universe 里的更新）。"""
+    """→ {pkg_name: (filename, version)} ；后出现的覆盖先出现的（universe 里的更新）。
+
+    ★★ 2026-10-19（R209）：加备选镜像回退。清华镜像对 GitHub Actions 的 Azure IP 段
+       间歇性 403 Forbidden ⇒ 索引取不到 ⇒ exit 2。修法：逐个候选镜像尝试，
+       第一个成功取到索引的镜像用于后续所有 .deb 下载。
+    """
+    global BASE
     out = {}
     for comp in COMPONENTS:
-        url = '%s/dists/%s/%s/binary-armhf/Packages.gz' % (BASE, suite, comp)
-        try:
-            raw = fetch(url)
-        except Exception as e:
-            print('   [warn] 索引取不到 %s: %s' % (url, e))
+        raw = None
+        used_base = None
+        for cand in BASE_CANDIDATES:
+            url = '%s/dists/%s/%s/binary-armhf/Packages.gz' % (cand, suite, comp)
+            try:
+                raw = fetch(url)
+                used_base = cand
+                break
+            except Exception as e:
+                print('   [warn] %s: %s' % (cand, e))
+                continue
+        if raw is None:
+            print('   [FAIL] 所有候选镜像都无法取到 %s 索引' % comp)
             continue
+        if used_base != BASE:
+            print('   [fallback] 主镜像 %s 不可用，已切到 %s' % (BASE, used_base))
+            BASE = used_base  # 后续 .deb 下载也用这个镜像
         txt = gzip.decompress(raw).decode('utf-8', 'replace')
         n = 0
         for stanza in txt.split('\n\n'):
