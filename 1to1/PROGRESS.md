@@ -8945,3 +8945,53 @@ cores/refctx/stbtt/loadstate）。
    不改源码。
 4. **P1**：修复 `sync_mirror.py --remote cnb` 的 401。
 5. **P2**：L4 两草稿云端 zig 语法验证（`EVDEV_SELFTEST` / `SRAM_SELFTEST` 块）。
+
+---
+
+## R212（2026-10-19）—— ★★ `1to1-verify` 首次转绿；REAL 第一项 `DrawFrame` 出手
+
+### 一、完成事项
+
+1. **`eb7320e0` 的 CI 实测结果（四条 workflow 全数回收）**：
+   | workflow | 结果 | 说明 |
+   |---|---|---|
+   | `1to1-verify` | **success** | ★ 首次转绿。s33 / s36 / s45 全部 PASS |
+   | `rkgame-rebuild` | success | B 线 |
+   | `toolchain-ab` | success | zig vs Buildroot-GCC 行为尺 A/B |
+   | `1to1-qemu-behav` | failure | **只红在 `B6 全零基线`**（观测点天花板·诚实红，R171b 单变量已钉死） |
+   ⇒ 这证明 R211 的两个判断都成立：① 台账 21 项是门禁口径的正确集合；
+     ② 两处仪器修复（`(名字)(` 正则 + 消除第二份 RE_CALL）都是对的。
+   ⇒ 至此 **L2 静态门禁（1to1-verify）从 R209 的 8 处失败收敛到全绿**。
+2. **`DrawFrame`（REAL 第一项）出手**：删掉 Ghidra 渲染出的顶部死载入
+   `puVar1 = rotation_buff;`，改在真正使用它的 4 个位置直接取 `rotation_buff`
+   （语义逐位不变）。依据 = CI 实测
+   `data-reads 仅F=[] 仅O=['0x003cfa94:4:R ×1']`（0x003cfa94 = `rotation_buff`）：
+   沙箱跑的是 `soft_rotation==0` 快速路径，这条路上该值是死的 ⇒ 工厂 GCC 不产生这次载入。
+3. 本地复验（推前）：`src_transcript_parity` PASS（无丢调用）、
+   `scan_call_counts` PASS（0 漏调用）、源码内已无 `puVar1` 残留引用。
+
+### 二、新发现与决策
+
+1. **`1to1-qemu-behav` 的剩余红是"诚实红"**：`硬门禁 rc=2：B6 全零基线`。
+   两侧 `frame_hash` 都是 `b5449dc5`（= 沙箱未观测到任何像素），不是我们侧回退。
+   R171b 已用单变量实验钉死为**观测点天花板**（qemu-user 下拿不到 framebuffer 内容）。
+   ⇒ 不掩盖、不 `|| true`；要变绿只能补观测点（L4 的一部分）。
+2. **为什么 `DrawFrame` 第一个打**：它是 REAL 3 项里唯一"语义零风险"的
+   —— 我们只是**少发一次对全局的死载入**，而工厂二进制本来就没有它。
+   另两项（`_Z17FormatZipMessageUjPcj` 的 `strlen` / `locale_charset` 的 `nl_langinfo`）
+   分别是 clang 未折叠字面量长度、沙箱 libc 模型返回指针落点不同，**都不该动源码**。
+3. `_Z17FormatZipMessageUjPcj` 的 `strlen` 已定位到**源码行**：上游
+   `src/upstream/xunzip/unzip.cpp:4082` 写 `unsigned int mlen=(unsigned int)_tcslen(msg);`，
+   而工厂二进制里每个分支的长度是**编译期常数**（Ghidra 渲染成 `sVar1 = 0x2f` 这种）。
+   ⇒ 若要收敛，应把 `mlen` 与 `msg` 一起在每个 `case` 里写成常数（与工厂同形），
+   而不是改语义。**未做**（属上游源码改动，留作下一步单独一轮验证）。
+
+### 三、下一步待办
+
+1. **P0**：监控 `DrawFrame` 这一推的 CI —— 判据看 `1to1-verify` 报告里的
+   「✓ 本轮收敛」是否含 `DrawFrame`，以及 `1to1-verify` 是否保持全绿。
+2. **P0**：若 `DrawFrame` 收敛 ⇒ 台账再重建一次（20 项）；未收敛 ⇒ 回到
+   `_rows.json` 看这个地址上的读到底从哪条指令来（不猜）。
+3. **P1**：`_Z17FormatZipMessageUjPcj` 的 `mlen` 常数化（单独一轮，单独验证）。
+4. **P1**：`locale_charset` 走补 `libc_model.nl_langinfo`（不改源码）。
+5. **P2**：修复 CNB sync 401；L4 两草稿云端 zig 语法验证。

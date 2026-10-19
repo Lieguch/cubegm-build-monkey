@@ -11,7 +11,16 @@
 void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
 
 {
-  gh_u2 *puVar1;
+  /* ★★ 2026-10-19（R211）：**删掉** Ghidra 渲染出来的顶部 `puVar1 = rotation_buff;`，
+   *   改为在真正用到它的三个分支里直接取（下面 `puVar2 = rotation_buff;`）。
+   *   为什么（CI 实测证据，不是风格偏好）：
+   *     diff_exec 报 `DrawFrame [strs/core/misc] data-reads 仅F=[] 仅O=['0x003cfa94:4:R ×1']`
+   *     —— `0x003cfa94` = `rotation_buff`（ledger/factory_globals.tsv:830）。
+   *     沙箱跑的是 `soft_rotation == 0` 这条快速路径（.bss 全零 ⇒ 直接 goto LAB_002b5440），
+   *     这条路上 `puVar1` 是**死值** ⇒ 工厂 GCC 不产生这次载入，而我们 clang 产生了
+   *     ⇒ 我们比工厂**多一次 4B 读**。
+   *   ⇒ 把死载入从"函数顶部"挪到"真正使用的分支里"，语义逐位不变（工厂就是这样）。
+   *   ★ 推断尚未实测：本次改动的收敛结果以 CI 报告为准（见 PROGRESS R211 待办 2）。 */
   gh_u2 *puVar2;
   gh_u2 *puVar3;
   gh_u2 *puVar4;
@@ -21,7 +30,6 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
   int iVar8;
   gh_u2 *puVar9;
   
-  puVar1 = rotation_buff;
   if (param_1 == (gh_u2 *)0x0) {
     return;
   }
@@ -57,7 +65,7 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
         }
         puVar7 = puVar7 + -1;
         iVar5 = param_2;
-        puVar2 = puVar1;
+        puVar2 = rotation_buff;      /* ★ R211：原 `puVar1`（= rotation_buff）见顶部注释 */
       } while (puVar7 != param_1 + -1);
       goto LAB_002b5440;
     }
@@ -79,7 +87,7 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
           } while (puVar7 != puVar4);
         }
         param_4 = param_2 << 1;
-        puVar2 = puVar1;
+        puVar2 = rotation_buff;      /* ★ R211：原 `puVar1`（= rotation_buff）见顶部注释 */
       }
       goto LAB_002b5440;
     }
@@ -102,14 +110,14 @@ void DrawFrame(gh_u2 *param_1,int param_2,int param_3,int param_4)
         }
         puVar7 = puVar7 + 1;
         iVar5 = param_2;
-        puVar2 = puVar1;
+        puVar2 = rotation_buff;      /* ★ R211：原 `puVar1`（= rotation_buff）见顶部注释 */
       } while (param_1 + param_2 + iVar8 != puVar7);
       goto LAB_002b5440;
     }
   }
   param_4 = param_3 << 1;
   iVar5 = param_2;
-  puVar2 = puVar1;
+  puVar2 = rotation_buff;      /* ★ R211：原 `puVar1`（= rotation_buff）见顶部注释 */
 LAB_002b5440:
   if (displayfps != 0) {
     UIDebug((void *)puVar2,iVar6,iVar5,param_4);
