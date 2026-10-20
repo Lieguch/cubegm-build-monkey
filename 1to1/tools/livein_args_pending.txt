@@ -27,17 +27,10 @@ filelist_run_game SoundPlay LOW
 mui_SoundplayThread SoundPlay LOW
 mui_run_game SoundPlay LOW
 main UpdateROM LOW
-mui_load_state blockadaptive LOW
-mui_save_state blockadaptive LOW
-mui_joystick_setting blockcopy LOW
-mui_load_state blockcopy LOW
-mui_save_state blockcopy LOW
-mui_video_setting blockcopy LOW
 main get_executable_path LOW
 run_game get_items_from_file LOW
 mui_menu mui_WaitNMI LOW
 mui_type mui_WaitNMI LOW
-mui_DisplayThumbnail mui_blockcopy LOW
 filelist_run_game mui_extract_basename LOW
 mui_do_file_list mui_extract_basepath LOW
 mui_search mui_run_game LOW

@@ -9384,3 +9384,85 @@ cores/refctx/stbtt/loadstate）。
    这是**真正的构建链改动**，届时一并带上台账 rebaseline。
 3. **P1**：`1to1-qemu-behav` 的 B6 全零基线（观测点天花板）—— 补 framebuffer 观测点（L4 一部分）。
 4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释；L4 两草稿云端 zig 语法验证。
+
+> 追加前 `old_intact=True`（旧文 726492 B / sha 838745bd47ae40d7…）；由 `tools/append_progress.py` 原子追加。
+## R219（2026-10-20）—— ★ 工厂同期真 GCC（Thumb）进 CI（口径分裂根修）+ 两处**判据仪器**缺陷根修 + 台账按**门禁自身测量**重建
+
+### 一、完成事项
+
+1. **CI 口径分裂根修（R218 待办 2 落地）**：此前 `1to1-verify` 一直用默认 `ICONV_CC=$CC=zig`，
+   而 zig 对 `arm-linux-gnueabihf` **静默忽略 `-mthumb`**（R107 实测）⇒ CI 产出的 libiconv 是 ARM，
+   而 `ledger/isa_mode_baseline.txt` 的 `max_mismatch=0` 是 R115 在云开发用 bootlin63 真 GCC 验证的
+   ⇒ **"正式产物"与"已证明对齐工厂的那个产物"不是同一个**（连续三轮登记）。
+   - `1to1-verify.yml`：新增 `actions/cache`（bootlin63）+ `fetch_bootlin63.sh`（`s52`），
+     P3 改用工厂同期 GCC 6.3 编 libiconv，并**首次把 `isa_mode_gate.py` 立为 CI 硬门禁**（`s53`）。
+   - 推前先取证「bootlin63 能不能在 ubuntu-22.04 跑」：`toolchain-wrapper` 的 `.gnu.version_r`
+     只要求 `GLIBC_2.2.5` / `GLIBC_2.3`（本机 pyelftools 实测）⇒ glibc 2.35 向后兼容，可运行。
+   - **CI 实测（run 39378104028）**：`Tag_THUMB_ISA_use: Thumb-2`（真产 Thumb，非假绿）；
+     `工厂 Thumb 308/804 ｜ 我方 Thumb 308/812 ｜ 模式不同 **0**` ⇒ `✔ 与基线一致`。
+
+2. **仪器缺陷 A（`s27`，与 R218 同族）**：`tools/scan_livein_args.py` 的 `base_mn()` **不认 Thumb-2
+   的 `.w`/`.n` 后缀**（objdump 把 32 位 Thumb 打印成 `ldr.w`/`add.w`）⇒ 正则失配 ⇒ 原样返回
+   `ldr.w` ⇒ `written_by()` 里 `b in LOAD_MN/ALU_DST` 全部落空 ⇒ 该指令写入的寄存器**不计"已设"**
+   ⇒ 凭空冒「未设 rN」。**实测代价**：libiconv 换 Thumb 后 `s27` 立刻报 2 条 HIGH
+   （`iso2022_jpms_wctomb -> jisx0208_wctomb / jisx0212_wctomb 未设 r1`），
+   而源码 `jisx0208_wctomb(conv,buf,wc,2)` 明写 4 个参数、r1 必有值。
+   - 修法：先剥 `.w/.n`，再走**表驱动 + 逐级剥后缀**（先剥 `s`、再剥条件码），
+     **不用**惰性正则 —— 惰性 `^([a-z0-9]+?)(s)?(cond)?$` 会把 `movs` 拆成 `mo` + 条件码 `vs`
+     （`movs` 是 Thumb 16 位最常见写法之一），这是同一处隐藏的第二个坏点。
+   - 自证：新增 `mn_selftest()` **13 条**锚点（含"`ldr.w` 必须记 r1""`movs.w` 必须落到已知助记符"
+     "`vadd.f32` 不得被归一成已知"），**旧实现下 11 条失败** ⇒ 有判别力；CI 实测 HIGH **4 → 2**。
+
+3. **仪器缺陷 B（`s45/s46/s43/s38`）**：`GAP 17.11` 明文要求"各门禁步骤带 `continue-on-error`、
+   由末尾总账一次收齐"，但这 4 步**没有** ⇒ `s45` 一红，`s46/s43/s38` 全部 `skipped`
+   ⇒ 违反"一轮看完所有失败"，判定能力被建在稀缺的 Actions 分钟上。已补齐（`s40` 是汇总步，保持原样）。
+
+4. **台账按门禁自身测量重建（R210/R211 纪律的正面执行）**：
+   - 先推**空正文** bootstrap 台账（只带 `ruler/steps/escalate`）⇒ `s36` 必红，但**同轮仍产出**
+     `report/diff_exec.txt` + `report/_rows.json`（已读源码确认 `--out`/`--dump-rows` 在 `return rc`
+     之前写出，本机空跑亦验证 `rc=2` 且两文件齐全）。
+   - 再用 `tools/ledger_from_report.py` 从**那份门禁自己的报告**机械重建：
+     **16 项**（发散 5 ∪ 不可判 11），`ours=fc0ed0e7`，`ruler=c85f9763`。
+   - ★ **本机测量被弃用**：本机同尺子量到 DIVERGE **10** / 台账 21 项，门禁只 **5** / 16 项
+     ⇒ 再次实证 R210 结论「换环境尺子的可判性就变」；把本机数字灌进台账 = 台账静默变弱。
+
+5. **口径统一（纪律"同一规则禁止写两处"）**：`ICONV_CC` 的选择逻辑收敛进
+   `tools/build_upstream.sh`（**探测式**：`gcc --version` 成功才采用，避免 Windows 上误用 Linux ELF），
+   并给 `1to1-qemu-behav.yml` 补同一 `cache + fetch` ⇒ **同一 commit 的两个门禁测同一份二进制**
+   （此前 verify 侧 Thumb、qemu 侧 ARM，任何"行为一致"的结论都不可比）。
+
+6. **最终验证：`1to1-verify` SUCCESS**（run `39424789997` / commit `e97691e067`）：
+   - `汇总：PASS 774 ｜ DIVERGE 5 ｜ TRUNC 5 ｜ DEADEQ 6 ｜ REFDEAD 0 ｜ SKIP 0`（**774+5+5+6+0+0 = 790 自洽**）；
+   - `台账棘轮：既有 16 项 ｜ 本轮发散 5 项 ｜ ★新增 0 ｜ 已收敛 0 ｜ 仍不可判（保留）11`（16 = 5 + 11 自洽）；
+   - `isa_mode_gate：模式不同的共有函数 0 ｜ ✔ 与基线一致`；
+   - `s27：HIGH 2 / LOW 31`（修前 HIGH 4）。
+
+7. **livein 台账收缩 8 行**（1 + 7）：`PauseMenu/mui_* -> blockcopy/blockadaptive` 这些 LOW 项
+   在 `.w` 归一后不再误报，按"改好一项删一行"的棘轮语义删除（40 → 33 项）。
+
+### 二、新发现与决策
+
+1. ★ **同一类根因连吃两次**：R218（`fp_key` 越界归因）、R219（`base_mn` 后缀归一）都是
+   **判据仪器**在"工厂结构变化"（换符号/换指令集编码）后暴露的假发散，**不是源码缺陷**。
+   ⇒ 今后凡"换了编译器/指令集/链接口径后突然成片出现同类差异"，**先查仪器**，且必须给出
+   "修前失败、修后通过"的判别力自证。
+2. ★ **本机 ≠ 门禁**已第三次实证（R210/R211/R219）：同一把尺子，本机 DIVERGE 10 / 门禁 5。
+   ⇒ 台账**只能**来自门禁报告；本机测量只用于"报告自洽性"和"仪器回归"。
+3. ★ **FastGithub 证书失效**（本轮环境事件）：`api.github.com` 严格校验报
+   `SSL: CERTIFICATE_VERIFY_FAILED: Missing Subject Key Identifier`；本地代理仍监听 `127.0.0.1:443`
+   （PID 7100），关闭校验后可用（rate_limit 正常）。本轮改用 verify=NONE 的**只读**通道取
+   状态/日志/artifact，并对数据做交叉核对（790 分解 + 产物 sha 与 `rkgame-rebuild` 一致）
+   ⇒ 结论不依赖单一被篡改风险通道。**待办：修 FastGithub 证书**。
+4. **"空台账 bootstrap"是可复用的正规手法**：它把"尺子换口径"与"内容重记"解耦 ——
+   门禁先红一次并**自带**重建所需的全部输入，下一轮即收敛；比在本地猜一份台账干净得多。
+
+### 三、下一步待办
+
+1. **P0**：确认 `1to1-qemu-behav`（commit `e97691e067`）结论；若仍只红在 `B6 全零基线`
+   （诚实红），则 R219 全闭合。
+2. **P1**：`B6` 观测点补强（L4）—— 设计方向已明确：`driver.so` 自封私有画布，
+   `drmModePageFlip` 只看得到全零 fb；应在 **ABI 边界**（`video_driver_disp_frame` 的入参缓冲）
+   或 **driver.so 自己的 mmap 画布**上取哈希，而不是在 DRM 帧缓冲上取。
+3. **P2**：修 FastGithub 证书；或把 CI 数据读取固化为「artifact + 公开 log」两条腿，减少对代理的依赖。
+4. **P2**：`build_upstream.sh` 的旧 `-Os` 历史注释已加"已被 R115/R219 覆盖"标注（本轮做），
+   后续可再精简为指针。
