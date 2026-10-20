@@ -9280,3 +9280,44 @@ cores/refctx/stbtt/loadstate）。
    并把 `isa_mode_gate.py` 加进 CI）。先决：`1to1-verify.yml` 当前完全没有 `cache_tc`，
    需先加 `sh tools/fetch_bootlin63.sh` 步骤并缓存。
 4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释；L4 两草稿云端 zig 语法验证。
+
+
+---
+
+## R217（2026-10-20）—— 本轮闭环：台账 18 项与门禁测量**逐项一致**；构建产物可复现
+
+### 一、完成事项
+
+1. **`fcddbf5e` 的 CI 结果**（推送台账 18 项 + R215/R216 + `sync_mirror.py` 修复后）：
+   | workflow | 结果 |
+   |---|---|
+   | `1to1-verify` | **success** |
+   | `rkgame-rebuild` | success |
+   | `1to1-qemu-behav` | 仍在跑（预期只红在 B6 诚实红） |
+2. **台账一致性核验（这是本轮最该看的一项）**：
+   `台账棘轮：既有 **18** 项 | 本轮发散 **6** 项 | ★新增 **0** | 已收敛 **0** | 仍不可判（保留）12`
+   ⇒ 台账（18）与门禁本轮测得的集合（发散 6 ∪ 不可判 12）**完全吻合**，无一处需要人工解释。
+3. **产物 sha 未变**：`632a7d2e` 与 `fcddbf5e` 两轮都是 `2619394205d091a9`
+   ⇒ `sync_mirror.py` / `PROGRESS.md` / 台账的改动**不影响构建结果**，构建具备确定性。
+
+### 二、新发现与决策
+
+1. **构建确定性的一个顺带证据**：两轮不同 commit（只有工具与文档变化）产出同一 ELF sha256。
+   这条以后可以用作"文档/工具改动是否污染构建"的粗筛（变了就要问为什么）。
+2. **本轮把「静态对拍」这条线推到边界了**：剩余 6 项 = REAL 1（仪器漏记）+ ABI 2（已定级）
+   + NOISE 2（别动源码）+ UNDECIDABLE 1（先补沙箱）。
+   ⇒ 下一轮的实质增量只能来自 **仪器/沙箱/构建环境**三处，不能再靠改源码。
+3. ★ **记录一个自己踩的坑**：在 `python -c "…"` 里写含反引号的 Markdown 追加脚本，
+   被 bash 当命令替换肢解，导致 memory 追加失败（文件未损坏）。
+   ⇒ 纪律：**含 Markdown 反引号的内容一律用 Write/Edit 工具，不走 bash。**
+
+### 三、下一步待办
+
+1. **P0**：`locale_charset` —— 云开发里 `CGM_DBG_RW=1` 跑单函数，定位我们侧那次 1 字节读
+   为何未进 `rk_o`（**修仪器，不动源码**）。这是 REAL 档最后一项。
+2. **P1**：`ICONV_CC` 单变量实验（CI 的 libiconv 由 zig-ARM 改为 bootlin63 真 GCC-Thumb，
+   并把 `isa_mode_gate.py` 加进 CI）。先决：`1to1-verify.yml` 需新增 `sh tools/fetch_bootlin63.sh` + 缓存。
+3. **P1**：`1to1-qemu-behav` 的 B6 全零基线（观测点天花板）—— 属 L4 的一部分，
+   要变绿只能补 framebuffer 观测点，不能掩盖。
+4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释（已被 R115 的 `-O0 -mthumb` 覆盖）；
+   L4 两草稿云端 zig 语法验证。
