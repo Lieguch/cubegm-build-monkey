@@ -84,6 +84,22 @@ jobs:
           sudo chown -R "$USER" /sdcard
           ls -la /sdcard/cubegm
 
+      # ★★★ 2026-10-20（R219）：**同一 commit 的两个门禁必须测同一份二进制**。
+      #   `1to1-verify` 已把 libiconv 切到工厂同期真 GCC（Thumb）；若本 workflow 不同步，
+      #   它测到的仍是 zig-ARM 版本 ⇒ 两条判据的"行为一致"结论不可比（同一条纪律：
+      #   同一规则禁止写两处 —— 选择逻辑在 tools/build_upstream.sh，本处只负责"有工具链"）。
+      - name: 工厂同期工具链 Bootlin 2017.05（GCC 6.3）缓存
+        uses: actions/cache@v4
+        with:
+          path: 1to1/cache_tc/bootlin63
+          key: bootlin63-2017.05-armv7-eabihf-glibc-v1
+
+      - name: 抓取 bootlin63（cache miss 时才下载 63 MB）
+        run: |
+          cd 1to1
+          sh tools/fetch_bootlin63.sh
+          cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc --version | head -1
+
       - name: 构建 1:1 重建产物（含 build/obj 对象）
         run: |
           cd 1to1

@@ -123,11 +123,37 @@ def disasm(elf, out_path, objdump):
         return f.read().splitlines()
 
 
+# ★★ R219：归一化的**判定基准表** = "我们认得的基础助记符"。
+#   为什么不用 `^([a-z0-9]+?)(s)?(cond)?$` 的惰性正则：对 `movs`，惰性量词会先吃 `mo`，
+#   再把剩下的 `vs` 当条件码（vs 确实是合法条件码）⇒ 返回 **`mo`** ⇒ 该指令被当未知。
+#   而 `movs` 正是 Thumb 16 位编码里最常见的写法之一（`movs r1,#0`）⇒ 换成 Thumb 后
+#   会成片误判。这里改成**表驱动 + 逐级剥后缀**：只有剥完能落到已知助记符上才算归一成功。
+_MN_KNOWN = (set(ALU_DST) | set(LOAD_MN) | set(STORE_MN) | set(CMP_MN) |
+             {'push', 'pop', 'b', 'bl', 'blx', 'bx', 'nop', 'movw', 'movt', 'vmov',
+              'smlal', 'smull', 'umlal', 'umull', 'smlabb', 'smlabt', 'smlaltb',
+              'it', 'cbz', 'cbnz', 'tbb', 'tbh', 'svc', 'udf', 'mrs', 'msr', 'bkpt'})
+
+
 def base_mn(mn):
-    m = re.match(r'^([a-z0-9]+?)(s)?(eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)?$', mn)
-    if not m:
+    # ★★★ 2026-10-20（R219）**Thumb-2 宽/窄编码后缀**：objdump 对 32 位 Thumb 指令打印
+    #   `ldr.w` / `str.w` / `add.w` / `mov.w`（16 位可能带 `.n`）。原先这里直接做
+    #   `^([a-z0-9]+?)(s)?(cond)?$` 匹配 —— 点号不在字符类里 ⇒ **匹配失败 ⇒ 原样返回
+    #   `ldr.w`** ⇒ `written_by()` 里 `b in LOAD_MN/ALU_DST` 全部落空 ⇒ 该指令写入的
+    #   寄存器**不被记为"已设"** ⇒ 凭空冒「未设 rN」的假阳性。
+    #   实测代价（R219 CI s27）：libiconv 由 zig-ARM 换成真 GCC **Thumb** 后，
+    #   `iso2022_jpms_wctomb -> jisx0208_wctomb/jisx0212_wctomb 未设 r1` 两条 HIGH
+    #   凭空出现（源码 `jisx0208_wctomb(conv,buf,wc,2)` 明写 4 参、r1 必有值）。
+    if '.' in mn:
+        mn = mn.split('.', 1)[0]
+    if mn in _MN_KNOWN:
         return mn
-    return m.group(1)
+    # Thumb 16 位"置标志位"后缀 `s`（movs/adds/subs/cmp…）—— 先剥 s 再判
+    if mn.endswith('s') and mn[:-1] in _MN_KNOWN:
+        return mn[:-1]
+    # ARM/Thumb 条件码后缀（eq/ne/cs/hs/cc/lo/mi/pl/vs/vc/hi/ls/ge/lt/gt/le/al）
+    if len(mn) > 2 and mn[:-2] in _MN_KNOWN:
+        return mn[:-2]
+    return mn
 
 
 def operands(ops):
@@ -408,6 +434,46 @@ def load_variadic(path, root='.'):
     return s
 
 
+def mn_selftest():
+    """★ R219：Thumb-2 后缀归一化的**纯函数**判别力自证（不依赖 ELF/objdump）。
+
+    为什么必须单列：这是"仪器级"缺陷，一旦漏了它，判据会把**工具链换编码**误报成
+    "我们漏了参数"。锚点必须能在**修前失败、修后通过**（否则等于没有判别力）。
+    """
+    bad = []
+
+    def c(t, got, want):
+        if got != want:
+            bad.append('%s: got=%r want=%r' % (t, got, want))
+
+    # ① 归一化：宽/窄后缀必须被剥掉
+    c('base_mn ldr.w', base_mn('ldr.w'), 'ldr')
+    c('base_mn str.w', base_mn('str.w'), 'str')
+    c('base_mn strh.w', base_mn('strh.w'), 'strh')
+    c('base_mn add.w', base_mn('add.w'), 'add')
+    c('base_mn movs.w ⇒ 必须落到已知助记符', base_mn('movs.w') in _MN_KNOWN, True)
+    c('written_by movs.w ⇒ 记 r1',
+      written_by('movs.w', ['r1', '#0'], 'r1, #0'), {'r1'})
+    c('base_mn mov.n', base_mn('mov.n'), 'mov')
+    c('base_mn ldrsh.w', base_mn('ldrsh.w'), 'ldrsh')
+    c('反例 无后缀照旧', base_mn('ldr'), 'ldr')
+    c('反例 条件后缀照旧', base_mn('ldreq'), 'ldr')
+    # ② 关键：`written_by` 必须把 `.w` 形式的目标寄存器记为"已写"
+    c('written_by ldr.w ⇒ 记 r1',
+      written_by('ldr.w', ['r1', '[sp, #4]'], 'r1, [sp, #4]'), {'r1'})
+    c('written_by add.w ⇒ 记 r1',
+      written_by('add.w', ['r1', 'r2', '#4'], 'r1, r2, #4'), {'r1'})
+    c('written_by ldrsh.w ⇒ 记 r2',
+      written_by('ldrsh.w', ['r2', '[r0, #2]'], 'r2, [r0, #2]'), {'r2'})
+    # ③ 反例：未知助记符**不得**被归一成"已知" ⇒ 仍记空集（防过度归一）
+    c('反例 vadd.f32 不得记写', written_by('vadd.f32', ['r1', 'r2'], 'r1, r2'), set())
+    c('反例 blx.w 不记写', written_by('blx.w', ['r3'], 'r3'), set())
+    print('  [mn-selftest] Thumb-2 后缀归一化 %d 条，失败 %d' % (13, len(bad)))
+    for b in bad:
+        print('     ✗', b)
+    return 0 if not bad else 9
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--factory', default='golden/factory.rkgame.bin')
@@ -426,6 +492,13 @@ def main():
     ap.add_argument('--write-ledger', action='store_true',
                     help='把当前违例写成台账后退出 0')
     a = ap.parse_args()
+
+    # ★ R219：仪器级自证前置（纯函数，零 I/O、零 objdump 依赖）——
+    #   它红就说明"编码后缀"这条链路坏了，后续所有结论都不可信 ⇒ 直接 fail-closed。
+    rc_mn = mn_selftest()
+    if rc_mn != 0:
+        print('  ★★ mn_selftest 失败 ⇒ 判据不可用（fail-closed）')
+        return rc_mn
 
     od = find_objdump(a.objdump)
     print('  objdump = %s' % od)

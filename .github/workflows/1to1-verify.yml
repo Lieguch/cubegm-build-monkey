@@ -334,8 +334,10 @@ jobs:
         run: |
           cd 1to1
           sh tools/fetch_bootlin63.sh
-          echo '--- 工具链版本自证（必须打印出 GCC 版本，否则 ICONV_CC 必然无效）---'
-          cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc --version | head -1
+          # ★ 硬断言：工具链必须**真的能跑**。缺了它 build_upstream.sh 会静默退回 zig（ARM），
+          #   而 ARM 下 isa_mode_gate 只是"看着绿"（基线与产物同模式），口径分裂会无声复活。
+          cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc --version | head -1 \
+            || { echo '::error::bootlin63 gcc 不可执行 ⇒ libiconv 会退化为 zig-ARM'; exit 1; }
 
       - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
         id: s22
@@ -345,10 +347,11 @@ jobs:
           mkdir -p build/upstream
           # ★ R219 **严格单变量**：只有 libiconv/libcharset 换编译器（真 GCC 6.3 产 Thumb），
           #   stb/mxml/mp3 仍走 `$CC`（zig ARM）—— 与 R115 云上验证的配置逐字一致。
+          #   ★ 不再在此写 `ICONV_CC=…`：选择逻辑已收敛进 tools/build_upstream.sh（单一真源），
+          #     否则 qemu-behav / gcc-vs-clang 三个 workflow 会各测一份不同二进制。
           #   注意：**不得**设 `ICONV_ONLY=1`（那是云上只编 libiconv 的实验开关，
           #   在 CI 会跳过 stb/mxml/mp3 ⇒ 后续链接缺 .o）。
-          ICONV_CC=cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc \
-            PY=python3 sh tools/build_upstream.sh build/upstream
+          PY=python3 sh tools/build_upstream.sh build/upstream
           echo '--- libiconv 对象 Thumb 属性留痕（缺 Tag_THUMB_ISA_use 即「没真产 Thumb」）---'
           arm-linux-gnueabihf-readelf -A build/upstream/libiconv_iconv.o 2>/dev/null \
             | grep -iE 'THUMB' || echo '★★ 无 THUMB 属性（ICONV_CC 未生效）'

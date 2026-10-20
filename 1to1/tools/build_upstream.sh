@@ -157,6 +157,18 @@ LIBCFLAGS="-c $LIBOPT -fno-sanitize=all -w -fno-strict-aliasing $ARCH $FIDELITY"
 #   ⇒ 根修 = libiconv 走独立的 ICONV_CC（默认=$CC，保本机 zig 仍可编 ARM 对象）；
 #     云上设 ICONV_CC=<真 GCC> 即产出 Thumb。收敛验证交 `tools/isa_mode_gate.py`
 #     （期望 mismatch 从基线 308 大幅下降）。这是**工具链根因**，非补丁。
+# ★★★ 2026-10-20（R219）**单一真源**：bootlin63 若就绪就自动用于 libiconv，不靠每个 workflow 各写一份。
+#   理由（纪律"同一规则禁止写两处"）：R219 先在 `1to1-verify.yml` 里写了 `ICONV_CC=…`，
+#   而 `1to1-qemu-behav.yml` / `gcc-vs-clang-fidelity.yml` 同样调本脚本却没写 ⇒
+#   **同一 commit 的两个门禁会测到两份不同的二进制**（一份 Thumb、一份 ARM），
+#   任何"行为一致"的结论都失去可比性。⇒ 把"用哪个编译器"收敛到本文件一处。
+#   ★ 探测式而非路径式：必须能**真的跑起来**（`--version` 成功）才采用 ——
+#     否则本机 Windows 上有 `cache_tc/bootlin63`（Linux ELF）会被误用 ⇒ 编译全崩。
+_BL="$ROOT/cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc"
+if [ -z "${ICONV_CC:-}" ] && [ -x "$_BL" ] && "$_BL" --version >/dev/null 2>&1; then
+    ICONV_CC="$_BL"
+    echo "== libiconv 编译器：bootlin63 真 GCC（工厂同期，产出 Thumb2）=="
+fi
 ICONV_CC="${ICONV_CC:-$CC}"
 # ★ ICONV_CC 可能 ≠ $CC（云上用真 GCC，本机/CI 仍是 zig）⇒ 目标/架构参数必须跟着 ICONV_CC 走，
 #   不能复用上面只跟 $CC 分支的 $ARCH —— 否则本机/CI 的 zig 会收到 `-march=armv7-a` 而无
