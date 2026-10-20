@@ -307,13 +307,51 @@ jobs:
           PY
           [ "$rc" = "0" ] || exit "$rc"
 
+      # ★★★ 2026-10-20（R219）：把**工厂同期真 GCC** 搬进 CI，让正式产物也产 Thumb。
+      #   流程缺口（R216/R217/R218 连续三轮登记）：CI 的 P3 一直用默认 `ICONV_CC=$CC=zig`，
+      #   而 zig 对 `arm-linux-gnueabihf` target **静默忽略 `-mthumb`**（R107 实测：
+      #   `-O2` 与 `-O2 -mthumb` 产物逐字节相同；`-Xclang -mthumb` 报 unknown argument）
+      #   ⇒ CI 产出的 libiconv 是 ARM，而 `ledger/isa_mode_baseline.txt` 的
+      #   `max_mismatch=0` 是 R115 在云开发用 bootlin63 真 GCC 验证的
+      #   ⇒ **CI 的「正式产物」与「已证明对齐工厂的那个产物」不是同一个**。
+      #   本步把工具链搬进 CI，消除这条口径分裂。
+      #
+      #   兼容性硬证据（本机 pyelftools 实测 `cache_tc/bootlin63/bin/toolchain-wrapper`）：
+      #     `.gnu.version_r` 只要求 GLIBC_2.2.5 / GLIBC_2.3，`.dynstr` 里无更高版本符号
+      #     ⇒ ubuntu-22.04（glibc 2.35）**向后兼容**，可直接运行（非猜测）。
+      #   ★ 缓存 500 MB 解压目录而非 63 MB tar：`fetch_bootlin63.sh` 见 `.ok` 即
+      #     `exit 0`（零网络、零解压）⇒ 后续每轮省掉一次跨洲下载。
+      - name: 工厂同期工具链 Bootlin 2017.05（GCC 6.3）缓存
+        id: cache-bootlin63
+        uses: actions/cache@v4
+        with:
+          path: 1to1/cache_tc/bootlin63
+          key: bootlin63-2017.05-armv7-eabihf-glibc-v1
+
+      - name: 抓取 bootlin63（cache miss 时才下载 63 MB）
+        id: s52
+        continue-on-error: true
+        run: |
+          cd 1to1
+          sh tools/fetch_bootlin63.sh
+          echo '--- 工具链版本自证（必须打印出 GCC 版本，否则 ICONV_CC 必然无效）---'
+          cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc --version | head -1
+
       - name: P3 上游组件编译（stb / mini-XML / Helix MP3 / GNU libiconv）
         id: s22
         continue-on-error: true
         run: |
           cd 1to1
           mkdir -p build/upstream
-          PY=python3 sh tools/build_upstream.sh build/upstream
+          # ★ R219 **严格单变量**：只有 libiconv/libcharset 换编译器（真 GCC 6.3 产 Thumb），
+          #   stb/mxml/mp3 仍走 `$CC`（zig ARM）—— 与 R115 云上验证的配置逐字一致。
+          #   注意：**不得**设 `ICONV_ONLY=1`（那是云上只编 libiconv 的实验开关，
+          #   在 CI 会跳过 stb/mxml/mp3 ⇒ 后续链接缺 .o）。
+          ICONV_CC=cache_tc/bootlin63/bin/arm-buildroot-linux-gnueabihf-gcc \
+            PY=python3 sh tools/build_upstream.sh build/upstream
+          echo '--- libiconv 对象 Thumb 属性留痕（缺 Tag_THUMB_ISA_use 即「没真产 Thumb」）---'
+          arm-linux-gnueabihf-readelf -A build/upstream/libiconv_iconv.o 2>/dev/null \
+            | grep -iE 'THUMB' || echo '★★ 无 THUMB 属性（ICONV_CC 未生效）'
 
       - name: P3 完整链接 + ABI/布局门禁 ★ 硬门禁
         id: s23
@@ -366,6 +404,28 @@ jobs:
           python3 tools/dyn_audit.py build/rkgame.rebuilt.elf
           echo '--- ABI 门禁 ---'
           python3 tools/abi_check.py build/rkgame.rebuilt.elf
+
+      # ★★★ 2026-10-20（R219）：指令集模式棘轮门禁**进 CI**。
+      #   为什么此前从未进 CI：`isa_mode_gate.py` 的基线 `max_mismatch=0` 只在
+      #   云开发用 bootlin63 真 GCC 验证过（R115），而 CI 一直用 zig（不产 Thumb）
+      #   ⇒ 若把本门禁直接加进 CI，会立刻 308 > 0 判红 —— 不是门禁错，是**产物错**。
+      #   R219 先把「产物换成真 GCC」（见上面的 cache/fetch + ICONV_CC），再上本门禁，
+      #   顺序不能反：先修因，再立判据。
+      #   判据方向（保守，见工具 docstring）：只看**两侧同名共有函数**的
+      #   `st_value` bit0（Thumb 位）是否一致；我方独占函数不由本门禁负责。
+      #   期望值：工厂 Thumb 308/804 ｜ 我方 Thumb 308/xxx ｜ 模式不同 **0**。
+      #   =308 ⇒ 无效（ICONV_CC 没吃到，对照 R115 判据 P3 的"=308 即无效"）；
+      #   >0 且 <308 ⇒ 部分生效（可疑，需查是哪批 charset）；>308 ⇒ 劣化。
+      - name: 指令集模式（ARM/Thumb）棘轮门禁 ★ 硬门禁
+        id: s53
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # 先自证（6 条锚点：正例/反例/分桶/基线读取），再判本体 —— 同其它门禁哲学
+          python3 tools/isa_mode_gate.py --self-test
+          python3 tools/isa_mode_gate.py \
+            --ours build/rkgame.rebuilt.elf \
+            --factory golden/factory.rkgame.bin
 
       - name: 上游符号指纹门禁（技能铁律 90：库名对 ≠ 版本对）
         id: s24

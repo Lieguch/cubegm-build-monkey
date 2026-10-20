@@ -9321,3 +9321,66 @@ cores/refctx/stbtt/loadstate）。
    要变绿只能补 framebuffer 观测点，不能掩盖。
 4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释（已被 R115 的 `-O0 -mthumb` 覆盖）；
    L4 两草稿云端 zig 语法验证。
+
+> 追加前 `old_intact=True`（旧文 720719 B / sha b11acfa3f3411a22…）；由 `tools/append_progress.py` 原子追加。
+## R218（2026-10-20）—— ★ REAL 最后一项 `locale_charset` 根因定案：是**仪器越界归因 bug**，不是源码差异；fp_key 修复后 DIVERGE→PASS
+
+### 一、完成事项
+
+1. **P0 落地，且全程零云/零 CI 成本**：把 R217 遗留的「上云跑 `CGM_DBG_RW=1`」这条待办，用**本机**完成。
+   关键事实更正：本机 Python 装好 `unicorn`(2.1.4)/`capstone`(5.0.7)/`pyelftools` 后即可直接跑
+   `tools/diff_exec.py`（它只依赖这三个 Python 包，不依赖 zig/objdump）—— 之前的「本机跑不了」判断
+   把「反汇编 ARM32 需要 zig/objdump」错误外推成了「diff_exec 也本机跑不了」，走了弯路。
+
+2. **根因精确定位（本机符号表 + 反编译 + .rodata 取证，证据链闭合）**：
+   | 证据 | 结论 |
+   |---|---|
+   | 工厂 `golden/ghidra-perfn.tar.gz` 里 `FUN_002db79c_locale_charset.c` | 工厂函数体仅 58B：`nl_langinfo(0xe)` → 判 NULL → 判 `*c=='\0'` → 返回 ASCII/空串，**没有 `aliases_hash`/`asso_values`/查表** |
+   | 两份 ELF `.symtab` | 工厂 `asso_values.9691`(LOCAL OBJECT, v=0x3acef0, sz=256)；`aliases_hash`(LOCAL FUNC) 是**libiconv 的 gperf 哈希**，与 locale_charset **无调用关系** |
+   | `.rodata@0x3acff0` 两产物逐字节 | **两侧同为** `00 00 00 00`（空串）+ `@0x3acff4` `"ASCII"` ⇒ 工厂读的正是空串首字节 |
+   | `[rw]` 调试输出 | `F=[('LN','asso_values',256,1,'R')] O=[]` —— 工厂读被归成 `asso_values+256`（偏移==size，**越界**） |
+
+3. **根因 = `Bin.nearest_sym` 的「最近前驱、不看 size」语义**：
+   `0x3acff0` 是紧贴在 `asso_values.9691`（`[0x3acef0, 0x3acff0)` 右开）**之后恰好 1 字节**的匿名空串字面量
+   ⇒ 被归成 `asso_values+256`（越界前驱）⇒ 因 `asso_values` 是纯私有 LOCAL 走 `'LN'` 形（按名字配对），
+   绕过 `norm_fp` 里只对 `'A'` 形的 fspans 过滤；我方读自己链接的空串（`'A'` 形）被 fspans 正常过滤 ⇒ `O=[]`。
+   两侧语义完全等价（都读空串判空→返回 "ASCII"，`ret_content` 同 "ASCII"，被 ret 内容短路）。
+
+4. **修复（改 `fp_key`，语义聚焦，不动源码）**：纯私有配对前确认 `addr` 落在 `[sa, sa+sz)` 内；
+   越界 ⇒ 退回 `'A'` 形，交给 fspans 过滤，与对侧**对称处理**。`_sz==0`（size 未知）保守不做排除（不碰未知）。
+
+5. **验证（本机全跑，零云）**：
+   - `--fn locale_charset`：**DIVERGE → PASS**（4 组全 PASS，无 `[rw]` 分歧残留）；
+   - `--self-test`：194 → **197** 条（新增 3 条越界前驱锚点全过），失败仍 1 条 —— 是**既有的、与本改动无关**
+     的 `strupr` NULL 组锚点（因本机产物 sha `e5ea3579` 是 10-18 旧构建，与 CI 台账产物 `2619394205` 不同步）；
+   - `--batch --limit 100` 冒烟：`locale_charset` 已不在发散集，唯一剩余 DIVERGE 是 `TestLibz0`
+     （calls_ext 原始名差异路径，与本改动无关）。
+
+### 二、新发现与决策
+
+1. **定性更正（比 R216/R217 原记录更准）**：这**不是**「我方那次 1 字节读没进 rk_o」（采集层漏记），
+   而是**归因层** `nearest_sym` 把工厂读的「越界处空串」错绑到私有符号，制造了「仅F 读 asso_values+256」的假发散。
+   修的位置是 `fp_key`（判据归因链），不是 `norm_fp` 采集、也不是源码。
+
+2. **`fp_key` 在 ruler 指纹链内 ⇒ 本次改动改变判据口径指纹**，旧台账 `diff_exec_pending.txt` 的
+   `ruler=d3c1a9d2…` 随之 fail-closed。这是**设计意图**（判据核心变动必须显式 rebaseline）。但：
+   - 台账 rebaseline 受 R210/R211 纪律约束 —— **必须来自门禁环境自己的测量**，不能本机（本机产物 sha 与 CI 不同步）、
+     不能人工挑选（不能手删 locale_charset）；
+   - 而 `tools/diff_exec.py` 是「判据仪器」，**不进入**构建链（`rkgame-rebuild/**` 或 `.github/workflows/**`）
+     ⇒ 按用户铁律 + 纪律 172 的 `push_gate` 机械门禁，**本轮只推 CNB 托管，不推 GitHub**。
+   - 结论：**台账本轮不动**。等下一次真正的构建链改动搭车推 GitHub 时，CI 会 fail-closed 提示「ruler 变了」，
+     再用 `tools/ledger_from_report.py` 从那次 CI 的 report 机械重建台账（届时 locale_charset 会自然收敛下去）。
+     这是 fail-closed 的正确行为，不是需要现在追的缺陷。
+
+3. **本机能力边界更新（重要，纠正此前多轮的错误假设）**：`diff_exec.py` 本机可跑（unicorn/capstone/pyelftools
+   三依赖已装于隔离 venv）。**不要**再因为「本机无 zig/objdump 无法反汇编 ARM32」而把「跑 diff_exec 判据」
+   也外推成「必须上云」。上云只留给「必须 Linux + arm 工具链 + qemu 的活」（构建、qemu 行为、isa_mode_gate）。
+
+### 三、下一步待办
+
+1. **P1（不追，等搭车）**：台账 rebaseline —— 下一次构建链改动推 GitHub 时，CI fail-closed 后
+   用 `ledger_from_report.py` 从 CI report 机械重建（预期 locale_charset 收敛，18→17 项）。
+2. **P1**：`ICONV_CC` 单变量实验（CI 的 libiconv 由 zig-ARM 改为 bootlin63 真 GCC-Thumb + 加 `isa_mode_gate.py` 进 CI）。
+   这是**真正的构建链改动**，届时一并带上台账 rebaseline。
+3. **P1**：`1to1-qemu-behav` 的 B6 全零基线（观测点天花板）—— 补 framebuffer 观测点（L4 一部分）。
+4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释；L4 两草稿云端 zig 语法验证。

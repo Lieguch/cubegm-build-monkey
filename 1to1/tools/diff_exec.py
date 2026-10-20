@@ -1163,8 +1163,21 @@ def fp_key(b, t, spec_private):
         if cn in spec_private:
             # ★ 显示里**必须带上绝对地址**：同名两份时只写 `handle+0` 读者无法判断是哪一份
             #   ⇒ 失去可审计性（本条的实测教训：曾因此把"同址"误读成"异址"）。
-            return (('LN', cn, a - sa, w, rw),
-                    '%s+%d:%d:%s@0x%x' % (cn, a - sa, w, rw, a))
+            # ★★ 2026-10-20（R218）：**越界前驱**修正（locale_charset 假发散的根因）。
+            #   `nearest_sym` 语义是"最近前驱"，**不保证** addr 落在 `[sa, sa+sz)` 内。
+            #   实测铁证：工厂 locale_charset 读的空串字面量 0x3acff0（内容 00 00 00 00）
+            #   紧贴在 `asso_values.9691`（LOCAL，`[0x3acef0, 0x3acff0)`，sz=256）之后
+            #   恰好 1 字节 ⇒ 被 nearest_sym 归因成 `asso_values+256`（偏移==size，越界）⇒
+            #   错按私有名字配对（'LN' 形）⇒ 我方读自己链接的空串（'A' 形，被 fspans 过滤）
+            #   ⇒ 凭空造出「仅F 读 asso_values+256」的假发散。
+            #   修复：纯私有配对**必须**确认 addr 在区间内；越界 ⇒ 退回按地址 'A' 形，
+            #   交给 norm_fp 的 fspans 过滤，与对侧同样处理。
+            #   保守默认：size 未知（0 / 缺失）时**不做**越界排除，保持旧行为（不碰未知）。
+            _ds = b.data_syms.get(nm)
+            _sz = _ds[1] if _ds else 0
+            if _sz == 0 or a < sa + _sz:
+                return (('LN', cn, a - sa, w, rw),
+                        '%s+%d:%d:%s@0x%x' % (cn, a - sa, w, rw, a))
     return ('A', a, w, rw), '0x%08x:%d:%s' % (a, w, rw)
 
 
@@ -2252,6 +2265,21 @@ def self_test():
               (g1 != g2) and g1[0] == 'A', True)
             c('反例  窄化必须仍被检出（宽度进键）',
               fp_key(BF, (0x3BC40C, 4, 'R'), sb)[0] != fp_key(BF, (0x3BC40C, 1, 'R'), sb)[0], True)
+            # ★ 2026-10-20（R218）：**越界前驱归因**（locale_charset 假发散的根因）回归锚点。
+            #   工厂纯私有 LOCAL `asso_values.9691`（sz=256）末尾后 1 字节是空串字面量
+            #   （内容 0x00，另一个对象）。nearest_sym 的"最近前驱"语义会把越界地址
+            #   误归因成 `asso_values+256`（偏移==size）⇒ 错按名字配对（LN 形）⇒
+            #   与我方被 fspans 过滤的空串读（A 形）不对称 ⇒ 假发散「仅F 读 asso_values+256」。
+            #   修复后：越界 ⇒ 退回 A 形，两侧对称，交给 fspans 过滤。
+            _asvo = [(a, sz) for a, sz, n, ty in BF.sym_list
+                     if n == 'asso_values.9691' and ty == 'STT_OBJECT']
+            c('前提  工厂存在纯私有 LOCAL `asso_values.9691`（R218 越界前驱锚点的样本）',
+              len(_asvo), 1)
+            _ka, _ks = _asvo[0]
+            c('正例  纯私有符号**区间内**读 ⇒ LN 形（按名字配对，私有副本合法）',
+              fp_key(BF, (_ka, 4, 'R'), sb)[0][0], 'LN')
+            c('反例  纯私有符号**越界**读（表尾后 1 字节空串）⇒ 退回 A 形（防 locale_charset 假发散）',
+              fp_key(BF, (_ka + _ks, 1, 'R'), sb)[0][0], 'A')
             # ---- 回归锚点：把"非语义量"当判据的两类假发散（GAP 17.12）-------------
             vf, vmsg = void_fns_from_corpus()
             if vf:
