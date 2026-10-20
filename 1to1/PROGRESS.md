@@ -9066,3 +9066,101 @@ cores/refctx/stbtt/loadstate）。
 4. **P1**：`lasterrorU` 无条件载入 —— 同在云开发做单变量实验（volatile 前后对比汇编）后
    再决定是否动源码。
 5. **P2**：修复 `sync_mirror.py --remote cnb` 的 401；L4 两草稿云端 zig 语法验证。
+
+
+---
+
+## R214（2026-10-20）—— `FormatZipMessageU` 第一刀生效（strlen 消除）；`locale_charset` 定性为**仪器漏记**（有硬证明）
+
+### 一、完成事项
+
+1. **`f1c8b0b` 的 CI 实测（1to1-verify 全绿）**：
+   | workflow | 结果 |
+   |---|---|
+   | `1to1-verify` | **success**（产物 `build/rkgame.rebuilt.elf` sha256 `8f0eea975b00bfa5`） |
+   | `rkgame-rebuild` | success |
+   | `toolchain-ab` | success |
+   | `1to1-qemu-behav` | 仍在跑（预期只红在 B6 全零基线） |
+   报告汇总：`PASS 771 ｜ DIVERGE 7 ｜ TRUNC 5 ｜ DEADEQ 7 ｜ REFDEAD 0 ｜ SKIP 0`，
+   自洽 `771+7+5+7+0+0 = 790` ✓；`台账棘轮：既有 19 项 | 本轮发散 7 项 | ★新增 0 | 已收敛 0`。
+2. **★ `mlen` 常数化**确认有效**：`_Z17FormatZipMessageUjPcj` 的 `calls_ext` 差异**全部消失**
+   （改前 4 组全有 `O=['strlen']`；改后 4 组 `ca_f=ca_o=[]` 或只剩 `strncpy`）。
+3. **★ 删 `case ZR_PASSWORD` 的效果**：`[misc]` 组（`code==ZR_RECENT` 路径）**整组不再发散**
+   —— 改前 `ret_f=2 / ret_o=0`，改后该组消失。
+4. **台账按本次测量重建**（`ledger_from_report.py`，原子写）：
+   `发散 7 ∪ 不可判 12 ⇒ 19 项`；`ours=8f0eea975b00bfa5`；`★新增 []`；`已收敛 []`。
+5. **`lasterrorU` 的无条件载入出手**（第二刀）：改成
+   `if (code==ZR_RECENT) code=*(ZRESULT const volatile *)&lasterrorU;`
+   理由见下（这不是屏蔽差异，见「新发现」第 2 条）。
+6. 本地复验（推前）：`scan_call_counts` **PASS**（0 漏调用）、`src_transcript_parity` **PASS**。
+
+### 二、新发现与决策
+
+1. **`_Z17FormatZipMessageUjPcj` 现在只剩一条差异**（`_rows.json` 逐字核对）：
+   `[zero]/[strs]/[core]` 三组 `rd_f=[] / rd_o=[['A',3875356,4,'R']]`（3875356 = 0x3b221c = `lasterrorU`）；
+   `ret_f=ret_o`（7 / 23 / 23，两侧一致）。⇒ 语义已同，只差这次多余的载入。
+
+2. **为什么可以给 `lasterrorU` 加 volatile（而不是"改源码去迁就编译器"）**：
+   - 证据：`zero` 组的 `code=0 ≠ ZR_RECENT(1)`，**按源码根本不该读**，但我们读了
+     ⇒ clang 把条件载入 **if-conversion 成"无条件 load + 条件 select"**；
+     工厂 GCC 6.3 是真实分支（Ghidra：`if (param_1 == 1) { param_1 = (uint)lasterrorU; }`）。
+   - volatile 的作用：把这次 load 变成 observable side effect ⇒ 编译器**不得投机执行** ⇒ 回到分支内。
+   - 语义安全性：`lasterrorU` 是普通全局，单线程下 volatile load 与普通 load 取到的值相同；
+     读到的值**仍原样**参与后续 switch（没有任何差异被"屏蔽"）。
+   - ⇒ 这是**对齐工厂的载入时机**，性质与 R211 删掉 DrawFrame 顶部死载入同类（都是"让载入发生的位置/次数与工厂一致"）。
+
+3. ★★ **`locale_charset` 定性为「仪器漏记」，不是源码差异 —— 有硬逻辑证明**：
+   - `trace_diffs`（`tools/diff_exec.py:1597-1610`）对 ret 有一条**先于判据的短路**：
+     `if rf['ret_content'] and rf['ret_content'] == ro['ret_content']: pass`
+     ⇒ 两侧 ret 指向的**内容相同**时不报 ret 差异。
+   - 实测正是如此：`ret_f=3854324(0x3ACFF4) / ret_o=5095813(0x4DCF85)`，**地址不同却未报 ret 差异**
+     ⇒ `ret_content` 相同 ⇒ 两侧都返回字符串 **"ASCII"**。
+   - 工厂返回 "ASCII" 的唯一路径是 `if (*local_c==' ') local_c="ASCII";`；
+     我们**也**返回了 "ASCII" ⇒ 我们**必然**执行过 `codeset[0]==' '` 这个判断
+     （`codeset` 来自外部调用 `nl_langinfo`，编译器不可能预先知道它是空串）。
+   - ⇒ 我们侧**必然发生过这次 1 字节读**，但 `rd_o` 是空 ⇒ **是采集/归一化把它丢了**。
+   - ⇒ 正确动作是**修仪器**（`CGM_DBG_RW=1` 打印原始 `rf['reads']/ro['reads']` 的调试钩子已存在，
+     需在云开发里跑），**不是动源码**。
+   - ★ 这条同时**推翻** R212/R213 的"补 `libc_model.nl_langinfo`"方向，也推翻今天早些时候
+     "我们侧没读"的推断 —— 两者都被"两侧 ret 内容相同"这一条钉死。
+
+4. ★★ **流程级新发现：CI 的构建与工厂在 libiconv 的指令集模式上不一致，且没有门禁在 CI 里守它**：
+   - `.github/workflows/1to1-verify.yml`：`CC="$ZIG cc"`，第 316 行
+     `PY=python3 sh tools/build_upstream.sh build/upstream` —— **没有传 `ICONV_CC`**，
+     全文件也搜不到 `ICONV_CC` / `cache_tc` / `bootlin63`。
+   - `tools/build_upstream.sh:148`：`ICONV_CC="${ICONV_CC:-$CC}"` ⇒ 未设时退化成 `zig cc`；
+     而 `zig cc` **静默忽略 `-mthumb`**（R115 实测 `-O2` 与 `-O2 -mthumb` 产物逐字节相同）
+     ⇒ **CI 产物的 libiconv/libcharset 全是 ARM，工厂是 Thumb**。
+   - `ledger/isa_mode_baseline.txt` 写的是 `max_mismatch=0`（"R115 根修后 308 -> 0"），
+     但那是**云开发**（`tools/cnb_ladder.sh:225/241` 显式 `ICONV_CC=$TC`）测出来的；
+     `isa_mode_gate.py` **从未出现在任何 CI workflow 里**（只有 `cnb_ladder.sh` 调它）。
+   - ⇒ 即：**CI 的"正式产物"与"已被证明对齐工厂"的那个产物不是同一个东西**，
+     而这层差异在 CI 里没有任何门禁守着。
+   - 影响面：296 个 libiconv/libcharset 函数。**这是一个变量，必须单独一轮做**（本轮不动）。
+   - 这也给 `locale_charset` 的残余差异提供了另一种可能解释（ISA 不同 ⇒ 代码生成不同），
+     但第 3 条已证明本次差异的直接原因是"仪器漏记"，两者不冲突、需分别验证。
+
+5. **注释与默认值的漂移（文档项，记下不改）**：`tools/build_upstream.sh:109` 是
+   `LIBOPT="${LIBOPT:--O0}"`，而第 123-135 行注释写着"`-O0` -> `-Os` … 采纳"。
+   两者看似矛盾，实为历史演进：R107 依据体积统计采纳 `-Os`，R115 又依据"工厂用
+   `arm-linux-gnueabihf-gcc -O0 -mthumb` 单独编这两个 TU"回到 `-O0`（`BUILD-FACT-ALIGNMENT.md:183`
+   也是 `-O0`）。⇒ **默认值 `-O0` 是当前正确值**，但 R107 那段"采纳 -Os"的注释没有标注已被覆盖
+   ⇒ 后人会误读。列 P2 清理。
+
+### 三、下一步待办
+
+1. **P0**：推送本轮（`lasterrorU` 的 volatile + 台账 19 项 `ours=8f0eea97`）后监控 CI；
+   判据 = `1to1-verify` 保持 success，且「✓ 本轮收敛」含 `_Z17FormatZipMessageUjPcj`。
+2. **P0**：若收敛 ⇒ 台账重建（预期 18 项）。若 `rd_o` 仍在 ⇒ 说明 volatile 没挡住
+   if-conversion，改走 `__asm__ __volatile__("" ::: "memory")` 或在云开发看汇编。
+3. **P1**：在**云开发**里用 `CGM_DBG_RW=1` 跑单函数 `locale_charset`，打印原始
+   `rf['reads']` / `ro['reads']`，定位**为什么我们侧那次 1 字节读没有进指纹**
+   （候选：`norm_fp` 的 `fspans` 归一化丢弃落在某段内的读；或采集阶段对未映射/短读的过滤）。
+   **不要动源码。**
+4. **P1**：**`ICONV_CC` 单变量实验（单独一轮）**：在 `1to1-verify.yml` 的 s22 步骤给
+   `build_upstream.sh` 传 `ICONV_CC=<bootlin63 的 arm-linux-gcc>`，并把 `isa_mode_gate.py`
+   加进 CI（期望 `max_mismatch=0` 能在 CI 复现）。先决：确认 CI 里 bootlin63 的落地方式
+   （当前 `1to1-verify.yml` 完全没有 `cache_tc`，需查 `toolchain-ab.yml` 或新增缓存步骤）。
+5. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释（标注已被 R115 覆盖）；
+   修复 `sync_mirror.py --remote cnb` 的 401（`--dry-run` 已验证可读远端，问题在推送段）；
+   L4 两草稿云端 zig 语法验证。

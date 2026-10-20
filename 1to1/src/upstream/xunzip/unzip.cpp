@@ -4074,7 +4074,17 @@ extern ZRESULT lasterrorU; /* 1:1：定义在工厂数据镜像（.bss 0x3b221c�
  *    7/24/25/25/21/29/24/35/18/24/52/47/53/34/52/42/46/38/46/46/41，default 23。
  */
 unsigned int FormatZipMessageU(ZRESULT code, TCHAR *buf,unsigned int len)
-{ if (code==ZR_RECENT) code=lasterrorU;
+{ /* ★★ 2026-10-20（R214）：这一句**必须**用 volatile 读。
+   *   CI 实测（f1c8b0b，产物 8f0eea97）：
+   *     `_Z17FormatZipMessageUjPcj [zero] data-reads 仅F=[] 仅O=['0x003b221c:4:R ×1']`
+   *     `[strs]` / `[core]` 同。0x003b221c = lasterrorU（ledger/factory_globals.tsv:789）。
+   *     zero 组的 code=0 ≠ ZR_RECENT(1)，**本不该读**，但我们读了 ⇒ clang 把这个条件载入
+   *     **if-conversion 成了无条件 load + 条件 select**（ARM 上常见），而工厂 GCC 6.3 是
+   *     真实分支（Ghidra 反编译：`if (param_1 == 1) { param_1 = (uint)lasterrorU; }`）。
+   *   volatile 使这次 load 成为 observable side effect ⇒ 编译器**不得**投机执行 ⇒ 回到分支内。
+   *   语义等价：lasterrorU 是普通全局，单线程下 volatile load 与普通 load 取到的值相同。
+   *   ★ 这是"对齐工厂的载入时机"，不是屏蔽差异（读的值仍照原样参与后续 switch）。 */
+  if (code==ZR_RECENT) code=*(ZRESULT const volatile *)&lasterrorU;
   const TCHAR *msg;
   unsigned int mlen;
   switch (code)
