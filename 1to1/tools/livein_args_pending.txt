@@ -29,7 +29,6 @@ mui_run_game SoundPlay LOW
 main UpdateROM LOW
 mui_load_state blockadaptive LOW
 mui_save_state blockadaptive LOW
-PauseMenu blockcopy LOW
 mui_joystick_setting blockcopy LOW
 mui_load_state blockcopy LOW
 mui_save_state blockcopy LOW

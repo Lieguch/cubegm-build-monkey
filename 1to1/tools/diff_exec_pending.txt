@@ -1,16 +1,25 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
+# ours=fc0ed0e7b974bf88c6104393b4e4fe7439ee5fbf09f544bad5fc97da758e0cbe
 # ruler=c85f9763c0b1226b702bce6f6988094a33199edbb89657ffada782b7952b3656
-# rebaseline: R219 BOOTSTRAP（正文**故意为空**）：R218 改了 fp_key（越界前驱归因）⇒ ruler
-# d3c1a9d2→c85f9763，旧台账 18 项口径作废。按 R210/R211 纪律，台账正文**只能来自门禁环境
-# 自己的测量**：本机产物 sha（e5ea3579）与 CI 产物（fc0ed0e7）不同、且本机可判性更弱
-# （不可判 11 vs CI 5），把本机结果灌进台账 = R210 那次「台账静默变弱」事故的重演。
-# ⇒ 本轮故意留空：s36 会据此报「★新增 N」并红，但**同轮仍产出**
-#    report/diff_exec.txt + report/_rows.json；随后用
-#    tools/ledger_from_report.py 从那份**门禁自己的**报告机械重建，再推一次即收敛。
-# ★ 重建命令：
-#   python tools/ledger_from_report.py --report report/diff_exec.txt \
-#       --rows report/_rows.json \
-#       --ruler c85f9763c0b1226b702bce6f6988094a33199edbb89657ffada782b7952b3656 \
-#       --out tools/diff_exec_pending.txt --reason "R219: 门禁自身的 R219 测量"
+# rebaseline: R219: 门禁本体（commit 3c689fb）自己的 R219 测量：PASS774/DIVERGE5/TRUNC5/DEADEQ6(合计790自洽)，产物 sha fc0ed0e7；ruler 因 R218 fp_key 越界归因修正由 d3c1a9d2 变 c85f9763
+# ★ 本台账由 tools/ledger_from_report.py 从**门禁环境自己的**测量报告机械重建（不人工挑选）—— 见文件头注释里的事故经过。
+# 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
+# ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
+DisplayPage_list
+MP3InitDecoder
+TestRun
+TestUSBJoy
+WaitNMI
+get_item_from_line
+mui_DisplayInputBuffer
+mui_DisplayLine_t
+outputblankxy
+outputxy1
+progress
+stbtt__get_subrs
+stbtt__tesselate_curve
+strtrim
+xmp3_AllocateBuffers
+xmp3_FDCT32
