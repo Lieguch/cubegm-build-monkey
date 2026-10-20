@@ -1,9 +1,9 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ours=8f0eea975b00bfa5a9e2f7a7b5c006175c2bbf796a53f01a52cfe6e6dc9c0893
+# ours=2619394205d091a958e8935d71396127d3326965bb103406580a40687e812e93
 # ruler=d3c1a9d2751fd5b1df50d02162ec8fcc9f108e388c95364dbeb4683d6f4a40a9
-# rebaseline: R214: f1c8b0b 的门禁测量（FormatZipMessageU 的 strlen 已消除、ZR_PASSWORD 已删；发散集合不变 7 项）
+# rebaseline: R216: lasterrorU 的 volatile 读生效，_Z17FormatZipMessageUjPcj 收敛（DIVERGE 7->6，PASS 771->772）
 # ★ 本台账由 tools/ledger_from_report.py 从**门禁环境自己的**测量报告机械重建（不人工挑选）—— 见文件头注释里的事故经过。
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
@@ -12,7 +12,6 @@ MP3InitDecoder
 TestRun
 TestUSBJoy
 WaitNMI
-_Z17FormatZipMessageUjPcj
 get_item_from_line
 locale_charset
 mui_DisplayInputBuffer

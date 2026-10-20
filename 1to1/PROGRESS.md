@@ -9164,3 +9164,119 @@ cores/refctx/stbtt/loadstate）。
 5. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释（标注已被 R115 覆盖）；
    修复 `sync_mirror.py --remote cnb` 的 401（`--dry-run` 已验证可读远端，问题在推送段）；
    L4 两草稿云端 zig 语法验证。
+
+
+---
+
+## R215（2026-10-20）—— CNB 同步 401/弹窗**根因修复**（三层），P2 待办清零一项
+
+### 一、完成事项
+
+1. **CNB 同步打通**：`tools/sync_mirror.py --remote cnb` 首次成功
+   —— `85325b5..0c0fcc6  HEAD -> main`，输出 `✓ 同步完成`。**全程无弹窗、无 60s 超时。**
+2. 修 `tools/sync_mirror.py` 三处（都属"根因"，不是重试绕过）：
+   - 新增 `_read_token_file()`：直接读 `~/.cnb/token` 的
+     `auths["cnb.cool"]["access_token"]`（实测 94 字符，`cnb_at_` 前缀），拼进 URL 的 userinfo
+     ⇒ **完全绕过 credential helper**；
+   - `git()` 的凭据注入改为**按子命令分流**：`clone` 走参数位 URL；
+     `fetch`/`push` 用 `-c http.extraHeader='Authorization: Basic …'` + `-c credential.helper=`
+     （清空 helper 链）；
+   - PATH 构造：`GITDIRS` 版本号由硬编 `1.2.0` 改为**动态发现**（本机实际是 `1.3.0`/`current`，
+     原来那三个目录**根本不存在**），并新增 `_winpath()` 把 MSYS 形态（`:` 分隔 / `/c/...`）
+     归一化成 Windows 形态。
+3. 修 `git config --global` 两处（先备份到 `R:/TEMP/_gitcred_backup.txt`）：
+   - **删除** `credential.https://cnb.cool.provider = generic`；
+   - `credential.helper`：`cnb git-credential` → **`!cnb git-credential`**（补 `!`）。
+4. 验证：`printf 'protocol=https\nhost=cnb.cool\n\n' | git credential fill`
+   ⇒ **秒回** `username=cnb` + `password=<redacted>`（此前 60s 超时）。
+
+### 二、新发现与决策
+
+1. ★★★ **「为什么总弹窗要用户名密码」的三层根因**（每层都有实测证据，缺一层都修不好）：
+
+   | 层 | 现象 | 根因 | 证据 |
+   |---|---|---|---|
+   | ① 弹窗本体 | GUI 对话框要用户名/密码 | **system 级 `credential.helper = manager`**（Git Credential Manager）+ `credential.https://cnb.cool.provider = generic` ⇒ helper 链失败时 GCM 的 generic provider **弹窗** | `git config --system --get-all credential.helper` → `manager` |
+   | ② helper 链失败 | `git: 'credential-cnb' is not a git command` | global `credential.helper = cnb git-credential` **少了 `!` 前缀** ⇒ git 当成 helper 名，去找 `git-credential-cnb` 子命令（不存在）⇒ 落到 ✓system 的 `manager` | 修前 `git credential fill` 60s 超时；修后秒回 |
+   | ③ 代码层 | `remote: Repository Not Found.`（**不是 403**，CNB 对未授权私有仓反枚举） | (a) PATH 拼成 `C:/…;C:/…;/c/Users/…:/usr/bin` —— MSYS `:` 混进 Windows `;` ⇒ `cnb` 可执行文件找不到；(b) `git()` 把凭据 URL 插在**子命令后第一个参数位** ⇒ `git fetch <url> origin +refs/…` 报 `fatal: couldn't find remote ref origin` | 修前两次实测日志 |
+
+2. **`Repository Not Found` 不等于"仓库没了/没权限"**：CNB 对未授权访问私有仓返回 404 而非 403（反枚举）。
+   这一条此前把人误导过（R153 就为此浪费一轮）。今后见到它，先查"凭据是否送达"，不要先怀疑仓库。
+3. **不再依赖 helper 是本轮的设计取向**：CNB CLI 已把长期 token 落盘，读文件比调 helper 更可控
+   —— 不弹窗、不受 PATH 影响、不受 GCM provider 影响。helper 配置只作为"顺手修好、别让别的工具再弹窗"。
+
+### 三、下一步待办
+
+1. **P0**（进行中）：`632a7d2e` 的 CI —— `1to1-verify` / `1to1-qemu-behav` / `toolchain-ab` 仍在跑，
+   `rkgame-rebuild` 已 success。判据同 R214：`1to1-verify` success 且「本轮收敛」含
+   `_Z17FormatZipMessageUjPcj`（本轮加了 `lasterrorU` 的 volatile 读）。
+2. **P1**：`locale_charset` 在云开发里用 `CGM_DBG_RW=1` 打原始 `rf['reads']/ro['reads']`，
+   定位我们侧那次 1 字节读为何没进指纹。
+3. **P1**：`ICONV_CC` 单变量实验（让 CI 的 libiconv 也用真 GCC 产 Thumb；当前 CI 全是 ARM，
+   而 `isa_mode_baseline.txt` 的 `max_mismatch=0` 只在云开发被验证过、**从未进 CI**）。
+4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释；L4 两草稿云端 zig 语法验证。
+
+
+---
+
+## R216（2026-10-20）—— ★ `_Z17FormatZipMessageUjPcj` **收敛**；发散 7→6，REAL 2→1
+
+### 一、完成事项
+
+1. **`632a7d2e` 的 CI 四 workflow 全数回收**：
+   | workflow | 结果 |
+   |---|---|
+   | `1to1-verify` | **success**（产物 sha256 `2619394205d091a9`） |
+   | `rkgame-rebuild` | success |
+   | `toolchain-ab` | success |
+   | `1to1-qemu-behav` | failure —— 仍只红在 `B6 全零基线`（诚实红，R171b 单变量已钉死，不掩盖） |
+2. **★ `_Z17FormatZipMessageUjPcj` 判为收敛**：
+   - 汇总 `PASS 771 → **772**`、`DIVERGE 7 → **6**`（自洽 `772+6+5+7+0+0 = 790` ✓）；
+   - 报告原文：`✓ 本轮收敛（明确判为 PASS/INFO）：['_Z17FormatZipMessageUjPcj']`；
+   - 「DIVERGE 信号强度」：`REAL 2 → **REAL 1**`。
+   ⇒ 说明本函数三处根因**全部修净**：`strlen` 未折叠（R213）、`ZR_PASSWORD` 多余分支（R213）、
+   `lasterrorU` 无条件载入（R214 的 volatile）。
+3. **台账按本次测量重建**（`ledger_from_report.py`，原子写）：
+   `发散 6 ∪ 不可判 12 ⇒ **18 项**`；`ours=2619394205d091a9`；
+   `★新增 []`；`✓已收敛 ['_Z17FormatZipMessageUjPcj']`。
+4. **CNB 同步修复的代码与本轮记录一并入库**（R215 内容：`sync_mirror.py` 三层根因 + git config 清理）。
+
+### 二、新发现与决策
+
+1. **`volatile` 那一刀的假设被证实**：R214 判断 `lasterrorU` 的读取是 clang 的
+   **if-conversion（无条件 load + 条件 select）** 对上 GCC 6.3 的真实分支；
+   加 `volatile` 后该条 `data-reads` 差异消失 ⇒ 假设成立、修法有效。
+   ★ 留档方法学：这类"编译器把条件载入变成投机载入"的差异，**不要改语义、不要放宽判据**，
+     用 `volatile` 把 load 钉回分支内即可（语义等价，只调载入时机）。
+
+2. **剩余 6 项的分布已经稳定，且全部"不该再用改源码的方式追"**：
+   | 档 | 函数 | 判据 | 结论 |
+   |---|---|---|---|
+   | REAL 1 | `locale_charset` | `data-reads 仅F=['asso_values+256:1:R@0x3acff0']` | R214 已硬证明是**仪器漏记**（两侧 `ret_content` 同为 "ASCII" ⇒ 我们侧必然读过 `codeset[0]`），⇒ **修仪器** |
+   | ABI 2 | `stbtt__get_subrs`、`stbtt__tesselate_curve` | 差异**只有 ret**，且两侧 ret 都落在沙箱人造区 | 第 154 轮已定级，**非语义** |
+   | NOISE 2 | `get_item_from_line`、`strtrim` | 跑完组全一致，发散只在**双侧早死**组 | 只在非法输入下发散，**别改源码** |
+   | UNDECIDABLE 1 | `xmp3_FDCT32` | 无跑完组 | 视野不对齐，**先补沙箱/模型** |
+   ⇒ 也就是说：**静态对拍这条线上，已没有"能靠改源码修"的项了**。
+     剩下的三类分别属于「仪器」「沙箱观测力」「已定级非语义」。
+
+3. **`locale_charset` 的下一步必须走云开发**：本机**无 zig / pyelftools / capstone**，
+   `cache_tc/bootlin63/bin/arm-linux-objdump` 又是 Linux ELF（Git Bash 下 `Exec format error`）
+   ⇒ 本机**无法**反汇编 ARM32、无法编出对照汇编。这是环境硬约束，不是"懒得做"。
+   已备好调试入口：`tools/diff_exec.py` 里 `CGM_DBG_RW=1` 会打印**原始键**（`rk_f` / `rk_o`），
+   下一步在云开发对该单函数跑即可看到"我们侧那次读到底有没有被采集到"。
+
+4. **`ICONV_CC` 的流程缺口仍未动**（R214 记录）：CI 的 libiconv/libcharset 用 `zig cc`（ARM），
+   工厂是 Thumb；`ledger/isa_mode_baseline.txt` 的 `max_mismatch=0` 只在云开发被验证过，
+   `isa_mode_gate.py` **从未进 CI**。⇒ CI 的"正式产物"与"已证明对齐工厂的那个产物"不是同一个。
+   这需要单独一轮（会动 296 个函数），本轮不动。
+
+### 三、下一步待办
+
+1. **P0**：推送本轮（台账 18 项 + R215/R216 + `sync_mirror.py` 修复）后监控 CI，
+   判据 = `1to1-verify` 保持 success、`★新增 0`、`已收敛 0`（因为本次没有新增收敛项）。
+2. **P1**：`locale_charset` —— 云开发里 `CGM_DBG_RW=1` 跑单函数，看 `rk_o` 是否为空、
+   以及采集阶段丢在哪一步（**修仪器，不动源码**）。
+3. **P1**：`ICONV_CC` 单变量实验（CI 里 libiconv 改用 bootlin63 真 GCC 产 Thumb，
+   并把 `isa_mode_gate.py` 加进 CI）。先决：`1to1-verify.yml` 当前完全没有 `cache_tc`，
+   需先加 `sh tools/fetch_bootlin63.sh` 步骤并缓存。
+4. **P2**：清理 `build_upstream.sh:123-135` 的 `-Os` 历史注释；L4 两草稿云端 zig 语法验证。
