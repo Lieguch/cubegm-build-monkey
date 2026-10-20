@@ -4052,34 +4052,55 @@ extern ZRESULT lasterrorU; /* 1:1：定义在工厂数据镜像（.bss 0x3b221c�
 /* 注：`zopenerror` 的 extern 声明在文件头部（unzip.h 之后）—— `unzOpenInternal` 与
  *     `TUnzip::Open` 都要用，位置必须在使用点之前。 */
 
+/* ★★ 2026-10-20（R213）两处**工厂一手取证**得出的修正（都改自工厂二进制本身，非猜测）：
+ *
+ *  ① `mlen` **必须写成常量**，不能写 `_tcslen(msg)`。
+ *     一手证据 A（Ghidra 反编译 `build/_ghidra_perfn/03-per-function/FUN_000129f0_FormatZipMessageU.c`）：
+ *     工厂每个分支形如 `sVar1 = 0x2f; __src = "..."; goto LAB_00012b58;` —— GCC 6.3 的
+ *     tree-ssa-strlen 把「所有分支都赋字面量」的 `strlen(msg)` 折叠成了 **PHI 常量**。
+ *     一手证据 B（CI 实测 b2c31080 / 产物 e3a58dff）：
+ *       `_Z17FormatZipMessageUjPcj [zero] calls_ext 仅F=[] 仅O=['strlen']`
+ *       ⇒ 工厂 buf==0 时**一个外部函数都不调**（直接返回常量），我们却调了 strlen。
+ *     后果：clang 不做这个折叠 ⇒ 我们多一次 strlen 调用 ⇒ 真发散。
+ *
+ *  ② **没有 `case ZR_PASSWORD`**（0x1000）。
+ *     一手证据：`b'Correct password required'` **在 golden/factory.rkgame.bin 里搜不到**
+ *     （而 `unknown zip result code` / `Caller: faulty arguments` 都在）⇒ 工厂根本没有这条分支，
+ *     code==0x1000 会落到 default 返回 23。
+ *     我们原来有这条 ⇒ code==0x1000 时返回 25 与工厂不同（沙箱三组输入都没取到 0x1000，
+ *     所以这是**未被沙箱覆盖**的真实语义发散，一并修掉）。
+ *
+ *  下面每个 `mlen=` 的值 = 该字面量的 `strlen`，与工厂反编译里的常量**逐项对齐**：
+ *    7/24/25/25/21/29/24/35/18/24/52/47/53/34/52/42/46/38/46/46/41，default 23。
+ */
 unsigned int FormatZipMessageU(ZRESULT code, TCHAR *buf,unsigned int len)
 { if (code==ZR_RECENT) code=lasterrorU;
-  const TCHAR *msg=_T("unknown zip result code"); /* 工厂: 非 UNICODE */
+  const TCHAR *msg;
+  unsigned int mlen;
   switch (code)
-  { case ZR_OK: msg=_T("Success"); break;
-    case ZR_NODUPH: msg=_T("Culdn't duplicate handle"); break;
-    case ZR_NOFILE: msg=_T("Couldn't create/open file"); break;
-    case ZR_NOALLOC: msg=_T("Failed to allocate memory"); break;
-    case ZR_WRITE: msg=_T("Error writing to file"); break;
-    case ZR_NOTFOUND: msg=_T("File not found in the zipfile"); break;
-    case ZR_MORE: msg=_T("Still more data to unzip"); break;
-    case ZR_CORRUPT: msg=_T("Zipfile is corrupt or not a zipfile"); break;
-    case ZR_READ: msg=_T("Error reading file"); break;
-    case ZR_PASSWORD: msg=_T("Correct password required"); break;
-    case ZR_ARGS: msg=_T("Caller: faulty arguments"); break;
-    case ZR_PARTIALUNZ: msg=_T("Caller: the file had already been partially unzipped"); break;
-    case ZR_NOTMMAP: msg=_T("Caller: can only get memory of a memory zipfile"); break;
-    case ZR_MEMSIZE: msg=_T("Caller: not enough space allocated for memory zipfile"); break;
-    case ZR_FAILED: msg=_T("Caller: there was a previous error"); break;
-    case ZR_ENDED: msg=_T("Caller: additions to the zip have already been ended"); break;
-    case ZR_ZMODE: msg=_T("Caller: mixing creation and opening of zip"); break;
-    case ZR_NOTINITED: msg=_T("Zip-bug: internal initialisation not completed"); break;
-    case ZR_SEEK: msg=_T("Zip-bug: trying to seek the unseekable"); break;
-    case ZR_MISSIZE: msg=_T("Zip-bug: the anticipated size turned out wrong"); break;
-    case ZR_NOCHANGE: msg=_T("Zip-bug: tried to change mind, but not allowed"); break;
-    case ZR_FLATE: msg=_T("Zip-bug: an internal error during flation"); break;
+  { case ZR_OK: msg=_T("Success"); mlen=7; break;
+    case ZR_NODUPH: msg=_T("Culdn't duplicate handle"); mlen=24; break;
+    case ZR_NOFILE: msg=_T("Couldn't create/open file"); mlen=25; break;
+    case ZR_NOALLOC: msg=_T("Failed to allocate memory"); mlen=25; break;
+    case ZR_WRITE: msg=_T("Error writing to file"); mlen=21; break;
+    case ZR_NOTFOUND: msg=_T("File not found in the zipfile"); mlen=29; break;
+    case ZR_MORE: msg=_T("Still more data to unzip"); mlen=24; break;
+    case ZR_CORRUPT: msg=_T("Zipfile is corrupt or not a zipfile"); mlen=35; break;
+    case ZR_READ: msg=_T("Error reading file"); mlen=18; break;
+    case ZR_ARGS: msg=_T("Caller: faulty arguments"); mlen=24; break;
+    case ZR_PARTIALUNZ: msg=_T("Caller: the file had already been partially unzipped"); mlen=52; break;
+    case ZR_NOTMMAP: msg=_T("Caller: can only get memory of a memory zipfile"); mlen=47; break;
+    case ZR_MEMSIZE: msg=_T("Caller: not enough space allocated for memory zipfile"); mlen=53; break;
+    case ZR_FAILED: msg=_T("Caller: there was a previous error"); mlen=34; break;
+    case ZR_ENDED: msg=_T("Caller: additions to the zip have already been ended"); mlen=52; break;
+    case ZR_ZMODE: msg=_T("Caller: mixing creation and opening of zip"); mlen=42; break;
+    case ZR_NOTINITED: msg=_T("Zip-bug: internal initialisation not completed"); mlen=46; break;
+    case ZR_SEEK: msg=_T("Zip-bug: trying to seek the unseekable"); mlen=38; break;
+    case ZR_MISSIZE: msg=_T("Zip-bug: the anticipated size turned out wrong"); mlen=46; break;
+    case ZR_NOCHANGE: msg=_T("Zip-bug: tried to change mind, but not allowed"); mlen=46; break;
+    case ZR_FLATE: msg=_T("Zip-bug: an internal error during flation"); mlen=41; break;
+    default: msg=_T("unknown zip result code"); mlen=23; break; /* 工厂: 非 UNICODE */
   }
-  unsigned int mlen=(unsigned int)_tcslen(msg);
   if (buf==0 || len==0) return mlen;
   unsigned int n=mlen; if (n+1>len) n=len-1;
   _tcsncpy(buf,msg,n); buf[n]=0;

@@ -8995,3 +8995,74 @@ cores/refctx/stbtt/loadstate）。
 3. **P1**：`_Z17FormatZipMessageUjPcj` 的 `mlen` 常数化（单独一轮，单独验证）。
 4. **P1**：`locale_charset` 走补 `libc_model.nl_langinfo`（不改源码）。
 5. **P2**：修复 CNB sync 401；L4 两草稿云端 zig 语法验证。
+
+
+---
+
+## R213（2026-10-20）—— REAL 第二项 `_Z17FormatZipMessageUjPcj` 出手：工厂一手取证揭出**两处**差异
+
+### 一、完成事项
+
+1. **台账按门禁测量机械重建到 19 项**（R212 待办 #2 落地）：
+   用 `tools/ledger_from_report.py` 从 **b2c31080 的 CI artifact**（`1to1-p2a-report`：
+   `diff_exec.txt` + `_rows.json`）重建，取代旧的 21 项。机械输出：
+   `发散 7 ∪ 不可判 12 ⇒ 共 19 项`；`steps=3000 / escalate=60000`；
+   `ours=e3a58dff166b26f9…`（= CI 产物 sha）；`★新增 []`；
+   `✓已收敛 ['DrawFrame', '_ZN6TUnzip5CloseEv']` ⇒ 原子写入 `tools/diff_exec_pending.txt`。
+2. **`_Z17FormatZipMessageUjPcj` 找出并修掉两处真差异**（两处都有工厂一手证据，非猜测）：
+   - ① `mlen` 由 `_tcslen(msg)` 改为**每个 case 写常量**
+     （7/24/25/25/21/29/24/35/18/24/52/47/53/34/52/42/46/38/46/46/41，default 23）；
+   - ② **删掉 `case ZR_PASSWORD`**（0x1000）。
+   位置：`src/upstream/xunzip/unzip.cpp` 的 `FormatZipMessageU`。
+3. 本地复验（推前）：`scan_call_counts --root . --ledger …` **PASS**（0 漏调用）；
+   `src_transcript_parity` **PASS**（所有可配对函数调用总数都不少于 Ghidra）。
+
+### 二、新发现与决策
+
+1. ★★ **工厂根本没有 `ZR_PASSWORD` 分支**（新发现，且是**沙箱覆盖不到**的真发散）：
+   - 一手证据：`b'Correct password required'` **搜不到**于 `golden/factory.rkgame.bin`
+     （对照：`b'unknown zip result code'` @2967644、`b'Caller: faulty arguments'` @2967900 都在）；
+   - 旁证：Ghidra 反编译 `build/_ghidra_perfn/03-per-function/FUN_000129f0_FormatZipMessageU.c`
+     里 `0x800` 之后直接比 `0x10000`，中间没有 `0x1000`。
+   ⇒ 我们原来有这条 ⇒ `code==0x1000` 时我们返回 25、工厂返回 23（走 default）。
+   沙箱三组输入都没取到 0x1000，所以**门禁看不到**这一条，但它是真差异 ⇒ 一并修掉
+   （动机是 1:1，不是为了让门禁变绿）。
+2. **`mlen` 必须写成常数，不能写 `_tcslen(msg)`**：
+   - 一手证据 A：工厂反编译每个分支都是 `sVar1 = 0x2f; __src = "..."; goto LAB_00012b58;`
+     ⇒ GCC 6.3 的 tree-ssa-strlen 把「所有分支都赋字面量」的 `strlen(msg)` 折叠成 **PHI 常量**；
+   - 一手证据 B（CI `_rows.json`，b2c31080 / 产物 `e3a58dff`）：
+     `[zero] ca_f=[] / ca_o=['strlen']`、`ret_f=ret_o=7`
+     ⇒ 工厂在 `buf==0` 时**一个外部函数都不调**（直接返回常量），我们却调了 `strlen`。
+   clang 不做这个折叠 ⇒ 真发散。已按工厂同形改掉（语义逐位不变）。
+3. **还剩一处（本次未动）：我们侧无条件读 `lasterrorU`。**
+   `_rows.json` 取证：zero / strs / core 三组 `rd_f=[] / rd_o=[['A',3875356,4,'R']]`
+   （3875356 = 0x3b221c = `lasterrorU`）；而 misc 组（`code==1`，两侧 `rd` 都有）证明
+   读本身没问题 ⇒ 只在那三组我们多读一次。
+   源码 `if (code==ZR_RECENT) code=lasterrorU;` **与工厂同形**，所以这是
+   **clang 的 if-conversion（无条件 load + select）对上 GCC 6.3 的真实分支** ⇒ 纯 codegen 差异，
+   读到的值被丢弃 ⇒ 语义无关。
+   ⇒ **不猜着改源码**（加 `volatile` 属于"改源码去迁就代码生成"，可能把差异从"多读一次"
+   变成别的差异），留到下一轮在**云开发**里编译出两侧汇编做单变量确认（本机无 zig / capstone）。
+4. ★ **`locale_charset` 的方向要修正**（R212 待办 #4 写的"补 `libc_model.nl_langinfo`"是错的方向）：
+   - `_rows.json` 四组全同：`ret_f=3854324(0x3ACFF4) / ret_o=5095813`、
+     `rd_f=[['LN','asso_values',256,1,'R']] / rd_o=[]`、`ca_f=ca_o=['nl_langinfo']`、
+     `fault_f=fault_o=None`、`sf=so='return'`；
+   - 工厂反编译 `FUN_002db79c_locale_charset.c` 只有 **58 字节**：
+     `nl_langinfo(0xe)` → `NULL ⇒ ""` → `if (*local_c=='\0') local_c="ASCII"` → return。
+   ⇒ 工厂那 1 字节读就是 `*local_c`；我们侧 **`rd_o` 为空 = 我们没做这次读**。
+   ⇒ 差异**不在 hook 返回值**，而在**我们侧这次载入没有发生**。
+   我们源码里是**有**这段的（`src/upstream/libcharset/localcharset.c:904-907`，
+   `if (codeset[0] == '\0') codeset = "ASCII";`）⇒ 需查清为何没生成载入
+   （候选：`alias_table_defined` 分支走了 `goto done_table_lookup` 提前跳出；或宏路径不同）。
+   下一步在云开发里对拍汇编定位（本机无 zig / pyelftools / capstone，无法反汇编 ARM32）。
+
+### 三、下一步待办
+
+1. **P0**：推送本轮（`unzip.cpp` 两处修复 + 19 项台账）后监控 CI；
+   判据 = `1to1-verify` 保持 **success**，且报告里「✓ 本轮收敛」含 `_Z17FormatZipMessageUjPcj`。
+2. **P0**：若收敛 ⇒ 台账再重建一次（应为 18 项）；同时看 `lasterrorU` 无条件读是否还在。
+3. **P1**：`locale_charset` —— 在**云开发**里对拍两侧 `locale_charset` 汇编，
+   查清我们侧为什么没有 `*codeset=='\0'` 这一次载入（**不是**改 `libc_model`）。
+4. **P1**：`lasterrorU` 无条件载入 —— 同在云开发做单变量实验（volatile 前后对比汇编）后
+   再决定是否动源码。
+5. **P2**：修复 `sync_mirror.py --remote cnb` 的 401；L4 两草稿云端 zig 语法验证。

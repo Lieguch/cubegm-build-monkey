@@ -1,20 +1,18 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ours=bf4d4461ed84f5d73f37547be5f54a489fc4bfce749ea56f7597edc4ece84d6c
+# ours=e3a58dff166b26f9d4dd16c0279f840a2697b960884168fa2116e48433e4e808
 # ruler=d3c1a9d2751fd5b1df50d02162ec8fcc9f108e388c95364dbeb4683d6f4a40a9
-# rebaseline: R211: 改由门禁环境(CI)自身的测量机械重建——R210 在 CNB 云开发 rebaseline 因环境判别力不同(不可判45 vs 5/REFDEAD34 vs 0)误删 5 项；同时回退 strupr 的 (islower)(..) 破坏性改动
+# rebaseline: R213: DrawFrame/_ZN6TUnzip5CloseEv 已收敛(DIVERGE 9->7)，按门禁环境自身测量机械重建
 # ★ 本台账由 tools/ledger_from_report.py 从**门禁环境自己的**测量报告机械重建（不人工挑选）—— 见文件头注释里的事故经过。
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 DisplayPage_list
-DrawFrame
 MP3InitDecoder
 TestRun
 TestUSBJoy
 WaitNMI
 _Z17FormatZipMessageUjPcj
-_ZN6TUnzip5CloseEv
 get_item_from_line
 locale_charset
 mui_DisplayInputBuffer
