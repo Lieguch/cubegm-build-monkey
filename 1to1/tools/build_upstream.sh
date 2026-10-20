@@ -107,6 +107,18 @@ CGM_HDR="-nostdinc -I$CGM_GI -I$CGM_GIF -I$CGM_GD"
 CGM_FID_EXTRA="-fno-builtin-strcmp"
 
 LIBOPT="${LIBOPT:--O0}"
+# ★★★★ 2026-10-20（R219）**读者请注意：下面这段「回退记录」已被后续轮次覆盖，不要照它决策。**
+#   现行生效配置（以代码为准，勿读注释猜）：
+#     · 上游库 stb/mxml/mp3 → `UPOPT=-Os`（见本文件上方 `UPOPT="${UPOPT:--Os}"`）
+#     · libiconv/libcharset → `LIBOPT=-O0` **+ `-mthumb`**，且由**真 GCC** 编（`ICONV_CC`）
+#   两条历史结论的现状：
+#     ① 下面「`-Os` 净恶化 ⇒ 回退 `-O0`」——那是**用 zig 编 libiconv** 时代的结论；
+#        R115 已把 libiconv 改为真 GCC `-O0 -mthumb`（zig 静默忽略 -mthumb 才是真根因），
+#        该结论**不再适用于当前配置**，不要据此拒绝 `-Os`/`-O2` 实验。
+#     ② 下面「工厂 296 个函数全是 Thumb，我方 Thumb=0，已登记待办」——**R115 已根修**
+#        （云上实测 308→0）；R219 把同一配置搬进 CI（`1to1-verify.yml` 的
+#        cache-bootlin63 + s52 + P3 的 `ICONV_CC`），并首次把 `isa_mode_gate.py` 立为 CI 硬门禁。
+#   ⇒ 保留下文原始记录（审计可追溯），但**不得**当作现行决策依据。
 # ★★★ 2026-10-01（第 107 轮）**回退记录**：曾试改为 `-Os`，**实测净恶化，已回退**。
 #   实测（同产物、同判据）：`-O0` → 函数总数 788 / PASS 766 / **DIVERGE 17**；
 #                          `-Os` → 函数总数 756 / PASS 714 / **DIVERGE 37**。
