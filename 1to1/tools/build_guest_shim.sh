@@ -17,6 +17,23 @@ OUT="${1:?usage: build_guest_shim.sh <out.so>}"
 CC="${CC:-}"
 SRC="$ROOT/tools/guest_shim/fake_mem.c"
 
+# ★★ R221：可选叠加 ABI 探针（`CGM_ABI_PROBE_BUILD=1`）。
+#   为什么必须**编进同一个 DSO** 而不是单独一个 .so：
+#     探针要 wrap 全局 `dlsym`。若做成独立 .so 并 LD_PRELOAD 叠加在 guest_shim 之前，
+#     guest_shim 内部的 `dlsym(RTLD_NEXT,"fopen")` 会落到探针实现；
+#     而 RTLD_NEXT 的语义是「从**调用者** link_map 之后找」——
+#     转发进另一个 DSO 后调用者上下文已变，会先命中 guest_shim **自己**的 fopen
+#     ⇒ 无限递归 ⇒ SIGSEGV（R221 实测 exit=139、stdout 0 行，两次复现）。
+#     编进同一个 DSO 后，`dlsym(RTLD_NEXT,..)` 的调用者与真 dlsym 的返回地址同属一个
+#     link_map ⇒ glibc 从本 so 之后继续找（libc），语义天然正确、不递归。
+#   ★ 默认**不编**（`CGM_ABI_PROBE_BUILD` 未设 ⇒ 行为与旧版逐字节一致），
+#     避免影响 CI 行为差分主链。
+EXTRA=""
+if [ "${CGM_ABI_PROBE_BUILD:-0}" = "1" ]; then
+    EXTRA="$ROOT/tools/guest_shim/abi_probe.c"
+    echo "  [shim] + ABI 探针（abi_probe.c）"
+fi
+
 # ★ 2026-10-04（第 138 轮）统一到**唯一权威探测** tools/cgm_cc_probe.sh。
 #   历程：第 137 轮把 `CC="${CC:-cc}"`（硬编宿主 cc）改成四段探测；
 #   第 138 轮发现同一段探测已在 **6 个脚本里各写一份** ⇒ 违反「同一规则禁止写两处」，
@@ -53,5 +70,10 @@ echo "  [shim] CC=$CC  目标 glibc=${SHIM_GLIBC}"
 
 mkdir -p "$(dirname "$OUT")"
 # shellcheck disable=SC2086
-$CC $ARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" -o "$(winpath "$OUT")" || exit 1
+# shellcheck disable=SC2086
+if [ -n "$EXTRA" ]; then
+    $CC $ARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" "$(winpath "$EXTRA")" -o "$(winpath "$OUT")" || exit 1
+else
+    $CC $ARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" -o "$(winpath "$OUT")" || exit 1
+fi
 ls -la "$OUT"

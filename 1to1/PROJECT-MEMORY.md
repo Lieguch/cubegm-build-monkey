@@ -657,6 +657,39 @@ PY="$PY" sh tools/stage_sd_diag.py                      # 生成 _sdcard_drop/
 
 ## 9. 待办与下一步
 
+### 9.0 ★★★★★ 第 R219 末记（2026-10-20）：工厂同期真 GCC（Thumb）进 CI + 两处仪器缺陷根修 + 台账按门禁自测重建 —— **权威记忆落后到 R203，本条补到 R219**
+
+> 详细逐轮台账在 `PROGRESS.md`（`## R219（2026-10-20）…` 段完整，未被截断）。本条只记**承重结论 + 待办状态**，不重述证据。
+
+**承重结论**
+1. **口径分裂根修落地**：`1to1-verify` 新增 bootlin63 cache+fetch（`s52`），P3 用真 GCC 6.3 编 libiconv，`isa_mode_gate.py` 立为硬门禁（`s53`）。
+   ⇒ 此前 CI 用 zig（静默忽略 `-mthumb`）⇒ 正式产物 ≠ 已验证对齐产物。`ICONV_CC` 选择已收敛进 `tools/build_upstream.sh`（探测式），qemu 侧补同 cache ⇒ 同 commit 两门禁测同一二进制。
+2. **两处仪器缺陷（同 R218 同族"换指令集/结构后先查仪器"）**：
+   - `scan_livein_args.base_mn` 不认 Thumb-2 `.w/.n` 后缀 ⇒ 表驱动归一 + `mn_selftest()` 13 条（修前 11 条失败），HIGH 4→2。
+   - `s45/s46/s43/s38` 缺 `continue-on-error` ⇒ 补齐（GAP 17.11 总账收齐要求）。
+3. **台账按门禁自测重建**（16 项 = 发散 5 ∪ 不可判 11，`ours=fc0ed0e7`，ruler `c85f9763`）；livein 台账删 8 行（40→33，`.w` 归一后误报消失）。
+   ★ **本机 ≠ 门禁**第三次实证（R210/R211/R219）：本机同尺子 DIVERGE 10，门禁 5 ⇒ 台账只能来自门禁。
+4. **最终判决**（commit `e97691e067` + `84e8e6110300`）：
+   `1to1-verify` **success**（PASS 774 / DIVERGE 5 / TRUNC 5 / DEADEQ 6 / REFDEAD 0 / SKIP 0 = 790 自洽；台账 16｜★新增 0；isa_mode 模式不同 0）；`rkgame-rebuild` success；
+   `1to1-qemu-behav` **rc=2 仅 B6 诚实红**。
+
+**P0/P1/P2 现状（本轮推进结果）**
+- **P0 ✅ 关闭**：`1to1-qemu-behav` 确认轮（`84e8e6110300` / run `39426304275`）**已跑完 = failure，但仅红 B6 全零基线**
+  （`frame_hash b5449dc5 vs b5449dc5`，B6R 3072 vs 3072 PASS，B1-B5/B7/B8a/b 全 PASS）。
+  ⇒ 换真 GCC Thumb 后**无新硬失败**，与 R219e 结论一致。
+- **P1（B6 观测点补强，未闭环）**：根因更比 R189 注释深 —— 本轮 `AddFB2_h` 实测 driver 创建的是
+  **1280×1280 / bpp=16（RG16）3 个 handle**（不是注释写的"AR24×1"）。`fb_commit_hash` 已按 `dumb_lookup(fb)` 精确引用实体，
+  但 guest 原始 stderr 里 **`SetPlane_geom`/`frame#` 一条都没打** ⇒ driver 走的是**私有画布 mmap 路径**（`drm_create_surface`
+  自封 `mmap@plt`），像素从未落进桩实体。补强需 guest stderr 原文定位 driver 真正 blit 目标画布 ⇒ **需 CNB 云开发实跑**
+  （设备 sysroot + 桩），非本机只读通道可得。**下一步：云开发取该 stderr，定位 blit 目标 handle，再决定观测点落在 ABI 边界还是私有画布。**
+- **P2（FastGithub 通道，环境事实）**：本机代理证书失效（`Missing Subject Key Identifier`，代理仍监听 127.0.0.1:443 PID 7100）
+  ⇒ 严格校验 `api.github.com` 不可用，本轮全部只读通道降级 `verify=NONE` + 数据交叉核对。
+  **下一步：修 FastGithub 证书，或固化「artifact + 公开 log」双通道**（CI 产物走 artifact、判据数字走公开 log，不经本机 TLS）。
+
+**环境事实（新增）**
+- FastGithub MITM：TLS 严格校验失败（证书无 Subject Key Identifier），`curl -k` / `verify=NONE` 可读（rate_limit 正常）。
+- job 级日志端点 `.../jobs/{id}/logs` 需**跟随 302**（重定向到 blob 存储）且带 token；artifact zip 下载需带 token + 跟随 302。
+
 ### 9.1 ★★★★★ **已确证根因：音频（ALSA）初始化序列与原厂不同**（2026-09-22，看完设备全部数据后）
 
 **证据来源**：程序**自己打印的** stdout/stderr（探针 v3 把子进程 fd1/fd2 重定向落盘）

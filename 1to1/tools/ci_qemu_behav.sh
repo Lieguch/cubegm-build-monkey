@@ -173,7 +173,8 @@ if [ -n "${CGM_SHIM_SO:-}" ]; then
         SHIM=""
     fi
 elif [ "${CGM_GUEST_SHIM:-1}" = "1" ] && [ -n "$CC_FOR_SHIM" ] && \
-     CC="$CC_FOR_SHIM" sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
+     CC="$CC_FOR_SHIM" CGM_ABI_PROBE_BUILD="${CGM_ABI_PROBE_BUILD:-1}" \
+     sh "$ROOT/tools/build_guest_shim.sh" "$SHIM" > "$OUT/shim_build.txt" 2>&1; then
     SHIM_ON=1
     echo "guest shim = $SHIM（已构建；两侧都加载它）"
 else
@@ -228,6 +229,10 @@ WRAP="$OUT/run_guest.sh"
 PRELOAD_OPT=""
 if [ -n "$SHIM" ]; then
     PRELOAD_OPT="-E LD_PRELOAD=$SHIM"
+    # ★ R221：显式打开 ABI 探针（B6A 判据的唯一数据源）。
+    #   shim 已按 CGM_ABI_PROBE_BUILD=1 编入 abi_probe.c（同一 DSO）；
+    #   这里只负责**在 guest 内**打开探针开关。两侧同值 ⇒ 差分仍公平。
+    PRELOAD_OPT="$PRELOAD_OPT -E CGM_ABI_PROBE=1"
     # 让 shim 输出一行"投毒参数"证据（默认静默）；两侧一致 ⇒ 不影响差分有效性。
     if [ "${CGM_SHIM_VERBOSE:-1}" = "1" ]; then
         PRELOAD_OPT="$PRELOAD_OPT -E CGM_SHIM_VERBOSE=1"
@@ -240,7 +245,7 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE CGM_ABI_PROBE; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done

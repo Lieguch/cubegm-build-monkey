@@ -12,7 +12,11 @@
   B3 新增文件路径一致      必须
   B4 变更文件路径一致      必须
   B5 menu.log 内容 sha 一致 两侧都有日志时必须（真机日志名 = menu.log）
-  B6 帧缓冲采样哈希一致     若两侧均非 none 则必须
+  B6 帧缓冲采样哈希一致     若两侧均非 none 则必须（DRM 呈现点；本机恒全零基线 ⇒ 诚实红）
+  B6A ABI 边界帧哈希一致    若两侧均带 ABI 探针则必须（`video_driver_disp_frame` 入参缓冲）
+     ★ 与 B6 并存，不是替换：B6 记录「呈现点看不到像素」，B6A 记录「rkgame 出帧是否一致」。
+       实测依据：rkgame 提交 1280×720 RGB565(pitch 2560)，而桩 FB 是 1280×1280 AR24(pitch 5120)
+       ⇒ 几何+格式双不匹配，桩永远读不到该画面。
   B7 shm 心跳一致          若两侧均 >0 则必须
   B8 设备访问计数一致       若两侧均经过 SFC 设备仿真则必须（命令条数 + 寄存器访问次数）
      ★ 这一项能抓住「设备访存被编译器提升/合并/向量化」——该类差异在 stdout 事件里不可见
@@ -331,6 +335,37 @@ def main():
                 '%s vs %s —— %s / %s' % (fha, fhb, _kind(fha), _kind(fhb)))
         else:
             chk('B6 frame_hash', fha == fhb, '%s vs %s' % (fha, fhb))
+
+    # ---- B6A ABI 边界帧哈希：rkgame **真正提交给 driver 的画面**必须两侧一致 ----
+    # ★ 为什么**新增**而不是替换 B6（R221 云开发实测依据，非偏好）：
+    #   R221 在完整按键注入环境（CGM_KEY2_SEED/HOOK）下实测 factory 单侧：
+    #     · rkgame 调 `video_driver_disp_frame(data, w=1280, h=720, pitch=2560)`
+    #       ⇒ **1280×720 RGB565**，内容 hash=`dfdaf563`、前 4 KiB 100% 非零；
+    #     · DRM 桩建的 framebuffer 是 **1280×1280 AR24（pitch 5120）**
+    #       ⇒ 几何与像素格式**双双不匹配** ⇒ 桩的 `frame#` 恒读全零基线 `b5449dc5`。
+    #   ⇒ 「B6 全零」不是"driver 没画"，而是"观测点看的是另一块几何不同的缓冲"。
+    #   ★ 纪律：**保留 B6 原判据**。它诚实地记录"呈现点未观测到像素"这一事实，
+    #     用 B6A 静默替换它 = 把已知缺口藏起来（本项目的假绿红线）。
+    #     两者并存：B6 说明"呈现点看不到"，B6A 说明"rkgame 出帧是否一致"。
+    faa, fab = a.get('frame_hash_abi', 'none'), b.get('frame_hash_abi', 'none')
+    wh_a, wh_b = a.get('frame_wh_pitch_abi', 'none'), b.get('frame_wh_pitch_abi', 'none')
+    if faa == 'none' or fab == 'none':
+        checks.append(('B6A frame_hash_abi', True,
+                       'SKIP（一侧无 ABI 探针：%s vs %s —— 需 CGM_ABI_PROBE=1 构建）'
+                       % (faa, fab)))
+    else:
+        zr2 = zero_baseline_hashes()
+
+        def _kind2(h):
+            return ('全零基线 %s ⇒ 未观测到像素' % h) if h in zr2 else '有内容'
+
+        if faa in zr2 or fab in zr2:
+            chk('B6A frame_hash_abi', False,
+                '%s vs %s —— %s / %s' % (faa, fab, _kind2(faa), _kind2(fab)))
+        else:
+            # 哈希 + 几何必须同时相等：只比哈希的话，"同哈希不同几何"会被漏掉
+            chk('B6A frame_hash_abi', faa == fab and wh_a == wh_b,
+                '%s(%s) vs %s(%s)' % (faa, wh_a, fab, wh_b))
 
     # ---- B6R 帧提交次数：两侧都必须**真的在刷帧**（防止 0 帧也判一致）----
     # 为什么要这条：`frame_hash` 相同也可能是"两侧都是黑屏 + 都没提交过"。

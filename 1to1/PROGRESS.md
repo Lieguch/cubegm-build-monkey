@@ -9466,3 +9466,149 @@ cores/refctx/stbtt/loadstate）。
 3. **P2**：修 FastGithub 证书；或把 CI 数据读取固化为「artifact + 公开 log」两条腿，减少对代理的依赖。
 4. **P2**：`build_upstream.sh` 的旧 `-Os` 历史注释已加"已被 R115/R219 覆盖"标注（本轮做），
    后续可再精简为指针。
+
+> 追加前 `old_intact=True`（旧文 733628 B / sha 46d53cc037cb0b86…）；由 `tools/append_progress.py` 原子追加。
+## R220（2026-10-21）—— 收敛核实轮：161 五项已闭环的显性化 + R219 P0 确认 + B6 补强技术定案
+
+### 一、完成事项
+
+1. **R219 P0 确认闭合**：`1to1-qemu-behav`（commit `e97691e067` / run `39426304275`）
+   job 级日志（`report/_r219p0_qlog.txt`）逐行核实 ——
+   `B6 frame_hash b5449dc5 vs b5449dc5`（**全零基线，诚实红**），`B6R frame_commits 3072 vs 3072` PASS，
+   B1/B2/B3/B4/B5/B7/B8a/B8b 全 PASS，里程碑矩阵 M0–M7/MX 两侧完全同步
+   （`→ 两侧里程碑差集：空`）；`GATE_RC=2` = 仅 B6。⇒ **R219 全闭合**
+   （符合 R219 待办 1 的判据："若仍只红在 B6 全零基线，则 R219 全闭合"）。
+
+2. **161 轮 P0① 复验**：`python tools/driver_stub_coverage.py` 重跑，
+   `需桩 37 项：已覆盖 37，缺失 0` ⇒ 假桩覆盖 driver.so 全部需桩 UNDEF（P0① 仍有效，无需补做）。
+
+3. **161 轮点名五项逐一核销（核心发现：全部已在前几轮闭环，本轮只做显性化）**：
+
+   | 161 待办 | 实际状态 | 证据 |
+   |---|---|---|
+   | P0① driver.so 符号族 diff 对齐 | ✅ R162 已做 | `tools/driver_stub_coverage.py`（本轮复验 37/37） |
+   | P0② DIAG-RUNBOOK「autorun 劫持」+「观测点」两节 | ✅ 已存在（hcge 按 R162 证伪改为 DRM/KMS 口径） | DIAG-RUNBOOK 第九节「autorun 劫持」+ 第十节「DRM/KMS 显示链 + ALSA 观测点」，10.5 节记录「原名 hcge/fbdev_draw_frame 观测点」 |
+   | P1① TreeFrogUI cores.md 对表 | ✅ R173 | `report/folder_core_map.md` |
+   | P1② madcock/sf2000_multicore retro_core_t 对表 | ✅ R174 | `report/retro_core_t_map.md` |
+   | P2 R36S Wiki 第二参照物 | ✅ R174 | `report/r36s_second_reference.md` |
+
+### 二、新发现与决策
+
+1. ★ **folder→core 映射的真实形态纠偏**：本 rkgame（RK3036G）**没有**数字编号映射
+   （`000=fba/001=FC/...` 是 CubeGM/SF3000（MIPS）**另一条线**的口径，不可混用）。
+   本机是**三层扩展名驱动**：filelist.xml（000/002/004 显式）→ `default_core_list`
+   @0x003b0254（33 项 × 68B：`[32B ext][4B Filetype][32B core名]`，扩展名→filetype 位→`libemu_*.so`）
+   → FBA_Load 9+1 槽 dlopen 遍历。本轮从 `src/data/factory_data.bin` 偏移 0x1254 重解码 33 项复核无误
+   （SMC/FIG/SFC/GD3/…/SWC→libemu_sfc、NES/NFC/FDS/UNF→libemu_nes、GBA/AGB/GBZ→libemu_gpsp、
+   GBC/GB/SGB→libemu_tgbdual、BIN/MD/SMD/GEN/SMS→libemu_md、ISO/IMG/PBP→libemu_pcsx、
+   A26→libemu_stella、A78→libemu_prosystem、CONF→libemu_dosbox、VT3/VT4→libemu_vrt；BKP/ZIP 仅置 Filetype 无 core）。
+
+2. ★ **B6 补强（R219 P1）技术定案**：观测点应从「drm_stub 的 dumb buffer」换到
+   **ABI 边界 `video_driver_disp_frame` 的入参缓冲**。证据链（非猜测）：
+   - driver.so 的 `mmap` 是**自封定义**（`.symtab` DEFINED `mmap@@GLIBC_2.4`，非 UNDEF）⇒ 直接 SVC 发 syscall，
+     **绕过 shim 的 LD_PRELOAD 拦截** ⇒ fake_mem.c 画布登记实测**零行** ⇒ 画面从不落桩实体 ⇒ dumb buffer 恒零；
+   - ABI 入口：rkgame 侧 `dispFlip()`（`FUN_0000d8e4`）以 4 参调用 `(*video_driver_frame)(data,w,h,pitch)`，
+     `data` = `DrawFrame` 转交的 core 渲染帧；`video_driver_frame` 来自 `InitDisplay`（`FUN_0000d678`）
+     的 `dlsym(handle,"video_driver_disp_frame")`；
+   - ⇒ 唯一干净拦截点 = **wrap dlsym**（精确匹配 `video_driver_disp_frame`）对入参 `data` 做 FNV-1a。
+     （直接提供同名符号无效：rkgame 用 `dlsym(handle,..)` 只在 driver.so 句柄里查，shim 不在其依赖链。）
+
+3. ★ **B6 补强的前置风险（必须云开发最小裁决，不得拍脑袋写判据）**：qemu 沙箱里菜单
+   可能本就黑屏（M6 显示「包已打开(条目缺失)」、menu.log 仅 2 行、stdout 27 行）——若
+   `video_driver_disp_frame` 入参在 qemu 下**也是全零**，则 B6 诚实红是「qemu 环境天花板」
+   （菜单未真正渲染非零像素），换观测点**不改变结论**，只需记录天花板、不必继续加观测。
+   反过来说，若入参**非零**，则 ABI 边界哈希才是真正有判别力的 B6 判据 ⇒ 值得接进 behav_diff.py。
+   ⇒ 结论分支必须由云开发一次最小实验决定，本机不做（本机拿不到 guest stderr，且 Linux 才有的 qemu 实跑）。
+
+### 三、下一步待办
+
+1. **P1（唯一实质）**：云开发跑 B6 ABI 边界最小裁决 —— 独立小 shim wrap dlsym 探测
+   `video_driver_disp_frame` 入参哈希 + 是否全零；非零 ⇒ 接判据（behav_diff.py 增 ABI-frame 哈希行）；
+   全零 ⇒ 记录「qemu 环境天花板」结论并停手观测点，转而归档。参照 `tools/_b6_adjudge.sh` 框架。
+2. **P2**：FastGithub 证书（本地代理 MITM 证书缺 Subject Key Identifier ⇒ api.github.com 严格校验失败）；
+   短期 `curl -k` / verify=NONE 只读双通道已固化（R219），长期修代理证书。
+3. **P2**：`build_upstream.sh` 旧 `-Os` 历史注释 —— 评估后**保留**（审计证据链；R219 已加醒目覆盖标注，
+   再精简边际价值低且有删错证据风险）。
+
+> 追加前 `old_intact=True`（旧文 738992 B / sha 0803bac468ba00c8…）；由 `tools/append_progress.py` 原子追加。
+## R221（2026-10-21）—— ★ B6 根因定案：不是"没画"，是桩 FB 几何/格式与 driver 实际用的**双双不匹配** + B6A 判据落地
+
+### 一、完成事项
+
+1. **B6 根因定案（R219 P1 闭环，云开发实测，非推断）**。R221 在**完整按键注入环境**
+   （`CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1`，复刻 `ci_qemu_behav`）下跑 factory 单侧，
+   拿到三条互相印证的硬证据：
+
+   | 观测 | 实测值 | 含义 |
+   |---|---|---|
+   | `[abiprobe] disp#1` | `data=44ef0008 w=1280 h=720 pitch=2560 bytes=1843200 hash=dfdaf563 nz4k=4096` | rkgame 真正提交的是 **1280×720 RGB565**，**hash 非全零**、前 4 KiB **100% 非零** |
+   | `[drmstub] SetPlane_geom` | `plane=5 fb=2/3/1` 轮转，`src_w=05000000 src_h=02d00000` | driver 每帧 `SetPlane` 呈现，`src_w/h` = **1280<<16 / 720<<16**（16.16 定点） |
+   | `[drmstub] frame#1` | `hash=b5449dc5 dim=1280x1280x5120` | 桩建的 FB 是 **1280×1280 AR24(pitch 5120)** |
+
+   ⇒ **「B6 全零」的真根因**：桩的 framebuffer（1280×1280 AR24）与 driver 实际呈现的
+   几何（1280×720）和像素格式（RGB565 vs AR24）**双双不匹配** ⇒ 桩永远读不到该画面。
+   这**修正**了 R219 的表述「driver 自封私有画布、像素不落桩实体」——不是"不落"，
+   是"落的是一块几何不同的缓冲"。
+
+2. **修正 R219 的一处误判**：R219 日志里 `SetPlane/PageFlip/SetCrtc` 一条都没有 ⇒ 当时判为
+   "driver 不调呈现点"。R221 用单变量实验证伪：`drmstub_note2/note6` **无条件写 stderr**
+   （不受 `CGM_SHIM_VERBOSE` 门控，已读源码确认），缺的是**按键注入**——没有 `CGM_KEY2_SEED/HOOK`
+   时 UI 包打不开、菜单起不来，只提交 1 帧。补上后 `SetPlane/PageFlip` **每帧轮转 3 个 fb**。
+
+3. **新增 ABI 边界探针 `tools/guest_shim/abi_probe.c`**（R219 P1 的设计落点）：
+   wrap `dlsym` 精确拦截 `video_driver_disp_frame`，对入参帧缓冲做 FNV-1a + 统计非零字节。
+   - **必须编进 `guest_shim` 同一个 DSO**（`CGM_ABI_PROBE_BUILD=1` 开关，默认不编）。
+     独立 .so 叠加注入会因 `RTLD_NEXT` 语义错位**先命中 guest_shim 自己的 fopen**
+     ⇒ 无限递归 ⇒ `exit=139`（本轮实测**两次复现**，已写进源码注释）。
+   - 打印策略：前 6 帧必打 + **哈希变化时**必打（上限 64 行）——否则取"最后一条"会拿到初始黑屏帧，
+     漏判"按键改变画面"这个最关键差异。
+
+4. **判据链落地（新增，不是替换）**：
+   - `behav_capture.sh`：新增 `frame_hash_abi` / `frame_wh_pitch_abi` / `frame_disp_n` 三字段；
+     `[abiprobe]` 行**排除出 events 判据流**（与 `[drmstub] frame#` 同理由：仪器噪声，不是证据）。
+   - `behav_diff.py`：新增 **B6A** 判据（哈希 **且** 几何同时相等），**B6 原判据保留**。
+   - `ci_qemu_behav.sh`：构建 shim 时传 `CGM_ABI_PROBE_BUILD=1`、qemu 侧传 `-E CGM_ABI_PROBE=1`。
+
+5. **判别力自证 `tools/b6a_selftest.py`：5/5 腿通过**（判据类工具的强制门禁）：
+
+   | 腿 | 场景 | 期望 | 实得 |
+   |---|---|---|---|
+   | A | 两侧哈希+几何完全一致 | 放行 | PASS |
+   | B | 哈希差最后一位 | 拦截 | FAIL |
+   | C | 一侧 = 全零基线 `b5449dc5` | 拦截 | FAIL |
+   | D | 一侧无探针（`none`） | 放行(SKIP) | SKIP |
+   | E | 哈希同但**几何不同** | 拦截 | FAIL |
+
+6. **端到端验证（云开发实跑）**：
+   - 提取链：`frame_hash=b5449dc5`（旧，保留） / `frame_hash_abi=dfdaf563` /
+     `frame_wh_pitch_abi=1280x720x2560` / `frame_disp_n=6` / `frame_commits=3072`；JSON 合法、`events=227`。
+   - 判定链（同数据 + 改 sha 模拟 rebuild）：`B6 FAIL`（诚实红保留）／
+     **`B6A PASS dfdaf563(1280x720x2560) vs dfdaf563(1280x720x2560)`** ／ `B6R PASS 3072/3072`。
+   - 确定性：同一 factory 连跑两遍，ABI 哈希/地址/几何**逐字相同**（`44ef0008` / `dfdaf563`）。
+
+### 二、新发现与决策
+
+1. ★ **"观测点选错"会让诚实红永远红**：B6 红的真因是**桩自建的 FB 几何/格式**与 driver 实参不匹配，
+   而非 driver 有问题。⇒ 今后凡"某判据长期只红一项且值恒定"，先查**该观测点与被观测对象是否同构**
+   （尺寸/格式/单位），而不是继续加桩逻辑。本轮为此付出 R188/R189 两轮"多实体反查"的代价。
+
+2. ★ **`wrap dlsym` 的 DSO 边界纪律**：只要被拦截方（guest_shim）自己也包装 libc 函数，
+   探针就**必须**编进同一个 DSO。独立 .so 叠加 = 必然递归（RTLD_NEXT 依赖调用者 link_map）。
+   这条写进 `abi_probe.c` 与 `build_guest_shim.sh` 双处注释，防回潮。
+
+3. ★ **`emit` 手写长度 = 已发生的事故**：`emit("...[=1)\n", 34)` 实际 37 字节 ⇒ 缺 `\n`
+   ⇒ 与下一行粘连 ⇒ `behav_capture` 产出 JSON 出现控制字符（`Invalid control character at line 77`）
+   ⇒ **采集直接失败**。已改成 `slen()` 计算长度 + 消息常量化。
+
+4. **B6 是否降级为 KNOWN-LIMITATION —— 待用户决策（不擅自动判据语义）**：
+   现状 B6 仍判 FAIL（全零基线），故门禁整体仍 `rc=2`。B6A 已能提供等价且更强的判据。
+   把 B6 从 FAIL 改为"已知限制（不计入失败）"是**判据语义变更**，
+   按本项目"假绿红线"必须显式确认，不由 agent 单方面决定。
+
+### 三、下一步待办
+
+1. **P0（待用户决策）**：B6 是否降级为 KNOWN-LIMITATION（附根因证据链）。
+   若保留，门禁长期 `rc=2` 但信息完整；若降级，需在报告里持续标注"呈现点未观测"这一事实。
+2. **P1**：推 GitHub 触发 `1to1-qemu-behav` 正式构建，验证 **rebuild 侧 `frame_hash_abi`** 与 factory 一致
+   —— 这将是「1:1 画面一致」**首次获得机械证明**（此前只有全零基线的"双方都没测到"）。
+3. **P2**：`report/_r221_abi_probe_stderr.txt`（594 KB）已归档；后续可加 `--abi-only` 精简输出。

@@ -146,7 +146,11 @@ if [ -s "$RUNDIR/stderr.txt" ]; then
     #     （CI 实测：同一二进制两遍 61/228 ⇒ INCONCLUSIVE）。
     #   判据不丢：B6（画面哈希）与 B6R（提交数）都从 stderr.txt **原文**提取（见下），
     #     不经过 events ⇒ 这里剔除的是噪声，不是证据。
-    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]'         | LC_ALL=C grep -av '^\[shim\] \[sp+[0-9]' | LC_ALL=C grep -av '^\[drmstub\] frame#' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
+    # ★ R221：ABI 探针行（`[abiprobe] disp#…`）同样**不进 events 判据流**。
+    #   理由与 `[drmstub] frame#` 完全相同：它是仪器探针输出，含 `data=<地址>` 与每帧哈希，
+    #   条数/地址取决于 host 调度与栈布局 —— 算进 events 会让 B2/B0c 因噪声误红。
+    #   判据不丢：`frame_hash_abi` 从 stderr.txt 原文提取（见下）。
+    norm < "$RUNDIR/stderr.txt" | LC_ALL=C grep -a '[^[:space:]]'         | LC_ALL=C grep -av '^\[shim\] \[sp+[0-9]' | LC_ALL=C grep -av '^\[drmstub\] frame#' | LC_ALL=C grep -av '^\[abiprobe\]' | head -200 | sed 's/^/E|/' >> "$RUNDIR/events.txt"
     _cfa=$(LC_ALL=C grep -a -o '真崩溃 @0x[0-9a-fA-F]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*@//')
     _csg=$(LC_ALL=C grep -a -o 'target signal [0-9]*' "$RUNDIR/stderr.txt" | head -1 | sed 's/.*signal //')
     printf 'C|crash_fault=%s
@@ -242,6 +246,34 @@ if [ -n "$_fbline" ]; then
     case "$FBHASH" in ''|--) FBHASH="none"; FBFRAMES=0 ;; esac
 fi
 
+# --- ★ R221 新增：ABI 边界帧哈希（`video_driver_disp_frame` 入参缓冲）---
+# 为什么需要第二套帧哈希（证据链，非重复建设）：
+#   R221 云开发实测（factory 单侧，含 CGM_KEY2_SEED/HOOK 按键注入）显示：
+#     · rkgame 实际提交 `video_driver_disp_frame(data, w=1280, h=720, pitch=2560)`
+#       = **1280×720 RGB565**，其内容 hash=`dfdaf563`、前 4 KiB 100% 非零；
+#     · 而 DRM 桩建的 framebuffer 是 **1280×1280 AR24（pitch 5120）** —— 几何与格式**双双不匹配**
+#       ⇒ 桩的 `frame#` 恒读全零基线 `b5449dc5`（B6 诚实红的真根因）。
+#   ⇒ 观测点上移到 ABI 边界才看得到"rkgame 真正渲染出的画面"。
+#   ★ 说明：本字段是**新增**，不改动原 `frame_hash`（drmstub 呈现点），
+#     两者并存 —— 原字段继续暴露"呈现点未观测到像素"这个事实，不许被静默替换掩盖。
+FBHASH_ABI="none"
+FBDISP_N="0"
+FBWH="none"
+if [ -f "$RUNDIR/stderr.txt" ]; then
+    _abiline=$(LC_ALL=C grep -a -o '\[abiprobe\] disp#[0-9]* .*hash=[0-9a-f]* nz4k=[0-9]*' \
+               "$RUNDIR/stderr.txt" 2>/dev/null | tail -1)
+    if [ -n "$_abiline" ]; then
+        FBHASH_ABI=$(printf '%s' "$_abiline" | sed -n 's/.* hash=\([0-9a-f]*\).*/\1/p')
+        FBDISP_N=$(LC_ALL=C grep -a -c '\[abiprobe\] disp#' "$RUNDIR/stderr.txt" 2>/dev/null || echo 0)
+        _w=$(printf '%s' "$_abiline" | sed -n 's/.* w=\([0-9]*\).*/\1/p')
+        _h=$(printf '%s' "$_abiline" | sed -n 's/.* h=\([0-9]*\).*/\1/p')
+        _p=$(printf '%s' "$_abiline" | sed -n 's/.* pitch=\([0-9]*\).*/\1/p')
+        FBWH="${_w}x${_h}x${_p}"
+    fi
+    case "$FBHASH_ABI" in ''|--) FBHASH_ABI="none" ;; esac
+    case "$FBDISP_N" in ''|*[!0-9]*) FBDISP_N=0 ;; esac
+fi
+
 # --- shm 心跳 ---
 SHM="0"
 if command -v ipcs >/dev/null 2>&1; then
@@ -306,6 +338,9 @@ TMO=false
     printf '  "sfc_faults": %s,\n' "$SFC_FAULTS"
     printf '  "sfc_cmds": %s,\n' "$SFC_CMDS"
     printf '  "frame_hash": "%s",\n' "$FBHASH"
+    printf '  "frame_hash_abi": "%s",\n' "$FBHASH_ABI"
+    printf '  "frame_wh_pitch_abi": "%s",\n' "$FBWH"
+    printf '  "frame_disp_n": %s,\n' "$FBDISP_N"
     printf '  "frame_commits": %s,\n' "$FBFRAMES"
     printf '  "events": [\n'
     LC_ALL=C awk '{gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "    \"%s\"%s\n", $0, (NR==n?"":",")}' \
