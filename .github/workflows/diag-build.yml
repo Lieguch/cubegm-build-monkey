@@ -52,13 +52,17 @@ jobs:
 
       # ★ 与交付版同一份 link_full.sh + factory_image.S（仓库内已提交），
       #   唯一差别 = 插桩 + wrap + 诊断仪自身（build_diag.sh 内部处理）。
+      #   ★★ 绝不用 `| tail` 收尾（会吞掉 exit code ⇒ 假绿）：先落盘日志、打印尾部、再透传 rc。
       - name: 构建诊断版（CGM_UPGRADE 默认 both ⇒ evdev/sram 观测点全开）
         run: |
           cd 1to1
           mkdir -p build report
           UPGR="${{ github.event.inputs.upgrade || 'both' }}"
           echo "CGM_UPGRADE=$UPGR"
-          PY=python3 CGM_UPGRADE="$UPGR" OPT=-Os sh tools/build_diag.sh build/rkgame.diag 2>&1 | tail -25
+          PY=python3 CGM_UPGRADE="$UPGR" OPT=-Os sh tools/build_diag.sh build/rkgame.diag > build/diag_build.log 2>&1
+          rc=$?
+          tail -25 build/diag_build.log
+          exit $rc
 
       - name: 产物终检（诊断仪 7 符号 + 双升级观测点在场）
         run: |

@@ -132,6 +132,17 @@ fi
 echo "== [4/5] wrap 列表（已在脚本开头 source tools/diag_wraps.sh）=="
 echo "   wrap 符号 $cnt 个（形式 $WFLAG<sym>）"
 
+# ★ R259：上游组件（stb / mxml / mp3 / libiconv）—— 独立跑 build_diag.sh 时
+#   build/upstream 可能不存在（CI 全新 checkout 实测：ld.lld 报
+#   undefined symbol: mxmlLoadFile / libiconv_open ⇒ 链接失败）。
+#   与交付版共用同一份 build_upstream.sh（纪律 69），已存在则跳过（幂等）。
+echo "== [4.5/5] 上游组件（缺则构建；已存在则跳过）=="
+if [ -z "$(ls "$ROOT/build/upstream"/*.o 2>/dev/null)" ]; then
+    PY="$PY" sh "$ROOT/tools/build_upstream.sh" "$ROOT/build/upstream" 2>>"$ROOT/report/diag_cc_err.txt" \
+        || { echo "!!! 上游组件构建失败（见 report/diag_cc_err.txt 尾部）" >&2; exit 7; }
+fi
+echo "   upstream 对象 $(ls "$ROOT/build/upstream"/*.o 2>/dev/null | wc -l) 个"
+
 echo "== [5/5] 链接 =="
 DIAG_OBJD="$OBJD" \
 DIAG_XUNZIP="$DIAG_XU" \

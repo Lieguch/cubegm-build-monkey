@@ -39,6 +39,32 @@ CC="$ZIG cc" OPT=-Os PY=<python> sh tools/build_diag.sh build/rkgame.diag
 **耗时**：本地约 **2 分钟**（213 个文件重编）。
 **产物**：`build/rkgame.diag`（比交付版 `build/rkgame.rebuilt.elf` 大约 8 KB + 768 KB `.bss` 环形缓冲）。
 
+### 2.1 R259：升级观测点在场（both 诊断版）
+
+第十一节的 evdev/sram 观测点依赖 `src/upgrade/` 模块被编进产物，因此：
+
+| CGM_UPGRADE | 诊断版能力 | 用途 |
+|---|---|---|
+| **both（默认）** | evdev 426 条库装载/匹配 + SRAM 双通道读写全部留痕 | **真机验收用这版** |
+| sram / evdev | 单项在场 | 单问题定位 |
+| 0 | 纯净 1:1（无观测点） | “交付口径本身出问题”时用 |
+
+规则与交付版共用 `tools/cgm_upgrade_flags.sh`（纪律 69：同一规则禁止写两处）。
+升级模块**不插桩**（`cgm_evdev_poll`/`cgm_sram_poll` 每帧/15ms 调，插桩会刷爆环形缓冲）。
+
+### 2.2 R259：CNB 云开发额度耗尽后的构建路径 = GitHub Actions
+
+```sh
+# 手动触发（可选 upgrade 参数：both|sram|evdev|0）
+gh api -X POST repos/Lieguch/cubegm-build-monkey/actions/workflows/diag-build.yml/dispatches \
+  -f ref=main -f 'inputs[upgrade]=both'
+# 或：push 触碰 1to1/src/diag|src/upgrade|tools/build_diag.sh|tools/diag_wraps.sh 自动触发
+```
+
+产物 = Actions artifact **`rkgame-diag`**（`rkgame.diag` + `.sha256`）。CI 末步做符号终检
+（诊断仪 6 关键符号 + `cgm_evdev_poll`/`cgm_evdev_ready`/`cgm_sram_poll`/`controller_db.txt` 在场）。
+**合规性**：触发 CI 只为“正式构建产出物”（诊断版二进制），不用于调试/验证。
+
 ### 两个硬性纪律（不遵守就会得到"看起来正常"的假日志）
 
 1. **诊断仪自身的文件绝不能带 `-finstrument-functions`**
