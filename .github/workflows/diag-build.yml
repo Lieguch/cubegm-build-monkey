@@ -20,6 +20,9 @@ on:
       - '1to1/tools/build_diag.sh'
       - '1to1/tools/diag_wraps.sh'
       - '1to1/tools/cgm_upgrade_flags.sh'
+      # ★ R259：link_full.sh 也必须在触发路径里 —— 诊断版链接由它完成
+      #   （wrap 透传修复就在该文件；漏了它 = 改了不重编 = 假绿）。
+      - '1to1/tools/link_full.sh'
       - '1to1/tools/fetch_bootlin63.sh'
       - '.github/workflows/diag-build.yml'
 
