@@ -513,7 +513,10 @@ fi
 #   优化成 `bcmp`，GCC 不做）。
 #   判据：单侧未建模符号必须**全部登记**在 tools/model_asymmetry_ledger.txt（带原因）。
 #   新增未登记者 ⇒ FAIL（exit 19）。
-if [ -f "$OUT" ] && [ -f "$ROOT/tools/model_coverage.py" ]; then
+#   ★ R259：`CGM_SKIP_MODEL_GATE=1` 可跳过（默认不跳，fail-closed）。**只有设备端诊断版**
+#     允许跳：诊断版用 `-Wl,-wrap=` 故意把 65 个 libc 符号重定向到 `__wrap_*`，
+#     "单侧未建模"对它不是缺陷而是设计前提（诊断版不参与 diff_exec 对拍）。
+if [ -f "$OUT" ] && [ -f "$ROOT/tools/model_coverage.py" ] && [ "${CGM_SKIP_MODEL_GATE:-0}" != "1" ]; then
     echo "== 单侧未建模门禁（防『尺子按名字查不到而判假发散』）=="
     if ! $PY "$(winpath "$ROOT/tools/model_coverage.py")" --ours "$(winpath "$OUT")"; then
         echo "★★ 单侧未建模门禁 FAIL —— 出现未登记的单侧未建模符号（潜在假发散），先定性再放行" >&2

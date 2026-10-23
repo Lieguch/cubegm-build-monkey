@@ -144,10 +144,15 @@ fi
 echo "   upstream 对象 $(ls "$ROOT/build/upstream"/*.o 2>/dev/null | wc -l) 个"
 
 echo "== [5/5] 链接 =="
+# ★ R259：CGM_SKIP_MODEL_GATE=1 —— 诊断版 wrap 故意重定向 65 个 libc 符号，
+#   link_full.sh 的"单侧未建模门禁"（防 diff_exec 假发散）对诊断版不适用
+#   （诊断版不参与 diff_exec 对拍；那 46 个"未建模"正是 wrap 的设计前提）。
+#   交付版（不传 DIAG_LDFLAGS）不受影响：开关只在 build_diag.sh 里设。
 DIAG_OBJD="$OBJD" \
 DIAG_XUNZIP="$DIAG_XU" \
 DIAG_EXTRA="$SELFOBJS" \
 DIAG_LDFLAGS="$LDF" \
+CGM_SKIP_MODEL_GATE=1 \
 CC="$CC" PY="$PY" GLIBC_VER="${GLIBC_VER:-2.7}" \
 sh "$ROOT/tools/link_full.sh" "$OUT" || { echo "!!! 链接失败，详见 report/link_full_err.txt" >&2; exit 8; }
 
