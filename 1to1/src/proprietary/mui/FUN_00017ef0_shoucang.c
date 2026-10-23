@@ -50,9 +50,9 @@ void shoucang(char *param_1)
     pFVar3 = fopen(acStack_52c,"wt");
     if (pFVar3 != (FILE *)0x0) {
 LAB_00017fa4:
-      code_convert_constprop_22(param_1,0x100,local_42c);
-      code_convert_constprop_22(param_1 + 0x104,0x80,local_328);
-      code_convert_constprop_22(param_1 + 0x184,0x80,local_2a8);
+      code_convert_constprop_22((gh_u4)param_1,0x100,local_42c,(size_t)0x100);
+      code_convert_constprop_22((gh_u4)(param_1 + 0x104),0x80,local_328,(size_t)0x80);
+      code_convert_constprop_22((gh_u4)(param_1 + 0x184),0x80,local_2a8,(size_t)0x80);
       if ((*(gh_uint *)(param_1 + 0x100) & 0x80) == 0) {
         fprintf(pFVar3,"%s;%s;%s;%s;%s\n",local_42c,local_328,param_1 + 0x204,local_2a8,
                 param_1 + 0x284);

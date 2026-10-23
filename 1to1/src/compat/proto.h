@@ -86,7 +86,7 @@ extern void mui_extract_basepath(char *param_1,char *param_2,int param_3);
 extern void mui_extract_basename(char *param_1,char *param_2,int param_3);
 extern void mui_DisplayThumbnail(); /* K&R: 参数不可信/不可解析 */
 extern long buttontoi(char *param_1);
-extern int code_convert_constprop_22(); /* K&R: 参数不可信/不可解析 */
+extern int code_convert_constprop_22(gh_u4 in, gh_u4 in_len, void *out, size_t out_len); /* 4 参：第 4 参=输出缓冲长度（工厂 r3=0x100/0x80/0x80，R245 定案） */
 extern gh_byte * strupr(); /* K&R：调用点 0 参 */
 extern gh_u4 FilePreEmu(char *param_1); /* 工厂汇编铁证：SeletEmuCore/mui_run_game 均 mov rN,r0 后未覆盖 r0 ⇒ 1 参 */
 extern gh_u1 * GetWorkPath(void); /* 对齐 Ghidra 定义 FUN_000171dc */

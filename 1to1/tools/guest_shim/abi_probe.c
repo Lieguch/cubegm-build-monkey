@@ -66,6 +66,8 @@ static unsigned slen(const char *s);
 #define MSG_ENABLED "[abiprobe] enabled (CGM_ABI_PROBE=1)\n"
 #define MSG_FATAL   "[abiprobe] FATAL: cannot resolve real dlsym\n"
 #define MSG_HOOKED  "[abiprobe] HOOKED video_driver_disp_frame -> wrapper\n"
+#define MSG_DUMPED  "[abiprobe] dump OK (first frame written)\n"
+#define MSG_DUMPFAIL "[abiprobe] dump FAIL (open/write error)\n"
 
 static dlsym_t      g_real_dlsym;
 static disp_frame_t g_real_disp;
@@ -74,6 +76,36 @@ static int          g_printed;
 static int          g_hooked_logged;
 static int          g_probe_on;
 static unsigned     g_last_hash;      /* 上次已判定的哈希（变化检测）*/
+static int          g_keyprint;       /* R230：按键状态打印计数（限 30 条）*/
+static char        *g_dump_path;      /* CGM_ABI_DUMP：把首帧原文落盘（NULL=不落盘）*/
+
+/* ---- ARM EABI 直调 SVC（**必须**绕过 glibc：本 shim 自己也包装了 open）----
+ * ★ 为什么不用 libc 的 open/write：guest_shim 的 open 被 wrap 过，
+ *   从本探针里调 open 会回到 guest_shim 的包装层 ⇒ 可能与 shim 自身状态纠缠；
+ *   而 driver.so 的既有先例（自封 mmap）说明 SVC 直调在本环境可用。
+ *   write(2) 本身没被 wrap，但统一走 SVC 更可控、也不依赖 libc 的 errno 语义。*/
+#if defined(__arm__)
+#define SYS_WRITE 4
+#define SYS_OPEN  5
+#define SYS_CLOSE 6
+static long sc3(long n, long a, long b, long c)
+{
+    register long r0 __asm__("r0") = a;
+    register long r1 __asm__("r1") = b;
+    register long r2 __asm__("r2") = c;
+    register long r7 __asm__("r7") = n;
+    __asm__ volatile("svc #0" : "+r"(r0) : "r"(r1), "r"(r2), "r"(r7) : "memory");
+    return r0;
+}
+#else
+static long sc3(long n, long a, long b, long c)
+{ (void)n; (void)a; (void)b; (void)c; return -1; }
+#endif
+
+#define ABI_BANDS 16   /* 分区哈希条带数（720 行 / 16 = 45 行一条带）*/
+#define USB_TABLE_ADDR 0x003af0d4u   /* 工厂/重建一致的全局（ledger/factory_globals.tsv 实证）*/
+#define JOY_TMP_ADDR   0x003b21b0u
+#define JOY1_PRESS_ADDR 0x003e19ecu  /* ReadJoystick 的防抖状态机：非 0 = 已识别到按键 */
 
 /* 显式开关：只有 CGM_ABI_PROBE=1 时才 hook（默认完全透明）。
  * ★ 为什么默认关闭：本 so 会覆盖全局 `dlsym`，只要加载就改变符号解析路径；
@@ -89,6 +121,9 @@ static void abi_probe_init(void)
         g_probe_on = 1;
         emit(MSG_ENABLED, slen(MSG_ENABLED));
     }
+    /* 首帧原文落盘（诊断用；未设置则完全不影响行为）*/
+    g_dump_path = getenv("CGM_ABI_DUMP");
+    if (g_dump_path != 0 && g_dump_path[0] == '\0') g_dump_path = 0;
 }
 
 /* ---- 极简输出（零 stdio 依赖：只用 write(2)，与桩同风格）---- */
@@ -142,6 +177,88 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
         hh = fnv1a((const unsigned char *)data, (unsigned)bytes);
         changed = (hh != g_last_hash);
         if (changed) g_last_hash = hh;
+
+        /* ★★ R224：首帧落盘 + 16 条带分区哈希（像素级定位差异区域用）
+         *   为什么要它：B6A 已证明两侧整帧哈希稳定不同（factory dfdaf563 / rebuild ae825958，
+         *   各自 6/6 稳定、零交集），但整帧哈希**指不出差在哪**。
+         *   分区哈希把 720 行切成 16 条带（每带 45 行 = 115200 B），
+         *   对比两侧条带哈希即可判定差异集中在屏幕哪一段（顶部标题/中部列表/底部状态栏）。
+         *   CGM_ABI_DUMP 同时给出原始 RGB565 帧，供离线逐像素比对。 */
+        /* ★★ R230：每次 disp 都读按键状态（限 30 条）——定位"事件已读到但位没置起/分支没进"
+         *   joytmp  = ReadUSBJoy 的累积键位（0x40=DOWN 等）
+         *   press   = ReadJoystick 的防抖状态（非 0 表示它**确实返回过**该键值）
+         *   ↑ 三者关系：joytmp 置起 → ReadJoystick 捕获到 → press=该值 → mui_menu 收到 uVar12 */
+        if (g_keyprint < 30) {
+            char jl[128], *jq = jl;
+            g_keyprint++;
+            jq = put_s(jq, "[abiprobe] key#");
+            jq = put_u(jq, (unsigned)g_calls);
+            jq = put_s(jq, " joytmp=");
+            jq = put_x8(jq, ((const unsigned *)JOY_TMP_ADDR)[0]);
+            jq = put_s(jq, " press=");
+            jq = put_x8(jq, *(const unsigned *)JOY1_PRESS_ADDR);
+            *jq++ = '\n';
+            emit(jl, (unsigned)(jq - jl));
+        }
+
+        if (g_calls == 1) {
+            unsigned per, bi;
+            char bl[512], *bq = bl;
+
+            /* ★★ R227：一次性读出按键映射表与累积键值（定案 A 键为何无效）
+             *   这两个全局是**固定地址**（ledger/factory_globals.tsv：USB_Table@0x3af0d4 [.data,g]、
+             *   joy_key_tmp@0x3b21b0），工厂与重建产物同地址 ⇒ LD_PRELOAD 里可直接读。 */
+            {
+                const unsigned *ut = (const unsigned *)USB_TABLE_ADDR;
+                unsigned k;
+                for (k = 0; k < 24; k++) {
+                    if ((k % 12) == 0) {
+                        bq = put_s(bq, k ? "[abiprobe] usbtbl2" : "[abiprobe] usbtbl1");
+                    }
+                    *bq++ = ' '; *bq++ = 'b';
+                    bq = put_u(bq, k); *bq++ = '=';
+                    bq = put_x8(bq, ut[k]);
+                    if ((k % 12) == 11 || k == 23) { *bq++ = '\n'; emit(bl, (unsigned)(bq - bl)); bq = bl; }
+                }
+                bq = bl;
+                bq = put_s(bq, "[abiprobe] joytmp");
+                for (k = 0; k < 2; k++) {
+                    *bq++ = ' '; bq = put_u(bq, k); *bq++ = '=';
+                    bq = put_x8(bq, ((const unsigned *)JOY_TMP_ADDR)[k]);
+                }
+                *bq++ = '\n';
+                emit(bl, (unsigned)(bq - bl));
+            }
+            bq = bl;
+
+            if (g_dump_path != 0) {
+                long fd = sc3(SYS_OPEN, (long)g_dump_path, 0x241 /*O_WRONLY|O_CREAT|O_TRUNC*/, 0644);
+                if (fd >= 0) {
+                    unsigned long off = 0;
+                    long wr = 1;
+                    while (wr > 0 && off < bytes) {
+                        wr = sc3(SYS_WRITE, fd, (long)((const char *)data + off), (long)(bytes - off));
+                        if (wr > 0) off += (unsigned long)wr;
+                    }
+                    sc3(SYS_CLOSE, fd, 0, 0);
+                    emit(MSG_DUMPED, slen(MSG_DUMPED));
+                } else {
+                    emit(MSG_DUMPFAIL, slen(MSG_DUMPFAIL));
+                }
+            }
+
+            per = (unsigned)(bytes / ABI_BANDS);
+            bq = put_s(bq, "[abiprobe] bands#1");
+            for (bi = 0; bi < ABI_BANDS; bi++) {
+                unsigned bh = fnv1a((const unsigned char *)data + (unsigned long)bi * per, per);
+                *bq++ = ' '; *bq++ = 'b';
+                bq = put_u(bq, bi); *bq++ = '=';
+                bq = put_x8(bq, bh);
+            }
+            *bq++ = '\n';
+            emit(bl, (unsigned)(bq - bl));
+        }
+
 
         if (g_printed < 6 || (changed && g_printed < 64)) {
             lim = (unsigned)(bytes < 4096UL ? bytes : 4096UL);

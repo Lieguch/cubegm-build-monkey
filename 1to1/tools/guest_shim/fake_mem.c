@@ -160,7 +160,11 @@ static int raw_openat(const char *path, int flags, mode_t mode)
  *   · `access()` 一并接管（guest 确实导入了它）—— 否则"真实文件系统里
  *     `/dev/input/jsN` 是否存在"会成为流程走不走到 open 的隐藏变量。 */
 static int g_inject_on;
-static unsigned char g_ev[512];
+/* ★ 2026-10-21（R229）：512 → 8192。原 512 B 只够 64 个 js_event，实测在 `mui_menu`
+ *   初始化（LoadSetting/LoadConfig/InitFont/LoadMenuLog + 第 100 行预热 ReadJoystick）
+ *   阶段就被消费殆尽 ⇒ 主循环读到 EOF ⇒ `joy_key_tmp` 恒 0、按键"注入成功但无效果"。
+ *   8192 B = 1024 个事件，足以覆盖初始化 + 主循环窗口。 */
+static unsigned char g_ev[8192];
 static int g_ev_len;
 /* `CGM_INPUT_FILL=<字节数>`：把事件流**循环填充**到该长度后再交给 guest。
  *   0（默认）= 原样给出（读尽即 EOF ⇒ `ReadUSBJoy` 返回旧值 ⇒ 等价"保持最后状态"）。
@@ -578,6 +582,64 @@ static FILE *(*g_real_fopen64)(const char *, const char *);
 static int g_fopen_chain = 1;      /* 1=dlsym(RTLD_NEXT) 真 fopen；2=强制 open+fdopen */
 static int g_in_fopen;             /* 重入保护：绝不在链式调用里递归进自己 */
 
+/* ---- ②f `/proc/bus/input/devices` 合成（CGM_USB_VID/PID/VER）----------------------
+ * 动机（R247）：`GetInputInfo` 用 fopen 读 /proc/bus/input/devices，取 `I:` 行的
+ *   Vendor/Product/Version 与 `H:` 行里的 jsN，再拿这三个值去 joystick.zip 里找
+ *   `<vid>_<pid>_<ver>` / `<vid>_<pid>` 表。
+ *   qemu 的 js0 是 virtio 设备（0002:0013），原厂 joystick.zip 里没有该条目，
+ *   而我们**不愿重写原厂 zip**（实测重写后解析会卡死/失效）。
+ *   ⇒ 由 shim 直接让 guest 看到"原厂手柄"（默认 20bc:5500:0111，正是
+ *     `cubegm/20bc_5500_0111` 那份真表），zip 一个字节都不改。
+ * 解析格式（get_from_line @0xbf9c 逐行核对）：
+ *   `I: Bus=<dec> Vendor=%x Product=%x Version=%x`
+ *   `H: Handlers=...` 且该行含 "js0"
+ * ★ 只在 CGM_USB_VID 设定时生效（默认关，行为一字不变）。 */
+static char g_devs_file[64];
+static int  g_devs_on;
+
+static int path_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == 0 && *b == 0;
+}
+
+static void build_input_devs(void)
+{
+    const char *vid = getenv("CGM_USB_VID");
+    const char *pid = getenv("CGM_USB_PID");
+    const char *ver = getenv("CGM_USB_VER");
+    char buf[256];
+    int n, fd, i, len;
+    if (vid == NULL || pid == NULL) return;
+    if (ver == NULL || *ver == 0) ver = "0111";
+    n = snprintf(buf, sizeof buf,
+        "I: Bus=0003 Vendor=%s Product=%s Version=%s\n"
+        "N: Name=\"Gamepad\"\n"
+        "P: Phys=\nS: Sysfs=/devices/virtual/input/input0\n"
+        "U: Uniq=\n"
+        "H: Handlers=js0 event0\n"
+        "B: PROP=0\nB: EV=1b\nB: KEY=7cdb000000000000 0 0 0 0\n",
+        vid, pid, ver);
+    if (n <= 0 || n >= (int)sizeof buf) return;
+    strcpy(g_devs_file, "/tmp/_cgm_input_devices");
+    fd = (int)syscall(SYS_openat, AT_FDCWD, g_devs_file,
+                      O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { g_devs_file[0] = 0; return; }
+    len = n;
+    i = 0;
+    while (i < len) {
+        long w = syscall(SYS_write, fd, buf + i, (size_t)(len - i));
+        if (w <= 0) break;
+        i += (int)w;
+    }
+    syscall(SYS_close, fd);
+    if (i == len) {
+        g_devs_on = 1;
+        note("[shim] 合成 /proc/bus/input/devices：%s:%s:%s（joystick.zip 不改）\n", vid, pid, ver);
+    }
+}
+
+
 /* constructor 阶段**预解析**真 fopen：决不在 fopen 内部第一次调 dlsym
  * （dlsym 自身可能 malloc/触发符号解析，从 fopen 内部首次进入风险不可控）。 */
 static void shim_resolve_fopen(void)
@@ -603,6 +665,7 @@ static FILE *shim_fopen_impl(const char *path, const char *mode, int is64)
         return (fd < 0) ? NULL : fdopen(fd, mode);
     }
     g_in_fopen = 1;
+    if (g_devs_on && path_eq(path, "/proc/bus/input/devices")) path = g_devs_file;
     key2_hook_try(path);
     real_fn = is64 ? g_real_fopen64 : g_real_fopen;
     if (g_fopen_chain == 1 && real_fn != NULL) {
@@ -1450,6 +1513,7 @@ __attribute__((constructor)) static void shim_poison_stack(void)
     shim_resolve_fread();
     shim_resolve_strcmp();
     /* ★ 场景 F：解析输入事件注入脚本（默认关） */
+    build_input_devs();
     parse_input_hex(getenv("CGM_INPUT_HEX"));
     g_ev_fill = parse_int(getenv("CGM_INPUT_FILL"));
     if (g_inject_on && g_ev_fill > g_ev_len) {

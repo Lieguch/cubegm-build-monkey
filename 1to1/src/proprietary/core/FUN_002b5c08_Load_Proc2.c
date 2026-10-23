@@ -7,6 +7,9 @@
 #include "ghidra_compat.h"
 #include "globals.h"
 #include "proto.h"
+#ifdef CGM_ENABLE_SRAM
+#include "cgm_upgrade.h"   /* 目的 2：SRAM 电池存档（每帧 poll + 首帧读回） */
+#endif
 
 void Load_Proc2(void)
 
@@ -130,6 +133,12 @@ LAB_002b5f64:
       (*pcVar4)();
     }
     ReadJoystickProc();
+#ifdef CGM_ENABLE_SRAM
+    /* ★ 目的 2：每帧 poll —— 完成"延迟建立的 SRAM 建立后首读 .srm" + "~5s 脏才落盘(fsync)"。
+     *   ★ R256 根因：此前 poll 挂在 ReadJoystick()（菜单输入），而游戏主循环走的是
+     *     ReadJoystickProc()，根本不经过 ReadJoystick ⇒ 断电保护从未生效，故挪到此处。 */
+    (void)cgm_sram_poll_base();
+#endif
     TurboKeyProcess();
     (*_retro_run)();
     if (bVar2) {

@@ -9612,3 +9612,2068 @@ cores/refctx/stbtt/loadstate）。
 2. **P1**：推 GitHub 触发 `1to1-qemu-behav` 正式构建，验证 **rebuild 侧 `frame_hash_abi`** 与 factory 一致
    —— 这将是「1:1 画面一致」**首次获得机械证明**（此前只有全零基线的"双方都没测到"）。
 3. **P2**：`report/_r221_abi_probe_stderr.txt`（594 KB）已归档；后续可加 `--abi-only` 精简输出。
+
+> 追加前 `old_intact=True`（旧文 745224 B / sha 574554add27c261c…）；由 `tools/append_progress.py` 原子追加。
+
+---
+
+### R221 补充：CI 实测结果（commit `343d54898011` / run `39550482665`）
+
+**B6A 判据在 CI 上首次运行即抓到真实分歧** —— 这是本轮最重要的产出。
+
+| 判据 | 结果 | 数值 |
+|---|---|---|
+| B1 exit_code | PASS | 124 vs 124 |
+| B2 events | PASS | 可判定前缀 **228/228** 一致 |
+| B3 new_files | PASS | 0 vs 0 |
+| B4 changed_files | PASS | 0 vs 0 |
+| B5 log_sha | PASS | `d7c86a6f…` vs `d7c86a6f…` |
+| B6 frame_hash（旧） | FAIL | `b5449dc5` vs `b5449dc5`（全零基线，已知限制） |
+| **B6A frame_hash_abi（新）** | **FAIL** | **`dfdaf563(1280x720x2560)` vs `ae825958(1280x720x2560)`** |
+| B6R frame_commits | PASS | 3072 vs 3072 |
+| B7 shm | PASS | 1 vs 1 |
+| B8a sfc_cmds | PASS | 4 vs 4 |
+| B8b sfc_faults | PASS | 180 vs 180 |
+
+**解读（严格区分"已知"与"待证"）**：
+- **已知**：两侧**几何完全一致**（1280×720，pitch 2560）⇒ 不是"尺寸/格式不同"造成的假差异；
+  执行路径（events 228/228）、日志（menu.log sha）、设备访问（180/180）**全部一致**
+  ⇒ 差异**只在像素内容**，且**不是**控制流或设备访问引起的。
+- **已知**：`1to1-verify`（静态差分）**success**、`rkgame-rebuild`（构建）**success**
+  ⇒ rebuild 产物本身合法，不是构建故障。
+- **待证**：哈希不同是「真实渲染差异」还是「采样到不同帧」。
+  需看 artifact 里的 `frame_disp_n`（两侧帧数）与逐帧 `[abiprobe] disp#N` 序列。
+  ⇒ 下一步必须在云开发用 rebuild ELF 逐帧对比（**不得**只凭一次哈希就断言"复刻有缺陷"）。
+
+**这是 B6A 的价值证明**：此前 B6 恒全零，两侧永远"相等"但毫无信息量；
+B6A 第一次让「画面是否一致」成为一个**可判定且会失败**的门禁项。
+
+> 追加前 `old_intact=True`（旧文 747174 B / sha 2afbf6f63ed74511…）；由 `tools/append_progress.py` 原子追加。
+## R223（2026-10-21）—— ★ 第三次代码级全量审计（用户指令）：假实现/假桩/假代码/天花板 + 联网根本方案 + 替代/升级评估
+
+### 一、审计声明与口径
+
+> 用户指令：严格审核 1:1 复刻的假实现、假桩、假代码、天花板；对天花板联网搜最新官网/论坛；
+> 形成根本解决/替代/升级方案；必须铁证，禁止猜测/断章。本轮不引用历史结论，全部重新机械复算。
+
+复算手段（本机隔离 venv `deps OK`，python 3.13.12 + unicorn/capstone/pyelftools）：
+- `fake_impl_audit.py`（A 空壳 / B 恒返回 / C 桩进产物 / D 源码占位 / E dynsym 对拍）
+- `dyn_audit.py build/rkgame.rebuilt.elf`、`fidelity_audit.py`、`driver_stub_coverage.py`
+- 联网：TreeFrogUI 官方仓库 README + install.md（2026-10 最新）、handhelds.wiki R36S_Clones/SF3000、
+  TreeFrogUI 社区实测博客、UniFrog 仓库、R36S 生态动态。
+
+### 二、假实现 / 假代码 / 假桩 —— 机械复算结果（本轮，非引用）
+
+| 判据 | 结论 | 硬证据（本轮输出） |
+|---|---|---|
+| A 空壳函数 | **0 嫌疑** | 我方 `st_size<=4` 14 个，与工厂同名者 **14/14 工厂同样空壳** |
+| B 恒返回常量 | **0 嫌疑** | 两侧一致 **4/4**（含 `GetDecodeData` 工厂机器码 `mov r0,#0;bx lr`），不一致 0 |
+| C 假桩进产物 | **0** | `compress/uncompress/_Znwj/_ZdlPv/_Znaj/_ZdaPv/malloc/free` **8/8 SHN_UNDEF**（设备端解析） |
+| D 源码占位 | **0 真占位** | 361 命中 = 注释措辞 / `cgm_diag.c:481` 显式占位（诊断程序，不入主产物）/ libiconv-legacy-stub（DEAD-TREE，`filelist.py` EXCLUDE） |
+| E dynsym 对拍 | 差 5（全免） | 仅工厂有 6：`_ITM_*×2/_Jv_*/__gmon_start__`（GCC 弱符号）、`__strdup`（glibc 内部）、`islower`（我方 glibc 宏内联，R166 已登记豁免）；仅我方有 1：`strdup`（glibc 新旧导出） |
+| dyn_audit（动态段自洽） | **PASS rc=0** | FAIL 0 / WARN 1（DT_INIT_ARRAYSZ=0，C 无构造子）；GLIBC 2.7 ≤ 工厂 2.7 |
+| fidelity_audit 刻度 A | 真实引用 **0**（4 处全 Thumb-2 半字假阳性，R204 已修 sh_offset） | 刻度 C 自有 .text **787/835 (94.3%)**，0 落工厂镜像区 |
+| driver.so 假桩覆盖 | **37/37** | 需桩 37 项全覆盖，缺失 0；石子 `guest_shim/{drm,alsa}_stub` 由显式开关启用、-nostdlib、**不进产物** |
+
+**结论：复刻侧"假实现=0、假代码=0、假桩进产物=0"三项在本轮全量复算下依然成立，证据链闭环。**
+
+### 三、天花板分层定性与「根本方案」（含本轮新增外部证据）
+
+| # | 天花板 | 定性 | 证据 | 根本方案（本轮更新） |
+|---|---|---|---|---|
+| 1 | 沙箱画面观测（B6 恒全零，`b5449dc5`） | **环境观测边界 + 探针缺陷，非复刻缺陷** | driver.so 自封 `mmap@@GLIBC_2.4` 绕 glibc；R221 已把观测点上移到 ABI 边界（`video_driver_disp_frame` 入参），CI 实测 `dfdaf563≠ae825958`（几何一致 1280×720×2560） | **B6A 已证明"画面可测且能红"**；剩余"哈希差异是渲染差还是采样帧差"→ 在**云开发用 rebuild ELF 逐帧 `[abiprobe] disp#N` 序列对拍**（唯一待办，非新天花板）。**B6 是否降 KNOWN-LIMITATION 待用户裁决** |
+| 2 | zig 0.16 无法关 PIC ⇒ 机器码不等价 | **结构性天花板，但已被分流** | §0.12 三腿实测 zig-Os 75 < gcc63-O2 100 < gcc63-Os 109 ⇒ zig 维持主构建；DIVERGE 残余 18 项 = 编译器优化决策 | 按 R136 决策走"**逐条机器码级归因 + 显式豁免**"；diff_exec_pending.txt 18+4 为唯一机械清单，逐个消 |
+| 3 | CLI stub_core.c（假 libretro core） | **不是天花板**（sandbox 辅助件，默认不载） | R203 已纠正"cores 只有 xml"为错：**20 枚真机 `libemu_*.so` 已在 `golden/sdcard_min/cores/`**（EM_ARM，导 `retro_*`，gitignore 隔离） | ✅ qemu 链改用**真 core 资产**（T12/T13 用），stub_core 仅兜底——**根本消除**，无需再跟假 core 较劲 |
+| 4 | 真机**无任何注入点**（启动链全原厂、无命令行） | **部署天花板（对本项目 1:1 目标并非阻塞）** | PROJECT-MEMORY §4：`LD_PRELOAD/LD_LIBRARY_PATH` 在真机**不存在** | 诊断能力**编进 rkgame 自身**（§8 既定）。1:1 目标 = drop-in 替换同名 `cubegm/rkgame`，天然规避注入点问题 |
+| 5 | 设备 SoC 口径（RK3036G vs HCSEMI MIPS） | **不是矛盾，是不同子型号** | 固件实测 ARM32 hard-float + 启动链铁证；handhelds.wiki 称 SF3000=HCSEMI C3100、R36SX=HCSEMI E3100 | 同 cubegm/icube OS 套件在多 SoC 变体复用的分叉事实；本机固件证据优先，无风险 |
+| 6 | 存档 + evdev/SRAM（L4 目的 2） | **已破案，无需再逆向** | 20/20 core 全部导出 `retro_get_memory_*` ⇒ 缺口只在前端没 dlsym | `report/L4-evdev-sram-design.md` 权威方案已成文（草稿未编进主链）；**升级项真正要做的是"把它合入主链并过 CI"** |
+| 7 | 真机验证只能最后做一次 | **用户禁止提前提及，非技术问题** | §0.0 约束 2/3 | qemu 链 100% 前推进 T11–T14 |
+
+### 四、能否直接替代原厂 rkgame —— 唯一诚实结论
+
+**结论：尚未达到"可以直接替代"，且唯一阻塞不是代码，是「qemu 端到端验证」尚未完成。**
+
+| 维度 | 状态 | 证据 |
+|---|---|---|
+| 代码重建 | 787/835 (94.3%)，真缺口 2（`load/save_state` 尾跳板，等价已实现） | fidelity 刻度 C 本轮复算 |
+| 假实现 | 0 | §二 全表 |
+| 静态差分门禁 | 1to1-verify success（R221 commit `343d54898011`） | CI |
+| 构建门禁 | rkgame-rebuild success | CI |
+| 行为差分 | B1–B8b 除 B6/B6A 外全 PASS（R221 实测） | CI |
+| ★ qemu 端到端（T11–T14：列表渲染/选游戏/core 加载/存档读回/三场景） | **未完成** | 任务表 T11–T14 = 未开始 |
+| B6A 帧哈希分歧（`dfdaf563 vs ae825958`） | **未裁决**（渲染差 vs 采样帧差待逐帧对拍） | R221 CI 实测 |
+
+⇒ 替代的正确判据 = **T11–T14 全绿 + B6A 裁决闭合**；在那之前任何"可以直接替代"的说法都是无证据断言。
+
+### 五、rkgame 功能升级 —— 最可行的升级路线（本轮核心产出）
+
+> 用户第二问：能否利用项目源码做 rkgame 的功能升级？答案：**能，且有一条已经被社区验证过的活路。**
+
+1. **复刻侧升级（低成本高确定性）**：L4 两项（evdev 即插即用手柄 + `.srm` 电池存档）**就是直接升级**：
+   核心函数、设计、观测点都已就绪（`L4-evdev-sram-design.md` + 两草稿），只差合入主链 + CI 验证。
+2. **★ 外部活路（TreeFrogUI 家族，本轮联网新发现，2026-10 最新）**：
+   - install.md 明确「**install_first/<device>/ 把原厂菜单 autorun 指向一个 dummy ROM（绝对路径）+ 用 launcher 覆盖
+     `cores/libemu_md.so` + 丢入正确 boot logo；原厂 icube/rkgame 从不被碰**」——
+     即在 cubegm 同族设备上，无注入点也能把新前端挂进去（社区已量产验证，57→58 core）。
+   - 适用前提：**桌面游戏盒子（RK3036G）不在其售前支持列表**，但 method-level 上 autorun+core 替换法与本项目 R1xx 的
+     autorun 逆向同构 ⇒ 若用户授权升级路线，可评估「复刻 rkgame 1:1 作为底座 + 覆盖式核心扩展」。
+   - 边界：TreeFrogUI 本体 CC BY-NC-SA 4.0 禁止商用；fork 它只合一并保留协议。picoarch 部分 BSD 3-Clause。
+3. **不能走的路线（须写明防误引）**：`libretro-legacy-stub`/`stub_core.c` 之外的"假 core"，因为 20 枚真 core 已在 golden；
+   "把工厂 .fimg 镜像段跑起来"（不可执行、R--，§2 架构事实）；"换编译器凑机器码"（纪律 151）。
+
+### 六、下一步待办（按优先级）
+
+1. **P0**：云开发逐帧对拍 B6A 分歧（rebuild ELF `[abiprobe] disp#N` 序列 vs factory）⇒ 裁决"渲染差 or 采样帧差"。
+2. **P0（待用户）**：B6 是否降级为 KNOWN-LIMITATION（语义变更审慎——证据链已全，见 R221）。
+3. **P1**：qemu T11→T12→T13 顺序推进，用 golden 的 20 枚真 core（替代 stub_core）做 core 加载与存档路径。
+4. **P1**：执行 diff_exec_pending.txt 18 项逐条归因收敛。
+5. **P2**：L4 evdev/SRAM 草稿云端语法校验（CNB 云开发 zig），为 per-用户授权的功能升级做准备。
+6. **P2**：`libiconv-legacy-stub` DEAD-TREE 整体移出 `src/upstream/`（先确认零引用再动）。
+
+> 追加前 `old_intact=True`（旧文 755870 B / sha d2a0e1e3bf551222…）；由 `tools/append_progress.py` 原子追加。
+## R224（2026-10-21）—— P0 闭环：B6A 分歧裁决（真实渲染差异）+ 像素级定位到局部 UI 块
+
+### 一、完成事项
+
+1. **B6A 分歧裁决完成（P0 第一项，铁证闭环）**
+   - 手段：从 CI artifact（run `39550482665` / commit `343d54898011` / artifact `1to1-qemu-behav`，410,538 B）
+     取回 **三侧** `behav_*.json` + `rundir_*/stderr.txt`（各 444 KB，含完整 `[abiprobe] disp#N` 序列）。
+   - **不是采样帧差**：`factory` 与 `control`（同一份 factory 复跑）**6/6 帧全部 `dfdaf563`**，
+     `rebuild` **6/6 帧全部 `ae825958`**，两者 **hash 集合交集为空**；三侧 `frame_disp_n=6`、
+     `frame_wh_pitch_abi=1280x720x2560`、`nz4k=4096` 全同。
+   - ⇒ **结论：这是稳定的、可复现的像素内容差异（真实渲染差异），不是采样时序差异。**
+
+2. **工具链无关性验证（排除"工具链噪声"这一解释）**
+   - 云开发用**完全不同的构建口径**重建出诊断 ELF：
+     `zig 0.16.0 自带头（伪 CGM_TC）` + `LINK_DRIVER=zigcc` + `GLIBC_VER=2.29`
+     + 移除 `-Wl,-z,execstack`（zig 内置 lld 不支持该扩展 flag）
+     ⇒ 产物 `5,724,528 B` / sha256 `4b5eccc445239fb3…`（CI 产物为 `fc0ed0e7…` / 5,404,384 B）
+   - **该诊断 ELF 跑出的帧哈希仍是 `ae825958`**（6/6 帧）。
+   - ⇒ **ae825958 与构建工具链无关**；差异来自源码/渲染逻辑本身，不是编译噪声。
+
+3. **像素级定位（本轮最大产出）**
+   - 给 `tools/guest_shim/abi_probe.c` 增两项**默认关闭**的诊断能力：
+     ① 首帧原文落盘（`CGM_ABI_DUMP=<path>`，ARM EABI `SVC` 直调 `open/write/close`，
+        绕开 guest_shim 自己的 `open` 包装，避免递归）；
+     ② **16 条带分区 FNV-1a 哈希**（`[abiprobe] bands#1 b0=… b15=…`）。
+   - 双侧实跑（各 45 s，`CGM_KEY2_SEED/HOOK=1`）后逐像素归因，工具落地
+     `tools/_b6a_pixel_diff.py`（可复跑）。
+
+   | 指标 | 实测 |
+   |---|---|
+   | 整帧差异像素 | **30,644 / 921,600 = 3.3251%** |
+   | 差异 bbox | **x=[105,675] y=[132,569]** |
+   | 中心区逐像素相同率 | **93.66%**（dx=dy=0 即最佳，无整体偏移） |
+   | 平移搜索 | 最佳仍在 dx=0/dy=0 ⇒ **排除整图平移/缩放** |
+   | 颜色映射集中度 | 高频值中仅 **3/70** 达 80% ⇒ **排除固定转换表/调色板错误** |
+   | 渲染提交路径 | `SetPlane_fb`/`PageFlip_fb` = factory **2683** vs rebuild **2685**（差 0.07%），其余 drm 调用逐项相同 |
+
+   **条带哈希（定位到具体屏幕区段）**：
+   - `b0/b1`（y=0–89，顶部栏）**完全相同**；
+   - `b2`–`b12`（y=90–584，内容区）**全不同**；
+   - `b13/b14/b15`（y=585–719，底部栏）**完全相同**。
+
+   **首个差异块的形态（精确定界）**：
+   - 位置 **x=[105,380] y=[138,226]**（275×88），差异率约 45%；
+   - factory 内部主色为**近白**（`0xFFFF`/`0xFA6E`/`0xF1EC`，亮度 ≈ 600–760），
+     rebuild 同位置为**暗色**（`0x4B94`/`0x4374`/`0x3AB2`，亮度 ≈ 130–350）；
+   - 白像素数：factory 该区 **6,668**，rebuild 同位置仅 **361 仍白 / 5,683 变中间灰 / 624 变全暗**；
+   - `factory` 白像素 bbox = `x=[124,369] y=[158,209]`（**245×51 的规则块**，非文字笔画）。
+
+   ⇒ **定性：同一位置、同一几何、颜色系统性偏暗的局部 UI 块**（约 245×51 的亮色块在
+     rebuild 侧被渲染成暗色），叠加右侧若干文字状小块。**不是字形缺失、不是整图毁损、不是工具链噪声。**
+
+4. **判据缺陷发现（新增，须记）**：`tools/behav_diff.py` 的 **B6A 判据没有 control 对照**。
+   `B0c` 确定性控制只作用于 `events`（228/228 行），**不校验 `frame_hash_abi`**。
+   本轮是靠人工取回 artifact 才确认"factory 两遍一致"；若 factory 自身帧哈希不稳定，
+   B6A 会把"参考实现自身不确定性"误判成"重建缺陷"。⇒ 已列入待办（P1，给 B6A 补 control 腿）。
+
+### 二、新发现与决策
+
+1. **B6A 是有效判据，但当前实现缺一条腿**：整帧哈希从"永远测不到"（B6 old）到"能稳定区分"
+   （B6A），价值已由本轮证明；缺的是 **control 侧同字段对照**（见上 4）。
+2. **云开发可独立构建 1:1 产物（不依赖 bootlin63）**：`zig 0.16.0 自带头 + zigcc + GLIBC 2.29`
+   可完整编出 214 个专有对象 + 25 个 upstream 对象并链接成功（约 20 s）。
+   **口径差异必须标注**：与 CI 交付口径（bootlin63 头 + lld + GLIBC 2.7）不同，
+   仅用于**行为/像素验证**，不得作为交付产物。
+3. **bootlin63 官方源在云上实测 18 KB/s（61 MB ≈ 55 分钟）**，国内镜像（清华/中科大/南大/阿里/北外）
+   均无 bootlin 目录；GitHub 无该工具链镜像。⇒ 本轮改用 zig 自带头路线绕开；
+   后续若需严格复现 CI 口径，应优先解决 bootlin63 的**镜像/制品库**问题，而不是反复重下。
+4. **`-Wl,-z,execstack` 是 zigcc 腿的不兼容参数**（zig 内置 lld 报
+   `unsupported linker extension flag`）—— 该参数只影响 `GNU_STACK` 权限位，与渲染无关；
+   诊断构建中移除，**CI 交付链（lld 腿）不受影响**。
+
+### 三、下一步待办
+
+1. **P0**：定位**具体 UI 元素**——首个差异块 245×51 位于内容区，需确认它对应
+   `DrawSelectBar`(0x14340) / `mui_DispBlock`(0x14508) / 封面缩略图(`mui_DisplayThumbnail` 0x14f84)
+   中的哪一个；方法：在诊断 ELF 上加**绘制调用级探针**（wrap 上述函数的入参矩形/颜色），
+   双侧对比首个差异块的绘制参数。
+2. **P0**：给 `behav_diff.py` 的 B6A 增加 **control 腿**（同一 factory 复跑的 `frame_hash_abi`
+   必须与参考侧一致，否则判 INCONCLUSIVE），并自测判别力（一致/不一致两向）。
+3. **P1**：把 `CGM_ABI_DUMP` + `bands#` 两项诊断能力接进 `ci_qemu_behav.sh` 的**可选开关**
+   （默认关），使后续每轮都能拿到像素级证据而不必人工重跑。
+4. **P1**：qemu T11→T13（列表渲染/core 加载/存档）继续，用 `golden/sdcard_min/cores/` 的 20 枚真 core。
+5. **P2**：bootlin63 的镜像/制品库方案（避免每换工作区重下 55 分钟）。
+
+> 口径声明：本轮所有像素结论基于**云开发诊断构建**（zig 0.16 自带头，sha `4b5eccc4…`），
+> 其帧哈希与 CI 交付构建（sha `fc0ed0e7…`）逐字节同值（`ae825958`），故结论对 CI 口径同样成立。
+
+> 追加前 `old_intact=True`（旧文 762601 B / sha 17d16a45d6a00918…）；由 `tools/append_progress.py` 原子追加。
+### R224 补充（2026-10-21）—— 首个差异块的来源链条（继续定位）
+
+**1. 排除 `DrawSelectBar`**
+`grep -rn DrawSelectBar src/` 显示其调用者**只有 3 处，全在设置类菜单**：
+`mui_setting.c:163` / `mui_joystick_setting.c:136,168,185,362,384` / `mui_video_setting.c:161`。
+主菜单/列表路径**不调用**它。⇒ 首个差异块不是 `DrawSelectBar` 的选中提亮
+（其算法是 `(0x7E0F81F - v) * 5 >> 5`，即向白色提亮 ≈15.6%，与实测"近白 vs 暗色"的量级不符）。
+
+**2. `ui_cn.zip` 内 `.raw` 的真实格式（本轮首次解出）**
+- 文件尺寸非整像素（menu.raw 3,282,288 B / game.raw 2,911,744 B …），**不是裸位图**。
+- 头部十六进制呈**定长 16 字节记录流**：
+  ```
+  menu.raw:  7001 0000 | 0005 d002 | 0000 0000 | 0005 d002
+             7021 1c00 | 0005 d002 | 4800 3e00 | 6602 8400
+             d849 1d00 | 0005 d002 | 6800 7200 | 8202 be00
+  ```
+  与 `UnDrawSelectBar` / `mui_DispBlock` 的 `piVar6 = (int *)(param_2 + param_3 * 0x10)`
+  （**步长 0x10 = 16**）逐字段吻合：
+  `(u32 data_off, u32 type=0x02D00500, u16 x0, u16 y0, u16 x1, u16 y1)`。
+- **记录 2 = (data_off 0x1C2170, x0=0x68=104, y0=0x72=114, x1=0x282=642, y1=0xBE=190)**
+  ⇒ 矩形 **(104,114)–(746,304)**，**正好覆盖首个差异块 x=[105,380] y=[138,226]**。
+- `mui_DispBlock`（124 B）与 `UnDrawSelectBar`（148 B）都是**按记录逐行 `memcpy`**（无缩放、无混色）。
+
+**3. 差异的最终形态**
+- 差异块内 **y=158 有一条 ~245 px 宽的纯白横线**（factory 有、rebuild 无），
+  其下 y=159–209 为"浅底 + 内容"（factory 近白 `0xF1EC`–`0xFFFF`），rebuild 为暗色（`0x3xxx`–`0x4xxx`）；
+- 该块以外**所有文字行（y=240–580）逐行高亮比例两侧完全相同** ⇒ 文字渲染管线本身正常；
+- 渲染提交次数一致（`SetPlane_fb` 2683 vs 2685）⇒ 不是管线断点。
+
+⇒ **定性升级：不是"整块缺失"，而是该块上叠加的"浅色底 + 顶部白线"这一层在 rebuild 侧缺失/被压暗。**
+下一步必须拿到"该块被哪个绘制调用覆盖"的证据：在诊断 ELF 上对
+`mui_DispBlock` / `UnDrawSelectBar` / `mui_outputxy_t` / `blockadaptive` 做**入参矩形级探针**
+（记录每次调用的 (x0,y0,x1,y1) 与目标偏移），双侧对比，定位到具体一次调用的参数差异。
+
+> 追加前 `old_intact=True`（旧文 765126 B / sha 276bfa350ff58a02…）；由 `tools/append_progress.py` 原子追加。
+## R225（2026-10-21）—— T11 达成：按键驱动菜单 + 画面真实变化（含一处环境根因）
+
+### 一、完成事项
+
+1. **T11 判据达成**（"qemu 内可浏览列表并选中一项"）——**首次拿到"按键改变画面"的机械证据**：
+
+   | 实验（云开发，诊断 ELF sha `4b5eccc4`） | `[abiprobe] disp#` hash 序列 | 结论 |
+   |---|---|---|
+   | 无按键（基线） | `ae825958` ×6（恒定） | 静止画面 |
+   | **DOWN ×3**（btn3，`value=1,type=1,num=3`） | **`ae825958`×2 → `965ea951`×1 → `4993d951`×3** | ★ **按键驱动选中项移动，画面重绘** |
+   | A ×1（btn6） | `ae825958` ×6 | A 单键在首屏无动作（符合源码：0x2000 走 `LAB_00023a80`，非启动路径） |
+
+   ⇒ **T11 达成**：`mui_menu` 主循环（`uVar12 = mui_ReadJoystick()`）已在 qemu 内被按键驱动，
+   画面 hash 发生**两次真实变化**并稳定在新画面。
+
+2. **找到并修复一处环境根因（否则按键永远无效）**
+   - 现象：`CGM_INPUT_HEX` 注入生效（`[shim] js 输入注入已启用：48 字节事件流（6 个 js_event）`），
+     但画面哈希恒定不变。
+   - 根因链（源码铁证）：
+     `ReadUSBJoy` → `GetInputInfo("js0")` 返回 `VID=0x0002 PID=0x0013`（VMware VMMouse）
+     → `GetJoystickConfig` 查 `joystick.zip` 的 `"%04x_%04x_%04x"` / `"%04x_%04x"` 两级键
+     → **`0002_0013` 不存在 ⇒ `return 0`**（源码 `if (zr != 0) return 0;`）
+     → **`USB_Table` 全 0 ⇒ 任何按钮号都映射不到功能位 ⇒ 按键被静默丢弃**。
+   - 修法（**仅 qemu 实验环境**）：给 `golden/sdcard_min/joystick.zip` 追加 `0002_0013`
+     （内容 = 默认表 `0000_0000` 的副本，107 B）。
+   - ★ 附带根因：云开发**没有 `zip` 命令**，首次 `zip -q` 静默失败（表未写入）；
+     改用 Python `zipfile` 追加后才生效。**教训：环境缺命令会静默失败，必须验证写入结果**。
+
+3. **按键/映射事实（本轮解出，写入台账）**
+   - `joystick.zip` 默认表 `0000_0000` = `SELECT,START,UP,DOWN,LEFT,RIGHT,A,B,TL1,X,Y,TR1,RESET,...`
+     ⇒ **btn0=SELECT, btn1=START, btn2=UP, btn3=DOWN, btn4=LEFT, btn5=RIGHT, btn6=A, btn7=B, btn8=TL1**
+   - `buttontoi` 位值：UP=`0x10` / RIGHT=`0x20` / DOWN=`0x40` / LEFT=`0x80` / SELECT=`1` /
+     START=`8` / TL1=`0x100` / TR1=`0x400` / A=`0x2000` / B=`0x4000` / X=`0x1000` / Y=`0x8000`
+   - `js_event`（8 B）：`time(u32) value(s16) type(u8) number(u8)`，`type=1`=BUTTON；
+     hex 例：DOWN 按下 `0000000001000103`、释放 `0000000000000103`、A 按下 `0000000001000106`
+
+4. **启动游戏的真实按键条件（源码定案）**：`mui_menu` 中只有
+   `uVar12 == 0x2100`（**A + TL1 同时按住**）才走 `SeletEmuCore()` → `filelist_run_game()` → `dlopen(cores/*.so)`；
+   `0x2000`（A 单键）走 `LAB_00023a80`，不是启动路径。
+
+### 二、新发现与决策
+
+1. **T12 卡点已明确（不是代码缺陷，是"组合键未生效 + 列表数据缺"）**：
+   - 用 `A按下(不释放)+TL1按下(不释放)` 注入（事件流 6×8=48 B：`DOWN,DOWN↑,DOWN,DOWN↑,A,TL1`），
+     画面仍停在 `965ea951`，**未出现 `dlopen cores/*.so` 痕迹**；
+   - `golden/sdcard_min/` **没有 ROM 目录**（只有 `cubegm/` 下资源），`filelist.xml` 条目指向 `002/xxx.zip`
+     但文件不存在 ⇒ 即使进入列表也无有效项可启动；
+   - 云上临时建了 `/sdcard/000/game.zip`、`/sdcard/002/test.sfc` 仍未触发。
+   ⇒ 下一步必须**先确认首屏列表的语义**（是"分类列表"还是"文件列表"）与 `joy_key_blob` 的位累积时序，
+   再构造最小可启动 ROM。
+2. **决策：T11 结果写入台账；T12 采用"分步单变量"推进**（每步只用 1 个按键组合），
+   不再一次塞多个动作（本轮已证明一次塞 4 个动作只有前两个生效）。
+3. **环境适配纪律（新增）**：任何"给 SD 资产补映射/补文件"的动作，
+   仅允许发生在**云开发实验副本**；不提交回仓库，且必须在报告里标注"实验环境适配"。
+
+### 三、下一步待办
+
+1. **P0（T12）**：确认首屏列表语义 —— dump 首屏帧的列表项区域，结合 `filelist.xml` / `000-008` 目录，
+   判定"首屏显示的是什么列表"；然后用**单步按键**（先 A 单独，再 A+TL1）逐步取画面哈希变化。
+2. **P0（T12）**：构造**最小可启动 ROM**（按 `filelist.xml` 的 `002/xxx.zip` 路径建目录 + 1 个文件），
+   目标判据：stderr/日志出现 `cores/libemu_*.so` 的 `open` 或 `dlopen` 记录。
+3. **P1（T13）**：core 加载成功后，用 `retro_save_state` 路径验证 `.sav` 写读（`compress` 链路）。
+4. **P1**：把「joystick 映射缺失」这条根因写进 `DIAG-RUNBOOK.md` 的按键注入节
+   （否则后续每轮都会重复踩：注入生效但画面不动）。
+5. **P2**：`behav_diff.py` B6A 补 control 腿（R224 遗留）。
+
+> 追加前 `old_intact=True`（旧文 770257 B / sha ce46a1a9fc41939b…）；由 `tools/append_progress.py` 原子追加。
+## R226（2026-10-21）—— T12 推进：列表数据链打通（root.dat）+ 启动键卡点定位
+
+### 一、完成事项
+
+1. **T12 数据链打通（决定性一步）**
+   - 源码铁证：`mui_menu` 的列表来自 **`/sdcard/root.dat`（ZIP 内 `fileinfo.txt`）**，不是目录扫描：
+     `sprintf(buf,"%s/root.dat",root_path) → OpenZipU → FindZipItemA("fileinfo.txt") → UnzipItem`
+     → `mui_do_file_list(iVar11, DAT_003af2ac)`。
+   - `golden/sdcard_min/` **原本没有 root.dat** ⇒ `DAT_003af2ac` 恒 NULL。
+   - 本轮用项目自带工具生成：`python3 tools/make_rootdat.py --mode filelist --golden golden/sdcard_min --out /sdcard/root.dat`
+     → **1156 B / 135 项 / 首项 `002/Targa (Europe) (Proto).zip`**，运行期**不再出现** `find .../root.dat fail`。
+
+2. **按键映射根因（已在 R225 记录，此处补一条硬证据）**
+   - `ReadUSBJoy` 的事件处理（`ev_type==1`）：
+     `uVar4 = USB_Table[param_1*0x18 + ev_number]; joy_key_tmp |= uVar4;`
+     ⇒ **按钮号必须能在 `USB_Table` 查到功能位，否则按键被静默丢弃**。
+   - `USB_Table` 由 `GetJoystickConfig(USB_Table + param_1*0x60, VID, PID, ver)` 填充；
+     `VID/PID` 来自 `GetInputInfo`（实机环境 = `0002 0013` VMware VMMouse）。
+   - `joystick.zip` 原本无 `0002_0013` ⇒ `GetJoystickConfig` 两级查找失败 ⇒ `return 0` ⇒ `USB_Table` 全 0。
+   - 云上追加 `0002_0013`（默认表副本，107 B）后，**DOWN(btn3) 立即生效** ⇒ 映射链打通。
+
+3. **菜单按键路由（源码定案，写入台账）**
+   - `mui_menu` 主循环：`uVar12 = mui_ReadJoystick()`（= `ReadJoystick() & 0xefffffff`）
+   - `uVar12==0x80`(LEFT) / `0x20`(RIGHT) / `0x40`(DOWN) / `0x10`(UP) → 列表移动
+   - `uVar12==0x2000`(A) 或 `0x8`(START) → **`LAB_00023a80` → `mui_run_game(file_info_list + cur*0x404)`**
+   - `uVar12==0x2100`(A+TL1) / `0x108`(START+TL1) → 选 core + 缩略图分支
+   - ★ `mui_menu` 第 100 行有一次**预热调用** `mui_ReadJoystick()`（返回值丢弃）⇒ **事件流第 1 个按键被吃掉**；
+     这解释了 R225 的 "DOWN×3 只产生 2 次画面变化"。
+
+### 二、新发现与决策
+
+1. **T11 结论保持（R225）**：DOWN 驱动画面 hash `ae825958 → 965ea951 → 4993d951`，**T11 = 达成**。
+2. **T12 卡点（本轮未能闭合，但已缩小到一指之宽）**：
+   - 按 `A×3` / `START×3`（均已越过预热消费）**画面哈希仍恒为 `ae825958`**，
+     且 **stderr 中完全没有 `mui_run_game:...` 这一行**（该行是 `mui_run_game` 的第一条 `RARCH_LOG`，
+     无条件打印）。⇒ **A/START 值没有到达 `mui_menu` 的分支判断**，问题在 `uVar12` 的取值，而非 `mui_run_game` 内部。
+   - 已排除：root.dat 缺失（已补、无 fail 行）、映射表缺失（DOWN 证明表已生效）、预热消费（A×3 已越过）。
+   - 待验：`USB_Table[6]`（A=0x2000）与 `USB_Table[1]`（START=0x8）是否真被 `GetJoystickConfig` 写入；
+     以及 `ReadJoystick` 里 `Joy1_Press/Joy1_Delay` 的状态是否把 A 抑制成 0。
+3. **决策**：下一步用**最小 shim 探针**（在 `guest_shim` 内读固定地址 `0x003af2a0`/`USB_Table` 槽位并打印）
+   一次判定 `USB_Table[1]/[3]/[6]` 的真实值——**不再靠按键组合试错**（已试 8 组，信息量低）。
+
+### 三、下一步待办
+
+1. **P0（T12）**：shim 探针读 `USB_Table` 槽位（1/3/6）→ 确认 A 键是否映射为 0x2000；
+   若为 0，则定位 `GetJoystickConfig` 解析中断点（`buttontoi` 的字符串切分）。
+2. **P0（T12）**：`mui_run_game` 需要 `root_path/<ROM 相对路径>` 真实存在（源码 `fopen` 失败即 `return 0`）；
+   需按 `filelist.xml` 首项 `002/Targa (Europe) (Proto).zip` 建文件（内容只需能被 core 接受，或先验证到 `fopen` 成功）。
+3. **P1（T13）**：core 加载成功后验证 `retro_save_state` → `.sav` 写读。
+4. **P1**：把「joystick 映射缺失 + mui_menu 预热消费第 1 事件」两条写进 `DIAG-RUNBOOK.md` 按键注入节。
+
+> 追加前 `old_intact=True`（旧文 774488 B / sha bc6cb6ac5f1e24f6…）；由 `tools/append_progress.py` 原子追加。
+## R228（2026-10-21）—— T11/T12 真实卡点定案：手柄映射表不含 UP/DOWN
+
+### 一、完成事项
+
+1. **`USB_Table` 24 项全部实测（探针直读 0x003af0d4）**
+
+   | btn | 值 | 功能 | btn | 值 | 功能 |
+   |---|---|---|---|---|---|
+   | b0 | `0x2000` | **A** | b12 | `0x80000000` | RESET |
+   | b1 | `0x4000` | **B** | b13–b16 | `0` | 未用 |
+   | b2 | `0` | 未用 | b17 | `0x1` | 轴号映射 |
+   | b3 | `0x1000` | **X** | b18 | `0x6` | 轴号映射 |
+   | b4 | `0x8000` | **Y** | b19 | `0x7` | 轴号映射 |
+   | b5 | `0` | 未用 | b20 | `0x2` | 轴号映射 |
+   | b6 | `0x400` | **TR1** | b21 | `0x3` | 轴号映射 |
+   | b7 | `0x800` | **TR2** | b22 | `0x8` | 轴号映射 |
+   | b8 | `0x100` | **TL1** | b23 | `0x9` | 轴号映射 |
+   | b9 | `0x200` | **TL2** | b10 | `0x1` | SELECT |
+   | b11 | `0x8` | START | | | |
+
+2. **★ 关键结论：UP/DOWN 既不在按钮表，也不在轴映射里**
+   - 24 项中**没有 `0x10`(UP) / `0x40`(DOWN)**；也没有 `0x80`(LEFT) / `0x20`(RIGHT)。
+   - `ReadUSBJoy` 的轴分支（`ev_type==2`）只用 `USB_Table[+0x44/+0x4c]`（b17/b19 → LEFT/RIGHT）
+     与 `[+0x50/+0x54/+0x58/+0x5c]`（b20–b23 → X/Y/A/B），**没有 UP/DOWN 的轴号**。
+   - ⇒ **当前这份映射配置（`USB_Table` 静态初值 / `0002_0013` 解析结果）无法产生 UP/DOWN 按键位**，
+     因此列表不能上下移动，`mui_menu` 的 `uVar12==0x10/0x40` 分支**永远进不去**。
+
+3. **轴事件注入实测（3 组单变量）**
+   | 注入 | 事件 | 结果 |
+   |---|---|---|
+   | Y 轴(1) +22768 | `00000000f0580201` | 画面恒 `ae825958`×6 |
+   | Y 轴(1) −22768 | `0000000010a70201` | 同上 |
+   | X 轴(0) +22768 | — | 同上 |
+
+   配合探针 `joytmp 0=00000000` ⇒ **`joy_key_tmp` 始终为 0**，按键位从未被置起。
+
+4. **原厂数据已接入**（用户提供 `D:\output\原厂SD卡根目录结构`）
+   - 已上传 `root.dat`(725,382 B) + `002/2020 SUPER BASEBALL.zip`(627,678 B) 到云开发；
+   - **原厂 root.dat 是伪装 ZIP，rkgame 自己的 XUnzip 可读**（铺设后无 `find .../root.dat fail`），
+     Python `zipfile` 读不了（已验证）。
+
+### 二、新发现与决策
+
+1. **T11/T12 的卡点已从"A 键打偏"收敛到"没有 UP/DOWN 位"**：
+   之前所有"A 键=btn6/btn3"的注入都是错的（btn3=X、btn6=TR1），
+   而现在连"正确的 A(btn0)"也不动，因为**菜单需要先移动选中项**，而 UP/DOWN 位不存在。
+2. **`0002_0013`（默认表副本）似乎未真正生效**：若生效，b0 应为 `SELECT(0x1)`，
+   实测 b0=`0x2000(A)` ⇒ `USB_Table` 更像**保留了 `.data` 静态初值**（`GetJoystickConfig` 未成功覆盖）。
+   ⇒ 需验证 `GetJoystickConfig` 是否被调用、以及 `buttontoi` 解析是否在首项就返回。
+3. **决策（不再盲试按键）**：先解决"映射表如何被正确装载"这一问题；
+   两条候选路径：
+   - ① 用探针在 `GetJoystickConfig` 返回处打印其返回值与写入项数（判定解析是否中断）；
+   - ② 直接观察 `GetInputInfo` 的 VID/PID 与 `joystick.zip` 的键名匹配（是否存在编码/大小写差异）。
+
+### 三、下一步待办
+
+1. **P0（T11）**：给 `GetJoystickConfig` 加返回值探针（或用 `DL dlsym`/断点），
+   确认 `0002_0013` 是否被 `FindZipItemA` 命中、`buttontoi` 是否逐项写入；
+   目标是让 `USB_Table[0..11]` = `SELECT,START,UP,DOWN,LEFT,RIGHT,A,B,TL1,X,Y,TR1`（默认表语义）。
+2. **P0（T12）**：映射修好后，用 `btn3(DOWN)` 移动选中项、`btn6(A→实际按生效表)` 启动，
+   判据 = `mui_run_game:` / `RomName:` / `cores/libemu_*.so` 任一出现。
+3. **P1（T13）**：core 加载后验证 `retro_save_state`。
+4. **P1**：把本轮"USB_Table 实测 24 项 + 方向键走轴事件 + 原厂 root.dat 伪装 ZIP"写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 778515 B / sha f75bdc081a665bbc…）；由 `tools/append_progress.py` 原子追加。
+### R228 补充（2026-10-21）—— 轴事件 FILL 注入仍无效，`joy_key_tmp` 恒 0
+
+| 实验（FILL=65536 循环注入） | `[abiprobe] joytmp` | 画面 hash |
+|---|---|---|
+| 轴1 `+22768`（应为 DOWN/0x40） | **`0=00000000`** | `ae825958`×6（不变） |
+| 轴1 `−22768`（应为 UP/0x10） | **`0=00000000`** | `ae825958`×6（不变） |
+
+**结论**：`joy_key_tmp` **从未被置位**——不是"按键位算错"，而是
+**`ReadUSBJoy` 的 `read(fd,ev_buf,8)` 从未读到注入的事件**（或读到的是 8 个零）。
+
+**已排除**：映射表值（24 项已实测）、轴号（b17=1 已确认是 UP/DOWN 轴）、FILL 长度（65536 B 已灌）。
+**唯一剩余嫌疑**：`open("/dev/input/js0")` 在 shim 里**没有走 memfd 注入分支**（退回了 `/dev/zero`），
+或 `access()` 与 `open()` 的判定不一致（前者命中、后者未命中）。
+
+**下一步（唯一）**：在 shim 的 `open` 路径加一次性日志（命中 js 注入分支时打印路径与 fd 类型），
+并在 `read` 上统计"返回长度分布"，**一次判定事件流是否真的被读**；不再做按键组合试错。
+
+> 追加前 `old_intact=True`（旧文 779786 B / sha 3a2dbf1bb6115c7c…）；由 `tools/append_progress.py` 原子追加。
+### R228 补充二（2026-10-21）—— `open(js-inject)` 已确认生效；疑点收敛到「事件流长度」
+
+`CGM_IO_TRACE=1` 单变量诊断（轴1 `+22768` + `CGM_INPUT_FILL=65536`）：
+
+```
+[shim] io #17 open(js-inject) rc=4    /dev/input/js0     ← ★ open 确实走了 memfd 注入分支
+[shim] js 在线掩码 = 0x1（CGM_INPUT_JS='0'）
+[shim] js 输入注入已启用：8 字节事件流（1 个 js_event）   ← 日志只反映原始长度
+[abiprobe] joytmp 0=00000000 1=00000000                  ← 第 1 帧时仍为 0
+```
+
+**已排除**：`access` 判定、`open` 分支、js 在线掩码、映射表值、轴号、事件编码。
+**剩余唯一嫌疑**：`CGM_INPUT_FILL` 未生效（`make_input_fd` 的 `target` 退化为 `g_ev_len=8`），
+于是 memfd 里只有 **1 个事件**，被 `mui_menu` 第 100 行的预热 `mui_ReadJoystick()` 消费掉，
+主循环读到 EOF ⇒ `joy_key_tmp` 恒 0 ⇒ 画面不变。
+
+**下一步（唯一，且是一次性可判）**：在 `fake_mem.c` 的 `make_input_fd` 里打印
+`g_ev_len / g_ev_fill / target / written`（一次 `io_trace`），
+即可判定是「FILL 解析失败」还是「写入/消费时序」；随后把注入序列改成**显式多事件**
+（不依赖 FILL），并以"无按键基线不变 + 按键后 hash 变化"作为 T11 的唯一判据。
+
+> 追加前 `old_intact=True`（旧文 781247 B / sha 53bc72f3b1be7ab4…）；由 `tools/append_progress.py` 原子追加。
+## R229（2026-10-21）—— 按键事件链路已打通（strace 硬证据）：`read(fd,8)=8` ×196
+
+### 一、完成事项
+
+1. **注入缓冲扩大（根因修复，非临时补丁）**
+   - `tools/guest_shim/fake_mem.c`：`g_ev[512]` → **`g_ev[8192]`**。
+   - 依据：512 B 只够 64 个 js_event，实测在 `mui_menu` 初始化（LoadSetting/LoadConfig/InitFont/LoadMenuLog + 第 100 行预热 `mui_ReadJoystick`）阶段被消费殆尽 ⇒ 主循环读 EOF。
+
+2. **strace 硬证据（本机链路的权威结论）**
+
+   | 观测 | 值 | 含义 |
+   |---|---|---|
+   | `memfd_create(...) = 4` | **1 次** | js0 打开一次（shim 注入 fd） |
+   | `access("/dev/input/js0")` | 约 889 次（合计 3555/4） | 每次 `ReadUSBJoy` 都到位 |
+   | **`read(4,0x407ff4c0,8) = 8`** | **196 次** | ★ **事件真的被读进去了**（注入 200 个） |
+   | `read(4,...,8) = 0`（EOF） | 967 次 | 事件流耗尽后的正常 EOF |
+   | `joystick_fd` 初值 | 工厂 `.data` = **`-1,-1,-1,-1`**；rebuild 符号落 `.fimg_data`（同址 0x3af020，size 16） | 段归属**正确**，排除"read(0) 读 stdin"假设 |
+
+3. **排除的假设（逐条有证据）**
+   - ❌ `access` 判定错误 —— 889 次全部到位
+   - ❌ `open` 未走注入分支 —— `memfd_create` 1 次 + `io_trace open(js-inject) rc=4`
+   - ❌ `joystick_fd` 初值为 0（read stdin）—— 工厂/重建同址且段归属正确
+   - ❌ 事件流长度不足 —— 200 事件注入、196 次成功 read
+   - ❌ 映射表为空 —— 24 项实测（R228）
+   - ❌ 轴号不匹配 —— `b17=1` 与注入 `number=1` 一致
+
+### 二、新发现与决策
+
+1. **链路已通到 `ReadUSBJoy` 的 `read` 成功返回**，剩余问题只剩两处：
+   - ① `ReadUSBJoy` 内 `joy_key_tmp` 的**最终置位**（轴分支 `& 0xffffffaf` 先清后置，需确认最后一条事件是"置位"而非"清除"）；
+   - ② `mui_menu` 的 `uVar12` 分支是否真的收到 `0x40`（`mui_ReadJoystick()` 还会 `& 0xefffffff`）。
+2. **决策**：下一步不再改注入侧，改为**在 `ReadUSBJoy` 返回点与 `mui_menu` 的 `uVar12` 处各打一条探针**
+   （打印 `param_1`、`ev_type/ev_number/ev_value`、返回位、`uVar12`），一次定位是"位没置起"还是"分支没进"。
+
+### 三、下一步待办
+
+1. **P0（T11 收口）**：上述两条探针 → 若 `joy_key_tmp` 已置 `0x40` 而 `uVar12` 不是 `0x40`，
+   则问题在 `ReadJoystick` 的 `Joy1_Press/Joy1_Delay` 状态机；若 `joy_key_tmp` 仍为 0，
+   则问题在 `ReadUSBJoy` 的轴分支比较（`ev_value` 的符号/阈值）。
+2. **P0（T12）**：T11 一旦出画面，立即用 `A(btn0)` + 原厂 `root.dat` + 真实 ROM 验证 `mui_run_game` → `dlopen cores/*.so`。
+3. **P1（T13）**：core 加载后验证 `retro_save_state`。
+4. **P1**：把"注入缓冲 512→8192""js_event 链路已通（read=8 ×196）""joystick_fd 段归属"写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 784333 B / sha e8d4336d6be8a6d5…）；由 `tools/append_progress.py` 原子追加。
+## R230（2026-10-21）—— 悖论收敛：`read(fd,8)=8` 成功但 `joy_key_tmp`/`Joy1_Press` 全 0
+
+### 一、完成事项
+
+1. **探针升级为"每次 disp 读按键状态"**（`abi_probe.c`）：
+   - 新增 `key#<n> joytmp=<u32> press=<u32>`，读 `joy_key_tmp@0x3b21b0` 与 `Joy1_Press@0x3e19ec`（限 30 条）。
+   - 两侧符号地址**逐位一致**（已核）：`joy_key_tmp` 0x3b21b0 / `Joy1_Press` 0x3e19ec / `USB_Table` 0x3af0d4。
+
+2. **实测结果（200 个轴1 `+22768` 事件）**
+
+   | 观测 | 值 |
+   |---|---|
+   | `read(4,...,8) = 8`（strace） | **196 次**（事件确实被读进 `ev_buf`） |
+   | `[abiprobe] key#1..30 joytmp` | **全部 `00000000`** |
+   | `[abiprobe] key#1..30 press` | **全部 `00000000`** |
+   | disp 画面 hash | `ae825958` ×6（不变） |
+
+   ⇒ **形成一个明确悖论**：事件进入 `ev_buf`（read 成功），但 `ReadUSBJoy` 没有把位写进 `joy_key_tmp`。
+
+3. **本轮排除项（均有证据）**
+   - ❌ 事件未读入：strace `read=8` ×196
+   - ❌ fd 错误（read stdin）：`memfd_create` 1 次、fd=4、`read(4,...)` 命中
+   - ❌ 映射表/轴号错：`USB_Table[0x44/4]=b17=0x1`、注入 `number=1`
+   - ❌ `ev_value` 未越阈：注入 `0x58F0`，比较式 `>= 0x58f0` 成立（应置 `0x40`）
+   - ❌ 探针地址漂移：两侧符号地址逐位一致
+   - ❌ 注入缓冲不足：`g_ev` 已扩到 8192（200 事件仅用 1600 B）
+
+### 二、新发现与决策
+
+1. **唯一剩下的可能**：`ReadUSBJoy` 内部在 `read` 之后、写 `joy_key_tmp` 之前发生了**提前 return**
+   （例如 `ev_type` 解析值与预期不符，或该次调用命中了另一条分支）。
+   `strace` + 全局地址探针都无法看到"函数内部"的判断，必须**在该函数内部加一条探针**。
+2. **决策**：在 `src/proprietary/input/FUN_0000c150_ReadUSBJoy.c` 的轴分支入口加**仅诊断构建启用**的日志
+   （`#ifdef CGM_DIAG_JOY`），打印 `ev_type/ev_number/ev_value` 与前三个比较结果；
+   交付构建不加（不污染产物）。这是**最后一次单点定位**。
+
+### 三、下一步待办
+
+1. **P0（T11 收口）**：按上条加内部探针 → 判定是 `ev_type` 不匹配、还是 `ev_value` 阈值比较方向问题；
+   修好后以"无按键基线不变 + 按键后 hash 变化"复核。
+2. **P0（T12）**：T11 出画面后，用 `A(btn0)` + 原厂 `root.dat` + 真实 ROM 验证 `mui_run_game` → `dlopen`。
+3. **P1（T13）**：core 加载后验证 `retro_save_state`。
+4. **P1**：把"事件链路已通（read=8 ×196）、但 joy_key_tmp 未置位"这个**未解悖论**显式写进 `DIAG-RUNBOOK.md`，
+   避免后续轮次重复从"注入侧"排查。
+
+> 追加前 `old_intact=True`（旧文 787178 B / sha c79db04c611d4580…）；由 `tools/append_progress.py` 原子追加。
+## R231（2026-10-21）—— ★ T11 根因定案：`USB_Table` 轴号槽位被写成按钮位
+
+### 一、完成事项（`diagjoy` 内部探针，一次定案）
+
+在 `FUN_0000c150_ReadUSBJoy.c` 的轴分支加**条件编译**探针（`-DCGM_DIAG_JOY`，交付构建不含）：
+
+```
+[diagjoy] AXIS num=1 val=22768 b16=64 b17=128 b18=32 b19=8192 tmp=0x00000000
+```
+
+| 观测 | 值 | 与代码期望对比 |
+|---|---|---|
+| `ev_number` | **1**（注入正确） | 应与某个槽位相等 |
+| `ev_value` | **22768 (0x58F0)** | `>= 0x58f0` ⇒ 应置 `0x40` |
+| `USB_Table[+0x40]`（b16） | **64 = 0x40** | 期望是**轴号**（0–7），实际是**按钮位 DOWN** |
+| `USB_Table[+0x44]`（b17） | **128 = 0x80** | 期望轴号，实际是**按钮位 LEFT** |
+| `USB_Table[+0x48]`（b18） | **32 = 0x20** | 期望轴号，实际是**按钮位 RIGHT** |
+| `USB_Table[+0x4c]`（b19） | **8192 = 0x2000** | 期望轴号，实际是**按钮位 A** |
+| `joy_key_tmp` | **0** | 因为 `1` 与 `64/128/32/8192` 全不匹配 ⇒ 轴分支全不命中 |
+
+**→ 根因（定案）**：`ReadUSBJoy` 的轴分支把 `USB_Table[+0x40..0x5c]` 当**轴号**比较，
+但 `GetJoystickConfig` 实际把**按钮位**写进了这些槽位（表格式与代码期望不一致）
+⇒ **轴事件（方向键）永远匹配不上** ⇒ `joy_key_tmp` 恒 0 ⇒ 菜单收不到方向键。
+
+### 二、新发现与决策
+
+1. **这解释了全部现象**：`access` 正常、`open(js-inject)` 正常、`read=8` ×196 正常、
+   `ev_type/ev_number/ev_value` 全部正确 —— **唯独比较基准（轴号槽）是错的**。
+2. **同时纠正 R228 的一个判断**：R228 读到的 "b17=1" 是**首帧（`GetJoystickConfig` 尚未完成）**的静态初值；
+   运行期实测 b16–b19 = `64/128/32/8192`。⇒ **不能再用"首帧读取"代表映射表终值**（已记入纪律）。
+3. **决策**：不再盲改注入；下一步是**让 `USB_Table` 的轴号槽位承载真正的轴号**（0/1/2/3…），
+   两条候选路径：
+   - ① 构造**符合代码期望的表格式**（前 12 项按钮名 + 后 8 项轴号）写进 `0002_0013`
+     （需先确定 `GetJoystickConfig` 对数字项的处理：`buttontoi` 末尾 `strtol` 可解析十进制）；
+   - ② 若原厂表本就是"纯按钮名"，则说明**真机手柄方向键走的是按钮事件而非轴事件**，
+     需换用带 `UP/DOWN/LEFT/RIGHT` 按钮名的表（`0000_0000` 默认表即是）。
+
+### 三、下一步待办
+
+1. **P0（T11 收口）**：把 `0002_0013` 改为**默认表 `0000_0000` 的副本后，再验证运行期
+   `USB_Table[0..3]` 是否为 `1/8/0x10/0x40`**（SELECT/START/UP/DOWN）。
+   若仍被写成按钮位，则说明 `GetJoystickConfig` 的写入偏移与 `ReadUSBJoy` 的读取偏移**不一致**（真实缺陷）。
+2. **P0（T12）**：T11 出画面后，用 `A(btn0 或按实测)` + 原厂 `root.dat` + 真实 ROM 验证 `dlopen cores/*.so`。
+3. **P1（T13）**：core 加载后验证 `retro_save_state`。
+4. **P1**：把"轴号槽被写成按钮位"这条根因 + "首帧读映射表不可靠（须运行期读）"写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 790458 B / sha 4aa785b1d7bd005b…）；由 `tools/append_progress.py` 原子追加。
+## R232（2026-10-21）—— ★★ T11 达成（真正确认）：方向键驱动菜单 + 三次画面变化
+
+### 一、完成事项（根因链完整闭环）
+
+1. **根因链（四层，逐层有证据）**
+
+   | 层 | 根因 | 修复 |
+   |---|---|---|
+   | ① 手柄映射缺失 | `joystick.zip` 无 VMware 手柄 `0002_0013` ⇒ `GetJoystickConfig` 返回 0 ⇒ `USB_Table` 全 0 | 补 `0002_0013` |
+   | ② **映射表格式错误** | 表为**纯按钮名**（`SELECT,START,UP,...`），但 `ReadUSBJoy` 的轴分支要求 `USB_Table[+0x40/+0x44]` 存的是**轴号**；实测这些槽被写成按钮位（64/128/32/8192）⇒ `ev_number=1` 永不匹配 | 构造 **12 按钮名 + 轴号** 的 24 项表（b16=轴0, b17=轴1） |
+   | ③ 注入缓冲太小 | `g_ev[512]` = 64 事件，被初始化阶段吃光 | 扩到 **`g_ev[8192]`**（1024 事件） |
+   | ④ 预热消费 | `mui_menu` 第 100 行 `mui_ReadJoystick()` 丢弃第一个事件 | 用多事件序列覆盖 |
+
+2. **T11 达成铁证（同一构建、同一环境、单变量对照）**
+
+   | 观测 | 值 |
+   |---|---|
+   | `[diagjoy] AXIS num=1 val=22768 b16=0 b17=1 b18=0 b19=0` | 轴号槽**已命中**（b17=1 == ev_number） |
+   | `tmp=0x00000000 → 0x00000040` | **DOWN 位成功置起** |
+   | `[abiprobe] key#2 joytmp=00000040 press=00000040` | `ReadJoystick` 捕获并返回 0x40 |
+   | **画面 hash** | `ae825958`(基线) → **`965ea951` → `4993d951` → `24d8ef9b`**（三次真实变化） |
+   | 无按键基线（本轮同时复测） | `ae825958` ×6 **恒定**（对照组有效） |
+
+   ⇒ **T11「qemu 内可浏览列表并选中一项」= 达成**（有基线对照、有内部状态证据、可复现）。
+
+3. **原厂数据接入（用户提供路径）**
+   - `root.dat`(725,382 B) + `002/2020 SUPER BASEBALL.zip`(627,678 B) 已上传云开发并铺设；
+   - 原厂 root.dat 为**伪装 ZIP**（Python `zipfile` 读不了），**rkgame 自己的 XUnzip 能读**（无 `find .../root.dat fail`）。
+
+### 二、新发现与决策
+
+1. **T12 尚未达成**：`DOWN×20 + A(btn0)×3` 序列中，`joytmp` 始终为 `0x40`（DOWN），
+   **按钮事件（btn0/0x2000）未被读到**（轴事件序列占满事件流前端，按钮在尾部未及消费）；
+   画面出现 5 次 `b5449dc5`（黑屏清屏帧），疑似触及 `mui_run_game` 的 `memset+dispFlip`，但**无 `mui_run_game:` 日志** ⇒ 未真正进入。
+2. **决策**：T12 改用**分离序列**：先用"少量 DOWN（如 3 个）+ A（btn0）"的短序列（总事件 ≤ 10），
+   避免轴事件占满；或分两次运行（先移动、再单独 A）。
+3. **纪律补充**：`USB_Table` 的**轴号槽（b16–b23）与按钮槽（b0–b12）语义不同**，
+   构造映射表时必须分开处理；这条写入 `DIAG-RUNBOOK.md` 的按键注入节。
+
+### 三、下一步待办
+
+1. **P0（T12）**：短序列 `DOWN×3 + A(btn0)×3`（约 12 个事件）→ 判据 = `mui_run_game:` / `RomName:` / `cores/libemu_*.so`。
+2. **P0（T12）**：若 A 仍无反应，改用 `START(btn1/0x8)` 或 `A+TL1(0x2100)`（源码里两条路径都通向启动/选 core）。
+3. **P1（T13）**：core 加载后验证 `retro_save_state` → `.sav`。
+4. **P1**：把本轮四层根因链 + `USB_Table` 槽位语义写入 `DIAG-RUNBOOK.md`（避免后续重复踩）。
+
+> 追加前 `old_intact=True`（旧文 793925 B / sha 234f924b968a86e9…）；由 `tools/append_progress.py` 原子追加。
+## R233（2026-10-21）—— 日志通道打通（debug.log）；T12 卡点精确定位到 `mui_menu` 分支
+
+### 一、完成事项
+
+1. **`RARCH_LOG` 落盘通道打通（关键基础设施）**
+   - 源码：`RARCH_LOG_V` 在 `log_file_initialized==0` 时写 **stdout**（全缓冲，qemu 下被 `timeout` 杀掉即丢失）；
+     否则写 `log_file_fp` 并 `fflush+fsync`。
+   - `GetConfig` 读 `setting.xml` 的 `<logfile>`；**相对路径分支有漏参 bug**
+     （`sprintf(local_1020,"%s%s",work_path)` 少了文件名）⇒ 必须用**绝对路径**。
+   - 已给 `setting.xml` 插入 `<logfile>/sdcard/cubegm/debug.log</logfile>`，实测生效：
+     ```
+     RF_IC Test Fail !
+     root_path:/sdcard
+     find font.ttf in /sdcard/cubegm//ui_cn.zip fail
+     VirtualPS/2 VMware VMMouse 0002 0013 6 js0 Opened!
+     ```
+   - ⇒ 今后所有 `RARCH_LOG` 均可落盘取证（不再依赖 stdout 全缓冲）。
+
+2. **T11 保持达成（R232 结论有效）**
+   - `diagjoy tmp 0 → 0x40`、`key#2 joytmp=0x40 press=0x40`、画面 `ae825958→965ea951→4993d951→24d8ef9b`；
+   - 本轮再次确认：无按键基线恒 `ae825958`×6。
+
+3. **T12 卡点精确定位（新）**
+   - 用 `DOWN×3 → 轴回中 → A(btn6)×2` 序列：`key#5 joytmp=0x2000 press=0x2000`
+     ⇒ **A 键值确实到达 `ReadJoystick` 并返回**；
+   - 但 `debug.log` 中**没有 `mui_run_game:`**（该行是 `mui_run_game` 的第一条无条件 `RARCH_LOG`）
+     ⇒ **`mui_menu` 的 `uVar12==0x2000 → LAB_00023a80` 分支未被进入**。
+   - 已排除：按键值未到（joytmp/press 均为 0x2000）、映射表（本轮已按轴号格式重建）、ROM/root.dat（均已铺设）。
+
+### 二、新发现与决策
+
+1. **映射表格式定案（写死，防止回退）**：
+   `joystick.zip` 的 `0002_0013` 必须写成 **24 项 = 12 个按钮名（SELECT,START,UP,DOWN,LEFT,RIGHT,A,B,TL1,X,Y,TR1）+ RESET + 3 占位 + 轴号槽（b16=轴0, b17=轴1）**；
+   纯按钮名的表会导致 `ReadUSBJoy` 轴分支永远不匹配（R231 已证）。
+2. **A 键位置随表变化**：默认表（SELECT 开头）下 **A=btn6(0x2000)**；SNES 表（A 开头）下 A=btn0。
+   ⇒ 注入前必须先用 `diagjoy`/`usbtbl` 确认当前表的 b0/b6。
+3. **决策（T12 下一步）**：在 `mui_menu` 的 `uVar12` 判断处加条件编译探针
+   （`-DCGM_DIAG_MENU`，打印每帧 `uVar12` 与命中分支），一次定位"值到了但分支没进"的原因
+   （候选：`ReadJoystick` 的防抖把第二次 0x2000 抑制为 0，或分支前被 `joy_key_blob & 0x8000` 提前跳走）。
+
+### 三、下一步待办
+
+1. **P0（T12）**：加 `CGM_DIAG_MENU` 探针 → 打印 `mui_menu` 每帧 `uVar12` 与外层分支走向；
+   目标：确认 `0x2000` 是否真的进到 `LAB_00023a80`。
+2. **P0（T12）**：若分支进不去，改用 **START(btn1=0x8)**（源码同样 `goto LAB_00023a80`）或 **A+TL1(0x2100)** 路径。
+3. **P1（T13）**：core 加载后验证 `retro_save_state`。
+4. **P1**：把「`<logfile>` 必须绝对路径（相对路径有漏参 bug）」「映射表 24 项格式」「A 键位置随表变化」
+   三条写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 797242 B / sha 166b3212b655d021…）；由 `tools/append_progress.py` 原子追加。
+## R234（2026-10-21）—— T12 深水区：1000 个 A 事件注入后 `uVar12` 仍恒 0
+
+### 一、完成事项
+
+1. **`mui_menu` 加了条件编译探针**（`-DCGM_DIAG_MENU`，交付构建不含）：
+   ```c
+   uVar12 = mui_ReadJoystick();
+   #ifdef CGM_DIAG_MENU
+     if (uVar12 != 0) fprintf(stderr, "[diagmenu] uVar12=0x%08x blob=0x%08x iVar7=%d iVar11=%d n=%d\n", ...);
+   #endif
+   ```
+   编译产物 8,532 B，链接成功（5,724,528 B；`LINK_FAIL` 只是"单侧未建模符号"门禁的非零返回，ELF 实际产出）。
+
+2. **满缓冲注入实验（1000 个 A 按下，8,000 B 事件流）**
+
+   | 观测 | 值 |
+   |---|---|
+   | `[shim] js 输入注入已启用` | **8,000 字节 / 1000 个 js_event** |
+   | `[diagmenu]` | **零输出**（`uVar12` 恒 0） |
+   | 画面 hash | `ae825958`×6（不变） |
+   | `debug.log` | 仍只有 4 行（`root_path` / `font.ttf fail` / `js0 Opened!`） |
+
+   ⇒ **即使 1000 个 A 事件，`mui_menu` 主循环里的 `uVar12` 依然恒 0**。
+
+3. **对照事实（前几轮已确立，本轮复用）**
+   - `ReadUSBJoy` 层：`joytmp` 曾被确认置 `0x2000`、`Joy1_Press=0x2000`（`abiprobe key#5`）；
+   - `ReadJoystick` 防抖：`joy_key_blob != 0` 且 `== Joy1_Press` 时，`Joy1_Delay < 0x27` 期间**返回 0**，
+     每 9 帧才放行一次（`0x27 → 0x1e`）；
+   - 因此"注入 1000 个相同 A 事件"理论上每 9 帧应放行一次 `0x2000`，但 `diagmenu` 无输出。
+
+### 二、新发现与决策
+
+1. **卡点从"按键没进去"推进到"放行值没到 `mui_menu`"**：
+   - 注入侧、映射表、`ReadUSBJoy`、FILL 全部已排除；
+   - 现在只剩两种可能：
+     ① `mui_menu` 主循环**没有执行到第 110 行**（初始化/渲染路径阻塞在别处）；
+     ② `ReadJoystick` 的 `Joy1_Press/Joy1_Delay` 状态让放行值始终为 0（需要读这两个全局）。
+2. **决策**：下一步**同时**做两件事（一次跑完）：
+   - 在 `ReadJoystick` 返回点加 `CGM_DIAG_JOY` 探针（打印 `joy_key_blob`、`Joy1_Press`、`Joy1_Delay`、返回值）；
+   - 在 `mui_menu` 进入主循环前加一条**无条件**探针（证明"主循环已启动"），区分"没到第 110 行"与"到了但值为 0"。
+
+### 三、下一步待办
+
+1. **P0（T12）**：按上条双探针 → 一次判定 ① 还是 ②。
+2. **P1（T13）**：T12 打通后，用 `retro_save_state` 路径验证 `.sav` 写读（`compress` 链路）。
+3. **P1**：把"注入 1000 事件仍不放行"这一事实与双探针方案写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 799929 B / sha ded13bf92d74b0ca…）；由 `tools/append_progress.py` 原子追加。
+## R235（2026-10-21）—— T12 卡点再收敛：`mui_menu` 根本没被调用
+
+### 一、完成事项（双探针，一次定案）
+
+1. **`ReadJoystick` 加防抖状态探针**（`-DCGM_DIAG_JOY`，交付不含）：
+   ```
+   [diagjoy2] blob=0x00002000 press=0x00000000 delay=0    ← A 键首次进入
+   [diagjoy2] blob=0x00002000 press=0x00002000 delay=0    ← 防抖置位
+   [diagjoy2] blob=0x00002000 press=0x00002000 delay=1
+   [diagjoy2] blob=0x00002000 press=0x00002000 delay=2 …  ← 正常递增
+   ```
+   ⇒ **防抖状态机完全正常**，`ReadJoystick` 侧没有问题。
+
+2. **`mui_menu` 主循环入口加无条件探针**（`[diagmenu0] mui_menu main-loop entered`）：
+   **零输出** ⇒ **`mui_menu` 从未执行到主循环**。
+
+3. **结论（卡点精确定位）**：
+   `main_Menu` 是状态机（`switch (DAT_003af26c)`）：
+   `0=mui_menu / 1=mui_type / 2=mui_recent / 3=mui_shoucang / 4=mui_search / 5=mui_setting`。
+   `DAT_003af26c` 来自 `LoadMenuLog()`（`menu.log` 首字段）。
+   ⇒ **当前跑的不是 `mui_menu`（游戏列表），而是另一个菜单**（最可能是 `mui_recent` 或 `mui_type`，
+   因为 `sdcard_min` 里存在 `recent.lst` / `favorites.lst`，而 `menu.log` 内容为近似全零的二进制）。
+
+### 二、新发现与决策
+
+1. **这条路解释了"按键全部正常但画面只动两次"**：
+   如果进的是 `mui_recent`（最近游玩，条目少），DOWN 只能移动 1-2 项；A 键在该菜单里的分支
+   也不同于 `mui_menu` 的 `LAB_00023a80`（`mui_run_game`）。
+2. **决策**：下一步在 `main_Menu` 的 `switch` 前打印 `DAT_003af26c` 与 `menu.log` 解析结果，
+   并用**受控 `menu.log`**（明确写入 `0`）强制进入 `mui_menu`；
+   之后 T12 的判据不变：`mui_run_game:` / `RomName:` / `cores/libemu_*.so`。
+
+### 三、下一步待办
+
+1. **P0（T12）**：`main_Menu` 加 `[diagmenu1] DAT_003af26c=%d` 探针 → 确认进入哪个菜单；
+   若 ≠0，写一份 `menu.log` 首字段为 0 的受控文件（并记录其二进制格式）。
+2. **P0（T12）**：进入 `mui_menu` 后，用 `DOWN×3 + 回中 + A(btn6)` → 判据 `mui_run_game:`。
+3. **P1（T13）**：core 加载成功后验证 `retro_save_state` → `.sav` 写读。
+4. **P1**：把「`main_Menu` 状态机入口（`DAT_003af26c`）决定跑哪个菜单」写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 802452 B / sha 6da1638b7f52cfc5…）；由 `tools/append_progress.py` 原子追加。
+## R236（2026-10-21）—— ★★ T12 核心路径打通：`mui_menu` 主循环 + `mui_run_game` 被调用
+
+### 一、完成事项（一次定位、一次打通）
+
+1. **定位"进入哪个菜单"（R235 遗留）**
+   - `main_Menu` 加探针 `[diagmenu1] menu_state=%d`，实测 **`menu_state=5`**
+     ⇒ 原 `sdcard_min/menu.log`（444 B 二进制结构体，`SaveMenuLog` 用 `fwrite(m_menulog,1,0x1bc)`）
+     首 4 字节 = **5** ⇒ 进的是 **`mui_setting`（设置菜单）**，不是游戏列表。
+   - 受控改 `menu.log` 首 4 字节为 **0**（仅云上实验副本，原厂文件不动）⇒ `menu_state=0`。
+
+2. **`mui_menu` 主循环启动（首次）**
+   ```
+   [diagmenu1] menu_state=0 raw=0x00000000
+   [diagmenu0] mui_menu main-loop entered      ← ★ 主循环进入
+   ```
+   画面 hash 开始**反复变化**：`b80141d2 ↔ ee731dc5`（之前恒 `ae825958`）。
+
+3. **`mui_run_game` 被调用（T12 核心路径打通）**
+   ```
+   debug.log:
+     open /sdcard//.dat fail
+     mui_run_game:            ← ★ 函数已进入（RARCH_LOG 第一条）
+     RomName:
+     run_game /sdcard/,
+     mui_menu exit back to here...
+   ```
+   ⇒ **A 键（btn6=0x2000）确实触发了 `mui_run_game`**，整条菜单→启动路径已连通。
+
+4. **同时确认的两处数据问题**
+   | 现象 | 原因 |
+   |---|---|
+   | `open /sdcard//.dat fail` | `file_info_list` 项为空 ⇒ `mui_extract_basepath` 取不到 `NNN/` 前缀 ⇒ `basepath=""` |
+   | `RomName:` 为空 / `run_game /sdcard/,` | 同上：`param_1` 是空串，拼出 `/sdcard/` |
+   | 原厂 `root.dat`（伪装 ZIP） | `mui_menu` 读它时 **`find /sdcard/root.dat fail!`** ⇒ 需 key2 解，而 shim 的 `key2_hook_try` 只对 `.zip` 后缀 re-assert ⇒ 用 `make_rootdat.py` 生成标准 ZIP 可读（但内容是 filelist 的 135 项） |
+
+### 二、新发现与决策
+
+1. **T12 的"最后一公里"是 `fileinfo.txt` 的条目格式**：
+   `mui_do_file_list` 要求每项形如 **`NNN/<文件名>`**（首段数字目录），且 `mui_extract_basepath` 用 `strrchr('/')` 取前缀；
+   当前 `make_rootdat.py --mode filelist` 生成的 135 项**解析后为空**，需核对它写入的分隔符/编码与解析器期望
+   （解析器分隔符：`,` `;` `\n` `\r`；每项经 libiconv GB2312→UTF-8）。
+2. **决策**：下一步直接检查 `root.dat` 内 `fileinfo.txt` 的**原始字节**与 `mui_do_file_list` 的解析结果，
+   必要时改 `make_rootdat.py` 的输出格式（这是工具，不是产品代码）。
+
+### 三、下一步待办
+
+1. **P0（T12 收口）**：修 `fileinfo.txt` 条目格式 → `mui_run_game:002/2020 SUPER BASEBALL.zip` → `cores/libemu_*.so` 的 `dlopen`。
+2. **P0（T13）**：dlopen 成功后验证 `retro_save_state` → `.sav` 写读。
+3. **P1**：把「`menu.log` 首 4 字节 = 菜单状态（5=设置/0=游戏列表）」「`root.dat` 伪装 ZIP 需 key2、标准 ZIP 可读」
+   两条写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 805565 B / sha 40c832aac6ba1231…）；由 `tools/append_progress.py` 原子追加。
+## R237（2026-10-22）—— ★★ T12 达成：`dlopen cores/libemu_fba.so` 成功（core 拒绝假 ROM 属正常）
+
+### 一、完成事项（T12 判据达成）
+
+1. **`fileinfo.txt` 真实格式定案（关键）**
+   原厂 `fileinfo_decoded.txt` 实测格式（**分号分隔 5 字段，每行一个游戏**）：
+   ```
+   000/kof97.zip;KOF 97;KOF 97;拳皇97;QH97
+   ```
+   `make_rootdat.py --mode filelist` 生成的**逗号列表格式不对**（导致 `file_info_list` 项为空、
+   `open /sdcard//.dat fail`、`RomName:` 空）。改用原厂 `fileinfo_decoded.txt`（2,373,964 B）
+   打标准 ZIP 作 `root.dat` 后，`RomName` 正确解析。
+
+2. **完整启动链贯通（debug.log 铁证）**
+   ```
+   mui_run_game:000/sengokuh.zip
+   RomName:sengokuh
+   run_game /sdcard/000/sengokuh.zip,ZIP               ← 完整路径 + 类型
+   open .../cores/libemu_neogeo.so fail（不存在）
+   open .../cores/libemu_capcom.so fail（不存在）
+   open .../cores/libemu_pgm.so fail（不存在）
+   Load /sdcard/cubegm/saves/ARCADE/sengokuh.scf       ← ★ 存档路径已走到
+   Load /sdcard/cubegm/saves/ARCADE/default.scf
+   /sdcard/cubegm//cores/libemu_fba.so unsupport.       ← ★ dlopen 成功（能找到并加载）
+   ```
+   - **`unsupport` ≠ 加载失败**：`Core_Load` 已 `dlopen` 成功并调用 `retro_is_support`，
+     该真实原厂 core 判定我们放的 4 字节假 ROM（`PK\003\004`）**不受支持**而返回 <0。
+   - 对照：其余 8 个 core 是 `cannot open shared object file`（文件不存在）——两者性质完全不同。
+
+3. **补齐云上缺失的 core 资产**
+   云上 `golden/sdcard_min/cores/` 只有 `config.xml` / `filelist.xml`（`.so` 被 `.gitignore` 排除，未入库）；
+   已上传 `libemu_fba.so`（3,909,304 B）到云上实验副本。
+
+### 二、新发现与决策
+
+1. **T12 判据「qemu 内 `dlopen` 到 `cores/*.so` 成功」= 达成**：
+   证据是 `libemu_fba.so unsupport.` —— 该行**只会在 `dlopen` 成功、进入 core 内部检查后**打印；
+   文件缺失时打印的是 `cannot open shared object file`。
+2. **T13（存档）已部分触及**：`Load .../saves/ARCADE/sengokuh.scf` 说明存档路径解析正确，
+   但因 core 未接受假 ROM，`retro_save_state` 尚未真正执行。
+3. **决策（T13 下一步）**：换**真实 ROM**（原厂 `000/kof97.zip` 等，core 支持），
+   使 `libemu_fba.so` 真正 `retro_load_game` 成功，再验证 `retro_save_state` → `.sav`/`.scf` 写读。
+
+### 三、下一步待办
+
+1. **P0（T13）**：上传 1 个真实 ROM（`000/kof97.zip`，原厂 SD 内）→ 跑 → 判据：
+   `retro_load_game` 成功（无 `unsupport`）、`retro_save_state` 返回 0、`saves/` 下落盘。
+2. **P1**：把「`fileinfo.txt` 分号 5 字段格式」「`menu.log` 首 4 字节=菜单状态」
+   「`root.dat` 伪装 ZIP 需 key2、标准 ZIP 可读」「`cores/*.so` 不在 git（需单独铺）」
+   四条写入 `DIAG-RUNBOOK.md`。
+3. **P1**：把云上实验用的 `menu.log`/`setting.xml`/`joystick.zip` 改动登记为"实验环境适配"，
+   明确**不提交回仓库**。
+
+> 追加前 `old_intact=True`（旧文 808846 B / sha 02311fa4752cc98a…）；由 `tools/append_progress.py` 原子追加。
+## R238（2026-10-22）—— T13 状态：存档路径已通，缺"core 真正接受的 ROM"
+
+### 一、完成事项
+
+1. **T12 保持达成**（R237）：`libemu_fba.so unsupport.` = `dlopen` 成功、core 内部拒绝假 ROM。
+
+2. **T13 实测（真实 ROM 尝试）**
+   - 上传原厂 `000/1941.zip`（1,420,289 B，FBA 真实 ROM），改 `fileinfo.txt` 首项指向它。
+   - 结果：`mui_run_game:000/sengoku3s.zip` / `RomName:sengoku3s`
+     ⇒ **`fileinfo.txt` 的改写未生效**：该文件行尾是 **`\r`（0x0D）**，不是 `\r\n`/`\n`，
+     用 `\r\n` 分割把整个文件当成一行 ⇒ 改写无效（列表仍按原顺序，首项是 `sengoku3s`）。
+   - `saves/` 目录**为空** ⇒ `retro_save_state` 未执行（core 未接受 ROM）。
+
+3. **T13 的前置条件（本轮定案）**
+   - `retro_save_state` 需要 `retro_load_game` 成功；
+   - `retro_load_game` 需要 **core 真正支持的 ROM**（FBA core 会校验 zip 内容/CRC）；
+   - 因此 T13 的可执行路径是：**用原厂 SD 中真实存在、且被对应 core 支持的 ROM**（如 `000/1941.zip`
+     对应 FBA），并让 `fileinfo.txt` 正确指向它（按 `\r` 分隔改写）。
+
+### 二、新发现与决策
+
+1. **`fileinfo.txt` 的分隔符是 `\r`（不是 `\n`）** —— 已从 hexdump 与 `orig first:` 输出双向确认；
+   改写工具必须按 `\r` 切分，否则会把整个文件压成一行。
+2. **`saves/` 空目录 = T13 的诚实红**（不是缺陷，是"没有成功加载的 core"）。
+3. **决策**：下一轮按 `\r` 切分改写 `fileinfo.txt` 首项为 `000/1941.zip`，
+   并把 `1941.zip` 放到 `/sdcard/000/`；若 FBA core 仍拒绝，则逐一试原厂 `000/` 下其它真实 ROM。
+
+### 三、下一步待办
+
+1. **P0（T13）**：按 `\r` 改写 `fileinfo.txt` → 首项 `000/1941.zip` → 观察
+   `retro_load_game` 成功（无 `unsupport`）→ `saves/` 下落盘 → `retro_save_state` 返回 0。
+2. **P1**：若 FBA core 仍拒绝，改用其它分类（如 `002/*.zip` + `libemu_snes9x.so`）验证同一链路。
+3. **P1**：把「`fileinfo.txt` 用 `\r` 分隔」「`menu.log` 首 4 字节=菜单状态」「`cores/*.so` 不在 git」
+   三条写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 811210 B / sha ab596e17f1716e52…）；由 `tools/append_progress.py` 原子追加。
+## R239（2026-10-22）—— `unsupport` 的精确来源（FBA_Load 三条件）+ T13 状态
+
+### 一、完成事项
+
+1. **`unsupport.` 日志定位（源码级）**
+   它来自 `FUN_002b6c14_FBA_Load.c:108`，不是 `Core_Load`。触发条件是以下**三者任一失败**：
+   ```c
+   if ((retro_is_support != NULL) && ((*retro_is_support)(param_1) >= 0)   // ①
+       && (Load_Proc1(DAT_002dbcb4) != 0)) {                               // ②
+       ...
+       if ((retro_load_game != NULL) && ((*retro_load_game)(game) != 0)) { // ③
+           RARCH_LOG("use %s to run %s\n", ...);  Load_Proc2();  return 0;
+       }
+       run_process("retro_unload_game",0); run_process("retro_deinit",0);
+   }
+   RARCH_LOG("%s unsupport.\n", acStack_128);   // ← 三者任一失败即到这里
+   ```
+   ⇒ `dlopen` **成功**（不是 `open ... fail`），失败在 ①/②/③ 之一。
+
+2. **把选中项精确指向真实 ROM（本轮达成的能力）**
+   - `menu.log` 的字段：偏移 0 = 菜单状态、**偏移 284 = 选中行（`DAT_003af27c`）**、偏移 288 = 选中列。
+   - 原值 `state=5 idx284=10 idx288=2717`；置 `state=0 idx284=0 idx288=0` 后：
+     ```
+     mui_run_game:000/1941.zip       ← ★ 精确选中真实 ROM
+     RomName:1941
+     run_game /sdcard/000/1941.zip,ZIP
+     /sdcard/cubegm//cores/libemu_fba.so unsupport.
+     ```
+   ⇒ **"选中指定 ROM"这一能力已打通**（此前一直选中 `sengoku3s`）。
+
+3. **T13 状态**：`saves/` 目录仍为空（`retro_load_game` 未成功 ⇒ `retro_save_state` 未执行）。
+   已确认 `Load /sdcard/cubegm/saves/ARCADE/<rom>.scf` 路径解析正常（只是文件不存在）。
+
+### 二、新发现与决策
+
+1. **`unsupport` 不是"复刻缺陷"，而是 core 侧三条件之一**：
+   - ① `retro_is_support(rom_path)` —— 真实 FBA core 会校验 zip 内 ROM 名/CRC；
+   - ② `Load_Proc1(DAT_002dbcb4)` —— 公共 retro_* 符号绑定；
+   - ③ `retro_load_game(game)` —— core 真正接受 ROM。
+2. **决策**：下一轮在 `FBA_Load` 的三条件处各加一条 `CGM_DIAG_CORE` 探针（打印 ①②③ 的返回值），
+   一次区分"core 不认 ROM"与"frontend 符号绑定缺项"——这两者的修复方向完全不同。
+
+### 三、下一步待办
+
+1. **P0（T12 完全闭环 / T13 前置）**：加 `CGM_DIAG_CORE` 探针 → 判定 `unsupport` 的具体条件。
+   - 若 ① 失败：需 **core 真正支持的 ROM**（原厂 `000/1941.zip` 应被 FBA 支持，需核对 zip 内文件名/CRC）；
+   - 若 ② 失败：frontend 侧 `Load_Proc1` 的 dlsym 清单缺项（可用 `core_dlsym_gate.py` 对照）；
+   - 若 ③ 失败：`game_blob` 的 path/data/size 组装问题。
+2. **P1（T13）**：`retro_load_game` 成功后验证 `retro_save_state` → `saves/ARCADE/*.scf` 落盘与回读。
+3. **P1**：把「`menu.log` 偏移 284 = 选中行」「`fileinfo.txt` 用 `\r` 分隔」「`unsupport` 三条件」
+   写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 814327 B / sha a125de8094dd36f6…）；由 `tools/append_progress.py` 原子追加。
+## R240（2026-10-22）—— T13 决定性根因：`unsupport.` 三条件逐一定位（全本机静态取证，零云零 CI）
+
+### 一、完成事项
+
+1. **判定 `#ifdef CGM_DIAG_CORE` 探针是死路（不再走）**
+   `CGM_DIAG_JOY` / `CGM_DIAG_MENU`（甚至计划中的 `CGM_DIAG_CORE`）这类 `#ifdef` 探针宏，
+   **在所有构建脚本里从未被 `-D` 定义过**（全仓 grep 0 命中）⇒ 它们一直是死代码，
+   "加了探针却不在产物里"会再次发生。真正接通的观测手段只有 guest_shim.so 里
+   环境变量门控的 `[abiprobe]`。⇒ **放弃加针**，改用工厂 `FBA_Load` 里**本来就有的三条
+   `RARCH_LOG`**（`open ... fail` / `... unsupport.` / `use ... to run ...`）定位——
+   三条连读即可判定遍历走到哪、哪一步失败，无需改任何源码。
+
+2. **新增 `tools/core_retro_syms.py`**（零执行环境读厂商 core .so 的 `.dynsym`，对拍 frontend 清单）
+   - `libemu_fba.so`：defined retro_* = **27**；`Load_Proc1` 必需 6 符号
+     （`retro_set_video_refresh`/`retro_set_audio_sample_batch`/`retro_set_input_state`/
+      `retro_set_environment`/`retro_set_input_poll`/`retro_init`）**全 DEFINED**；
+     仅 `retro_save_state`/`retro_load_state` 未导出。
+   - `libemu_cps2.so`：同样 27 个 retro_*、6 必需符号全 DEFINED。
+   - ⇒ **② 分支（`Load_Proc1` 符号绑定）不可能失败**。
+
+3. **解出 `FBA_Load` 10 槽 core 指针表（与 folder_core_map.md R173 对表一致）**
+   `libemu_neogeo → capcom → pgm → fba → cps2 → extend → fbalpha → fbalpha2012 → mame2000 → (空串终止)`
+
+4. **判定 `DAT_002dbcb4` = 空串**（= rodata+0x10 的 `\x00` 终止符）⇒
+   `Load_Proc1(DAT_002dbcb4)` 里 `*param_1 != '\0'` 为假 ⇒ 跳过 dlopen，
+   **复用** `FBA_Load` 已打开的 `handle_emurun` 做符号绑定（语义正确，非 bug）。
+
+### 二、新发现与决策
+
+1. **★ 推翻「`libemu_fba.so unsupport.` = T13 失败」的隐含误读**
+   - 1941（CPS-1 游戏）的驱动 `BurnDrvCps1941`/`1941j`/`1941r1`/`1941u`
+     **只存在于 `libemu_cps2.so`**（1047 个驱动）；**不存在于 `libemu_fba.so`**
+     （416 个驱动，0 含 1941）。
+   - ⇒ `FBA_Load` 遍历到槽[3]（fba）时打 `unsupport.` 是**预期正确行为**，
+     循环会继续走到槽[4]（cps2，1941 的真正归属）。
+   - R239 只抓到 fba 那一行就下「T13 未达成」结论，是**日志被截取导致的误判**——
+     cps2 那步大概率已成功（`use ... to run ...`）或也 unsupport，但**没被抓到**。
+
+2. **1941 ROM 构成验证**：`000/1941.zip`（1,420,289 B）含 19 文件，主 ROM
+   `41-1m.3a`(CRC=ff77985a) / `41-32m.8h`(4e9648ca) 等标准 CPS-1 set；
+   原厂 fileinfo 第 81–84 行登记 1941/1941j/1941r1/1941u 四套。
+
+3. **★★ R239「fba unsupport 就停」的两种可能（分层标注，未实测，需抓完整日志裁决）**
+   - 【已实测】1941 的驱动 `BurnDrvCps1941` 族**只在 `libemu_cps2.so`**（槽[4]），
+     不在 `libemu_fba.so`（槽[3]）。⇒ 槽[3] fba 打 `unsupport.` 是**预期正确**，循环应继续到 cps2。
+   - 【未实测推断】summary 只记载上传了「1941.zip + libemu_fba.so」两文件；若云上 cores/
+     只铺了 fba，则 cps2(槽[4]) 起往下全打 `open ... fail`（非 `use...`、非 `unsupport.`）。
+   - ⇒ **下一步唯一动作**：抓完整 FBA_Load 遍历日志，区分两种结局
+     （a）`use .../libemu_cps2.so to run` = core 已接受 ROM（环境 OK，T13 卡在存档动作未触发）；
+     （b）`libemu_cps2.so unsupport.` = core 侧 ROM 匹配失败（进 zip 文件名/CRC 定位）。
+   - 无论哪种，都**不是复刻 bug**：三条件②已排除，①/③ 都是 core 侧对 ROM 的判定。
+
+4. **决策**：T13 不再需要任何 C 源码改动 / 探针。只需**上云抓一次 FBA_Load 完整遍历日志**
+   （三条 `RARCH_LOG` 连读），一次判定：
+   - (a) `use /sdcard/cubegm//cores/libemu_cps2.so to run ...` → **core 接受 ROM 已通**，
+     T13 卡在「存档动作未触发」（`saves/` 空是正常，非 bug）；
+   - (b) `libemu_cps2.so unsupport.` → `retro_is_support`/`retro_load_game` 失败，
+     进 core 侧 ROM 匹配定位（zip 内文件名/CRC）。
+
+### 三、下一步待办
+
+1. **P0（T13 收口，一次云，跑完即 stop）**：抓重建侧 `run_game` 的**完整** `FBA_Load` 遍历日志：
+   `grep -aE "open .*fail|unsupport\.|use .* to run|Exit fba" report/qemu_*/rundir_rebuild/stdout.txt`
+   判据：见 cps2 的 `use...` 即「core 接受 ROM」闭环；见 cps2 `unsupport.` 则进 core 侧匹配定位。
+2. **P1（若 cps2 成功）**：存档落盘需**触发存档动作**（游戏内 save state 或退出），
+   不能只看「跑起来后 saves/ 空」。
+3. **P1**：把「core 必需 6 retro_* 符号清单」「FBA_Load 10 槽遍历」「1941→cps2 归属」
+   写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 819457 B / sha 2b524fe46a0e9454…）；由 `tools/append_progress.py` 原子追加。
+## R241（2026-10-22）—— ★★★ T13 机制链闭环：`retro_save_state` 是**前端实现**（非 core 导出）+ 1941↔cps2 逐字节匹配 19/19 + `autorun` 直达路径
+
+### 一、完成事项（全本机静态取证，零云零 CI）
+
+1. **★★★ 纠正 R239/R240 的一处隐含误读：`retro_save_state` / `retro_load_state` 是【前端自有实现】，不是 core 导出**
+
+   用零执行环境读两个 core 的 `.dynsym`（5899 / 2644 个符号）：
+
+   | 符号 | `libemu_cps2.so` | `libemu_fba.so` |
+   |---|---|---|
+   | `retro_save_state` | **ABSENT** | **ABSENT** |
+   | `retro_load_state` | **ABSENT** | **ABSENT** |
+   | `retro_serialize` | DEFINED (0x1f9fd4) | DEFINED (0x24375c) |
+   | `retro_serialize_size` | DEFINED (0x1fa03c) | DEFINED (0x2437c4) |
+   | `retro_unserialize` | DEFINED (0x1f9f6c) | DEFINED (0x2436f4) |
+   | `retro_get_memory_data` | DEFINED (0x1f9cc0) | DEFINED (0x2418e8) |
+   | `retro_get_memory_size` | DEFINED (0x1f9cb8) | DEFINED (0x2418e0) |
+   | `retro_run` / `retro_init` / `retro_load_game` | 全 DEFINED | 全 DEFINED |
+
+   而 `src/proprietary/core/FUN_002b83e8_retro_save_state.c`（**前端** @0x2b83e8）的实现是：
+   ```c
+   _retro_serialize_size = dlsym(handle_emurun,"retro_serialize_size");  // core 导出 ✓
+   local_20 = (*_retro_serialize_size)();
+   __ptr = malloc(local_20 << 1);
+   _retro_serialize = dlsym(handle_emurun,"retro_serialize");            // core 导出 ✓
+   (*_retro_serialize)(__ptr, local_20);
+   RARCH_LOG("retro_save_state:%s\n", param_1);                          // ← 这行是 T13 的判据锚
+   __s = fopen(param_1,"wb");
+   compress(__ptr_00,&local_1c,__ptr,local_20);                          // zlib，设备/SYSROOT 侧解析
+   fwrite(&local_20,1,4,__s);  fwrite(__ptr_00,1,local_20,__s);
+   ```
+   ⇒ **T13 不依赖 core 导出 `retro_save_state`**。core 只提供 `retro_serialize*`，前端自己做
+   压缩（`compress`）+ 落盘（4 字节原长 + 压缩数据）。
+   ⇒ **R239 把「`unsupport` ② 分支 = `Load_Proc1` 的 6 符号」当成了 T13 的前置**，方向对但**不完整**：
+   `Load_Proc1` 的 6 符号（`retro_set_video_refresh`/`audio_sample_batch`/`input_state`/
+   `environment`/`input_poll`/`init`）只负责**进游戏主循环**；真正存档还另需
+   `retro_serialize_size`/`retro_serialize` —— 这两个**已验证在两 core 里 DEFINED**。
+
+2. **★★★ 1941.zip ↔ `libemu_cps2.so` 逐字节匹配：19/19 文件名 + 19/19 CRC 全命中**
+
+   从原厂 `000/1941.zip` 读 19 个条目的 (filename, CRC32)，逐个到 cps2 core 的 `.rodata` 里搜：
+
+   | 校验项 | 结果 |
+   |---|---|
+   | 文件名（19 个，含 `41-1m.3a` / `41-32m.8h` / `buf1` / `ioa1` / `prg1` / `sou1` …） | **19/19 全在** |
+   | CRC32（LE 4 字节，含 `ff77985a` / `4e9648ca` / `983be58f` …） | **19/19 全命中** |
+   | `BurnDrvCps1941` 驱动名 | 在 cps2 @0x18486（4 个变体 `1941`/`1941j`/`1941r1`/`1941u` 全在） |
+
+   ⇒ **① `retro_is_support(1941.zip)` 与 ③ `retro_load_game(1941)` 必然通过**（core 侧判定，
+   不是猜测：core 内部就是拿这份 ROM 表逐项比对文件名/CRC）。
+
+3. **★ `autorun` 是 T13 最干净的一次性触发路径（比 menu.log 注入少三个变量）**
+
+   `src/proprietary/main/FUN_00009b58_main.c:47-64`：
+   ```c
+   if (autorunfile[0] == '\0') { main_Menu(); }      // 无 autorun → 进菜单（需按键/选中项）
+   else if (strcmp(autorunfile,"/USBJoystickTest")) { ... }
+   else { autorun(autorunfile, autorundriver); }     // 有 autorun → 直接 run_game()
+   ```
+   `FUN_002b7a28_autorun.c:19`：`if (*param_2 == '\0') run_game(param_1);`（driver 空则直接跑）
+   `src/data/factory_rodata.bin` 逐字节确认属性名：`@0xc8 "autorun"`、`@0xd0 "file"`、`@0xd8 "driver"`。
+   ⇒ 只要 `setting.xml` 写 `<autorun file="/sdcard/000/1941.zip" driver="" />`，
+   **`main()` 直接 `run_game("/sdcard/000/1941.zip")`**，完全绕过 menu.log 选中项注入 + 按键注入
+   + `root.dat` 三件事 ⇒ 上云实验的可控变量从 4 个降到 1 个（只剩 ROM 路径）。
+
+4. **★ 存档落盘的两个真实路径（此前未区分）**
+
+   | 触发器 | 函数 | 落盘路径 | 判据锚（`RARCH_LOG`） |
+   |---|---|---|---|
+   | `savestatehotkey`（`setting.xml`=3072=**0xC00**）在**游戏主循环**按下 | `SaveDefaultState` | `<work>saves/<gametype>/<RomName>.sav` | `SaveDefaultState:%s` + `retro_save_state:%s` |
+   | 游戏内 **PauseMenu**（`GameMenuHotKey`=9）→ 存档页 → A | `mui_save_state` | `<work>states/<ArchivePath>/<RomName>.sv%d` | 无 RARCH_LOG（只 `retro_save_state`） |
+
+   ⇒ T13 的「`retro_save_state` 返回 0 且存档可读回」**最短达成路径** = `autorun` 直跑 1941 →
+   进 `Load_Proc2` 主循环 → 注入 `0xC00` → `SaveDefaultState` → `saves/ARCADE/1941.sav` 落盘。
+
+### 二、新发现与决策
+
+1. **`Load_Proc2` 主循环是 T13 的"游戏内"阶段**（`FUN_002b5c08`）：它 `dlsym("retro_run")` 后
+   进入 `do{…}while(true)`，每轮 `ReadJoystickProc()` → 检查 `SaveDefaultStateKey` →
+   `(*_retro_run)()`。⇒ **只要出现 `use ... to run ...`，程序就已经在这个循环里**，
+   此后注入热键即可触发存档。**这是判定"T13 卡在哪"的分界线**。
+
+2. **决策：上云只做一件事 —— 抓 `FBA_Load` 完整遍历日志，确认 cps2 槽位打出 `use ... to run`**
+   - 用 `autorun`（`<autorun file="/sdcard/000/1941.zip" driver="" />`）+ `logfile` 绝对路径；
+   - 把 `golden/sdcard_min`（含 20 个 core `.so`）整树 tar 上传（`.gitignore` 只影响 git，不影响 tar）；
+   - 一次 SSH 内跑完并取回 `debug.log`，跑完即 `workspace-stop`。
+
+3. **判据（先写死再看结果）**：
+   - **(a) `use /sdcard/cubegm//cores/libemu_cps2.so to run /sdcard/000/1941.zip`** ⇒ core 接受 ROM
+     闭环，T13 只需再注入 `0xC00` 验证 `.sav` 落盘；
+   - **(b) `libemu_cps2.so unsupport.`** ⇒ 与 19/19 匹配事实矛盾 ⇒ 必须查 cps2 的
+     `retro_is_support` 是否走了别的判定（不是 ROM 表），属新证据；
+   - **(c) 无 cps2 行（只有 fba `unsupport` + cps2 `open ... fail`）** ⇒ 云上 core 资产仍缺，
+     是环境问题不是代码问题。
+
+### 三、下一步待办
+
+1. **P0（T13 收口，一次云，跑完即 stop）**：`autorun` 直达 1941，抓完整 `FBA_Load` 遍历 + `use...to run`。
+2. **P1（若 (a)）**：注入 `0xC00` 热键 → 验证 `saves/ARCADE/1941.sav` 落盘 + `retro_load_state` 回读。
+3. **P1**：把本段三条（`retro_save_state` 前端实现 / 1941↔cps2 19/19 / `autorun` 属性名与路径）
+   写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 826338 B / sha 722d4cfb96d11c7a…）；由 `tools/append_progress.py` 原子追加。
+## R242（2026-10-22）—— ★★★★ T13 根因破案：`build/obj` 里 23 个**过期 `.o`** 冒充当前源码（`sprintf` 缺第 4 参 ⇒ core 名 `(null)`）；重编后 cps2 **接受** ROM，但崩在闭源 core 内部且**原厂同址**
+
+### 一、上云实测（CNB 云开发 `cnb-nkr-1k5gsgg2e`，autorun 直达 1941）
+
+装置：`<autorun file="/sdcard/000/1941.zip" driver="" />` + `<logfile>/sdcard/cubegm/debug.log</logfile>`；
+`/sdcard/cubegm/cores/` 铺 **20 个 core `.so`**；`/sdcard/000/1941.zip`（1,420,289 B）；
+guest shim（1,187,508 B）+ 三桩（libkms/libdrm/libasound）+ `/dev/dri/card0,1` + `/dev/mem`。
+
+**单变量对照（同环境 / 同 ROM / 同 shim+三桩，只换二进制）**：
+
+| 侧 | `debug.log` 里的 FBA_Load 遍历 | exit |
+|---|---|---|
+| **原厂** `golden/factory.rkgame.bin` | `neogeo fail` → `capcom fail` → `pgm unsupport.` → `fba unsupport.`；**core 名全部正确** | 139（si_addr=0x1a400） |
+| **重建（旧 ELF）** | `open …/cores/(null) fail` **×9**；**core 名全是 `(null)`** | 0（空遍历后正常退出） |
+
+⇒ `(null)` 是重建侧的确切缺陷，**不是**装置/环境问题。
+
+### 二、★ 根因（三级证据，全部实测）
+
+**① 运行期**：`sprintf(acStack_128,"%s/cores/%s",work_path,*ppcVar4)` 的 `%s` 得 `(null)`
+⇒ 第 4 参实参为 0。
+
+**② 反汇编**（capstone 5.0.7 直读 ELF；本机 `arm-linux-objdump` 是 Linux ELF，Windows 上 `Exec format error`）：
+- 重建旧 `FBA_Load @0x4fcfd0`（960 B）：`bl sprintf` 前只有 `mov r0,r7 / mov r1,r5 / mov r2,r4`，**无 r3**；
+  且往栈数组只写 **8 个槽**（`stm ip,{r5,r6,r7}` + 4×`str` + 1×`str`，覆盖 `sp+0x114..0x130`），
+  **槽 8/9（`libemu_mame2000.so` + 空串哨兵）从未写入**。
+- 工厂 `FBA_Load @0x2b6c14`（836 B）：`ldm ip!,{r0..r3}` + `stm lr!,{r0..r3}` **批量搬 10 个槽**。
+
+**③ 根因**：`build/obj/FUN_002b6c14_FBA_Load.o` mtime **2026-09-30 21:40**，
+而源码（含「补第 4 参」修复）**2026-10-13 14:05** ⇒ **`.o` 比源码早 13 天**；
+`build/rkgame.rebuilt.elf`（10-18 11:16）是**用旧对象重链**出来的 ⇒ 不含该修复。
+该 `.o` 的反汇编同样是「`mov r0/r1/r2` 后直接 `bl`」，与源码不一致。
+
+**④ 全仓普查（同一类不止一个）**：`src/proprietary` 214 个 `.c` 中
+**`build/obj` 里 23 个 `.o` 比源码旧**（最大 20.5 天），1 个缺；
+含 T11/T12 关键修复：`ReadJoystick` / `ReadUSBJoy` / `mui_menu` / `main_Menu` /
+`DrawFrame` / `strupr` / `SeletEmuCore` …
+
+### 三、重编后的实测（`REBUILD=1`：`rm -rf build/obj build/upstream` 全量重编）
+
+`obj 数=214`，新 ELF sha **`f984165edf9def04`**。重建侧 `debug.log`（583 B）**全文**：
+
+```
+RF_IC Test Fail !
+autorun /sdcard/000/1941.zip
+run_game /sdcard/000/1941.zip,ZIP
+open …/libemu_neogeo.so fail, cannot open shared object file
+open …/libemu_capcom.so fail, cannot open shared object file
+…/libemu_pgm.so unsupport.
+…/libemu_fba.so unsupport.
+Load /sdcard/cubegm/saves/ARCADE/.scf
+Load /sdcard/cubegm/saves/ARCADE/default.scf
+01 41em_30.11f 128KB: 0.00%          ← ★ cps2 已开始加载 1941.zip 内的真实文件
+```
+
+`strace` 的 `openat` 序列逐条对上：
+
+| 槽 | core | openat 结果 | 日志 |
+|---|---|---|---|
+| 0 | `libemu_neogeo.so` | **-1**（文件不存在） | `open … fail` |
+| 1 | `libemu_capcom.so` | **-1** | `open … fail` |
+| 2 | `libemu_pgm.so` | 5（成功） | `unsupport.` |
+| 3 | `libemu_fba.so` | 5 | `unsupport.` |
+| 4 | **`libemu_cps2.so`** | **5** | **无 `unsupport.`** ⇒ ① `retro_is_support` 通过、② `Load_Proc1` 通过、③ `retro_load_game` **已进入**（开始加载 `41em_30.11f`） |
+
+⇒ **R241 的静态推断（1941 ↔ cps2 的 19 文件 + 19 CRC 全命中）在实跑中被证实**：
+core 接受了 ROM 并开始读实际文件。
+
+**崩溃点**：`SIGSEGV si_addr=0x1a400`，shim 报 **`故障指令 @pc = 0x28a31002`**
+—— 不在 rkgame 的地址范围（0x9000–0x542858）⇒ **崩在 dlopen 的闭源 core 内部**（cps2 基址 ~0x28a30000）。
+
+### 四、新发现与决策
+
+1. **★ 推翻 R237–R241 的整个归因前提**：那几轮围绕「`unsupport` 三条件 / 1941 归属 cps2 /
+   19 文件 CRC」推演，但**云上产物连 core 名都拼不出来**（`(null)` ×9），
+   `unsupport.` 的 `%s` 打的是同一个 `(null)` 路径 ⇒ 那些"`unsupport` 是 core 判定"的**前提不成立**。
+   R240/R241 的静态取证本身有效（回答"假如产物正确会发生什么"），但不能用来判定 T13 的当时状态。
+
+2. **★★ T13 的真实天花板（诚实结论）**：产物修好后，链路已推进到
+   **`retro_is_support` + `Load_Proc1` + `retro_load_game` 全部通过、core 开始加载 ROM**，
+   但**崩在核心闭源 core 内部**，且**原厂同址崩溃**（si_addr 均为 0x1a400）。
+   ⇒ 该崩溃**不是复刻缺陷**，是 qemu-user + 假硬件装置承载不了真实 CPS core 的 ROM 加载
+   （缺真机 CPS 相关硬件/时序状态）。**T13（存档落盘）在本装置上无法达成**，
+   与 B6 同族 —— 属 **KNOWN-LIMITATION**，需真机验证，不再从 qemu 侧继续追。
+
+3. **纪律（本项目第 N 次同类事故，已机械化）**：
+   > **过期 `.o` = 静默错误结论。** 任何"云上/CI 跑出来的行为"，先核对
+   > `产物 mtime ≥ 源码 mtime` 且 `.o` 不旧于 `.c`；构建脚本必须清缓存，**不许"有 .o 就跳过"**。
+   新增门禁 **`tools/artifact_freshness_gate.py`**（F1 缺 `.o` / F2 `.o` 旧于 `.c` / F3 ELF 落后于
+   全部源码与对象），带 `--selftest` **双向锚点**自证（stale→STALE、fresh→FRESH、elf-stale→STALE，已 PASS）。
+   对当前仓库实跑：**STALE rc=2**（23 过期 + 1 缺失 + ELF 落后 3.5 天）。
+
+4. **本机反汇编通道建立**（零云零 CI）：
+   Windows 上 `arm-linux-objdump`（bootlin）报 `Exec format error`；
+   改用 **capstone 5.0.7 + Python 读 PT_LOAD 段映射**做 ARM 反汇编（装进托管 venv，不污染系统）。
+   ⇒ 今后"某函数是否真含某修复"可在本机秒级判定。
+
+5. **CNB 环境两处实测坑（已写进脚本）**：
+   - `/var/cache/apt/archives` 可能被清空/损坏 ⇒ 装包前必须 `apt-get clean; rm -rf /var/cache/apt/archives`；
+   - 极简镜像**无 `bzip2`** ⇒ `bootlin63.tar.bz2` 解压直接失败（`tar child: bzip2: Cannot exec`）；
+   - bootlin63 从 CNB→OVH 仅 ~59 KB/s（63 MB ≈ 18 min）⇒ **必须随包上传本机 `cache_tc/bootlin63.tar.bz2`**。
+
+### 五、下一步待办
+
+1. **P0（需用户裁决）**：T13 在 qemu 装置的**天花板**已定位（崩在闭源 core，原厂同址）
+   ⇒ 是否与 B6 一并列为 KNOWN-LIMITATION、转真机验证？**不再从 qemu 侧追**。
+2. **P0**：把 `artifact_freshness_gate.py` 接进既有门禁族（CI/云开发前置检查），并**清掉本地 23 个过期 `.o`**。
+3. **P1**：用新 ELF（`f984165edf9def04`）复查 T11/T12 结论是否仍成立（它们同样建立在旧 `.o` 产物上）。
+4. **P1**：`saves/ARCADE/.scf` 的**文件名为空**（`RomName` 未赋值）是新暴露的小缺陷，登记待查
+   （不阻塞上面结论：它在 cps2 接受 ROM 之前就打印，属存档路径拼接）。
+
+> 追加前 `old_intact=True`（旧文 833818 B / sha 0099d1b2cf2e004c…）；由 `tools/append_progress.py` 原子追加。
+## R243（2026-10-22）—— 新鲜度门禁**接入流水线**（自愈式）+ 撤销 R242 第 4 条（`.scf` 空名是 autorun 正常后果）
+
+### 一、完成事项
+
+1. **★ `tools/artifact_freshness_gate.py` 三态语义定稿并接入两处**
+
+   | 退出码 | 语义 | 判据 |
+   |---|---|---|
+   | **0** | `FRESH` | 全 `.c` 有 `.o`、无 `.o` 旧于 `.c`、ELF 不落后于全部源码与对象 |
+   | **2** | `STALE` | 有缺失 `.o` / 有 `.o` 旧于 `.c` / ELF 落后（**计入门禁失败**） |
+   | **3** | `NOT-APPLICABLE` | `build/obj` 整个不存在（干净树）或 ELF 尚未生成 ⇒ **不计失败**（防假红） |
+   | **11** | 配置错 | `src` 目录不存在（fail-closed） |
+
+   **接入点**：
+   - `tools/cnb_gates.sh`：加入 `ALL` 清单（`artifact_freshness`），参数
+     `--src src/proprietary --obj build/obj --elf build/rkgame.rebuilt.elf`；rc=3 已被既有分支
+     归入「前置缺失，不计入失败」。
+   - `tools/cnb_env.sh` 第 [6/7] 段前：**自愈式**——若已有 ELF 且门禁 rc=2，
+     打印前 6 行证据后 `rm -rf build/obj build/upstream` 强制重编（**不许"有 .o 就跳过"**）。
+
+   **自证**（`--selftest`，双向锚点，已 PASS）：
+   stale 锚（`.c` 比 `.o` 新 1 天）→ STALE；fresh 锚（`.o` 比 `.c` 新 1 天）→ FRESH；
+   elf-stale 锚（ELF 比 `.o` 旧）→ STALE。三种退出码实测 = 2 / 3 / 11，与上表一致。
+
+2. **★★ 撤销 R242 第 4 条：「`saves/ARCADE/.scf` 空文件名」不是缺陷**
+
+   `RomName` 的**唯一赋值点**是 `mui_run_game`（`FUN_000229f8_mui_run_game.c:35`
+   `mui_extract_basename(RomName,param_1,0x100)`），而 `autorun` 路径
+   `main → autorun() → run_game()` **完全跳过 `mui_run_game`** ⇒ `RomName` 保持 `.bss` 初值空串
+   ⇒ `InitKeyMapping0fEmuType` / `SaveDefaultState` 拼出的 `.scf` / `.sav` 名字为空。
+   **原厂二进制走同一条路径必然得到同样结果**（同一份源码语义）⇒ 属**原厂行为**，
+   **不许"修"** —— 修了就是偏离 1:1。用菜单路径时才由 `mui_run_game` 赋值。
+
+   ⇒ 本轮把 R242「遗留小缺陷」这一条**明确撤销**，避免下轮有人当成 bug 去改。
+
+3. **本地过期 `.o` 的处理决定**：**不擅自搬动/删除**（`build/` 是用户侧产物）。
+   依赖两道机制：门禁可查（`rc=2` STALE）+ `cnb_env.sh` 自愈清缓存。
+   当前仓库状态仍是 STALE（23 过期 + 1 缺失 + ELF 落后 3.5 天），**下次构建自动纠正**。
+
+### 二、下一步待办
+
+1. **P0（需用户裁决）**：T13 在 qemu 装置的**天花板**已定位（崩在闭源 `libemu_cps2.so` 内部，
+   `pc=0x28a31002`；**原厂同环境同址崩** `si_addr=0x1a400`）⇒ 是否与 B6 一并列 KNOWN-LIMITATION、
+   转真机验证？**不再从 qemu 侧追**。
+2. **P1**：用 R242 的新 ELF（`f984165edf9def04`）复查 T11/T12 结论（它们同样建立在旧 `.o` 产物上）。
+3. **P1**：把「新鲜度门禁」「autorun 不赋 `RomName`」两条写入 `DIAG-RUNBOOK.md`。
+
+> 追加前 `old_intact=True`（旧文 837038 B / sha e06cd833bad414fe…）；由 `tools/append_progress.py` 原子追加。
+## R244（2026-10-22）—— ★★★★ 纠错：崩溃**不是**"假硬件承载不了"，真因是 `autorun` 绕过 `main_Menu` ⇒ 帧缓冲未分配 ⇒ `progress()` 对 NULL 基址 memset
+
+### 一、先认错（用户质询成立）
+
+R242 我写「崩在闭源 `libemu_cps2.so` 内部 ⇒ qemu-user + 假硬件承载不了真实 CPS core 的 ROM 加载」。
+**这条站不住**：
+- core 是**纯软件模拟器**，不访问真硬件；qemu-user 忠实执行 ARM 指令，
+  「假硬件」与「core 加载 ROM」之间没有因果链；
+- 我还把 `pc=0x28a31002` 当成了"故障指令地址"，实际 shim 报的是
+  **`pc(出错点) 0x40aef770 -> libc.so.6 + 0x75770 符号=memset`**；
+- 最关键：`si_code=2` 是 **SEGV_ACCERR（权限错）**，不是 MAPERR（未映射）
+  ⇒ 地址**是映射过的，只是不许写** —— 这是"往只读页写"，典型野指针，不是"硬件缺失"。
+
+### 二、真机制（每一步都有实测/反汇编支撑）
+
+| # | 事实 | 来源 |
+|---|---|---|
+| 1 | 崩溃在 **libc `memset`**，调用者是 rkgame 的 **`progress` 回调** | shim 报告：`pc -> libc.so.6+0x75770 memset`、`lr=0x4f49f0` |
+| 2 | `lr=0x4f49f0` 对**本次新 ELF**（`a36f824fac9105ab`，已取回）符号化 = **`progress`（0x4f4938+0xb8，size=360）** | 本机 capstone + `.symtab` |
+| 3 | `progress()` 第 36 行 `memset((void*)(scr_h_size*(scr_v_size-0x30) + DAT_003af29c), 0, scr_h_size*0xc0)` | `FUN_00029b44_progress.c:36` |
+| 4 | `InitScr()` 设 `scr_h_size=0x1e0(480)`、`scr_v_size=0x110(272)` ⇒ `480×(272-0x30)=480×224=107520=0x1a400` | `FUN_00029ce8_InitScr.c:14-15` |
+| 5 | **故障地址恰好 = 0x1a400** ⇒ `DAT_003af29c == 0`（基址为 NULL，只剩偏移） | si_addr 实测值 |
+| 6 | `DAT_003af29c` 全仓**只有两处** malloc：`main_Menu`（`FUN_0002ce6c:56-57`，`malloc(0x1c2000)`）与 `JoystickTest`（同） | `grep "DAT_003af29c *="` |
+| 7 | **`autorun` 路径 = `main() → autorun() → run_game()`，完全跳过 `main_Menu`** | `FUN_00009b58_main.c:47-64` + `FUN_002b7a28_autorun.c` |
+
+⇒ 链条：`autorun` 跳过 `main_Menu` ⇒ `DAT_003af29c` 永为 NULL ⇒ core 在 ROM 加载中回调
+`progress` ⇒ `memset(NULL + 0x1a400, 0, …)` 写进 rkgame 自己的 **R+X 代码页**
+（rebuild PT_LOAD 0x9000–0x3acffc 内含 0x1a400）⇒ `SIGSEGV / ACCERR`。
+
+**这不是"装置承载不了 core"，是"走错了入口 + 该入口没有分配帧缓冲"。**
+
+### 三、单变量验证（MODE=menu）
+
+`tools/cnb_t13_autorun.sh` 新增 `MODE=menu`：**保持 `setting.xml` 的 autorun 为空**，
+让 `main()` 走 `main_Menu()`，并置 `menu.log` `state=0 / idx284=0 / idx288=0`，
+`root.dat` 内含单条 `000/1941.zip`，注入 A 键（btn6=0x2000）+ `CGM_KEY2_SEED=1`。
+
+| 侧 | 结果 |
+|---|---|
+| `MODE=autorun` | `exit=139`（SIGSEGV @0x1a400，即上面那条 memset） |
+| **`MODE=menu`** | **`exit=124`（超时仍在跑，不崩）**；`debug.log` 进入 `mui_menu` 主循环（反复 `open /sdcard/000/000.dat fail` 取缩略图） |
+
+⇒ **反证成立**：崩溃来自 `main_Menu` 未执行，不是 core、不是"假硬件"。
+
+### 四、修正此前结论
+
+1. **撤销 R242 §2 的「崩在闭源 core 内部 / 装置天花板 / T13 不可能达成」** ——
+   那三条全部作废（依据是把 `pc` 指错的地址当成了故障指令）。
+2. **撤销 R241/R243 把 `autorun` 当"最干净触发路径"的建议**：
+   `autorun` 在原厂固件里是给 `/USBJoystickTest`、`/JoystickTest` 用的，
+   **不是启动游戏的路径**（启动游戏必须经 `main_Menu` → `mui_run_game`）。
+   `autorun` 拉游戏还会自带第二个坑：`RomName` 不被赋值（R243 已记）。
+3. **`progress()` 不判空是原厂行为**（原厂同路径同样崩），但**不是**我们该修的点 ——
+   我们该做的是**用对入口**，不是给原厂代码打补丁（那会偏离 1:1）。
+
+### 五、T13 现状（诚实）
+
+- 已证：`cps2` 槽位 `openat` 成功、**无 `unsupport.`**、core 开始加载 1941 真实文件
+  （`41em_30.11f`）；菜单路径下进程**能活着进 `mui_menu` 循环**。
+- 未证：`retro_load_game` 返回 0、`retro_save_state` 落盘 —— 需把菜单路径**驱动到 `run_game`**。
+- 当前卡点（装置/数据侧，非产品缺陷）：
+  ① `/sdcard/000/000.dat`（缩略图包）缺失 ⇒ `mui_menu` 每轮都重试；
+  ② `find font.ttf in ui_cn.zip fail` ⇒ 文字渲染受阻；
+  ③ A 键事件未被消费（`CGM_INPUT_HEX` 已注入、`js0 Opened!` 有，但未触发 `mui_run_game`）。
+
+### 六、纪律（本轮第三次踩同一个坑，守卫拦下三次）
+
+`ssh` 双引号字面量里**不许出现反引号**（本轮在注释里写 `` `OpenZipU` ``、`` `/sdcard/root.dat` ``），
+本地 shell 会先做命令替换把远端脚本打散。**跑之前必看
+`tools/ssh_literal_guard.py` 的 VERDICT，FAIL 就不许跑** —— 本轮三次 FAIL 都被它挡住，
+是它起作用而不是运气。
+
+> 追加前 `old_intact=True`（旧文 842173 B / sha ad590cc649fecd48…）；由 `tools/append_progress.py` 原子追加。
+## R245（2026-10-22）—— ★★★★★ T13 主链路打通：修掉 `code_convert` 缺第 4 参（真缺陷）→ `use … to run` + 进 `Load_Proc2` 主循环
+
+### 一、本轮修掉的**真实缺陷**（这是"收尾"要的东西）
+
+R244 把崩因从"假硬件"纠正到"走错入口"后，菜单路径立刻暴露下一个真缺陷：
+
+**`code_convert_constprop_22` 的 6 处调用全都少传第 4 个参数。**
+
+源码（修前）：
+```c
+code_convert_constprop_22(param_1,        0x100, local_42c);   // 3 参
+code_convert_constprop_22(param_1 + 0x104, 0x80, local_328);   // 3 参
+code_convert_constprop_22(param_1 + 0x184, 0x80, local_2a8);   // 3 参
+```
+出现在 `mui_run_game`（3 处）与 `shoucang`（3 处）。而函数定义是 **4 参**：
+`(gh_u4 in, gh_u4 in_len, void *out, size_t out_len)`，第一句就是 `memset(out,0,out_len)`
+⇒ 第 4 参是**栈上垃圾**。实测 `r2=0xffffefbf`（负长度）⇒ `memset` 写爆 → SIGSEGV
+（`pc -> libc memset`，`lr=0x4e59b4` → `code_convert_constprop_22`）。
+
+**工厂反汇编给出真值**（`golden/factory.rkgame.bin`）：
+
+| 调用 | r0 | r1 (in_len) | r2 (out) | **r3 (out_len)** |
+|---|---|---|---|---|
+| `mui_run_game` #1 | `sb` | `0x100` | `sp+0x2ac` | **`0x100`** |
+| #2 | `sb+0x104` | `0x80` | `sp+0x3b0` | **`0x80`** |
+| #3 | `sb+0x184` | `0x80` | `sp+0x430` | **`0x80`** |
+| `shoucang` #1/#2/#3 | 同上 | `0x100`/`0x80`/`0x80` | — | **`0x100`/`0x80`/`0x80`** |
+
+**为什么能活到现在**：`proto.h:89` 原是 **K&R 空括号声明**
+`extern int code_convert_constprop_22();` ⇒ 编译器**不校验实参个数** ⇒ 少传参静默通过。
+这与 R240 的 `sprintf` 缺第 4 参是**同一类缺陷**（K&R 声明 + 少传参）。
+
+**修法**（3 处改动，均可回退）：
+1. `src/compat/proto.h`：K&R → 真原型
+   `extern int code_convert_constprop_22(gh_u4 in, gh_u4 in_len, void *out, size_t out_len);`
+2. `mui_run_game` / `shoucang` 各 3 处补第 4 参：`(size_t)0x100` / `(size_t)0x80` / `(size_t)0x80`，
+   并给 `param_1` 加 `(gh_u4)` 转换（clang 21 把 `char*`→整形的 int-conversion 默认当**错误**，
+   改成真原型后首次编译即报 `2 个文件失败`，加转换后 214/214 全过）。
+
+**结果**：`obj 数=214`，新 ELF sha **`a31fc3de5efed1ee`**。
+
+### 二、装置侧两处必需修正（此前只在云上实验副本，未入库）
+
+1. **`joystick.zip` 缺 `0002_0013` 条目** —— qemu 的 js0 是 VID:PID `0002:0013`，
+   而 `golden/sdcard_min/joystick.zip` 与原厂 `cubegm/joystick.zip` **都没有**该条目
+   ⇒ 按键永远映射不到 `0x2000`（A）⇒ 菜单永远不响应。
+   按 R231 定案补一条：`SELECT,START,UP,DOWN,LEFT,RIGHT,A,B,TL1,X,Y,TR1,RESET,0,0,0,0,1`
+   （A 落在 index 6）。**补上后 A 键立刻生效**（`mui_run_game` 被触发）。
+2. **按键事件 hex 写错**：`js_event` = `time(4)|value(2)|type(1)|number(1)`。
+   按 btn6 应为 `0000000001000106`；我先前写成 `…000600`（type=6,number=0）⇒ 无效。
+
+### 三、★ T13 实测结果（新 ELF，菜单路径，`exit=124` 活着跑满 40s）
+
+`debug.log` 全文（关键段）：
+```
+mui_run_game:000/1941.zip
+RomName:1941                                  ← 菜单路径下 RomName 有值
+run_game /sdcard/000/1941.zip,ZIP
+open …/libemu_neogeo.so fail（文件不存在，预期）
+open …/libemu_capcom.so fail（预期）
+…/libemu_pgm.so unsupport.（预期）
+…/libemu_fba.so unsupport.（预期）
+Load /sdcard/cubegm/saves/ARCADE/1941.scf     ← 存档路径带正确 ROM 名
+Load /sdcard/cubegm/saves/ARCADE/default.scf
+01 41em_30.11f 128KB: 0.00%                   ← core 开始逐个加载 1941 的 ROM 文件
+01 41em_35.11h / 41em_31.12f / 41em_36.12h / 41-32m.8h / 41-5m.7a /
+41-7m.9a / 41-1m.3a / 41-3m.5a / 41_9.12b / 41_18.11c / 41_19.12c   ×12
+use /sdcard/cubegm//cores/libemu_cps2.so to run /sdcard/000/1941.zip   ← ★★★
+pal_ntsc:0                                    ← 进入 Load_Proc2
+find _SetFrameSkip process                    ← Load_Proc2 的 dlsym
+```
+
+`use %s to run %s` 是 `FBA_Load` **三条件全通过（① `retro_is_support`≥0 ② `Load_Proc1` ③
+`retro_load_game != 0`）时才打印**的那一行；其后 `pal_ntsc` / `_SetFrameSkip` 是 `Load_Proc2`
+的输出 ⇒ **已进入游戏主循环**，进程 40 s 不崩。
+
+⇒ **T12 完全闭环；T13 的前置（core 接受 ROM + 进主循环）已达成。**
+
+### 四、尚未达成 / 下一步
+
+- **`saves/` 仍为空**：`SaveDefaultState` 要求 `joy_key == SaveDefaultStateKey(0xC00)`
+  在某一帧精确相等。我按"A=btn6→0x2000 ⇒ 位=btn+7"推 `0xC00 = btn3+btn4` 并发注入，
+  未触发（推测该位映射不成立，或需要保持多帧）。**这是纯按键码问题，不是产品缺陷。**
+- 需实测确定：哪个按钮/组合对应 `0xC00`。最省的办法是扫 btn0..btn11 单键 + 若干组合，
+  在 `debug.log` 里找 `SaveDefaultState:` / `retro_save_state:`（这两行是判据锚）。
+- 另：`000.dat`（240 MB 缩略图包）未铺，`mui_menu` 每帧重试 `open /sdcard/000/000.dat fail`；
+  不影响选择与启动（已证），但会在日志里刷屏。
+
+### 五、纪律补充
+
+本轮回滚/纠错三次，全部由机械门禁拦下（`ssh_literal_guard.py` 反引号 ×3、
+`artifact_freshness_gate.py` 过期 `.o`）。**结论：这类纪律必须靠门禁，不靠记性。**
+
+> 追加前 `old_intact=True`（旧文 847737 B / sha d7b3e3e1a0778c2d…）；由 `tools/append_progress.py` 原子追加。
+## R246（2026-10-22）—— 按键位图权威表（`buttontoi`）+ `0xC00` 的真身是 **TL1|TR1 双键**；存档落盘仍未验证
+
+### 一、权威事实：名字→mask 全表（`buttontoi` @0x151e4，逐行核对）
+
+| 名字 | mask | 名字 | mask |
+|---|---|---|---|
+| `SELECT` | `0x1` | `A` | `0x2000` |
+| `START` | `0x8` | `B` | `0x4000` |
+| `UP` | `0x10` | `X` | `0x1000` |
+| `DOWN` | `0x40` | `Y` | `0x8000` |
+| `LEFT` | `0x80` | `TL1`/`TL3` | `0x400` |
+| `RIGHT` | `0x20` | `TR1`/`TR3` | `0x800` |
+| `TL2` | `0x100` | `TR2` | `0x200` |
+| `RESET` | `0x80000000` | 数字 | `strtol()` |
+
+按键事件（`type=1`）的 mask 来自 `USB_Table[(param_1*0x18 + ev_number)*4]`，
+即**表中第 N 项决定 btn N 的位** ⇒ 「A 是 btn 几」取决于 `joystick.zip` 里该设备的表内容。
+
+### 二、★ `savestatehotkey=3072=0xC00` 的真身 = `TL1|TR1`（不是任何单键）
+
+`0xC00 = 0x400 | 0x800`。**单键表里没有任何一项等于 0xC00** ⇒
+必须让 `joy_key` 同时含这两位，即 **TL1 与 TR1 同按**。
+（前一轮我按"位=btn+7"推 `btn3+btn4`，实为 `0x40|0x80 = 0xC0`，少一个十六进制位 —— 已于本轮纠正。）
+
+### 三、原厂表 `cubegm/20bc_5500_0111`（60 B，20 字段，用户提供）
+
+```
+A,B,0,X,Y,0,TL1,TR1,TL2,TR2,SELECT,START,RESET,0,0,0,0,1,6,7
+btn0=A   btn1=B   btn3=X   btn4=Y   btn6=TL1   btn7=TR1   btn8=TL2   btn9=TR2
+btn10=SELECT   btn11=START   btn12=RESET   （btn13..16=0；btn17=1 轴槽；btn18=6 btn19=7）
+```
+⇒ 若用这张表：**A=btn0**、**`0xC00` = btn6+btn7 同按**。
+
+### 四、两次实测都未触发存档（如实记录，未成功）
+
+| 尝试 | 表 | 注入 | 结果 |
+|---|---|---|---|
+| ① | 原厂 20 字段表（写入 `0002_0013`） | A=btn0、btn6+btn7 同按 | `debug.log` 9045 B，只有 `000.dat` 循环，**无 `mui_run_game`** ⇒ A 未生效 |
+| ② | 18 字段合成表（R245 验证过 A=btn6） | A=btn6、btn8+btn11 同按 | `debug.log` **仅 165 B**，停在 `js0 Opened!` 之后 40 s 静默 ⇒ **疑似卡在 `GetJoystickConfig` 解析我重写的 `joystick.zip`** |
+
+⇒ **结论：`joystick.zip` 重写这条路不可靠**（同一段重写代码，换表内容后一次"映射不生效"、一次"解析卡死"）。
+下一步应改为**不改 zip**：要么让 qemu 的 js0 直接是原厂 VID:PID（shim 目前**没有** VID/PID 覆盖开关，
+需新增 `CGM_USB_VID/PID` 注入，改的是 shim 而非产品），要么用 `GetJoystickConfig` 的真实解析规则
+（`switch(*puVar5)` 的 token 边界 + 是否需要 24 项）反推正确写法。**在此之前不再盲试。**
+
+### 五、T13 状态（不变）
+
+- **已达成**：`use …/libemu_cps2.so to run /sdcard/000/1941.zip` + `pal_ntsc:0` + `_SetFrameSkip`
+  ⇒ core 接受 ROM 并进入 `Load_Proc2` 主循环（R245 证据，ELF `a31fc3de5efed1ee`）。
+- **未达成**：`saves/ARCADE/1941.sav` 落盘（热键未触发，原因见上）。
+
+> 追加前 `old_intact=True`（旧文 850809 B / sha 8320e5b105d84b1f…）；由 `tools/append_progress.py` 原子追加。
+## R247（2026-10-22）—— ★★★★★ **T13 达成**：`retro_save_state` 落盘 8496 B（4B 原长 + zlib），链路全通
+
+### 一、达成判据（全部实测）
+
+| 判据 | 结果 |
+|---|---|
+| `FBA_Load` 三条件 | `use /sdcard/cubegm//cores/libemu_cps2.so to run /sdcard/000/1941.zip` |
+| 进 `Load_Proc2` 主循环 | `pal_ntsc:0` / `find _SetFrameSkip process` |
+| `SaveDefaultState` 触发 | `SaveDefaultState:/sdcard/cubegm/saves/000/1941.sav` |
+| `retro_save_state` | `retro_save_state:%s` **59 次**（该行只在 `retro_serialize` 成功后打印） |
+| **存档落盘** | `/sdcard/cubegm/saves/000/1941.sav` **8496 B**，sha256 `0e2783af8c09ddd3…` |
+| **格式自洽** | 头 4 字节 `2c 21 00 00` = **8492 = 8496−4**（原长）；紧随 `78 9c` = **zlib 流头** ⇒ 与 `FUN_002b83e8_retro_save_state` 的写法（`fwrite(原长,4)` + `compress`）**逐字节对应** |
+
+### 二、两个关键卡点的真因（都不是产品缺陷）
+
+1. **`saves/<NNN>/` 目录不存在** ⇒ `retro_save_state` 里 `fopen(path,"wb")` **静默失败**
+   （源码 `if (__s != NULL)` 无 else 分支）。真机 SD 上有 `saves/000`，装置里没铺。
+   ⇒ 脚本补 `mkdir -p saves/{000,ARCADE} states/{000,ARCADE}` 后立刻落盘。
+2. **`savestatehotkey=0xC00` 需要 TL1|TR1 两键同按**（R246 已定）。按键流改为
+   「扫键 btn0..11 启动游戏 → 随后 btn6+btn7 保持按」即命中。
+
+### 三、装置侧关键改造（本轮真正解决的工程问题）
+
+**问题**：qemu 的 js0 是 virtio 设备 `0002:0013`，原厂 `joystick.zip` **没有**该条目
+⇒ 键位表为空 ⇒ 任何按键都映射不到 `0x2000`；而**重写原厂 zip 不可靠**（R246 实测：一次不生效、一次解析卡死）。
+
+**解法（不动任何原厂文件）**：给 shim 加 `/proc/bus/input/devices` 合成
+（`CGM_USB_VID/PID/VER`，默认关）。`GetInputInfo` 走 `fopen` 读该文件，
+shim 在 `shim_fopen_impl` 里把该路径重定向到一份合成内容：
+```
+I: Bus=0003 Vendor=20bc Product=5500 Version=0111
+N: Name="Gamepad"
+H: Handlers=js0 event0
+```
+⇒ guest 看到原厂手柄 `20bc:5500:0111` ⇒ 命中 `joystick.zip` 里**已有的** `20bc_5500` 表
+（A=btn0、TL1=btn6、TR1=btn7），zip 一个字节都没改。
+实测日志：`Gamepad 20bc 5500 111 js0 Opened!`（原来是 `VirtualPS/2 VMware VMMouse 0002 0013 6`）。
+
+### 四、复现命令（一次会话跑完）
+
+```sh
+# 全新工作区 + 运行集（含 20 core / 1941.zip / 新 ELF）
+UP_SET=run REBUILD=0 MODE=menu sh tools/cnb_t13_autorun.sh
+# 复用工作区（只换按键流/脚本）
+WS_SN=<sn> UP_SET=none REBUILD=0 MODE=menu sh tools/cnb_t13_autorun.sh
+```
+
+### 五、仍未做（明确边界）
+
+- **读回**：`LoadDefaultState` 在 `Load_Proc2` 首帧 `access()` 到文件才 `retro_load_state`；
+  本轮是"先跑后存"，文件在**本次**运行里生成，故未验证回读。验证只需**再跑一次**
+  （文件已存在 ⇒ 首帧即读）。
+- `000.dat`（240 MB 缩略图包）未铺，仅造成 `mui_menu` 每帧重试刷屏，不影响启动/存档。
+
+> 追加前 `old_intact=True`（旧文 854049 B / sha 63cb5a9a2e26c383…）；由 `tools/append_progress.py` 原子追加。
+## R248（2026-10-22）—— ★★★★★ **T13 完全闭环**：存档落盘 + **读回**双向实证（同一会话两遍）
+
+### 一、读回证据（strace 直读，非推断）
+
+第二遍启动（`saves/000/1941.sav` 已由第一遍生成，8496 B）：
+```
+658 access("/sdcard/cubegm/saves/000/1941.sav", F_OK)                 = 0   ← LoadDefaultState 前置检查通过
+658 openat(AT_FDCWD,"/sdcard/cubegm/saves/000/1941.sav",O_RDONLY)     = 9   ← ★ retro_load_state 真实读回
+658 openat(AT_FDCWD,"/sdcard/cubegm/saves/000/1941.sav",O_WRONLY|O_CREAT|O_TRUNC,0666) ← 其后热键再次存档
+```
+`LoadDefaultState` 的源码路径：`sprintf(...%ssaves/%03d/%s.sav)` → `access(...,0)==0` → `retro_load_state(path)`；
+`retro_load_state` 内部 `fopen(rb)` → `fread(4B 原长)` → `fread(压缩数据)` → `uncompress` → `retro_unserialize`。
+⇒ `O_RDONLY` 那一行 = 读回链路**真实执行**，不是"文件存在"这种弱证据。
+
+### 二、T13 判据逐条对账（项目定义：`qemu 内 retro_save_state 返回 0 且存档可读回`）
+
+| 判据 | 实测 |
+|---|---|
+| core 接受 ROM | `use …/libemu_cps2.so to run /sdcard/000/1941.zip` |
+| 进游戏主循环 | `pal_ntsc:0` / `find _SetFrameSkip process` |
+| `retro_save_state` 成功 | `retro_save_state:%s`（仅在 `retro_serialize` 成功后打印）×59 |
+| 存档落盘 | `saves/000/1941.sav` **8496 B**，头 `2c 21 00 00`=8492=8496−4、紧随 `78 9c`(zlib) |
+| **读回** | `access(F_OK)=0` + `openat(O_RDONLY)` |
+
+⇒ **T13 完全闭环。**
+
+### 三、本轮新增的两个装置能力（都不碰原厂文件）
+
+1. **shim 合成 `/proc/bus/input/devices`**（`CGM_USB_VID/PID/VER`，默认关）
+   ⇒ guest 看到原厂手柄 `20bc:5500:0111`，命中 `joystick.zip` 里已有的 `20bc_5500` 表，
+   **zip 一个字节不改**（重写 zip 在本项目实测不可靠，见 R246）。
+2. **`TWOPASS=1`**：同一会话内跑两遍（第一遍存档、第二遍读回），
+   strace 双份对比 ⇒ "存档/读回"可在**一次云会话**内同时取证。
+
+### 四、纪律修补
+
+`ssh_literal_guard.py` 白名单补 `TWOPASS`（有意本地内插，与 `MODE`/`UP_SET` 同类），
+否则守卫会 FAIL。**本轮守卫在 FAIL 状态下仍被我跑了一次**（`&&` 链未拦住）——
+后续改成"守卫 FAIL 即 `exit`"，不能只靠人看输出。
+
+> 追加前 `old_intact=True`（旧文 856554 B / sha 2dfabd6631719658…）；由 `tools/append_progress.py` 原子追加。
+## R249（2026-10-22）—— 收尾：补铺 `000.dat`（刷屏 1100+ → **2**）+ 新建 **T11–T13 验收台账** + 隔离过期对象缓存
+
+### 一、`000.dat`（240,935,839 B）铺上后
+`/sdcard/000/000.dat` 就位 ⇒ `mui_menu` 的 `open /sdcard/000/000.dat fail` 从 **1100+ 次** 降到 **2 次**
+（仅启动最前面的两次探测）。缩略图包不再是噪声源。
+★ 240 MB 文件只在云上使用；本地副本用完即删（避免仓库目录膨胀）。
+
+### 二、新建 `T11-T13-ACCEPTANCE.md`（可核对台账）
+把 T11/T12/T13 的**判据 → 实测证据 → 证据文件路径**固化成一张表，并单列：
+- 「已确认的装置侧前提」5 条（缺一即失败：logfile 绝对路径 / saves 目录 / 手柄身份命中表 /
+  必须走菜单路径 / 三桩+shim+/dev/dri）；
+- 「已知边界（有意不修）」3 条（`.scf` 空名、`font.ttf in ui_cn.zip` 回退信息、`progress()` 不判空）；
+- 「本轮修掉的产品侧真缺陷」2 条（`code_convert` 缺第 4 参；过期 `.o`）。
+⇒ 以后不必翻 800 KB 的 `PROGRESS.md` 才能回答"这条到底过没过"。
+
+### 三、过期对象缓存处理
+`build/obj`（1.2 MB，23 个 `.o` 旧于源码）**整目录隔离**到
+`build/_obj_quarantine_20261022/obj`（可回退：`mv` 回去）。
+`artifact_freshness_gate.py` 由 **STALE(rc=2)** 变为 **NOT-APPLICABLE(rc=3)** ——
+这是**诚实状态**：本地没有对象缓存，`build/rkgame.rebuilt.elf` 是云上从源码重编的 `a31fc3de5efed1ee`。
+**注意**：`NOT-APPLICABLE` 不等于 FRESH；它只表示"本地没有可判定的对象集"，不能当成"产物已验证新鲜"。
+
+### 四、本轮结束时的状态
+| 项 | 状态 |
+|---|---|
+| T11 / T12 / T13 | ✅ 达成（见 `T11-T13-ACCEPTANCE.md`） |
+| 云工作区 | 全部 `stop`（`cnb-qfg-*`、`cnb-nr3-*`、`cnb-40e-*`） |
+| 本地产物 | `build/rkgame.rebuilt.elf` = `a31fc3de5efed1ee`（云上重编） |
+| 本地对象缓存 | 已隔离（需重建时 `rm -rf build/_obj_quarantine_*` 或直接重编） |
+
+> 追加前 `old_intact=True`（旧文 858742 B / sha f0e58f229d82c59e…）；由 `tools/append_progress.py` 原子追加。
+## R250/R251（2026-10-22）—— 目的 2 两项升级：草稿**首次编译通过** + evdev 自测通过；SRAM 验证路径定案
+
+### 一、做了什么（对照 `report/L4-evdev-sram-design.md` §6 的"未做"项）
+
+设计文档 §6 明确写：**草稿未在目标编译链上编译通过**（本机无 zig、bootlin63 是 Linux 二进制）。
+本轮把它补完：新增 `tools/cnb_upgrade_selftest.sh`，云端 zig 编译 + qemu 运行。
+
+| 项 | 结果 |
+|---|---|
+| `evdev_gamepad.c`（`-DEVDEV_SELFTEST`） | **BUILD_OK**，自测 `exit=0` |
+| `sram_persist.c`（`-DSRAM_SELFTEST`） | **BUILD_OK**，自测可运行 |
+
+### 二、首次编译暴露的真问题（草稿"没编译过"的直接代价）
+
+`evdev_gamepad.c:84/90/93` 用了 **`BITS_TO_LONGS` / `LONG_BITS`** —— 这两个是
+**内核内部宏**（`linux/bitops.h`），userspace 的 `<linux/input.h>` **不提供**
+⇒ 一次 5 个 `error: call to undeclared function 'BITS_TO_LONGS'` / `use of undeclared identifier 'LONG_BITS'`。
+修法：按内核等价定义补齐（`LONG_BITS=(sizeof(long)*8)`、`BITS_TO_LONGS(nr)=((nr)+LONG_BITS-1)/LONG_BITS`），
+不引入内核头。修后 BUILD_OK。
+
+### 三、SRAM 侧的关键实测（★ 修正设计文档一处事实）
+
+| 观测 | 结果 |
+|---|---|
+| `dlsym retro_get_memory_data/size` | **全拿到**（cps2/md/mgba 均非 NULL） |
+| **`get_memory_size(SAVE_RAM)` 在 `retro_load_game` 之前** | **= 0**（cps2 实测） |
+| `retro_load_game` 在最小宿主里 | cps2/md/mgba 全**返回 0**；`tgbdual` **SIGSEGV** |
+| `.srm` 产物 | 无（因 load 未成功，size=0 直接跳过） |
+
+⇒ ★ **修正 §2 的表述**：`20/20 core 导出 retro_get_memory_*` 只证明"接口存在"，
+**不等于"随时有 SRAM"** —— SRAM 是 **`retro_load_game` 之后**才建立的（load 前 size=0）。
+所以"扫 .dynsym 就能判定有无电池存档"是错的，必须真的把 ROM 喂给 core。
+
+⇒ **最小 host 不够用**：即便补齐 `retro_set_environment/video/audio/input/poll` 五个入口
++ `GET_SYSTEM_DIRECTORY` 写回指针，`retro_load_game` 仍返回 0（md/mgba），tgbdual 直接崩。
+说明这些 core 还依赖更完整的 frontend 环境（save dir、变量回调、像素格式细节、控制器端口等）。
+**结论：SRAM 验证必须挂在 rkgame 的完整前端上** —— 这也正是设计文档 §4.2 原本定的合入点
+（`SaveDefaultState`/`LoadDefaultState` 旁各加一次同名异后缀调用）。
+
+### 四、下一步（唯一正路，已收敛）
+
+1. `src/upgrade/` 放 `sram_persist.c` / `evdev_gamepad.c`，**编译开关默认关**
+   （`-DCGM_ENABLE_SRAM` / `-DCGM_ENABLE_EVDEV`），未开启时产物与当前 1:1 逐字节一致。
+2. 合入点只加**受开关保护的 1~2 行**：`SaveDefaultState`/`LoadDefaultState` 旁调用
+   `sram_save/sram_load`（路径 `%ssaves/%03d/%s.srm`）；`ReadUSBJoy` 侧按开关走 evdev 分支。
+3. 验证用 **003/MD 或 004/GBA**（有电池存档）走菜单路径：`root.dat` 指向该 ROM → `menu.log` 选中 → A；
+   判据 = `saves/<NNN>/<rom>.srm` 落盘 + `get_memory_size` 实测值 + 二次运行读回。
+4. 行为尺：这两项是**目的 2 有意偏离**，合入后在 `diff_exec` 出现新 DIVERGE 须**显式豁免登记**。
+
+### 五、本轮未做（明确边界）
+
+- 未改 `src/proprietary/` 任何一行（按设计文档 §5 的合入门禁，主链要在 L2/L3 之后再动）。
+- 未取得"真实 SRAM 大小"数值 —— 卡在"必须用 rkgame 完整前端"，见 §四。
+
+> 追加前 `old_intact=True`（旧文 862420 B / sha 803f5eef1209c6db…）；由 `tools/append_progress.py` 原子追加。
+## R252（2026-10-22）—— 目的 2：**全量手柄库落地**（426 条，零手工）+ SRAM 双通道模块可运行
+
+### 一、需求①「全量驱动、绝不逐手柄加文件」—— **已落实并实证**
+
+| 项 | 结果 |
+|---|---|
+| 数据来源（已联网核实） | `libretro/retroarch-joypad-autoconfig` 的 `udev/` 目录；官方打包 `https://buildbot.libretro.com/assets/frontend/autoconfig.zip`（实测 http 200，712,490 B，1116 条目） |
+| 其中 udev profile | **439** 个 `.cfg` |
+| 合并成设备端单文件 | `golden/sdcard_min/controller_db.txt`：**426 条记录**（377 条带 vid/pid，49 条仅按名字），70,652 B |
+| 生成工具 | `tools/build_controller_db.py`（可重复：官方上游更新后一条命令重生成） |
+| 设备端加载 | 实测 `[evdev] db 载入 426 条 profile` / `db_count=426`（`/sdcard/cubegm/controller_db.txt`，431 行含 5 行表头） |
+| 匹配策略 | (vid,pid) 精确 → device name 子串（双向）→ **兜底映射**（BTN_SOUTH/EAST/NORTH/WEST + hat0），任何手柄都不会"完全不可用" |
+| 原厂 `joystick.zip` | **一字节未改**（保持只读）；新库另存一个文件 |
+
+上游格式要点（已核实 docs.libretro.com）：`input_vendor_id`/`input_product_id` 是**十进制**；
+`input_b_btn="N"` 的 N 是该设备按键的**序号**（按 keycode 升序枚举），不是 keycode；
+方向键两种写法（hat `h0up` / 轴 `+1`）；轴写 `+N`/`-N`。
+⇒ 模块按此实现：`EVIOCGBIT(EV_KEY)` 枚举出序号→keycode 表，再按 profile 的序号取键。
+
+### 二、需求②「SRAM 覆盖无电池存档/记忆卡/需电池维持」—— 模块就绪，样本受限
+
+`src/upgrade/sram_persist.c`（新增，默认不编入 1:1 主链）实现三条口径：
+1. **不设白名单**：`get_memory_size(id)>0` 即存/读；`==0` 静默跳过（＝该 ROM 无存档）；
+2. **双通道**：`SAVE_RAM(0) → .srm`（PS1 记忆卡也走这条，通常 128KiB）、`RTC(1) → .rtc`；
+3. **及时落盘**：`cgm_sram_poll()` 每 ~5s 比对 256 点采样指纹，**脏才写**，写完 `fsync`
+   —— 真机直接断电是常态，只在退出写等于丢档。
+
+**实测（云端 zig + qemu + 真 core）**：
+
+| core | ROM | `retro_load_game` | SAVE_RAM | RTC |
+|---|---|---|---|---|
+| cps2 | 1941.zip | **1（接受）** | **0** | 0 |
+| md | 92 Barcelona Olympics | **1（接受）** | **0** | 0 |
+| mgba | 同上（错配 ROM） | SIGSEGV | — | — |
+| snes9x | 同上 | dlopen 失败：`undefined symbol: __cxa_pure_virtual`（缺 libstdc++） | — | — |
+
+⇒ `size=0` 是**合法结论**而非失败：1941 是街机、92 Barcelona Olympics 是体育游戏，
+**都不带电池存档**。所以「取到 >0 的真实 SRAM」还缺一个**有存档的游戏**作样本。
+
+### 三、下一步（明确、可执行）
+
+1. **需要一个带电池存档的 ROM**（任一即可）：MD 的 RPG（如 Phantasy Star）、
+   或 GBA 任意游戏（普遍 128KiB flash）、或 SFC 的 SRPG（如 Fire Emblem）。
+   现有 7 个样例里只有 GBA 可能带存档，但 `mgba` 在最小宿主里 SIGSEGV，需先修宿主环境。
+2. 拿到样本后一条命令即可给出：`SAVE_RAM size=N` + `.srm` 落盘 + 二次运行读回。
+3. `snes9x` 的 `__cxa_pure_virtual` 是**宿主侧缺 libstdc++**（不是 core 缺陷），
+   在 sysroot 里补 `libstdc++.so.6` 即可；`mgba` 的崩溃优先查是否需要
+   `retro_set_controller_port_device`。
+
+### 四、边界
+
+- 本轮**未改** `src/proprietary/` 任何一行；`src/upgrade/*` 是独立目录，默认不参与构建。
+- 合入主链仍需按 §8.4 的开关方式（`-DCGM_ENABLE_SRAM` / `-DCGM_ENABLE_EVDEV`）。
+
+> 追加前 `old_intact=True`（旧文 866262 B / sha 715fba3f0f44c51d…）；由 `tools/append_progress.py` 原子追加。
+## R253（2026-10-23）—— ★★★★ SRAM 实证通过：梦幻模拟战2（MD）= **16384 B SRAM**，落盘 + 往返逐字节一致
+
+### 一、样本
+用户提供 `原厂SD卡根目录结构/Roms/langrisser 2 final cn.bin`（2,097,664 B，MD 梦幻模拟战2，支持 SRAM）。
+
+### 二、实测输出（云端 zig + qemu + 真 core `libemu_md.so`）
+```
+[sram] retro_load_game -> 1
+[sram] SAVE_RAM id=0 size=16384 ptr=0x64bc0
+[sram] RTC      id=1 size=0 ptr=(nil)
+[sram] flush SAVE_RAM -> /tmp/_cgm_sram_test.srm (16384 B)
+[sram] load  SAVE_RAM <- /tmp/_cgm_sram_test.srm (16384 B)
+[sram] 通道0 round-trip 不符字节=0/16384 OK
+```
+
+| 判据 | 结果 |
+|---|---|
+| core 接受 ROM | `retro_load_game -> 1` |
+| **真实 SRAM 大小** | **16384 B（16 KiB）** —— MD 电池存档典型容量，与游戏自带 SRAM 声明一致 |
+| 落盘 | `.srm` **16384 B**（已取回 `report/upgrade/langrisser2.srm`，sha256 前缀 `9038ac64e659335c`） |
+| **读回** | 第二遍 `load` 读入 16384 B，与写入图案**逐字节一致**（0/16384 不符） |
+| 双通道 | `RTC size=0` —— 该游戏无 RTC，**合法**（`size==0` 静默跳过，不写空文件） |
+| 无白名单 | 未做任何游戏登记；`md` core + 该 ROM 自动识别 → 自动存/读 |
+
+⇒ **需求②「支持所有无电池存档/记忆卡存档的游戏，并覆盖需电池维持的特殊案例」的机制已跑通**：
+判据是 core 自报 `size>0`，不是游戏名单。
+
+### 三、顺带确认的两处宿主环境问题（非模块缺陷）
+- `mgba` + 任意 ROM：最小宿主里 **SIGSEGV**（`sram_selftest` 与 `selftest` 都复现）⇒ 需补
+  `retro_set_controller_port_device` 或用 rkgame 完整前端；
+- `snes9x`：`dlopen` 失败 `undefined symbol: __cxa_pure_virtual` ⇒ **sysroot 缺 `libstdc++.so.6`**。
+
+### 四、结论
+需求①（全量库 426 条、零手工）与需求②（SRAM 双通道、无白名单、往返一致）**机制层面均已验证**。
+剩下的是"合入主链"这一步——仍按 `-DCGM_ENABLE_SRAM` / `-DCGM_ENABLE_EVDEV` 开关方式，默认关。
+
+> 追加前 `old_intact=True`（旧文 868489 B / sha 43f903d89c5422a2…）；由 `tools/append_progress.py` 原子追加。
+## R254（2026-10-23）—— ★★★★ **已合入主链**（宏保护，默认关）：SRAM/evdev 两模块 + 4 处挂钩 + 构建收录
+
+### 一、改了什么（全部受宏保护，不传宏 ⇒ 与 1:1 逐字节一致）
+
+| 位置 | 改动 | 宏 |
+|---|---|---|
+| `tools/link_audit.sh` | `CGM_UPGRADE=sram\|evdev\|both` ⇒ 追加 `-D` + `-I src/upgrade`，并**额外编译 `src/upgrade/*.c`**（`selftest.c` 排除） | — |
+| `src/proprietary/misc/FUN_00026cd8_SaveDefaultState.c` | `.sav` 之后补 `sram_set_base + bind + flush`，并 `RARCH_LOG("SRAM hook(bind,written,size0,size1,base)")` | `CGM_ENABLE_SRAM` |
+| `src/proprietary/misc/FUN_00026c5c_LoadDefaultState.c` | 载 `.sav` 之后补 `set_base + bind + load`（此时 `retro_load_game` 已完成） | `CGM_ENABLE_SRAM` |
+| `src/proprietary/input/FUN_0000c8f0_ReadJoystick.c` | 每帧 `bind`（幂等）+ `poll`（~5s 节流、脏才写、`fsync`） | `CGM_ENABLE_SRAM` |
+| `src/proprietary/input/FUN_0000c150_ReadUSBJoy.c` | 函数首部 `return cgm_evdev_poll(param_1);`；**原逻辑整段保留在 `#else`** | `CGM_ENABLE_EVDEV` |
+
+**回退方式**：去掉 `CGM_UPGRADE` 即回到现状；`src/upgrade/` 可整目录删除。
+
+### 二、编译与回归实测
+
+| 项 | 结果 |
+|---|---|
+| `obj 数` | **216**（原 214 + `cgm_sram_persist.o` + `cgm_evdev_gamepad.o`） |
+| 新 ELF | **`695d5e25d0d03c2f`**，5,410,8xx B，`[PASS] DT_FINI_ARRAY` |
+| 1941 回归（`MODE=menu`） | `use /sdcard/cubegm//cores/libemu_cps2.so to run /sdcard/000/1941.zip`，`exit=124` 活着 ⇒ **无回归** |
+| hook 生效 | `SRAM hook(bind=0,written=0,size0=0,size1=0):/sdcard/cubegm/saves/003/langrisser2` ⇒ **bind 成功**，size=0 时静默不写（符合"无白名单"口径） |
+
+### 三、★ 意外撞出的**更底层复刻缺口**（与本次升级无关，但卡住所有非 cps2 系统）
+
+用 `.bin` 启动 MD 游戏时：
+```
+run_game /sdcard/003/langrisser2.bin,BIN
+with cores:(null)                      ← ★ core 名是 NULL
+find retro_set_progress_callback process fail
+retcode:1
+```
+原因链：
+- `.bin` ⇒ `GetCoreIndex("BIN")` 返回 0 ⇒ `Filetype=0` ⇒ **不走 `FBA_Load`**；
+- 改走 `Core_Load(param_1, default_core_list + idx*0x44)`，而**我们的产物里 `default_core_list` 为空**
+  （`artifact_freshness_gate` 早就报过 `MISSING-OBJ: default_core_list.c`）
+  ⇒ `with cores:(null)` ⇒ 拿不到真 core 的 handle ⇒ `retro_set_progress_callback` dlsym 失败
+  ⇒ 后面 `pal_ntsc` / `SaveDefaultState` 是在**没有正确 core 的状态**下跑的。
+
+⇒ 这解释了"为什么只有 1941(cps2) 能跑"：cps2 走 `FBA_Load`（10 槽硬编码表），
+不依赖 `default_core_list`。**任何 MD/SFC/GBA/GB 游戏都卡在这里。**
+
+### 四、下一步（P0）
+1. 补 `default_core_list.c`（把 8 个目录 → core 名的映射表补全），让 `Core_Load` 能拿到真 core；
+2. 补完后即可用梦幻模拟战2 跑完整 e2e：游戏内存档 → `.srm` 落盘 → 重进读回；
+3. `003/003.dat` 已在 `golden/sdcard_min/`（30,374,283 B），菜单缩略图不再是阻塞。
+
+> 追加前 `old_intact=True`（旧文 871724 B / sha b905ef9417190052…）；由 `tools/append_progress.py` 原子追加。
+## R255（2026-10-23）—— ★★★★ 修正两处误判 + **`.srm` 真实落盘 16384 B**（主链产物）
+
+### 一、先纠正我上一轮的两个错误结论
+
+| 上一轮我说 | 实际 |
+|---|---|
+| `with cores:(null)` ⇒ core 名为空 | **错**。`Core_Load` 里 `RARCH_LOG("with cores:%s\n")` **漏传实参**（UB，读垃圾 vararg）。修后实打：`with cores:libemu_md.so (Filetype=8)` |
+| 因为没有 `default_core_list` 才加载不到 core | **错**。`retcode:1` 说明 `retro_load_game` **成功**；`DAT_003b0278` 在镜像里是**内联字符串表**（entry2 起 `libemu_sfc.so`），不是空表 |
+
+⇒ 已修 `FUN_002b6f58_Core_Load.c` 的日志 UB（补 `param_2` + `Filetype`），这是**真缺陷**（变参漏传是 UB）。
+
+### 二、真正的 SRAM 卡点（我们模块自己的缺陷，已修）
+
+自测里加了"load 之后**立刻**查 size"这一步，实测：
+```
+[sram] retro_load_game(path only) -> 1
+[sram]   size after path-only: 0        ← 立刻查 = 0
+[sram] SAVE_RAM id=0 size=16384         ← 稍后 refresh = 16384
+```
+⇒ **md core 的 SRAM 是延迟建立的**；而我的模块把 size **缓存在 bind 时**（那时还是 0）
+⇒ 之后 `flush` 永远看到 0 ⇒ 永远不写盘。
+
+**修法**（`src/upgrade/sram_persist.c`）：
+- `cgm_sram_flush` 开头 `cgm_refresh()`；
+- `cgm_sram_poll` 节流后 `cgm_refresh()`；
+- `cgm_sram_size(idx)` 若缓存为 0 则再 refresh 一次。
+
+### 三、结果（主链产物 `be036af0ffb6815f`，`CGM_UPGRADE=sram`）
+
+`/sdcard/cubegm/saves/003/`：
+```
+langrisser2.sav   38104 B     ← 即时 state（1:1 原有）
+langrisser2.srm   16384 B     ← ★ 新增：SRAM 电池存档（sha256 e645d82e76517eb9…）
+```
+⇒ **"游戏内存档 → `.srm` 落盘"在真实前端 + 真实 core 下成立**，且 16384 B = MD SRAM 正确容量。
+
+### 四、尚未完成（诚实）
+第二遍启动的 strace 里**未见** `003/langrisser2.srm` 的读取 ⇒ `LoadDefaultState` 侧的
+`cgm_sram_load_base()` 未触发（该函数只在 `Load_Proc2` 首帧按 `.sav` 是否 `access` 成功决定是否走，
+`.srm` 的读回不该被 `.sav` 的存在与否门控）。**下一步：把 SRAM 的 load 从 `LoadDefaultState` 里
+挪到 `Load_Proc2` 的确定位置（或去掉 access 门控），再验第二遍读回。**
+
+### 五、边界
+- 仍是 `CGM_UPGRADE` 宏控制，默认关。
+- `mgba` 在最小宿主 SIGSEGV、`snes9x` 缺 `libstdc++` —— 宿主问题，与本模块无关。
+
+> 追加前 `old_intact=True`（旧文 874346 B / sha 943c5aca6d3edba5…）；由 `tools/append_progress.py` 原子追加。
+## R256（2026-10-23）—— ★★★★★ SRAM 电池存档**写+读双向闭环**实证（`.srm` 读回 O_RDONLY，主链产物）
+
+### 一、上一轮唯一未决项已解决
+
+R255 末尾诚实声明：第二遍 strace 未见 `003/langrisser2.srm` 读取 ⇒ `LoadDefaultState` 侧
+`cgm_sram_load_base()` 未触发。本轮定位到**两个真实根因**并双双修复，读回链实证通过。
+
+### 二、两个真实根因（都是产品/集成缺陷，非环境）
+
+| # | 根因 | 修法 |
+|---|---|---|
+| 1 | **SRAM 每帧 poll 挂在 `ReadJoystick()`**（菜单输入），而游戏主循环 `Load_Proc2` 走的是 `ReadJoystickProc()`（直接调 `ReadUSBJoy`），**根本不经过 `ReadJoystick`** ⇒ 断电保护 poll 在游戏里从未执行 | 把 `cgm_sram_poll_base()` 挪到 `Load_Proc2` 主循环每帧（`ReadJoystickProc()` 之后、`retro_run()` 之前），全部受 `CGM_ENABLE_SRAM` 保护；`ReadJoystick` 里的死挂钩删除 |
+| 2 | **`.srm` 读回用了 3 秒壁钟超时窗口**（`g_pending_load` + `g_pending_at`），而 qemu 下 guest 时间远慢于真实 wall clock ⇒ SRAM（延迟建立，首帧 retro_run 后才 size=16384）出现时，pending 窗口早已过期 ⇒ 读回永不触发 | 删除壁钟超时；pending 持久到 `cgm_refresh()` 查到 `size>0` 才补读。`cgm_refresh` 只是 4 次缓存函数指针间接调用（非 dlsym），每帧成本可忽略 |
+
+### 三、读回证据（strace 直读 + 日志双证）
+
+第二遍（`saves/003` 只留 `.srm`，删 `.sav` 隔离 savestate 干扰）：
+
+```
+8327 openat(AT_FDCWD,"/sdcard/cubegm/saves/003/langrisser2.srm",O_RDONLY) = 9   ← 读回真实执行
+[sram] load SAVE_RAM <- /sdcard/cubegm/saves/003/langrisser2.srm (16384 B)      ← stdout 确认
+```
+
+| 判据 | 实测 |
+|---|---|
+| `.srm` 落盘（第一遍，游戏内） | `O_WRONLY` ×55，16384 B（每 ~5s 脏才写 + fsync，断电保护在**游戏主循环**内生效） |
+| **`.srm` 读回（第二遍）** | `O_RDONLY` ×1 + stdout `[sram] load SAVE_RAM <- … (16384 B)` |
+| 无白名单 | md core + 梦幻模拟战2 自动识别（size>0 才存/读），未做任何游戏登记 |
+
+### 四、本轮改动文件（全部宏保护，默认关 ⇒ 1:1 不变）
+
+| 文件 | 改动 |
+|---|---|
+| `src/upgrade/sram_persist.c` | ① `cgm_sram_load` 首查 size==0 记 `g_pending_load`；② `cgm_sram_poll` 每帧 refresh + pending 补读；③ 读回后记指纹避免立即回写 |
+| `src/proprietary/core/FUN_002b5c08_Load_Proc2.c` | `#ifdef CGM_ENABLE_SRAM` 主循环每帧 `cgm_sram_poll_base()` |
+| `src/proprietary/input/FUN_0000c8f0_ReadJoystick.c` | 删除挂在 `ReadJoystick` 的死 poll（挪到 Load_Proc2） |
+| `src/proprietary/misc/FUN_00026c5c_LoadDefaultState.c` | `cgm_sram_load_base()` + `RARCH_LOG("SRAM load hook(...)")` |
+| `tools/cnb_t13_autorun.sh` | TWOPASS 第二遍删 `.sav`（仅 sram 模式）；apt lists/dpkg 双锁等待加固；取回 `debug.log2` 与 `t13_stdout2.txt` |
+
+### 五、产物与复现
+
+- 主链产物（`CGM_UPGRADE=sram`）：`build/rkgame.rebuilt.elf` sha256 前缀 **`020cc65df129bb6c`**，obj 216/216。
+- 复现：
+  `UP_SET=all REBUILD=1 MODE=menu TWOPASS=1 CGM_UPGRADE=sram ROM_ENTRY=003/langrisser2.bin sh tools/cnb_t13_autorun.sh`
+
+> 追加前 `old_intact=True`（旧文 877733 B / sha 63b0a69cc1627fcb…）；由 `tools/append_progress.py` 原子追加。
+## R257（2026-10-23）—— ★★★★★ 最终交付产物：`CGM_UPGRADE=both` 双升级同时生效（evdev 懒加载根因 + 回退兜底）
+
+### 一、R255/R256 的一个真实疏漏（本轮纠正）
+
+R255/R256 重编只传 `CGM_UPGRADE=sram` ⇒ `ReadUSBJoy.c` 的 `#ifdef CGM_ENABLE_EVDEV` 未开，走 `#else` 的 joydev 老路径。
+⇒ **evdev 代码在 ELF 里，但完全不生效**。说"手柄升级已合入"为时尚早——必须 `CGM_UPGRADE=both` 重编。
+
+### 二、两个真缺陷（都是产品/集成缺陷，已修）
+
+| # | 缺陷 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | **evdev 全量库形同虚设** | `link_audit.sh` 只要 `CGM_UP_ANY=1` 就编 `src/upgrade/*.c` **全部**（含 evdev）；但主链 `ReadUSBJoy` 只调 `cgm_evdev_poll→cgm_evdev_open`，**从不调 `cgm_evdev_init`**，而 `load_db()` 只在后者里被调 ⇒ 426 条 profile 从未装载、`match_prof` 恒 NULL、只剩兜底映射 | `cgm_evdev_open` 首部懒加载 `load_db(...)`（幂等，`g_db_loaded` 守卫） |
+| 2 | **无 event* 即手柄失灵** | `ReadUSBJoy` 原写法是无条件 `return cgm_evdev_poll()`：qemu/精简内核无 `/dev/input/event*` 时返回 0，手柄完全废（不如原厂 joydev 路径可被 shim 注入） | 新增 `cgm_evdev_ready(slot)`（懒加载+尝试打开，幂等），`ReadUSBJoy` 改为 `if(cgm_evdev_ready) return poll;` 否则**回退下方 joydev 原逻辑** |
+
+修缺陷 2 时踩过一坑：把 `#else` 改 `#endif` 后，文件尾残留旧 `#endif` 无配对 ⇒ `ReadUSBJoy.c` 编译失败 ⇒ `MISSING 1: ReadUSBJoy` ⇒ 链接失败。已删除残留行，3 处 `#ifdef`/`#endif` 配对核对通过。
+
+### 三、最终产物（both，云上 zig + 真 core + TWOPASS 实证）
+
+- **编译**：`obj 数=216`、`[PASS] DT_FINI_ARRAY`、ELF sha256 前缀 **`2ad788e988efc2b0`**。
+- 主链产物已更新为 `2ad788e988efc2b0`（旧 sram 版 `020cc65df129bb6c` 备份到 `build/_exp/_r256_sram_prev.elf`）。
+
+| 升级 | 判据 | 实测 |
+|---|---|---|
+| **evdev 手柄** | 全量库装载铁证 | `[evdev] db 载入 426 条 profile <- /sdcard/cubegm/controller_db.txt` |
+| | 环境边界 | `[evdev] /dev/input 打不开（errno=2）` ×N = qemu 无 event* 的**合法现象**；`cgm_evdev_ready` 判定失败 ⇒ 回退 joydev，不崩 |
+| **SRAM 电池存档** | 写（第一遍） | `openat(...,langrisser2.srm,O_WRONLY)` ×**55**、`[sram] flush ... (16384 B)` |
+| | 读（第二遍） | `openat(...,langrisser2.srm,O_RDONLY)=9` ×1 + `[sram] load SAVE_RAM <- ... (16384 B)` |
+| | 无回归 | `with cores:libemu_md.so (Filetype=8)` + `pal_ntsc:0`；两遍 `exit=124`（进程存活） |
+
+### 四、判据边界（诚实声明）
+
+- evdev 的**完整键位匹配**（vid:pid → `build_btn_order` 序号 → `RK_*` 位域）只能在**真机**验证：qemu 不合成 `/dev/input/event*`（shim 只合成了 `js*` 老接口供 joydev 用）。本轮已亮出**全量库装载**这一可通过 qemu 验证的唯一铁证 + **回退不崩**的兜底确证。
+- 原厂手柄 `20bc:5500`（BETOP AX1 BFM）**已在 426 条内**（`controller_db.txt:88`），真机插入即命中 vid:pid 精确匹配。
+
+### 五、本轮改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `src/upgrade/evdev_gamepad.c` | `cgm_evdev_open` 首部懒加载 `load_db`；新增 `cgm_evdev_ready()` |
+| `src/upgrade/cgm_upgrade.h` | 声明 `cgm_evdev_ready()` |
+| `src/proprietary/input/FUN_0000c150_ReadUSBJoy.c` | `#else`→`#endif`；`#else` 内的原逻辑改为无条件回退代码；evdev 分支改为 `if(cgm_evdev_ready)` 才替换 |
+
+### 六、复现
+
+`UP_SET=all REBUILD=1 MODE=menu TWOPASS=1 CGM_UPGRADE=both ROM_ENTRY=003/langrisser2.bin sh tools/cnb_t13_autorun.sh`
+
+> 追加前 `old_intact=True`（旧文 881579 B / sha 6c6a13deba4b3046…）；由 `tools/append_progress.py` 原子追加。
+## R258（2026-10-23）—— ★★★★★ 第三方代码级审计（不采信历史叙述，全部亲自取证）+ "能否直接替代"正式裁定
+
+### 一、日期与方法
+
+用户指令：不受过往历史影响，纯粹做一次客观代码级审计。方法纪律：**只用本轮亲自执行的扫描/反汇编/指纹作证据；PROGRESS.md 历史叙述仅作"待验证声明清单"**。
+审计对象：`build/rkgame.rebuilt.elf` sha256 `2ad788e988efc2b0`（both 版，5,410,960 B，obj 216）vs `golden/factory.rkgame.bin`（3,921,108 B）+ `golden/factory.funcs.json`（835 函数）。
+
+### 二、审计结论：**未发现假实现/假桩/假代码**（5 项独立探针全过）
+
+| 探针（本轮亲自执行） | 结果 |
+|---|---|
+| 符号覆盖率独立复算（pyelftools，不引用旧数字） | **787/835 = 94.25%**，缺失 48 ⇒ PROGRESS §1"94.3%"属实 |
+| 体量探针：787 个命中函数逐个比"我方 size vs 工厂 size" | **疑似桩/截断 = 0**（最强反假桩证据） |
+| 空函数体扫描（214+3 个 .c） | **0 处** |
+| 单行恒返回 | **仅 `GetDecodeData` 1 处**；工厂机器码亲自反汇编 = `00 00 a0 e3 1e ff 2f e1` = `mov r0,#0; bx lr` ⇒ **精确 1:1** |
+| 声音子系统 | 工厂 15 个声音函数**全部实现**且体量匹配（InitSound 184/196、SoundPlay 364/392、MP3Decode 1632/1088…） |
+
+### 三、假桩审核：仅 3 类，全部诚实且有铁证
+
+| 桩 | 铁证 |
+|---|---|
+| `zstub.c`（compress/uncompress 链接期桩） | 注释明言"永不被执行"；T13 实证 `1941.sav` 8496B 头 `78 9c` = **真实 zlib 流** ⇒ 运行期走设备 libz |
+| `cxx_ops.c`（_Znwj 等，仅 P3/P4 静态试链） | 亲自核验：产物中 `_Znwj/_ZdlPv/_Znaj/_ZdaPv` 与工厂一致均为 **SHN_UNDEF 动态导入** |
+| drm/kms/alsa 三桩 | 仅 qemu 测试用，不在产物 |
+
+**假代码审核**：工厂 `.text` 镜像（2,957,704 B）`.incbin` 进 `.fimg_text` 但 `SHF_EXECINSTR=0`（flags=0x2 只读不可执行），入口 `0x4ff008` 落我方 `.text` ⇒ 镜像是数据不是冒充代码；`DT_NEEDED` 7 库与工厂完全一致；我方多出 9 个导入符号全部来自升级模块（可解释）。`libiconv-legacy-stub/`（252 文件满是 "not implemented" 字样）经查**构建脚本 0 引用 = 死目录**（仓库卫生问题，非产物造假）。
+
+### 四、48 个缺失符号裁决（全部有分类，无隐藏缺口）
+
+26 个工厂 `STT_NOTYPE size=0` 数据标记（24 个音效 Begin/End 成对 + `.divsi3_skip_div0_test`；**音效数据字节在镜像 .text 里，只是符号名不在**）+ 8 个 size=0 工具链样板（CRT 6 + aeabi 2，我方有 `__divsi3`/`__udivsi3` 实体）+ 12 个"工厂有体但我方 clang 命名"（base 名逐一核实存在，如 `run_process.constprop.0`→`run_process_constprop_0` **80B 精确同尺寸**；仅 `mxml_isspace` 20B 分片疑被内联）+ 2 个 4B 尾跳板（`load_state`/`save_state`，我方有 `retro_*` 实体）。
+**顺带纠正过期叙述**：PROGRESS §3.2/§3.3 称 `stbtt__cuberoot`/`stbtt__csctx_rline_to` 缺失 —— **已在当前产物中**（72B/84B，R204 修复属实）。
+
+### 五、天花板清单（联网核实 + 根本解决方案）
+
+| # | 天花板 | 根本解决方案 |
+|---|---|---|
+| C1 | **both 交付产物从未跑过行为差分全量**（台账 `ours=fc0ed0e7` = R219/10-20 升级合入前产物；4 个升级钩子函数未登记豁免） | CNB 云开发跑 `diff_exec --batch --rebaseline`，按 L4 §5.2 登记"目的 2 有意偏离" |
+| C2 | evdev 426 条库匹配 qemu 不可验（无 `/dev/input/event*`）—— **实为仪器缺口非真天花板**：shim 已在 `/proc/bus/input/devices` 声明 `Handlers=js0 event0` | 扩展 `fake_mem.c` 合成 `/dev/input/event*`（opendir+EVIOCGBIT/EVIOCGNAME/EVIOCGID+read，复用 CGM_INPUT_HEX 注入） |
+| C3 | zig PIC/GOT 结构性差异（R136 定案）—— 联网核实：**zig cc 支持 `-fno-PIC/-fno-PIE`**（官方文档） | 先做 `-fno-pic` 单变量 A/B；仍飘则按 DEADEQ 体系逐函数登记 |
+| C4 | 音频端到端未验（qemu 无 ALSA） | alsa_stub 加写入帧记录；MP3 BGM 真解码是已登记待办 |
+| C5 | mgba SIGSEGV / snes9x 缺 libstdc++（仅最小宿主复现） | 在 rkgame 真实前端链路复测，真实前端也崩才算真缺陷 |
+| C6 | 工厂二进制 qemu 不可加载（R242 环境阻塞） | 差分走 Unicorn 单函数层（已在用） |
+| C7 | 真机 drop-in | 设计上最后一步 |
+
+### 六、★ "能否直接替换原厂 rkgame"正式裁定（用户问询，留痕）
+
+| 层 | 状态 | 证据 |
+|---|---|---|
+| 静态层 | ✅ 绿 | 94.25% 覆盖 + 48 全分类 + 段布局 + DT_NEEDED + 机器码抽验 |
+| 模拟层（qemu，约束 3 指定手段） | ✅ 绿 | T13/T14 + R257 both 版：菜单→core 加载→存/读档→**SRAM 写+读双向闭环**，两遍 exit=124；evdev 426 装载+回退兜底 |
+| 行为层 | ⚠️ **未对 both 产物跑全量** | 台账测量对象是升级合入前产物；4 个升级钩子未登记豁免 |
+
+**裁定**：① "功能可用的替代二进制"**已就绪**——qemu 层在真实前端+真实 core 下实证了核心功能闭环；② 按约束 3"三层全绿才可称 100%"⇒ **不得声称 100%**（行为层未验 + 真机未验）；③ 用户指令凌驾 0.0 ⇒ 用户批准即可进真机验收，但**验收判据必须一次做全**（真机全项目只做一次）。
+
+**真机验收判据清单（一次做全）**：① 启动+主菜单中文显示（字体链路）② 原厂 20bc:5500 手柄全键在菜单/游戏中正确（evdev 426 库命中 or 回退 joydev）③ 9 个目录（000 fba/001 FC/002 SFC/003 MD/004 GBA/005 NES/006 GB/007 PS1/008 2600）代表 ROM 各跑一个 ④ 存档：.sav + 梦幻模拟战2 .srm，重启读回 ⑤ 音频：菜单 BGM + 键音 + 游戏声 ⑥ 断电保护：游戏中直接断电重进 SRAM 保留 ⑦ 30 分钟稳定性。
+
+### 七、仓库卫生（顺带发现，需处置）
+
+`.pat` = push_1to1.py 的 GitHub token 源（**未被 git 跟踪、filelist 已排除**，非泄露事故，但明文落本机 ⇒ 建议轮换）；`1to1/` 空目录 + 根目录 20+ 个 4 字节垃圾文件（未跟踪）；`libiconv-legacy-stub/` 死目录（252 文件，建议删除或移 `report/` 存档）。
+
+### 八、下一步待办
+
+1. **C1**（CNB 额度恢复后）：both 产物 `diff_exec --batch --rebaseline` + 4 函数豁免登记；
+2. **C2**：shim 合成 `/dev/input/event*`（一次性仪器投入）；
+3. **真机验收**（用户批准后）：按第六节判据清单一次做全；
+4. 卫生三项处置。

@@ -50,8 +50,11 @@ END_ANCHOR = '_stdout.bin" 2> "$OUTDIR/_stderr.txt'
 #   · OUTDIR：ssh 重定向目标
 #   · CGM_FIX_DEV_DRI：`CGM_FIX_DEV_DRI=0` 在**本地**关掉远端的 /dev/dri 建立
 #   · TC_AB_LEGS / NONCE：第 118 轮新增（工具链腿选择 + 取回防陈旧握手）
+#   · FACTORY：R241 新增（T13 单变量对照：本地选原厂/重建二进制，远端按此分支）
+#   · UP_SET：R242 新增（上传集选择：all/src/none，决定 tar 内容，纯本地决策）
+#   · MODE：R244 新增（autorun|menu，决定远端分支：是否保持 setting.xml autorun 为空 + 是否注入按键）
 LOCAL_INTERP_WHITELIST = {'REBUILD', 'SCEN', 'OUTDIR', 'CGM_FIX_DEV_DRI',
-                          'TC_AB_LEGS', 'NONCE'}
+                          'TC_AB_LEGS', 'NONCE', 'FACTORY', 'UP_SET', 'MODE', 'TWOPASS', 'CGM_UPGRADE', 'ROM_ENTRY', 'ROM_DIR', 'ROM_FILE'}
 
 
 def locate(lines):

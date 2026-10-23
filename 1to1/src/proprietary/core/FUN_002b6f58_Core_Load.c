@@ -23,7 +23,10 @@ gh_u4 Core_Load(char *param_1,char *param_2)
   n_input_visible_height = 0xe0;
   screen_w = 0x100;
   screen_x = 0;
-  RARCH_LOG("with cores:%s\n");
+  /* ★ 2026-10-23 修 UB：原句 `RARCH_LOG("with cores:%s\n")` **漏传实参**，
+   *   %s 读到寄存器/栈垃圾 ⇒ 日志永远打 `(null)`（曾误导我把"core 名为空"当成根因）。
+   *   补上 param_2（core 名）与 Filetype（便于判定走了哪个分支）。 */
+  RARCH_LOG("with cores:%s (Filetype=%x)\n",param_2,(unsigned)(unsigned short)Filetype);
   sprintf(acStack_120,"%s/cores/%s.cfg",work_path,param_2);
   memset(corecfg,0,16000);
   get_items_from_file(acStack_120,corecfg);

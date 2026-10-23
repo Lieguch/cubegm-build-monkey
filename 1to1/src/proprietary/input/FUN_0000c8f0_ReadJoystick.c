@@ -13,7 +13,16 @@ gh_u4 ReadJoystick(void)
 {
   gh_u4 uVar1;
   
+  /* ★ R256：SRAM 每帧 poll 已挪到 Load_Proc2 游戏主循环。原挂在此 ReadJoystick()，
+   *   但游戏主循环走 ReadJoystickProc() 不经过本函数 ⇒ poll 是死代码、断电保护从未生效。 */
   ReadJoystickProc();
+#ifdef CGM_DIAG_JOY
+  /* 诊断（交付不含）：打印防抖状态机输入，判定"放行值为何恒 0" */
+  if (joy_key_blob._0_4_ != 0 || Joy1_Press != 0) {
+    fprintf(stderr, "[diagjoy2] blob=0x%08x press=0x%08x delay=%d\n",
+            (unsigned)joy_key_blob._0_4_, (unsigned)Joy1_Press, (int)Joy1_Delay);
+  }
+#endif
   if ((joy_key_blob._0_4_ != joytemp0) || (joy_key_blob._4_4_ != joytemp1)) {
     joytemp0 = joy_key_blob._0_4_;
     joytemp1 = joy_key_blob._4_4_;

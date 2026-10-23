@@ -7,6 +7,9 @@
 #include "ghidra_compat.h"
 #include "globals.h"
 #include "proto.h"
+#ifdef CGM_ENABLE_EVDEV
+#include "cgm_upgrade.h"
+#endif
 
 gh_uint ReadUSBJoy(int param_1)
 
@@ -27,6 +30,14 @@ gh_uint ReadUSBJoy(int param_1)
 #define ev_number (*(unsigned char *)(void *)(ev_buf + 7))
   char acStack_38 [36];
   
+#ifdef CGM_ENABLE_EVDEV
+  /* ★ 目的 2：evdev 自适应手柄（全量库 controller_db.txt，按 vid:pid/名字自动匹配）。
+   *   R257：**仅在 event* 设备就绪时才整体替换** joydev；就绪失败（qemu 无 /dev/input/event*、
+   *   或某精简内核）则**回退下方 joydev 原逻辑**，绝不失灵。关宏即回到 1:1 行为。 */
+  if (cgm_evdev_ready(param_1)) {
+    return cgm_evdev_poll(param_1);
+  }
+#endif
   iVar1 = access((&JOYSTICK_DEVNAME)[param_1],4);
   if (iVar1 < 0) {
     if (*(int *)(&joystick_fd + param_1 * 4) < 0) {
@@ -74,6 +85,16 @@ gh_uint ReadUSBJoy(int param_1)
                ev_number);
   }
   if (ev_type == '\x02') {
+#ifdef CGM_DIAG_JOY
+    /* 诊断专用（交付构建不含）：打印轴事件与四组轴号映射，定位"read 成功但位没置起" */
+    fprintf(stderr, "[diagjoy] AXIS num=%u val=%d b16=%u b17=%u b18=%u b19=%u tmp=0x%08x\n",
+            (unsigned)ev_number, (int)ev_value,
+            (unsigned)*(gh_uint *)(USB_Table + 0x40),
+            (unsigned)*(gh_uint *)(USB_Table + 0x44),
+            (unsigned)*(gh_uint *)(USB_Table + 0x48),
+            (unsigned)*(gh_uint *)(USB_Table + 0x4c),
+            (unsigned)*(gh_uint *)(&joy_key_tmp + param_1 * 4));
+#endif
     uVar3 = (gh_uint)ev_number;
     iVar1 = param_1 * 0x60;
     if ((uVar3 == *(gh_uint *)(USB_Table + iVar1 + 0x44)) ||

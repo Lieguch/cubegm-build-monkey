@@ -59,6 +59,10 @@ void main_Menu(void)
   SoundPlay(0,(int *)mui_MenuMusic);
   LoadMenuLog();
   DAT_003af26c = (m_menulog_blob)._0_4_;
+#ifdef CGM_DIAG_MENU
+  fprintf(stderr, "[diagmenu1] menu_state=%d raw=0x%08x\n",
+          (int)DAT_003af26c, (unsigned)DAT_003af26c);
+#endif
   uVar2 = (m_menulog_blob)._0_4_;
   do {
     switch(uVar2) {

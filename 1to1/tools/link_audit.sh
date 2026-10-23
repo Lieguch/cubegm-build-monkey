@@ -115,6 +115,18 @@ OPT="${OPT:--Os}"
 PER_TU_FLAGS="FUN_0000b6b0_TestLibz0=-fno-builtin-malloc"
 # ★ 头集合**排在组件 -I 之后**（这里只有 src/compat 在它前面，是故意的：compat 是我们的垫片）。
 CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat ${CGM_HDR} ${EXTRA_INC:-} $CGM_FID_EXTRA $ARCH $FIDELITY"
+# ★★★ R254（2026-10-23）：目的 2 两项升级（SRAM 电池存档 / evdev 自适应手柄）**默认关**。
+#   打开方式：`CGM_UPGRADE=1` ⇒ 追加两个宏 + src/upgrade 头路径 + 编译 src/upgrade/*.c。
+#   不传 CGM_UPGRADE ⇒ 产物与 1:1 复刻**逐字节一致**（升级代码根本不进编译单元）。
+#   取值：sram | evdev | both | 1(=both)；空/0 = 全关。
+CGM_UP_ANY=0
+case ",${CGM_UPGRADE:-0}," in
+    *,sram,*|*,both,*|*,1,*) CFLAGS="$CFLAGS -DCGM_ENABLE_SRAM"; CGM_UP_ANY=1 ;; esac
+case ",${CGM_UPGRADE:-0}," in
+    *,evdev,*|*,both,*|*,1,*) CFLAGS="$CFLAGS -DCGM_ENABLE_EVDEV"; CGM_UP_ANY=1 ;; esac
+if [ "$CGM_UP_ANY" = "1" ]; then
+    CFLAGS="$CFLAGS -I$WINROOT/src/upgrade"
+fi
 
 # ★★★★★ 2026-09-29：**本脚本是编译口径的唯一来源**（纪律 69「同一规则禁止写两处」）。
 #   别的门禁可以用 `sh tools/link_audit.sh --print-cflags xunzip` **读到同一份口径**。
@@ -172,6 +184,25 @@ for f in "$SRCDIR"/*/*.c; do
             >> "$ROOT/report/_link_bad.txt"
     fi
 done
+
+# ★ R254：升级模块（仅在 CGM_UPGRADE=1 时编译；与主体同一份 CFLAGS，不另写口径）
+if [ "$CGM_UP_ANY" = "1" ]; then
+    for f in "$ROOT"/src/upgrade/*.c; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f" .c)
+        [ "$base" = "selftest" ] && continue      # 自测 main 不进产物
+        total=$((total + 1))
+        nf=$(winpath "$f")
+        no=$(winpath "$OBJD/cgm_$base.o")
+        # shellcheck disable=SC2086
+        if $CC $CFLAGS "$nf" -o "$no" 2>"$ROOT/report/_link_err.txt"; then
+            ok=$((ok + 1))
+        else
+            bad=$((bad + 1))
+            echo "$f | $(grep -a -m1 'error:' "$ROOT/report/_link_err.txt" | head -c 180)"                 >> "$ROOT/report/_link_bad.txt"
+        fi
+    done
+fi
 
 echo "== 编译: 总计 $total，成功 $ok，失败 $bad =="
 

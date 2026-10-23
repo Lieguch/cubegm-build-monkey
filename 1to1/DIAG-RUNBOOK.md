@@ -223,6 +223,55 @@ grep '<autorun' /sdcard/cubegm/setting.xml
 **真机 drop-in 成功的最低判据** = 该文件存在且内容非空。若不存在 ⇒ 启动链在 exec 之前就已失败
 （路径错 / 权限错 / setting.xml 未生效 / 内核 panic），**不要继续后续测试**。
 
+### 9.5 日志通道 + core 符号清单 + ROM 匹配判据（R233/R241 定案，权威）
+
+**① `logfile` 必须写绝对路径**（R233 实测定案）
+`GetConfig` 读 `setting.xml` 的 `<logfile>`；**相对路径分支有漏参 bug**
+（`sprintf(local_1020,"%s%s",work_path)` 少了文件名）⇒ 相对路径等于没配。
+```xml
+<logfile>/sdcard/cubegm/debug.log</logfile>
+```
+生效后 `RARCH_LOG` 写 `log_file_fp` 并 `fflush+fsync`（`FUN_00009e6c_RARCH_LOG_V.c`）；
+未生效则写 stdout（全缓冲，qemu 下被 `timeout` 杀掉即丢失）⇒ **不配 logfile 的日志不可信**。
+
+**② core 必需符号有两组，别混为一谈**（R240/R241）
+
+| 组 | 符号 | 用途 | cps2/fba 实测 |
+|---|---|---|---|
+| A. 进游戏主循环（`Load_Proc1` 的 6 个） | `retro_set_video_refresh` / `retro_set_audio_sample_batch` / `retro_set_input_state` / `retro_set_environment` / `retro_set_input_poll` / `retro_init` | `FBA_Load` 的 ② 分支 | **全 DEFINED** |
+| B. 存档链路（`Load_Proc2` 之后） | `retro_serialize_size` / `retro_serialize` / `retro_unserialize` / `retro_get_memory_data` / `retro_get_memory_size` | 前端 `retro_save_state`/`retro_load_state` 内部 `dlsym` | **全 DEFINED** |
+
+★ **`retro_save_state` / `retro_load_state` 不是 core 导出的**（两个 core 都 **ABSENT**）；
+它们是**前端自有实现**：`FUN_002b83e8_retro_save_state.c`（@0x2b83e8）内部
+`dlsym("retro_serialize_size")` → `dlsym("retro_serialize")` → `compress`（zlib）→
+`fwrite(4字节原长 + 压缩数据)`。⇒ **判 core 能否存档，查 B 组而不是 `retro_save_state`**。
+
+**③ 存档落盘的两条真实路径**
+
+| 触发器 | 函数 | 落盘路径 | 日志锚 |
+|---|---|---|---|
+| 游戏主循环按 `savestatehotkey`（`setting.xml` 默认 **3072 = 0xC00**） | `SaveDefaultState` | `<work>saves/<gametype>/<RomName>.sav` | `SaveDefaultState:%s` → `retro_save_state:%s` |
+| 游戏内 PauseMenu（`GameMenuHotKey` 默认 9）→ 存档页 → A | `mui_save_state` | `<work>states/<ArchivePath>/<RomName>.sv%d` | 无（只有 `retro_save_state:%s`） |
+
+**④ ROM 是否被 core 接受：查文件名 + CRC 是否在 core 的 `.rodata` 里**
+零执行环境判据（`python` 读 ELF + zip，不需要 qemu）：
+```python
+import zipfile, struct
+z = zipfile.ZipFile('000/1941.zip')                      # 待测 ROM
+core = open('golden/sdcard_min/cores/libemu_cps2.so','rb').read()
+names = [i.filename.encode() for i in z.infolist()]
+crcs  = [struct.pack('<I', i.CRC) for i in z.infolist()]  # CRC32 按 LE 4 字节
+print('文件名命中', sum(n in core for n in names), '/', len(names))
+print('CRC 命中',   sum(c in core for c in crcs),  '/', len(crcs))
+```
+R241 对 `000/1941.zip`（19 文件）实测：**文件名 19/19、CRC 19/19 全命中 `libemu_cps2.so`**
+⇒ core 必然接受该 ROM。同理可对任意 ROM/core 组合先做本机预判，**不必烧核时**。
+
+**⑤ core 资产不入 git，云上必须 tar 上传**
+`.gitignore` 第 14-18 行排除 `golden/sdcard_min/cores/*.so`（闭源真机资产）。
+⇒ 云上 `git clone` 只得到 `config.xml`/`filelist.xml`；**必须 tar 打包本地 `golden/sdcard_min`**
+（`cnb_devqemu.sh` / `cnb_ladder.sh` / `cnb_t13_autorun.sh` 都是这么做的），否则各 core 全 `open ... fail`。
+
 ---
 
 ## 十、DRM/KMS 显示链 + ALSA 音频链观测点（视频/音频初始化入口权威清单）
@@ -345,3 +394,41 @@ DRM_IOCTL 计数判据），不是 hcge 硬件命令队列。R161「画面不走
 2. `EVIOCGBIT` 的手柄判定（BTN_SOUTH+ABS）是跨手柄通用测试（libmanette/SDL 同款），
    但罗技/8bitdo 等的**轴范围标识**各不相同，最终映射仍须走 `joystick.zip` 的 VID:PID 校准
    （`GetJoystickConfig.c`），evdev 只替换"发现/读事件"这一层。
+
+---
+
+## 十二、产物新鲜度 + autorun 语义（R242/R243 定案）
+
+### 12.1 产物新鲜度门禁（**任何行为结论之前先过这一关**）
+
+```sh
+python tools/artifact_freshness_gate.py --selftest         # 先证门禁有判别力（双向锚点）
+python tools/artifact_freshness_gate.py                    # 再查当前仓库
+```
+
+| rc | 语义 | 处置 |
+|---|---|---|
+| 0 | FRESH | 可继续 |
+| 2 | STALE（有 `.o` 旧于 `.c` / 缺 `.o` / ELF 落后） | **产物不可信**：`rm -rf build/obj build/upstream` 重编 |
+| 3 | NOT-APPLICABLE（干净树，未构建） | 不计失败 |
+| 11 | `src` 目录不存在（配置错） | fail-closed |
+
+**真实事故（R242）**：`build/obj` 23 个 `.o` 比源码旧（最大 20.5 天），ELF 由旧对象重链 ⇒
+`FBA_Load` 的 `sprintf(buf,"%s/cores/%s",work_path,*ppcVar4)` **只传 3 参**（无 r3）⇒
+glibc 打 `(null)` ⇒ 10 槽 core 遍历全废（日志 `open …/cores/(null) fail` ×9）⇒
+连续多轮围绕 `unsupport.` 的归因**前提不成立**。
+
+已接入：`tools/cnb_gates.sh`（门禁清单）+ `tools/cnb_env.sh`（检测到 STALE 自动清缓存重编）。
+
+### 12.2 `autorun` 路径**不会**给 `RomName` 赋值（原厂同样如此，不是缺陷）
+
+`RomName` 的唯一赋值点是 `mui_run_game`（`FUN_000229f8:35` `mui_extract_basename(RomName,…)`）。
+`main → autorun() → run_game()` **跳过 `mui_run_game`** ⇒ `RomName` 保持空串 ⇒
+`InitKeyMapping0fEmuType` / `SaveDefaultState` 拼出的路径变成
+`/sdcard/cubegm/saves/ARCADE/.scf`、`/sdcard/cubegm/saves/000/.sav`（**文件名为空**）。
+
+⚠ **不许"修"这一条**：原厂二进制走同一路径得到同样结果，属**原厂行为**；
+修了就偏离 1:1。要 `RomName` 有值必须走菜单路径（经 `mui_run_game`）。
+
+⇒ 用 `autorun` 做实验时，**任何依赖 `RomName` 的功能（按键映射存档 `.scf`、默认存档 `.sav`）
+都不可用于判据**；需要它们时改用 `menu.log` 选中项 + 按键路径。

@@ -97,6 +97,9 @@ joined_r0x0002331c:
   uVar12 = 0;
   ForceFlashCount = 0;
   dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
+#ifdef CGM_DIAG_MENU
+  fprintf(stderr, "[diagmenu0] mui_menu main-loop entered\n");
+#endif
   mui_ReadJoystick();
   diff_prev = 0;
   m_time0 = GetTicks();
@@ -108,6 +111,13 @@ LAB_0002348c:
     mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af28c,DAT_003af394 + 1 + DAT_003af26c);
   }
   uVar12 = mui_ReadJoystick();
+#ifdef CGM_DIAG_MENU
+  /* 诊断专用（交付构建不含）：定位"A 键值到达 ReadJoystick 但 mui_menu 分支未进" */
+  if (uVar12 != 0) {
+    fprintf(stderr, "[diagmenu] uVar12=0x%08x blob=0x%08x iVar7=%d iVar11=%d n=%d\n",
+            (unsigned)uVar12, (unsigned)joy_key_blob._0_4_, iVar7, iVar11, iVar2);
+  }
+#endif
   if (uVar12 == 0x80) {
     if (iVar11 < DAT_003af394) {
       iVar7 = 0;

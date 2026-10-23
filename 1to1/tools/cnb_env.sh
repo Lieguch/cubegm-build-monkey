@@ -168,6 +168,22 @@ echo "== [6/7] 构建 1:1 重建产物"
 #   本地一旦用宿主 gcc 编对象、用 zig 链接，就会得到一个 CI 上不复现的假故障。
 #   ⇒ 统一 CC=zig 后两侧的"目标 glibc"一致，链接即通。
 . /tmp/cgm_env.sh
+# ★★★ R242（2026-10-22）**产物新鲜度自愈**（真实事故：23 个过期 .o 冒充当前源码，
+#   使 `FBA_Load` 的 sprintf 缺第 4 参 ⇒ core 名 `(null)` ⇒ 多轮归因前提不成立）
+#   语义：**有产物**但要重建时，先查 `.o` 是否旧于 `.c`；旧 ⇒ 清缓存强制重编。
+#   rc: 0=FRESH 2=STALE（自愈）3=不适用 11=配置错。
+if [ -f build/rkgame.rebuilt.elf ] && [ "${FORCE_BUILD:-0}" != "1" ]; then
+  "$PY" tools/artifact_freshness_gate.py --src src/proprietary --obj build/obj \
+        --elf build/rkgame.rebuilt.elf > /tmp/_fresh_gate.txt 2>&1
+  _frc=$?
+  if [ "$_frc" = "2" ]; then
+    echo "   ★★ 产物不新鲜（build/obj 有 .o 旧于 .c）⇒ 清缓存强制重编"
+    sed -n '1,6p' /tmp/_fresh_gate.txt | sed 's/^/      /'
+    rm -rf build/obj build/upstream
+  elif [ "$_frc" = "0" ]; then
+    echo "   产物新鲜度 ✓ FRESH"
+  fi
+fi
 if [ -f build/rkgame.rebuilt.elf ] && [ "${FORCE_BUILD:-0}" != "1" ]; then
   echo "   已存在 $(stat -c%s build/rkgame.rebuilt.elf) B，跳过（FORCE_BUILD=1 强制重编）"
 else

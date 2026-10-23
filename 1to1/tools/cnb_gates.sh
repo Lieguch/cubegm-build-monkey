@@ -86,7 +86,10 @@ for spec in "tools/abi_check.py build/rkgame.rebuilt.elf" \
 done
 
 # ---- 门禁清单（每个：名字 → 需要的额外参数）----
-ALL="scan_symbol_delta scan_cxx_abi scan_livein_args scan_kr_argcount scan_dead_loop ci_p2a_stb"
+# ★ R242 新增 artifact_freshness：产物新鲜度（`.o` 不得旧于 `.c`，ELF 不得落后）
+#   来历：`build/obj` 23 个过期 `.o` 导致 `FBA_Load` 的 `sprintf` 缺第 4 参 ⇒ core 名 `(null)`
+#   ⇒ 连续多轮围绕 `unsupport.` 的归因前提不成立。rc=2 计入失败；rc=3(不适用) 不计。
+ALL="artifact_freshness scan_symbol_delta scan_cxx_abi scan_livein_args scan_kr_argcount scan_dead_loop ci_p2a_stb"
 WANT="${*:-$ALL}"
 say ""
 say "== 跑门禁 =="
@@ -100,6 +103,8 @@ for t in $WANT; do
     #   ⇒ `FileNotFoundError: '--objdump'` ⇒ **假失败**（它没有参数解析，只吃两个位置参数）。
     args=""
     case "$t" in
+        artifact_freshness)
+            args="--src src/proprietary --obj build/obj --elf build/rkgame.rebuilt.elf" ;;
         scan_symbol_delta)
             args="--ours build/rkgame.rebuilt.elf --pending tools/upstream_api_pending.txt"
             [ -n "$OBJ" ] && args="--objdump $OBJ $args" ;;
