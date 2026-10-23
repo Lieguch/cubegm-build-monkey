@@ -125,6 +125,11 @@ FILES = [
     #   `open driver.so fail` 并跳过图形/驱动初始化 ⇒ 可观测窗口极浅（env 缺陷，不是实现差异）。
     #   两侧加载**同一份** ⇒ 差分仍是"同环境比实现"。
     ("golden/sdcard_min/driver.so",        "1to1/golden/sdcard_min/driver.so"),
+    # ★★★ R258：evdev 全量手柄库（RetroArch 官方 udev autoconfig 合并表 426 条，
+    #   tools/build_controller_db.py 生成）。**both 版交付产物的运行时依赖**：
+    #   ReadUSBJoy → cgm_evdev_poll → cgm_evdev_open → load_db("/sdcard/cubegm/controller_db.txt")。
+    #   R252 新增时漏登记 ⇒ 被静默漏推（正是本文件注释警告的故障模式）⇒ R258 审计补登。
+    ("golden/sdcard_min/controller_db.txt", "1to1/golden/sdcard_min/controller_db.txt"),
     (".github/workflows/1to1-verify.yml", ".github/workflows/1to1-verify.yml"),
     (".github/workflows/1to1-qemu-behav.yml", ".github/workflows/1to1-qemu-behav.yml"),
     # ★ 2026-09-28：仓库根 `.cnb.yml`（CNB 云原生构建的声明式流水线）。

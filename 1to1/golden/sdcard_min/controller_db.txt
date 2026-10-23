@@ -1,0 +1,431 @@
+# controller_db.txt —— RetroArch 官方 udev autoconfig 全量合并表（自动生成，勿手改）
+# 来源: libretro/retroarch-joypad-autoconfig  →  buildbot.libretro.com/assets/frontend/autoconfig.zip
+# 生成: tools/build_controller_db.py
+# 记录数: 426 （有 vid/pid: 377 ；仅名字: 49 ；跳过: 13）
+# 格式: <vid:4hex|----> <pid:4hex|----> <name(%20 编码)> key=value ...
+---- ---- 2Axes%2011Keys%20Game%20%20Pad b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16c0 75e1 3H%20Dual%20Arcade%203H%20Dual%20Arcade b=1 a=0 y=3 x=2 l=8 r=9 l2=5 r2=6 l3=10 r3=11 sel=4 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1949 0402 7039RG b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 6009 8BitDo%208BitDo%20Pro%203 b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 200a Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 5112 8BitDo%208BitDo%20Lite%202 b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 5006 8BitDo%20M30%20gamepad b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 0651 8BitDo%20M30%20gamepad b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 02e0 8BitDo%20M30%20gamepad b=0 a=1 y=2 x=3 l=5 l2=4 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 r2_ax=+2
+2dc8 9020 8BitDo%20Micro%20gamepad b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right
+2dc8 9026 "JJ"%20#%20That%20is%20how%20device%20names%20itself%20on%20v1.09%20firmware b=0 a=1 y=3 x=4 l=6 r=7 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right
+2dc8 9025 8BitDo%20NEOGEO%20GP b=0 a=1 y=3 x=4 l=6 r=7 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right
+2dc8 6006 8BitDo%20Pro%202 b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e ---- 8BitDo%20Pro%202 b=0 a=1 y=2 x=3 l=4 r=5 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 2865 8BitDo%20N30%20Pro%202 b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 9015 8Bitdo%20N30%20Pro%202 b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 9001 8Bitdo%20NES30%20Pro%20%20%208Bitdo%20NES30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 6102 8BitDo%20SN30%20Pro+ b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e ---- 8BitDo%20SN30%20Pro+ b=0 a=1 y=2 x=3 l=4 r=5 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 6002 8BitDo%20SN30%20Pro+ b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 301d 8BitDo%208BitDo%20Ultimate%202C%20Wired%20Controller b=0 a=1 y=3 x=4 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+2dc8 301b 8BitDo%208BitDo%20Ultimate%202C%20Wireless%20Controller b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 310a 8BitDo%208BitDo%20Ultimate%202C%20Wireless%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 6012 8BitDo%20Ultimate%202%20Wireless b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 310b 8BitDo%20Ultimate%202%20Wireless b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 901b 8BitDo%20Ultimate%203mode%20Xbox b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 3106 8BitDo%20Ultimate%20C%20Wired%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 3017 8BitDo%20Ultimate%20C%20Wired%20Controller b=0 a=1 y=3 x=4 l=6 r=7 l2=+10 r2=+9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 2027 8BitDo%20Ultimate%20C%20Wired%20Controller%20for%20Xbox b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 3011 8BitDo%208BitDo%20Ultimate%20Wired%20Controller b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 2003 8BitDo%20Ultimate%20Wired%20Controller%20for%20Xbox b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 3013 8BitDoUltimate%20wireless%20Controller%20for%20PC b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 3230 8BitDo%20Zero%202%20gamepad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 3001 8Bitdo%208Bitdo%20SF30%20Wireless%20Controller b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 3000 8Bitdo%208Bitdo%20SN30%20Wireless%20Controller b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 3019 8BitDo%208BitDo%2064%20Bluetooth%20Controller b=0 y=1 l=6 r=7 l2=8 r2=9 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+1080 0009 8Bitdo%20Joy b=11 a=12 y=14 x=15 l=17 r=18 l2=19 r2=20 sel=21 st=22 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+8000 1002 8Bitdo%20JoyStick%20%20%20%208Bitdo%20Joy b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 1080 8Bitdo%20NES30%20Arcade b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+2dc8 1003 8Bitdo%20%20%20%20%20%20%20%20%20%20%20%20%208Bitdo%20NES30%20Arcade b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+2dc8 2810 8Bitdo%20FC30%20GamePad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 2810 8Bitdo%20FC30%20II b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 ab11 FC30%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20FC30%20%20Joystick b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 2820 8Bitdo%20NES30%20GamePad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 ab12 NES30%20%20%20%20%20%20%20%20%20%20%20%20%20%20NES30%20Joystick b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 5107 8Bitdo%20P30%20Modkit b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 3810 8Bitdo%20FC30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 9000 8Bitdo%20FC30%20Pro%20%20%20%208Bitdo%20FC30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 3820 8Bitdo%20NES30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 6100 8Bitdo%20SF30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 02e0 8Bitdo%20SF30%20Pro b=0 a=1 y=2 x=3 l=4 r=5 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 6000 8Bitdo%20SF30%20Pro%20%20%208Bitdo%20SF30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 6101 8Bitdo%20SN30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 02e0 8Bitdo%20SN30%20Pro b=0 a=1 y=2 x=3 l=4 r=5 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2dc8 6001 8Bitdo%20SN30%20Pro%20%208Bitdo%20SN30%20Pro b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-7 dn_ax=+7 lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2dc8 6728 8BitDo%20S30%20Modkit b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 2830 8Bitdo%20SFC30%20GamePad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 ab21 SFC30%20%20%20%20%20%20%20%20%20%20%20%20%20%20SFC30%20Joystick b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 2840 8Bitdo%20SNES30%20GamePad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 2862 Bluetooth%20Wireless%20Controller b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 9012 8BitDo%20SN30%20gamepad b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 5103 8BitDo%20SN30%20Modkit b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2dc8 ab20 SNES30%20%20%20%20%20%20%20%20%20%20%20%20%20SNES30%20Joy b=1 a=0 y=4 x=3 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+05a0 3232 8Bitdo%20Zero%20GamePad b=0 a=1 y=3 x=4 l=6 r=7 sel=10 st=11 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0f30 1100 ACRUX%20QuanBa%20Arcade%20JoyStick%201008 b=1 a=0 y=2 x=3 l=5 r=4 l2=7 r2=6 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- ASUS%20Gamepad b=0 a=1 y=2 x=3 l=4 r=5 l3=7 r3=8 sel=9 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+0b05 1b4c ASUS%20ROG%20Ally%20X%20Gamepad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0e6f 0413 Afterglow%20AX.1%20Gamepad%20for%20Xbox%20360 b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0e6f 0213 Afterglow%20Gamepad%20for%20Xbox%20360 b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=-3 rx-=+3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0e6f 0139 Afterglow%20Prismatic%20Wired%20Controller b=1 a=0 y=3 x=2 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0e6f 6302 Afterglow%20controller%20for%20PS3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0010 0082 Akishop%20Customs%20PS360+%20v1.66 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+1949 041a Amazon%20Game%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1bad f02a Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1bad f019 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1bad f039 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2341 8036 Arduino%20LLC%20Arduino%20Leonardo b=0 a=1 y=2 x=3 l=4 r=5 l2=11 r2=9 l3=8 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0ca3 0028 Astro%20city%20mini%20Arcade%20stick b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+3250 1002 Game%20Controller b=1 a=2 y=3 x=4 l=5 r=6 l3=7 r3=8 sel=10 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+05e3 0596 Austgame%20PS%20to%20USB%20convert%20cable b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=9 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+20d6 ca6d BDA%20Pro%20Ex b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+20bc 503d BETOP%20BETOP%20XF1%20BFM%20DONGLE b=4 a=3 y=7 x=6 l=9 r=10 l2=11 r2=12 l3=16 r3=17 sel=13 st=14 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+20bc 5500 BETOP%20AX1%20BFM b=9 a=10 y=12 x=13 l=15 r=16 l2=17 r2=18 l3=22 r3=23 sel=19 st=20 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0411 00c6 BUFFALO%20INC.%20BUFFALO%20BGC-FC801%20USB%20Gamepad b=1 a=0 y=3 x=2 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+146b 0d01 Bigben%20Revolution%20Pro b=0 a=1 y=3 x=2 l=4 r=5 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+16d0 0d04 Bliss-Box%204-Play%20ATARI b=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20ATARI b=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20ATARI b=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20ATARI b=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20GC b=1 a=2 y=3 x=4 r2=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d05 Bliss-Box%204-Play%20GC b=1 a=2 y=3 x=4 r2=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d06 Bliss-Box%204-Play%20GC b=1 a=2 y=3 x=4 r2=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d07 Bliss-Box%204-Play%20GC b=1 a=2 y=3 x=4 r2=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d04 Bliss-Box%204-Play%20GEN_3 b=2 a=10 y=1 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20GEN_3 b=2 a=10 y=1 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20GEN_3 b=2 a=10 y=1 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20GEN_3 b=2 a=10 y=1 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20GEN_6 b=2 a=10 y=1 x=4 l=3 r=9 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20GEN_6 b=2 a=10 y=1 x=4 l=3 r=9 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20GEN_6 b=2 a=10 y=1 x=4 l=3 r=9 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20GEN_6 b=2 a=10 y=1 x=4 l=3 r=9 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20N64 b=2 a=4 y=1 x=9 l=3 r=10 l2=5 r2=8 sel=7 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+16d0 0d05 Bliss-Box%204-Play%20N64 b=2 a=4 y=1 x=9 l=3 r=10 l2=5 r2=8 sel=7 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+16d0 0d06 Bliss-Box%204-Play%20N64 b=2 a=4 y=1 x=9 l=3 r=10 l2=5 r2=8 sel=7 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+16d0 0d07 Bliss-Box%204-Play%20N64 b=2 a=4 y=1 x=9 l=3 r=10 l2=5 r2=8 sel=7 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+16d0 0d04 Bliss-Box%204-Play%20NES b=1 a=2 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20NES b=1 a=2 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20NES b=1 a=2 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20NES b=1 a=2 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20PSX_DS2 b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 l3=15 r3=16 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d05 Bliss-Box%204-Play%20PSX_DS2 b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 l3=15 r3=16 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d06 Bliss-Box%204-Play%20PSX_DS2 b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 l3=15 r3=16 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d07 Bliss-Box%204-Play%20PSX_DS2 b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 l3=15 r3=16 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d04 Bliss-Box%204-Play%20SATURN_DIGITAL b=1 a=2 y=3 x=4 l=9 r=10 l2=7 r2=8 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20SATURN_DIGITAL b=1 a=2 y=3 x=4 l=9 r=10 l2=7 r2=8 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20SATURN_DIGITAL b=1 a=2 y=3 x=4 l=9 r=10 l2=7 r2=8 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20SATURN_DIGITAL b=1 a=2 y=3 x=4 l=9 r=10 l2=7 r2=8 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20SNES b=2 a=4 y=1 x=3 l=7 r=8 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d05 Bliss-Box%204-Play%20SNES b=2 a=4 y=1 x=3 l=7 r=8 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d06 Bliss-Box%204-Play%20SNES b=2 a=4 y=1 x=3 l=7 r=8 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d07 Bliss-Box%204-Play%20SNES b=2 a=4 y=1 x=3 l=7 r=8 sel=5 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+16d0 0d04 Bliss-Box%204-Play%20WII_CLASSIC b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d05 Bliss-Box%204-Play%20WII_CLASSIC b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d06 Bliss-Box%204-Play%20WII_CLASSIC b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0d07 Bliss-Box%204-Play%20WII_CLASSIC b=2 a=4 y=1 x=3 l=7 r=8 l2=9 r2=10 sel=5 st=6 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+16d0 0a60 BLISS-BOX%204PLAY%20PORT b=5 a=7 y=4 x=6 l=10 r=11 l2=12 r2=13 l3=18 r3=19 sel=8 st=9 up=14 dn=15 lf=16 rt=17 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+1c5a 0024 CHA1%20%20%20%20%20CHA1 b=3 a=4 y=0 x=1 l=2 r=5 sel=7 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1c5b 0025 CHA2%20%20%20%20%20CHA2 b=3 a=4 y=0 x=1 l=2 r=5 sel=7 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- ControlBlock%20Arcade%20Gamepad b=1 a=0 y=5 x=4 l=2 r=3 l2=6 r2=7 l3=8 r3=9 sel=11 st=10 up_ax=+1 dn_ax=-1 lf_ax=+0 rt_ax=-0
+---- ---- ControlBlock%20SNES%20Gamepad b=1 a=0 y=3 x=2 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2563 0547 ShanWan%20USB%20WirelessGamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- USB%20Gamepad b=2 a=1 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0079 0006 DragonRise%20Inc.%20PC%20TWIN%20SHOCK%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+0079 0006 DragonRise%20Inc.%20%20%20Generic%20%20%20USB%20%20Joystick b=5 y=4 l=6 r=7 l2=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+0e6f 0130 Performance%20Designed%20Products%20EA%20SPORTS%20Controller%20for%20PS3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+056e 2010 ELECOM%20JC-U4113S%20DirectInput%20Mode b=2 a=3 y=0 x=1 l=4 r=5 l2=6 r2=7 l3=8 r3=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+056e 2013 ELECOM%20JC-U4113S%20XInput%20Mode b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1a34 0802 USB%20GAMEPAD%208116 b=1 a=0 y=3 x=2 l=4 r=5 l3=6 r3=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2 l2_ax=-4 r2_ax=+4
+07d7 0040 Flydigi%20VADER2P b=1 a=2 y=3 x=4 l=5 r=6 l2=7 r2=8 l3=11 r3=12 sel=9 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+07d7 0040 Flydigi%20VADER2 b=1 a=2 y=3 x=4 l=5 r=6 l2=7 r2=8 l3=11 r3=12 sel=9 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+04d9 0f16 GAMESAIKE%20USB%20GAME%20Controller b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+---- ---- GEN%20GAME%20S3 b=9 a=10 y=12 x=13 l=15 r=16 l2=17 r2=18 l3=22 r3=23 sel=19 st=20 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0079 18d4 GPD%20Win%202%20X-Box%20Controller b=0 a=1 y=2 x=3 l=9 r=10 l2=4 r2=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+3537 1040 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l2=4 r2=5 l3=9 r3=10 sel=6 st=Menu up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+3537 109b Guangzhou%20Chicken%20Run%20Network%20Technology%20Co.,%20Ltd.%20GameSir-G7%20Pro b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+3537 1022 GameSir-G7%20Pro b=0 a=1 y=3 x=4 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+0f0d 1011 GameStick%20Controller b=11 a=12 y=14 x=15 l=17 r=18 l3=24 r3=25 st=22 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+0 r2_ax=+1
+---- ---- Gamegirl%20Controller b=10 a=0 y=5 x=7 l=2 r=1 sel=4 st=9 up=3 dn=6 lf=11 rt=8
+05ac 061c Gamesir-T4%201.25 b=1 a=0 y=4 x=3 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+0e4c 1103 Generic%20X-Box%20pad b=0 a=1 y=3 x=4 l=5 r=2 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right l2_ax=+2 r2_ax=+5
+25b6 0001 Gametel b=7 a=4 y=5 x=6 l=8 r=9 sel=10 st=11 up=0 dn=3 lf=1 rt=2 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0925 0005 Gamtec.,Ltd%20SmartJoy%20PLUS%20Adapter b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=9 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0e8f 0008 Gasia%20Co.,Ltd%20PS(R)%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- Gasia%20Co.,Ltd%20PS(R)%20Gamepad b=14 a=13 y=15 x=12 l=10 r=11 l2=8 r2=9 l3=1 r3=2 sel=0 st=3 up=4 dn=6 lf=7 rt=5 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0079 0006 SWITCH%20CO.,LTD.%20Controller%20(Dinput) b=6 a=8 y=8 l=4 r=5 l2=7 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+2dc8 200f Generic%20X-Box%20pad b=1 a=0 y=3 x=2 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+18d1 9400 Google%20LLC%20Stadia%20Controller%20rev.%20A b=0 a=1 y=2 x=3 l=4 r=5 l2=14 r2=13 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+047d 4008 Gravis%20Destroyer%20Tiltpad b=1 a=2 y=0 x=3 l=4 r=5 l2=4 r2=5 l3=4 r3=5 sel=4 st=5 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0428 4001 Gravis%20GamePad%20Pro%20USB b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- GreenAsia%20Inc.%20%20%20%20USB%20Joystick b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0e8f 0012 GreenAsia%20Inc.%20%20%20%20%20%20USB%20%20Joystick b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0079 1800 HJZ%20Mayflash%20WiiU%20Pro%20Game%20Controller%20Adapter b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+04d9 138c HOLTEK%20Twin%20Shock b=2 a=0 y=3 x=1 l=6 r=7 l3=9 r3=10 sel=8 st=1 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=4 r2_ax=5
+0f0d 00c1 HORI%20CO.,LTD.%20HORIPAD%20S b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0f0d 005e HORI%20CO.,LTD.%20Fighting%20Commander%204 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+0f0d 0085 HORI%20CO.,LTD.%20Fighting%20Commander b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0f0d 0084 HORI%20CO.,LTD.%20Fighting%20Commander b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+0f0d 0086 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0f0d 00dc HORI%20Fighting%20Commander b=1 a=0 y=3 x=2 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1a34 0203 HORIPAD%20S b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0f0d 000d Hori%20Fighting%20Stick%20EX2 b=1 a=0 y=3 x=2 l=6 r=7 l2=4 r2=5 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0f0d 0087 HORI%20CO.,LTD.%20Fighting%20Stick%20mini%204 b=1 a=2 y=0 x=3 l=4 r=5 l3=6 r3=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0f0d 0137 Generic%20X-Box%20pad b=1 a=0 y=3 x=2 l=5 l2=4 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right r2_ax=+2
+0f0d 0067 HORIPAD%20ONE b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0f0d 00ee HORI%20CO.,LTD.%20HORIPAD%20mini4 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+0f0d 004d HORI%20CO.,LTD%20%20PAD%20A b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0f0d 0011 HORI%20CO.,LTD.%20REAL%20ARCADE%20PRO.3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0f0d 006a HORI%20CO.,LTD.%20Real%20Arcade%20Pro.4 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0f0d 00aa HORI%20CO.,LTD.%20Real%20Arcade%20Pro%20V b=1 a=2 y=0 x=3 l=5 r=7 l2=4 r2=6 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+5335 0001 Handheld%20Daemon%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- Handheld%20Controller b=6 a=7 y=8 x=9 l=10 r=11 l3=15 r3=16 sel=12 st=13 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1bad f900 Harmonix%20Xbox%20360%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=-2 r2_ax=-5
+12ab 0002 Honey%20Bee%20QuasiCON b=0 a=1 y=2 x=3 l=7 r=6 l2=8 r2=9 sel=4 st=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+056e 2007 HuiJia%20%20JC-W01U b=2 a=3 y=0 x=1 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2e24 0423 Hyperkin%20DuchesS%20Xbox%20One%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0079 0011 USB%20Gamepad b=1 a=2 y=0 x=4 l=3 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2e24 386a Hyperkin%20Trooper%20V2 b=0 a=1 l=2 r=3 sel=4 st=5 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- ION%20iCade b=9 a=8 y=6 x=7 l=11 r=10 sel=5 st=4 up=0 dn=3 lf=1 rt=2
+0f30 0111 Jess%20Tech%20Colour%20Rumble%20Pad b=2 a=3 y=0 x=1 l=4 r=6 l2=5 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0f30 0110 Jess%20Tech%20Dual%20Analog%20Rumble%20Pad b=2 a=3 y=0 x=1 l=4 r=6 l2=5 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0e6f 0401 Logic3%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+046d cad1 Logitech%20ChillStream%20PS3/USB%20Corded%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+046d c242 Logitech%20Chillstream%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+046d c219 Logitech%20Logitech%20Cordless%20RumblePad%202 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+046d c29a Driving%20Force%20GT b=0 a=2 y=1 x=3 l=5 r=4 l2=7 r2=6 l3=11 r3=10 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ry+=-2 ry-=-1
+046d c216 Logitech%20Logitech%20Dual%20Action b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+046d c29b G27%20Racing%20Wheel a=2 x=3 l=7 r=6 l2=20 r2=18 l3=21 r3=19 sel=11 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=h0down ly-=h0up rx+=+0 rx-=-0 ry+=h0down ry-=h0up
+046d c21d Logitech%20Gamepad%20F310 b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+046d c21e Logitech%20Gamepad%20F510 b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+046d c21f Logitech%20Gamepad%20F710 b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+046d c21a Logitech%20Logitech(R)%20Precision(TM)%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=6 r3=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=-0 lx-=-0 ly+=-0 ly-=-0 rx+=+0 rx-=+0 ry+=+0 ry-=+0
+046d c218 Logitech%20Logitech%20RumblePad%202%20USB b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+046d c20b Logitech%20WingMan%20Action%20Pad b=0 a=1 y=3 x=4 l=6 r=7 l2=0 r2=2 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+046d c20a Logitech%20Inc.%20WingMan%20RumblePad b=1 a=0 y=4 x=3 l=6 r=7 l2=2 sel=8 st=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+0738 4426 MAD%20CATZ%20,Ltd.%20Mad%20Catz%20Game%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l2=10 r2=11 l3=7 r3=9 sel=6 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0079 18d2 MAGIC-NS b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2f24 00f5 MAYFLASH%20N64%20USB%20Adapter%20MF103 b=2 a=1 l=4 r=5 l2=6 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=Joystick Right lx-=Joystick Left ly+=Joystick Down ly-=Joystick Up rx+=C-Right rx-=C-Left ry+=C-Down ry-=C-Up
+0079 1843 mayflash%20limited%20MAYFLASH%20GameCube%20Controller%20Adapter b=1 a=2 y=0 x=3 l=4 r=5 r3=7 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+5 rx-=-5 ry+=+2 ry-=-2 l2_ax=+3 r2_ax=+4
+040b 6533 MOSIC%20%20%20%20%20%20SPEED-LINK%20Competition%20Pro b=2 a=0 sel=3 st=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+040b 6530 MOSIC%20%20%20%20%20%20USB%202A8K%20%20GamePad b=2 a=3 y=0 x=1 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- WiseGroup.,Ltd%20MP-8800%20Quad%20USB%20Joypad b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=9 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- WiseGroup.,Ltd%20MP-8866%20Dual%20USB%20Joypad b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=9 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0e8f 0003 MY-POWER%20CO.,LTD.%202In1%20USB%20Joystick b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0738 3250 Mad%20catz%20Inc.%20Mad%20Catz%20FightPad%20PRO%20PS3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0738 8250 Mad%20catz%20Inc.%20Mad%20Catz%20FightPad%20PRO%20PS4 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+0738 3481 Mad%20Catz%20FightStick%20TE2+%20PS3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0738 8481 Mad%20Catz%20FightStick%20TE2+%20PS4 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0738 2237 Mad%20Catz%20V.1%20Stick b=0 a=1 y=4 x=5 l=2 r=3 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 ry+=+2 ry-=-2 l2_ax=-3 r2_ax=+3
+0738 4738 Mad%20Catz%20Wired%20Xbox%20360%20Controller%20(SFIV) b=0 a=1 y=2 x=3 l=5 r=7 l2=4 r2=6 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+1bad f016 Mad%20Catz%20Xbox%20360%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+248a 8266 Magicsee%20R1 b=3 a=1 y=4 x=0 sel=7 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- Manba%20One%20BFM b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0079 1824 Mayflash%20Ltd%20Mayflash%20MD%20USB%20Adapter b=1 a=2 y=0 x=4 l=3 r=6 sel=7 st=9 up=12 dn=14 lf=15 rt=13
+2f24 0037 MAYFLASH%20Arcade%20Fightstick%20F101 b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+2f24 006e MAYFLASH%20Arcade%20Fightstick%20F101 b=4 a=1 y=3 x=0 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right
+0079 181c MAYFLASH%20Arcade%20Fightstick%20F300/F500%20V2 b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=-1 ly-=+1 rx+=+2 rx-=-2 ry+=-3 ry-=+3
+0079 1830 MAYFLASH%20Arcade%20Fightstick%20F300 b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+1a34 f705 HuiJia%20%20USB%20GamePad b=2 a=1 y=3 x=0 l=4 r=5 r3=7 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+5 rx-=-5 ry+=+2 ry-=-2 l2_ax=+3 r2_ax=+4
+20d6 a710 MAGIC-S%20PRO b=1 a=2 l=4 r=5 l2=6 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0e8f 3013 HuiJia%20%20USB%20GamePad b=2 a=1 l=6 r=7 l2=8 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=-3 rx-=+3 ry+=+2 ry-=-2
+0e8f 3010 HuiJia%20%20USB%20GamePad b=0 a=1 y=3 x=4 l=6 r=2 l2=5 r2=7 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+0079 1803 HJZ%20Mayflash%20Wiimote%20PC%20Adapter b=2 a=3 y=1 x=0 l=7 l2=6 sel=4 st=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+2 lx-=-2 ly+=+3 ly-=-3 rx+=+0 rx-=-0 ry+=+1 ry-=-1
+044f b315 Mega%20World%20Thrustmaster%20dual%20analog%203.2 b=0 a=2 y=1 x=3 l=4 r=6 l2=5 r2=7 l3=8 r3=9 sel=11 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=-0 lx-=+0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+07b5 0213 Mega%20World%20USB%202-Axis%208-Button%20Gamepad b=0 a=2 y=1 x=3 l=4 r=6 sel=5 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+07b5 0314 Mega%20World%20USB%20Game%20Controllers b=2 a=3 y=0 x=1 l=4 r=6 l2=5 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0079 0006 Microntek%20%20%20%20%20%20%20%20%20%20%20%20%20%20USB%20Joystick b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 028e Microsoft%20X-Box%20360%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0289 Microsoft%20X-Box%20pad%20v2%20(US) b=0 a=1 y=3 x=4 l=5 r=2 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0007 Microsoft®%20Microsoft®%20SideWinder®%20Game%20Pad%20USB b=0 a=1 y=3 x=4 l=5 r=2 l2=6 r2=7 sel=9 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+045e 0027 Microsoft®%20Microsoft®%20SideWinder®%20Plug%20&%20Play%20Game%20Pad b=0 a=1 y=2 x=3 l=4 r=5 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+045e 0028 Microsoft%20SideWinder%20Dual%20Strike%20USB%20version%201.0 b=3 a=2 y=1 x=0 l=6 r=7 sel=5 st=4 up=h0up dn=h0down lf=h0left rt=h0right
+045e 0b00 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0b20 Xbox%20Wireless%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+4 r2_ax=+5
+045e 02e3 Microsoft%20X-Box%20One%20Elite%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 02ea Microsoft%20X-Box%20One%20S%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 02e0 Xbox%20Wireless%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 02d1 Microsoft%20X-Box%20One%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 02dd Microsoft%20X-Box%20One%20pad%20(Firmware%202015) b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0b12 Microsoft%20X-Box%20Series%20X|S%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 028e Microsoft%20X-Box%20Series%20X|S%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0285 Microsoft%20X-Box%20pad%20(Japan) b=0 a=1 y=3 x=4 l=5 r=2 l3=8 r3=9 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0005 05ac MOCUTE-032_B43-0F1E b=13 a=12 y=15 x=14 l=19 r=17 l2=16 r2=20 st=21 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+20d6 0dad Moga%20Pro%20HID b=0 a=1 y=2 x=3 l=4 r=5 l3=7 r3=8 sel=9 st=6 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+0955 7214 NVIDIA%20Corporation%20NVIDIA%20Controller%20v01.04 b=0 a=1 y=2 x=3 l=4 r=5 l3=7 r3=8 st=6 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+0955 7210 NVIDIA%20Corporation%20NVIDIA%20Controller%20v01.03 b=4 a=5 y=6 x=7 l=8 r=9 l3=12 r3=13 sel=3 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+---- ---- MD/Gen%20Control%20Pad b=0 a=1 y=3 x=2 l=5 r=6 sel=7 st=8 up=h0up dn=h0down lf=h0left rt=h0right
+057e 2019 N64%20Controller b=1 a=0 l=6 r=7 l2=8 r2=9 sel=5 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- SNES%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+057e ---- Nintendo%20Switch%20Left%20Joy-Con b=16 a=15 y=14 x=17 l=6 r=8 sel=4 st=9 up_ax=+0 dn_ax=-0 lf_ax=-1 rt_ax=+1
+057e 2009 Nintendo%20Switch%20Pro%20Controller b=0 a=1 y=3 x=2 l=5 r=6 l2=7 r2=8 l3=12 r3=13 sel=9 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+057e ---- Nintendo%20Switch%20Right%20Joy-Con b=1 a=2 y=0 x=3 l=4 r=6 sel=9 st=8 up_ax=-0 dn_ax=+0 lf_ax=+1 rt_ax=-1
+057e 2007 Nintendo%20Switch%20Online%20NES%20Controller%20(L) b=0 a=1 l=4 r=5 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+057e 2007 Nintendo%20Switch%20Online%20NES%20Controller%20(R) b=0 a=1 l=4 r=5 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+---- ---- Nintendo%20Clovercon%20-%20controller1 b=1 a=0 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=13 dn=14 lf=11 rt=12
+---- ---- Nintendo%20Clovercon%20-%20controller2 b=1 a=0 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=13 dn=14 lf=11 rt=12
+057e 0330 Nintendo%20Wii%20Remote%20Pro%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=13 dn=14 lf=15 rt=16 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+057e 0306 Nintendo%20Wii%20Remote b=4 a=5 y=7 x=6 sel=10 st=9 up=2 dn=1 lf=0 rt=3
+---- ---- Nintendo%20Wii%20Remote%20Classic%20Controller b=5 a=4 y=7 x=6 l=8 r=9 l2=10 r2=11 l3=null r3=null sel=14 st=13 up=0 dn=3 lf=1 rt=2
+057e 0330 Nintendo%20Wii%20Remote%20TR b=4 a=5 y=7 x=6 sel=10 st=9 up=2 dn=1 lf=0 rt=3
+1d5a 1802 Nokia%20GC%205000 b=0 a=1 y=3 x=4 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+---- ---- OUYA%20Game%20Controller b=3 a=6 y=4 x=5 l=7 r=8 l2=15 r2=16 l3=9 r3=10 sel=9 st=10 up=11 dn=12 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+0e6f 0185 Performance%20Designed%20Products%20Wired%20Fight%20Pad%20Pro%20for%20Nintendo b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0e6f 02a6 PDP%20Wired%20Controller%20for%20Xbox%20One%20-%20Camo%20Series b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0e6f 02a4 PDP%20Wired%20Controller%20for%20Xbox%20One%20-%20Stealth%20Series b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- PLAYSTATION(R)3Conteroller-PANHAI b=14 a=13 y=15 x=12 l=10 r=11 l2=+6 r2=+7 l3=1 r3=2 sel=0 st=3 up=4 dn=6 lf=7 rt=5 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0583 b031 USB,4-Axis,12-Button%20with%20POV b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+054c 0cda Sony%20Interactive%20Entertainment%20Controller b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0e8f 0041 playsega%20controller b=1 a=2 y=0 x=4 l=3 r=5 l2=6 r2=7 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0f0d 0092 HORI%20CO.,LTD.%20POKKEN%20CONTROLLER b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+20d6 a713 PowerA%20NSW%20wired%20controller b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+20d6 2015 Microsoft%20Xbox%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=7 st=6 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+20d6 2015 Generic%20X-Box%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=7 st=6 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+20d6 a711 PowerA%20Wired%20Switch%20Controller%20-%20Zelda:%20Breath%20of%20the%20Wild%20Edition b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- Lic2%20Pro%20Controller b=0 a=1 y=2 x=3 l=R Button r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0f30 1012 Jess%20Technology%20Co.,%20Ltd.%20QanBa%20Joystick%20Plus b=0 a=1 y=2 x=3 l=4 r=6 l2=5 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+081f e401 Qnyx%20Snes%20Replica b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+27f8 0bbf Razer%20Kishi b=5 a=6 y=8 x=9 l=11 r=12 l3=18 r3=19 sel=15 st=16 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=13 r2_ax=14
+1532 1007 Razer%20Razer%20Raiju%20Tournament%20Edition%20Wired b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+1532 100a Razer%20Raiju%20Tournament%20Edition b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+---- ---- Razer%20Serval b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+12ba 0100 Licensed%20by%20Sony%20Computer%20Entertainment%20Guitar%20Hero4%20for%20PlayStation%20(R)%203 b=1 a=2 y=0 x=3 l=4 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+12ba 0120 RedOctane%20MIDI%20Drum%20GuitarHero%20for%20Playstation%20(R)%203 b=1 a=2 y=0 x=3 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+2dc8 3830 8Bitdo%20N64%20GamePad b=1 a=0 l=6 r=7 l2=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+2dc8 9002 8Bitdo%20N64%20%20%20%20%20%20%20%20%208Bitdo%20N64 b=1 a=0 l=6 r=7 l2=10 st=11 up=h0up dn=h0down lf_ax=+5 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+0079 0011 SWITCH%20CO.,LTD.%20USB%20Gamepad b=1 a=2 y=0 x=3 l=5 r=4 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0583 2060 RetroFlag%20Wired%20Controller b=1 a=0 y=3 x=2 l=4 r=5 l2=8 r2=9 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1234 0004 Brain%20Actuated%20Technologies%20N64%20RetroPort b=6 a=7 y=9 x=10 l=13 r=12 l2=5 st=4 up=3 dn=2 lf=1 rt=0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+04d8 f064 retroUSB%20NES%20RetroPort b=1 a=0 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+f000 0003 RetroUSB.com%20RetroPad b=0 a=1 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+04d8 f064 NES%20RetroPort b=1 a=0 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+f000 00f1 RetroUSB.com%20SNES%20RetroPort b=1 a=5 y=0 x=4 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0403 97c1 Retrode%20Mega%20Drive%20#1 b=0 a=4 y=1 x=5 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0403 97c1 Retrode%20Mega%20Drive%20#2 b=0 a=4 y=1 x=5 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0403 97c1 Retrode%20SNES%20/%20N64%20#1 b=0 a=4 y=1 x=5 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0403 97c1 Retrode%20SNES%20/%20N64%20#2 b=0 a=4 y=1 x=5 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0079 0006 Retrolink%20Nintento%2064%20Classic%20USB b=8 a=6 l=4 r=5 l2=7 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+0079 0011 USB%20Gamepad b=1 a=2 y=0 x=3 l=6 r=7 l2=4 r2=5 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0e6f 011e Rock%20Candy%20Gamepad%20for%20PS3 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0ca3 0025 3B%20controller b=1 a=5 y=2 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0ca3 0024 6B%20controller b=1 a=5 y=2 x=0 l=3 r=4 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+2563 0526 SHANWAN%20Android%20Gamepad b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2563 0575 ShanWan%20%20%20%20%20PC/PS3/Android%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- SHANWAN%20PS3%20GamePad b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=13 dn=14 lf=15 rt=16 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+04b4 010a CYPRESS%20USB%20Gamepad b=1 a=2 y=0 x=3 l=6 r=7 l2=4 r2=5 st=8 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1d57 0020 SNES%20PC%20Game%20Pad%20%20%20%20SNES%20PC%20Game%20Pad b=0 a=1 y=2 x=3 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- SNES-to-Gamepad%20Device b=1 a=0 y=3 x=2 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+---- ---- SPEEDLINK%20COMPETITION%20PRO%20Game%20Controller%20for%20Android b=3 a=0 sel=4 st=1 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+11c0 9105 SPEEDLINK%20TORID b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+05fd 3002 STD%20AxisPad b=2 a=3 y=0 x=1 l=6 r=7 l2=4 r2=5 l3=8 r3=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+2563 0575 SWITCH%20CO.,LTD.%20Controller%20(Dinput) b=1 a=2 y=2 l=4 r=5 l2=6 st=12 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- SZMy-power%20LTD%20CO.%20%20Dual%20Box%20WII b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 sel=8 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 0719 Saitek%20Cyborg%20Rumble%20Pad b=0 a=1 y=2 x=3 l=4 r=5 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+06a3 0109 SAITEK%20P880 b=2 a=3 y=0 x=1 l=6 r=7 l3=8 r3=9 sel=4 st=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+06a3 040b Saitek%20P990%20Dual%20Analog%20Pad b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=9 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+06a3 ff0d Saitek%20PLC%20Saitek%20P2600%20Rumble%20Force%20Pad b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=9 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+06a3 075c Saitek%20Saitek%20X52%20Flight%20Control%20System b=1 a=0 y=2 x=3 l=18 r=16 l2=7 r2=5 sel=30 st=6 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+5 rx-=-5 ry+=+2 ry-=-2
+04e8 a000 Samsung%20Game%20Pad%20EI-GP20 b=11 a=12 y=14 x=15 l=17 r=18 sel=21 st=22 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+11c0 5044 Sanmos%20JY-P62U%20Series%20ONLINE%20GRIP b=0 a=1 y=3 x=4 l=6 r=8 l2=7 r2=9 l3=10 r3=11 sel=12 st=14 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+2563 0526 ShanWan%20PC/PS3/Android b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+6666 0667 Smartjoy%20Family%20Super%20Smartjoy%202 b=2 a=1 y=3 x=0 l=6 r=7 sel=4 st=5 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+054c 09cc Sony%20Interactive%20Entertainment%20Wireless%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+054c 0ba0 Sony%20Interactive%20Entertainment%20DUALSHOCK®4%20USB%20Wireless%20Adaptor b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+054c 0df2 Sony%20Interactive%20Entertainment%20DualSense%20Edge%20Wireless%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+054c 0ce6 Sony%20Interactive%20Entertainment%20DualSense%20Wireless%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- PLAYSTATION(R)3%20Controller b=14 a=13 y=15 x=12 l=10 r=11 l2=8 r2=9 l3=1 r3=2 sel=0 st=3 up=4 dn=6 lf=7 rt=5 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- Sony%20Computer%20Entertainment%20Wireless%20Controller b=14 a=13 y=15 x=12 l=10 r=11 l2=8 r2=9 l3=1 r3=2 sel=0 st=3 up=4 dn=6 lf=7 rt=5 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+054c 0268 Sony%20PLAYSTATION(R)3%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=13 dn=14 lf=15 rt=16 up_ax=+12 dn_ax=+13 lf_ax=+14 rt_ax=+15 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+8087 0a2a Wireless%20Controller b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+2563 0523 ShanWan%20PS3/PC%20Wired%20GamePad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+20bc 5500 ShanWan%20PS3/PC%20Wired%20GamePad b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+28de 11ff Microsoft%20X-Box%20360%20pad b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+28de 0476 Steam%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=0 r3=2 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+6 lx-=-6 ly+=+7 ly-=-7 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+0111 1431 SteelSeries%20Stratus%20Duo b=0 a=1 y=3 x=4 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+1038 1431 SteelSeries%20Stratus%20Duo b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+1bad f028 Street%20Fighter%20IV%20FightPad b=0 a=1 y=2 x=3 l=4 l2=5 sel=6 st=7 up_ax=D-Pad Up dn_ax=D-Pad Down lf_ax=D-Pad Left rt_ax=D-Pad Right r2_ax=Right Trigger
+1209 d500 TAITO%20Densha%20de%20Go!%20Plug%20&%20Play%20(DC%20Two%20Handle%20mode) b=0 a=1 y=16 x=15 l=2 r=14 l2=8 st=9 up=10 dn=11 lf=12 rt=13
+1209 d500 TAITO%20Densha%20de%20Go!%20Plug%20&%20Play%20(N64%20Two%20Handle%20mode) b=1 a=12 y=0 x=13 l=11 r=10 l2=16 r2=8 sel=2 st=9 up=15 rt=14
+1209 d500 TAITO%20Densha%20de%20Go!%20Plug%20&%20Play%20(PS1%20Two%20Handle%20mode) b=1 a=2 y=0 x=14 l=10 r=12 l2=11 r2=13 sel=8 st=9 up=4 dn=5 lf=15 rt=16
+1209 d500 TAITO%20Densha%20de%20Go!%20Plug%20&%20Play%20(SAT%20Two%20Handle%20mode) b=0 a=1 y=14 x=15 l=16 r=2 l2=10 r2=11 sel=8 st=9 dn=12 lf=13
+1292 4e47 TOMMO%20NEOGEOX%20Arcade%20Stick b=0 a=1 y=3 x=2 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+0378 0003 TRBot%20Joypad%200 b=22 a=21 y=24 x=23 l=27 r=28 l3=31 r3=0 sel=25 st=26 up=15 dn=16 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+5 r2_ax=+2
+06f0 0003 TRBot%20Joypad%201 b=22 a=21 y=24 x=23 l=27 r=28 l3=31 r3=0 sel=25 st=26 up=15 dn=16 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+5 r2_ax=+2
+0a68 0003 TRBot%20Joypad%202 b=22 a=21 y=24 x=23 l=27 r=28 l3=31 r3=0 sel=25 st=26 up=15 dn=16 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+5 r2_ax=+2
+0de0 0003 TRBot%20Joypad%203 b=22 a=21 y=24 x=23 l=27 r=28 l3=31 r3=0 sel=25 st=26 up=15 dn=16 lf=13 rt=14 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+5 r2_ax=+2
+044f b655 FGT%20Rumble%203-in-1 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly-=-1 ry+=+2 ry-=-2
+044f b323 Thrustmaster%20Dual%20Trigger%203-in-1 b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5
+---- ---- THRUSTMASTER%20FireStorm%20Dual%20Analog%202 b=0 a=2 y=1 x=3 l=4 r=6 l2=5 r2=7 l3=8 r3=9 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+044f b304 THRUSTMASTER%20FireStorm%20Dual%20Power%202 b=0 a=2 y=1 x=3 l=4 r=6 l2=5 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+044f d001 Thrustmaster%20T%20Mini b=0 a=2 y=1 x=3 l=4 r=6 l2=5 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- Thrustmaster%20T%20Mini%20Wireless b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+044f b102 THRUSTMASTER%20Top%20Gun%20Fox%202%20%20Pro b=1 a=0 y=6 x=3 l=4 r=5 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2
+11ff 3331 PC%20Game%20Controller b=4 a=5 l=6 r=7 l2=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1
+1d57 0021 NES%20PC%20Game%20Pad%20NES%20PC%20Game%20Pad b=1 a=0 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+14d8 cd07 Toodles%202008%20ChImp%20PC/PS3%20Controller b=1 a=2 y=0 x=3 l=5 r=7 l2=4 r2=6 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+14d8 face Toodles%202008%20Cthulhu%20Mult b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0810 0001 Twin%20USB%20Joystick b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+12bd c001 USB%20Joystick b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+12bd e001 USB%20Vibration%20Joystick b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=8 st=9 up=12 dn=14 lf=15 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+081f e401 USB%20gamepad b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0079 181a Venom%20Limited%20PS3/PS4%20Arcade%20Joystick b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+05ac 022d Gamepad b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- Wii%20U%20GameCube%20Adapter%20Port%201 b=3 a=0 y=2 x=1 r=6 st=7 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- Wii%20U%20GameCube%20Adapter%20Port%202 b=3 a=0 y=2 x=1 r=6 st=7 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- Wii%20U%20GameCube%20Adapter%20Port%203 b=3 a=0 y=2 x=1 r=6 st=7 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+---- ---- Wii%20U%20GameCube%20Adapter%20Port%204 b=3 a=0 y=2 x=1 r=6 st=7 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+28de 1142 Wireless%20Steam%20Controller b=2 a=3 y=4 x=5 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=17 dn=18 lf=19 rt=20 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+7 r2_ax=+6
+1a34 0809 SL-6566 b=1 a=0 y=3 x=2 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+aa55 0101 Xarcade-to-Gamepad%20Device b=3 a=4 y=0 x=1 l=2 r=5 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+045e 0b13 Xbox%20One%20S%20Wireless%20Controller b=0 a=1 y=3 x=4 l=6 r=7 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+---- ---- Xbox%20Gamepad%20(userspace%20driver) b=0 a=1 y=2 x=3 l=4 r=5 l2=6 r2=7 l3=11 r3=12 sel=8 st=9 up_ax=-5 dn_ax=+5 lf_ax=-4 rt_ax=+4 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+045e 02a1 Xbox%20360%20Wireless%20Receiver b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=13 dn=14 lf=11 rt=12 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 02a1 Xbox%20360%20Wireless%20Receiver%20(XBOX) b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0719 Xbox%20360%20Wireless%20Receiver b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=13 dn=14 lf=11 rt=12 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+045e 0291 Xbox%20360%20Wireless%20Receiver b=0 a=1 y=2 x=3 l2=4 r2=5 l3=9 r3=10 sel=6 st=7 up=13 dn=14 lf=11 rt=12 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4
+045e 028e Xbox%20Wireless%20Controller b=0 a=1 y=2 x=3 l=4 r=5 l3=9 r3=10 sel=6 st=7 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+4 ry-=-4 l2_ax=+2 r2_ax=+5
+2717 3144 Xiaomi%20Mi%20Bluetooth%20Gamepad b=4 a=5 y=7 x=8 l=10 r=11 l3=17 r3=18 sel=14 st=15 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+5 ry-=-5 l2_ax=+7 r2_ax=+6
+16c0 05e1 Xin-Mo%20Xin-Mo%20Dual%20Arcade b=0 a=1 y=3 x=4 l=8 r=5 l2=9 r2=2 sel=7 st=6 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+04b4 c681 USB%20Game%20Device b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+---- ---- MICREAL%20USB%20Gamepad b=1 a=0 y=2 x=3 l=4 r=5 sel=8 st=9 up_ax=-4 dn_ax=+4 lf_ax=-3 rt_ax=+3
+1038 1412 Zeemote:%20SteelSeries%20FREE b=0 a=1 y=3 x=4 l=6 r=7 sel=12 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0c12 0005 Zeroplus%20PS%20Vibration%20Feedback%20Converter b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=9 r3=10 sel=11 st=8 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+3 rx-=-3 ry+=+2 ry-=-2
+0079 181c ZhiXu%20Gamepad b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+1781 0a96 raphnet.net%20(S)NES%20Atari%20USB b=1 a=4 y=0 x=8 l=3 r=2 sel=5 st=9 up=h0up dn=h0down lf=h0left rt=h0right
+25f0 83c2 Goodbetterbest%20Ltd%20Gioteck%20VX2%202.4G%20Wireless%20Controller b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+25f0 c121 ShanWan%20Gioteck%20PS3%20Wired%20Controller b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- GO-Advance%20Gamepad b=0 a=1 y=3 x=2 l=4 r=5 sel=12 st=13 up=6 dn=7 lf=8 rt=9 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- GO-Advance%20Gamepad%20(rev%201.1) b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=14 st=15 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- GO-Super%20Gamepad b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=12 st=13 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0411 00c6 USB,2-axis%208-button%20gamepad b=1 a=0 y=3 x=2 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1dd8 000b BUFFALO%20BSGP1601%20Series b=5 a=3 y=4 x=2 l=8 r=9 l2=6 r2=7 l3=10 r3=11 sel=14 st=15 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+0583 2060 USB,2-axis%208-button%20gamepad b=1 a=0 y=3 x=2 l=4 r=5 sel=6 st=7 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0079 0126 iNNEXT%20SNES%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0079 0011 iNNEXT%20SNES%20Gamepad b=2 a=1 y=3 x=0 l=4 r=5 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1949 0402 ipega%20classic%20gamepad b=9 a=10 y=12 x=13 l=15 r=16 l3=22 r3=23 sel=19 st=20 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=+5 r2_ax=+4
+2563 0623 Ipega_PG_9068_BT b=1 a=0 y=4 x=3 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=10 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- PG-9083S b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+8087 0a2a PG-9087 b=10 a=11 y=13 x=14 l=16 r=17 l2=18 r2=19 l3=23 r3=24 sel=20 st=21 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+10c4 82c0 kadevice.com%20KADE%20-%20Kick%20Ass%20Dynamic%20Encoder b=1 a=2 y=0 x=3 l=4 r=5 l2=6 r2=7 l3=10 r3=11 sel=8 st=9 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+---- ---- odroidgo2_joypad b=0 a=1 y=3 x=2 l=4 r=5 sel=12 st=13 up=6 dn=7 lf=8 rt=9 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- odroidgo2_joypad_v11 b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=14 st=15 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+---- ---- odroidgo3_joypad b=0 a=1 y=3 x=2 l=4 r=5 l2=6 r2=7 sel=14 st=15 up=8 dn=9 lf=10 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+289b 0063 raphnet%20technologies%20Dual%20GC/N64%20to%20USB%20v3.6 b=1 a=0 l=4 r=5 l2=2 st=3 up=10 dn=11 lf=12 rt=13 lx+=+0 lx-=-0 ly+=+1 ly-=-1
+289b 002f raphnet%20technologies%20Dual%20SNES%20to%20USB%20v2.1 b=1 a=4 y=0 x=5 l=6 r=7 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+289b 0026 raphnet%20technologies%20SNES%20to%20USB%20v2.0 b=1 a=4 y=0 x=5 l=6 r=7 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+289b 002e raphnet%20technologies%20SNES%20to%20USB%20v2.1 b=1 a=4 y=0 x=5 l=6 r=7 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+289b 0005 raphnet.net%20Saturn_Adapter_2.0 b=2 a=5 y=1 x=0 l=6 r=7 l2=3 r2=4 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1781 0a96 raphnet.net%204nes4snes b=0 a=4 y=1 x=5 l=6 r=7 sel=2 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+289b 0004 raphnet.net%20GC/N64%20to%20USB,%20v2.3 b=4 a=5 y=2 x=3 l=6 r=7 sel=8 st=1 up=9 dn=10 lf=12 rt=11 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3 l2_ax=-4 r2_ax=-5
+16c0 0a99 retronicdesign.com%20Sega%20Joypad%20Adapter%20v3.0 b=1 a=2 y=0 st=3 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+0810 e501 usb%20gamepad b=2 a=1 y=3 x=0 l=4 r=5 l2=6 r2=7 sel=8 st=9 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0
+1a15 2262 WiseGroup.,Ltd%20SmartJoy%20Dual%20PLUS%20Adapter b=2 a=1 y=3 x=0 l=6 r=7 l2=4 r2=5 l3=10 r3=11 sel=9 st=8 up=12 dn=14 lf=15 rt=13 up_ax=-1 dn_ax=+1 lf_ax=-0 rt_ax=+0 lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+05ac 022d Gamesir-G3s b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+05ac 033d xiaoji%20Gamesir-G3s%201.02 b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+05ac 022d Gamesir-G3v b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
+05ac 033d xiaoji%20Gamesir-G3v%201.00 b=0 a=1 y=3 x=4 l=6 r=7 l2=8 r2=9 l3=13 r3=14 sel=10 st=11 up=h0up dn=h0down lf=h0left rt=h0right lx+=+0 lx-=-0 ly+=+1 ly-=-1 rx+=+2 rx-=-2 ry+=+3 ry-=-3
