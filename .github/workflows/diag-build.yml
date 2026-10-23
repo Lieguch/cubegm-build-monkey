@@ -52,15 +52,19 @@ jobs:
 
       # ★ 与交付版同一份 link_full.sh + factory_image.S（仓库内已提交），
       #   唯一差别 = 插桩 + wrap + 诊断仪自身（build_diag.sh 内部处理）。
-      #   ★★ 绝不用 `| tail` 收尾（会吞掉 exit code ⇒ 假绿）：先落盘日志、打印尾部、再透传 rc。
+      #   ★★ 两个 2026-10-23 实测的坑（都属"假绿"族，已修）：
+      #     ① `bash -e`（Actions 默认）下 build_diag.sh 失败会**立即中止脚本** ⇒
+      #        `rc=$?`/`tail`/`exit $rc` 根本不执行 ⇒ 看不到任何构建输出。
+      #        改用 `|| rc=$?` 模式（errexit 不触发）。
+      #     ② 绝不用 `cmd | tail` 收尾（管道吞 exit code）。
       - name: 构建诊断版（CGM_UPGRADE 默认 both ⇒ evdev/sram 观测点全开）
         run: |
           cd 1to1
           mkdir -p build report
           UPGR="${{ github.event.inputs.upgrade || 'both' }}"
           echo "CGM_UPGRADE=$UPGR"
-          PY=python3 CGM_UPGRADE="$UPGR" OPT=-Os sh tools/build_diag.sh build/rkgame.diag > build/diag_build.log 2>&1
-          rc=$?
+          rc=0
+          PY=python3 CGM_UPGRADE="$UPGR" OPT=-Os sh tools/build_diag.sh build/rkgame.diag > build/diag_build.log 2>&1 || rc=$?
           tail -25 build/diag_build.log
           exit $rc
 
@@ -83,10 +87,12 @@ jobs:
           PY
 
       - name: 上传诊断版产物
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rkgame-diag
           path: |
             1to1/build/rkgame.diag
             1to1/build/rkgame.diag.sha256
-          if-no-files-found: error
+            1to1/build/diag_build.log
+          if-no-files-found: warn
