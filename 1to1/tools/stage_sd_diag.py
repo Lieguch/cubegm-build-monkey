@@ -45,7 +45,9 @@ README = """\
 --------------------------------------------------------------------------------
 【第 0 步】包里有什么
 --------------------------------------------------------------------------------
-  cubegm/rkgame          ← 【第 1 步用】诊断版（修复后）。覆盖到设备上的同名文件
+  cubegm/rkgame          ← 诊断版（both，R259）。覆盖到设备上的同名文件
+  cubegm/controller_db.txt ← ★ 手柄全量库 426 条。**必须一起放**：缺了它 evdev
+                             只走兜底映射（不崩但新手柄不支持），观测点白开
   cubegm/rkgame.probe    ← 【第 2 步备用】最小探针，3.5 KB。**先不要动它**
   cubegm/_diag/cfg.ini   ← 日志级别（已设 level=3，最全）
 
@@ -67,11 +69,12 @@ README = """\
 【第 2 步】（第 1 步测试）部署诊断版并开机
 --------------------------------------------------------------------------------
   ① 把本包 `cubegm/rkgame` 覆盖到 SD 卡的 `cubegm/rkgame`
-  ② 把本包 `cubegm/rkgame.probe` 拷到 SD 卡的 `cubegm/rkgame.probe`（**保持这个文件名**）
-  ③ 把本包 `cubegm/_diag/` 整个文件夹拷到 SD 卡的 `cubegm/_diag/`
+  ② 把本包 `cubegm/controller_db.txt` 拷到 SD 卡的 `cubegm/controller_db.txt`
+  ③ 把本包 `cubegm/rkgame.probe` 拷到 SD 卡的 `cubegm/rkgame.probe`（**保持这个文件名**）
+  ④ 把本包 `cubegm/_diag/` 整个文件夹拷到 SD 卡的 `cubegm/_diag/`
      （若 SD 上已有 _diag，先删掉再拷，避免混入上一轮残留）
-  ④ 插卡开机，**等满 90 秒**（黑屏也等满；崩溃现场在崩的那一刻就已经写进 SD）
-  ⑤ 关机拔卡，看 `cubegm/_diag/` 里有没有东西
+  ⑤ 插卡开机，**等满 90 秒**（黑屏也等满；崩溃现场在崩的那一刻就已经写进 SD）
+  ⑥ 关机拔卡，看 `cubegm/_diag/` 里有没有东西
 
   ---- 结果 A：有日志（trace.log 里有 `## BOOT`）----
        ⇒ 结构性缺陷就是根因，且已修复。把整个 `_diag/` 取回来发我，**到此结束**。
@@ -186,6 +189,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--diag', default=os.path.join(ROOT, 'build', 'rkgame.diag'))
     ap.add_argument('--probe', default=os.path.join(ROOT, 'build', 'rkgame.probe'))
+    # ★ R259：both 诊断版的运行时依赖（evdev 全量库）。缺它 = 手柄只走兜底映射。
+    ap.add_argument('--ctrl-db', default=os.path.join(ROOT, 'golden', 'sdcard_min', 'controller_db.txt'))
     ap.add_argument('--out', default=os.path.join(ROOT, '_sdcard_drop'))
     ap.add_argument('--level', type=int, default=3)
     a = ap.parse_args()
@@ -194,6 +199,11 @@ def main():
         if not os.path.exists(p):
             print('!! 找不到 %s\n   先跑： %s' % (p, how))
             return 2
+    if not os.path.exists(a.ctrl_db):
+        print('!! 找不到 controller_db.txt（%s）\n   both 诊断版的 evdev 全量库依赖它；'
+              '生成：python tools/build_controller_db.py --zip <autoconfig.zip> '
+              '--out golden/sdcard_min/controller_db.txt' % a.ctrl_db)
+        return 2
     if a.level not in (0, 1, 2, 3):
         print('!! level 只能是 0..3')
         return 2
@@ -205,8 +215,10 @@ def main():
 
     dst_bin = os.path.join(out, 'cubegm', 'rkgame')
     dst_prb = os.path.join(out, 'cubegm', 'rkgame.probe')
+    dst_db = os.path.join(out, 'cubegm', 'controller_db.txt')
     shutil.copy2(a.diag, dst_bin)
     shutil.copy2(a.probe, dst_prb)
+    shutil.copy2(a.ctrl_db, dst_db)
     with io.open(os.path.join(out, 'cubegm', '_diag', 'cfg.ini'), 'w',
                  encoding='utf-8', newline='\n') as f:
         f.write(CFG.format(level=a.level))
@@ -223,12 +235,13 @@ def main():
            '日志级别 : %d' % a.level,
            '',
            '%-32s %12s  %s' % ('文件', '字节', 'sha256')]
-    for rel in ('cubegm/rkgame', 'cubegm/rkgame.probe', 'cubegm/_diag/cfg.ini', 'READ-ME-FIRST.txt'):
+    for rel in ('cubegm/rkgame', 'cubegm/controller_db.txt', 'cubegm/rkgame.probe', 'cubegm/_diag/cfg.ini', 'READ-ME-FIRST.txt'):
         p = os.path.join(out, rel.replace('/', os.sep))
         man.append('%-32s %12d  %s' % (rel, os.path.getsize(p), sha256(p)))
     man += ['',
-            '★ rkgame      = 诊断版（PT_LOAD 几何已修；16.6 MB → 5.4 MB）',
-            '★ rkgame.probe= 最小探针（3.5 KB，静态、无 interp、无 NEEDED）',
+            '★ rkgame            = both 诊断版（SRAM + evdev 全量库；sha256 前缀见上）',
+            '★ controller_db.txt = RetroArch 官方手柄全量库 426 条（**必须放**）',
+            '★ rkgame.probe      = 最小探针（3.5 KB，静态、无 interp、无 NEEDED）',
             '★ 本包**不含任何原厂文件**；原厂 rkgame 的备份请在 SD 卡上手动完成。']
     with io.open(os.path.join(out, 'DEPLOY-MANIFEST.txt'), 'w',
                  encoding='utf-8', newline='\n') as f:

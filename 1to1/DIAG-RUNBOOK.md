@@ -364,6 +364,56 @@ qemu 的价值在于**启动链连通性 + 软件层行为对齐**；上述硬�
 但根据 PROGRESS.md §0.0 约束 2/3：**模拟进度达 100% 之前，禁止在任何文档/报告/对话中提及真机验证**；
 达到 100% 后由 agent 主动向用户提出。本节仅为技术备忘，不构成"现在就该上真机"的建议。
 
+---
+
+## 十三、R259：both 诊断投放包（真机验收就绪态）
+
+### 13.1 投放包生成与内容
+
+```sh
+python tools/stage_sd_diag.py            # 读 build/rkgame.diag + probe + controller_db.txt
+```
+
+产出 `_sdcard_drop/`（R259 实测内容）：
+
+| 文件 | 字节 | sha256 前缀 | 作用 |
+|---|---|---|---|
+| `cubegm/rkgame` | 5,460,216 | `b8e624c2fd80de5a` | both 诊断版（SRAM+evdev+插桩+wrap） |
+| `cubegm/controller_db.txt` | 70,652 | `f14edcfd58f3ad6a` | **evdev 全量库 426 条（必须放）** |
+| `cubegm/rkgame.probe` | 3,572 | `9bc91b758e4743a9` | 最小探针（启动链失败时二分定位） |
+| `cubegm/_diag/cfg.ini` | 393 | `b662fed9fdd69ff7` | 日志级别 level=3 |
+| `READ-ME-FIRST.txt` | 8,594 | — | 面向用户的全部步骤（自包含） |
+
+产物来源：GitHub Actions `diag-build.yml` run `39908481619`（conclusion=success，
+artifact `rkgame-diag`），本地 sha256 与 CI 自记逐字节一致。
+
+### 13.2 投放与回退（详见 READ-ME-FIRST.txt）
+
+1. **备份**：SD 上 `cubegm/rkgame` → `cubegm/rkgame.factory.orig`（再复制到电脑，双保险）；
+2. **部署**：覆盖 `rkgame` + 放 `controller_db.txt` + 放 `probe` + 放 `_diag/`；
+3. **回退**：从 `.factory.orig` 还原，删 `controller_db.txt`/`_diag/` 即可恢复原厂现场。
+
+★ **不需要改 `setting.xml`**：启动链（S80icube → icube）写死拉起 `cubegm/rkgame`，
+drop-in 只换二进制本身；第九节的 autorun 劫持仅用于"开机直进某游戏"的实验场景，与验收无关。
+
+### 13.3 判据口诀（trace.log / stdout）
+
+| 验什么 | 日志特征 |
+|---|---|
+| 诊断版跑起来了 | `_diag/BEGIN.txt` 存在且非空；`trace.log` 首行 `## BOOT` |
+| evdev 手柄链路接通 | `ioctl` req 高字节 = `0x45`（EVIOC 族）+ `read` 长度 = **16**（evdev 事件；8 = 还在 joydev） |
+| 全量库装载 | `[evdev] db 载入 426 条 profile` |
+| SRAM 落盘 | `[sram] flush SAVE_RAM -> …xxx.srm (16384 B)` + SD 上 `.srm` 文件出现 |
+| SRAM 读回 | 第二遍 `[sram] load SAVE_RAM <- …xxx.srm (16384 B)` |
+| core 加载 | `use /sdcard/cubegm//cores/libemu_XXX.so to run …` |
+| 渲染管线 | `DRM_IOCTL_MODE_ADDFB2` + `MODE_PAGE_FLIP` 计数 > 0（见 10.3） |
+
+### 13.4 已知边界（诚实清单）
+
+- **qemu 无法验证 evdev 完整匹配**：无 `/dev/input/event*`（shim 只合成 `/proc/bus/input/devices`）。真机插入手柄后按 13.3 口诀判读。
+- **升级模块不插桩**：`cgm_evdev_poll`/`cgm_sram_poll` 每帧/15ms 调，插桩会刷爆环形缓冲（build_diag.sh [2b/5] 注释）。
+- **`CGM_SKIP_MODEL_GATE=1`**：诊断版 wrap 故意重定向 libc 符号，"单侧未建模门禁"（防 diff_exec 假发散）对诊断版不适用，由 build_diag.sh 显式跳过；交付版不受影响。
+
 ### 10.5 命名纠错（R174，2026-10-13）—— 本节原名「hcge / fbdev_draw_frame 观测点」
 
 原名沿用自第 161 轮的 `driver_so.h` 符号族，但**第 162 轮实测证伪**（PROJECT-MEMORY.md 纪律 159）：

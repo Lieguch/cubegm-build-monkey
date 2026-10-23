@@ -11677,3 +11677,51 @@ R255/R256 重编只传 `CGM_UPGRADE=sram` ⇒ `ReadUSBJoy.c` 的 `#ifdef CGM_ENA
 2. **C2**：shim 合成 `/dev/input/event*`（一次性仪器投入）；
 3. **真机验收**（用户批准后）：按第六节判据清单一次做全；
 4. 卫生三项处置。
+
+> 追加前 `old_intact=True`（旧文 888333 B / sha 288d2251c2a5633b…）；由 `tools/append_progress.py` 原子追加。
+## R259（2026-10-23）—— ★★★★★ 板上诊断仪 both 化就绪：GitHub CI 构建链打通 + SD 投放包生成（真机验收就绪态）
+
+### 一、背景与目标
+
+R258 审计裁定"功能可用的替代二进制已就绪"，真机验收前最后一块拼图 = **设备端诊断仪**
+（DIAG-RUNBOOK.md 定义：函数级轨迹 + 65 个 libc wrap + 崩溃现场，全编进 rkgame 自己，
+因为启动链全是原厂文件、红线不可动 ⇒ 没有 LD_PRELOAD 注入点）。用户指令：把它准备好。
+
+### 二、改造内容（4 项）
+
+| # | 改动 | 文件 |
+|---|---|---|
+| 1 | `CGM_UPGRADE` 解析规则抽成共享库（纪律 69），交付版与诊断版共用；六种取值 `--print-cflags` 逐一验证等价 | `tools/cgm_upgrade_flags.sh`（新）+ `tools/link_audit.sh`（改用） |
+| 2 | `build_diag.sh` 支持 `CGM_UPGRADE`（**默认 both** ⇒ 第十一节 evdev/sram 观测点在场）；新增 [2b/5] 编升级模块（**不插桩**：poll 每帧/15ms 调会刷爆环形缓冲）；新增 [4.5/5] 上游组件缺则构建 | `tools/build_diag.sh` |
+| 3 | 新增 GitHub Actions 诊断版构建流水线（**CNB 云开发额度耗尽后的正式构建路径**，合规：CI 只用于正式构建产出物）；触发路径含 src/diag、src/upgrade、build_diag/diag_wraps/cgm_upgrade_flags/**link_full**/fetch_bootlin63、workflow 自身 | `.github/workflows/diag-build.yml`（新） |
+| 4 | `stage_sd_diag.py` 补 `controller_db.txt`（both 诊断版运行时依赖，缺它 evdev 只走兜底映射）；README 重写为 both 验收场景（4 步投放 + 判据口诀 + 回退） | `tools/stage_sd_diag.py` |
+
+### 三、★ CI 构建链打通过程中抓出的**三个真实缺陷**（全部已修，均有铁证）
+
+| # | 缺陷 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | **诊断版 10-01 起就已编不出来**（静默 22 天） | `link_full.sh` 的 `ld.lld` 直驱路径（10-01 第 112 轮引入）**从未接收 `DIAG_LDFLAGS`** ⇒ wrap 标志丢失 ⇒ `undefined symbol: __real_open` 等 46 个 | lld 路径剥 `-Wl,` 前缀透传（`--wrap=` 形式）；不传时链接行逐字不变（fail-safe） |
+| 2 | 独立跑诊断构建缺上游组件 | `build_diag.sh` 假设 `build/upstream/*.o` 已存在（CI 全新 checkout 没有）⇒ `undefined: mxmlLoadFile/libiconv_open` | 加 [4.5/5]：缺则调 `build_upstream.sh`（幂等） |
+| 3 | “单侧未建模门禁”误杀诊断版 | 该门禁（防 diff_exec 假发散）把 wrap 重定向的 46 个 libc 符号全判"未建模"——对诊断版这是**设计前提**不是缺陷 | 加 `CGM_SKIP_MODEL_GATE=1` 开关（默认不跳，fail-closed），仅 `build_diag.sh` 设 |
+
+**另有两个我自引入的 workflow 假绿（已修，记入纪律）**：① `cmd \| tail` 吞 exit code；
+② GitHub Actions 默认 `bash -e` 下失败即中止脚本 ⇒ `rc=$?`/`tail`/`exit $rc` 根本不执行 ⇒ 必须 `\|\| rc=$?` 模式。
+
+### 四、最终状态（CI 全绿 + 本地复核）
+
+- **CI**：`diag-build.yml` run `39908481619` conclusion=**success**（7 步全绿；artifact `rkgame-diag`）。
+- **产物**：`build/rkgame.diag` sha256 **`b8e624c2fd80de5a`**（5,460,216 B）；本地 sha 与 CI 自记逐字节一致。
+- **本地独立复核**：诊断仪 6 关键符号 + `cgm_evdev_poll`/`cgm_evdev_ready`/`cgm_sram_poll`/`cgm_sram_bind`/`controller_db.txt`/`/sdcard/cubegm/_diag` **全部在场**；ABI 检查 PASS（e_machine/e_flags/interp/host-marks；DT_NEEDED 7 库与工厂同款）。
+- **SD 投放包**：`_sdcard_drop/`（7 文件）：`cubegm/rkgame`(b8e624c2) + `cubegm/controller_db.txt`(f14edcfd，与 golden 逐字节一致) + `cubegm/rkgame.probe` + `cubegm/_diag/cfg.ini`(level=3) + `READ-ME-FIRST.txt` + `DEPLOY-MANIFEST.txt`。
+- **DIAG-RUNBOOK.md**：新增 2.1（both 观测点在场矩阵）、2.2（CI 构建路径）、**十三节**（投放包内容表/投放回退/判据口诀/已知边界）。
+
+### 五、投放要点（回退与红线）
+
+- 备份 `cubegm/rkgame.factory.orig` → 覆盖 rkgame → **同时放 controller_db.txt** → 放 _diag/。
+- **不需要改 setting.xml**：启动链写死拉起 cubegm/rkgame；第九节 autorun 劫持仅用于"开机直进游戏"实验，与验收无关（已澄清，避免不必要动原厂文件）。
+- 回退：从 `.factory.orig` 还原 + 删 `controller_db.txt`/`_diag/` ⇒ 恢复原厂现场。
+
+### 六、下一步
+
+真机验收按 PROGRESS R258 第六节判据清单执行（一次做全）；判据口诀见 DIAG-RUNBOOK 13.3。
+C1（both 产物 diff_exec 全量 + 豁免登记）待 CNB 云开发额度恢复；C2（shim 合成 event*）可独立推进。
