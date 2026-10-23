@@ -22,6 +22,10 @@
 # 用法：
 #   CC="<zig> cc" OPT=-Os sh tools/build_diag.sh [输出路径]
 #   DIAG_LEVEL=2 影响不了产物，只影响设备上的 cfg.ini 默认值说明
+#   CGM_UPGRADE=both|sram|evdev|0（默认 **both**）—— R259：诊断版默认开 both，
+#     因为 DIAG-RUNBOOK 第十一节的 evdev/sram 观测点依赖升级模块在场；
+#     传 0 得纯净 1:1 诊断版（用于"交付口径本身出问题"的场景）。
+#     规则与交付版共用 tools/cgm_upgrade_flags.sh（纪律 69）。
 # ============================================================
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -42,6 +46,9 @@ OUT="${1:-$ROOT/build/rkgame.diag}"
 
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 WINROOT=$(winpath "$ROOT")
+# ★ R259：升级开关规则（与 link_audit.sh 共用唯一来源 tools/cgm_upgrade_flags.sh）
+CGM_UPGRADE="${CGM_UPGRADE:-both}"
+. "$(dirname "$0")/cgm_upgrade_flags.sh" || { echo "!! 缺 tools/cgm_upgrade_flags.sh" >&2; exit 14; }
 
 case "$CC" in
   *zig*) ARCH="-target arm-linux-gnueabihf -mfloat-abi=hard -mfpu=neon" ;;
@@ -51,6 +58,8 @@ esac
 FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 INST="-finstrument-functions"
 BASE="-c $OPT -w -Wno-error=implicit-function-declaration $ARCH $FIDELITY"
+# ★ R259：专有函数 + 升级模块的编译口径 = BASE + 升级宏/头（诊断仪自身**不用**它）
+PRIBASE="$BASE$CGM_DEFS $CGM_HDR"
 
 OBJD="$ROOT/build/diag_obj"      # 插桩后的专有函数对象
 SELFD="$ROOT/build/diag_self"    # 诊断仪自身（**不插桩**）
@@ -84,12 +93,28 @@ for f in "$ROOT"/src/proprietary/*/*.c; do
     [ -f "$f" ] || continue
     n=$((n + 1))
     b=$(basename "$f" .c)
-    if ! $CC $BASE $INST -I"$WINROOT/src/compat" "$(winpath "$f")" -o "$(winpath "$OBJD/$b.o")" 2>>"$ROOT/report/diag_cc_err.txt"; then
+    if ! $CC $PRIBASE $INST -I"$WINROOT/src/compat" "$(winpath "$f")" -o "$(winpath "$OBJD/$b.o")" 2>>"$ROOT/report/diag_cc_err.txt"; then
         bad=$((bad + 1)); FAILED="$FAILED $b"
     fi
 done
 echo "   插桩对象 $n 个，失败 $bad 个"
 [ "$bad" = "0" ] || { echo "!!! 有编译失败（$FAILED）—— 诊断产物不可信，中止" >&2; exit 6; }
+
+echo "== [2b/5] 编译升级模块（**不插桩**：poll 每帧/15ms 调，插桩会以每秒上百帧刷爆 65536 帧环形缓冲，冲掉真正的崩溃前历史）=="
+if [ "$CGM_UP_ANY" = "1" ]; then
+    for f in "$ROOT"/src/upgrade/*.c; do
+        [ -f "$f" ] || continue
+        b=$(basename "$f" .c)
+        [ "$b" = "selftest" ] && continue      # 自测 main 不进产物
+        if $CC $PRIBASE "$(winpath "$f")" -o "$(winpath "$OBJD/cgm_$b.o")" 2>>"$ROOT/report/diag_cc_err.txt"; then
+            echo "   ✓ cgm_$b.o（$(wc -c < "$OBJD/cgm_$b.o") B，未插桩，观测点在场）"
+        else
+            echo "   ✗ cgm_$b 编译失败："; sed -n '1,8p' "$ROOT/report/diag_cc_err.txt"; exit 6
+        fi
+    done
+else
+    echo "   （CGM_UPGRADE=0 ⇒ 纯净 1:1 诊断版，无 evdev/sram 观测点）"
+fi
 
 echo "== [3/5] 编译 xunzip（-finstrument-functions；zip 路径是重点观测区）=="
 DIAG_XU="$ROOT/build/diag_XUnzip.o"

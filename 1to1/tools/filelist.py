@@ -132,6 +132,9 @@ FILES = [
     ("golden/sdcard_min/controller_db.txt", "1to1/golden/sdcard_min/controller_db.txt"),
     (".github/workflows/1to1-verify.yml", ".github/workflows/1to1-verify.yml"),
     (".github/workflows/1to1-qemu-behav.yml", ".github/workflows/1to1-qemu-behav.yml"),
+    # ★ R259：设备端诊断版构建流水线（CNB 云开发额度耗尽后的正式构建路径）。
+    #   不登记 = 永远不会被推送 = 流水线不存在（白名单制，见 controller_db.txt 同款教训）。
+    (".github/workflows/diag-build.yml", ".github/workflows/diag-build.yml"),
     # ★ 2026-09-28：仓库根 `.cnb.yml`（CNB 云原生构建的声明式流水线）。
     #   为什么必须显式登记：CNB **只读仓库根**的 `.cnb.yml`；本项目镜像到
     #   `lieguch/cubeGM` 时其余文件都带 `1to1/` 前缀 ⇒ 不登记就永远不会被 CNB 读到。

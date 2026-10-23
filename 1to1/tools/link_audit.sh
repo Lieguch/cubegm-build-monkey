@@ -116,17 +116,11 @@ PER_TU_FLAGS="FUN_0000b6b0_TestLibz0=-fno-builtin-malloc"
 # ★ 头集合**排在组件 -I 之后**（这里只有 src/compat 在它前面，是故意的：compat 是我们的垫片）。
 CFLAGS="-c $OPT -w -Wno-error=implicit-function-declaration -I$WINROOT/src/compat ${CGM_HDR} ${EXTRA_INC:-} $CGM_FID_EXTRA $ARCH $FIDELITY"
 # ★★★ R254（2026-10-23）：目的 2 两项升级（SRAM 电池存档 / evdev 自适应手柄）**默认关**。
-#   打开方式：`CGM_UPGRADE=1` ⇒ 追加两个宏 + src/upgrade 头路径 + 编译 src/upgrade/*.c。
-#   不传 CGM_UPGRADE ⇒ 产物与 1:1 复刻**逐字节一致**（升级代码根本不进编译单元）。
-#   取值：sram | evdev | both | 1(=both)；空/0 = 全关。
-CGM_UP_ANY=0
-case ",${CGM_UPGRADE:-0}," in
-    *,sram,*|*,both,*|*,1,*) CFLAGS="$CFLAGS -DCGM_ENABLE_SRAM"; CGM_UP_ANY=1 ;; esac
-case ",${CGM_UPGRADE:-0}," in
-    *,evdev,*|*,both,*|*,1,*) CFLAGS="$CFLAGS -DCGM_ENABLE_EVDEV"; CGM_UP_ANY=1 ;; esac
-if [ "$CGM_UP_ANY" = "1" ]; then
-    CFLAGS="$CFLAGS -I$WINROOT/src/upgrade"
-fi
+#   ★ R259（纪律 69「同一规则禁止写两处」）：解析规则抽出到 tools/cgm_upgrade_flags.sh，
+#     build_diag.sh（设备端诊断仪）与本文件共用；改规则只改那一处。
+#   取值：sram | evdev | both | 1(=both)；空/0 = 全关。不传 ⇒ 产物与 1:1 逐字节一致。
+. "$(dirname "$0")/cgm_upgrade_flags.sh" || { echo "!! 缺 tools/cgm_upgrade_flags.sh" >&2; exit 14; }
+CFLAGS="$CFLAGS$CGM_DEFS $CGM_HDR"
 
 # ★★★★★ 2026-09-29：**本脚本是编译口径的唯一来源**（纪律 69「同一规则禁止写两处」）。
 #   别的门禁可以用 `sh tools/link_audit.sh --print-cflags xunzip` **读到同一份口径**。

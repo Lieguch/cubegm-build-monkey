@@ -1,0 +1,88 @@
+name: diag-build
+
+# ★ R259：设备端诊断版 rkgame.diag 的**构建流水线**。
+#   为什么进 CI（而不是只在 CNB 云开发编）：CNB 云开发额度是消耗品（2026-10-23 已耗尽），
+#   而 GitHub Actions 是部署架构内（约束 1：CNB 托管 + CNB 云开发 + GitHub 提交触发 CI 构建）
+#   的独立构建路径 ⇒ 诊断版这种"正式构建产出物"由它承担，符合"CI 只用于正式构建"的纪律。
+#   产出物 = upload-artifact「rkgame-diag」（rkgame.diag + sha256），供真机投放包制作。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upgrade:
+        description: 'CGM_UPGRADE (both|sram|evdev|0)'
+        required: false
+        default: 'both'
+  push:
+    paths:
+      - '1to1/src/diag/**'
+      - '1to1/src/upgrade/**'
+      - '1to1/tools/build_diag.sh'
+      - '1to1/tools/diag_wraps.sh'
+      - '1to1/tools/cgm_upgrade_flags.sh'
+      - '1to1/tools/fetch_bootlin63.sh'
+      - '.github/workflows/diag-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-diag:
+    name: 构建设备端诊断版 rkgame.diag
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 zig（与云上/本地同一工具链 ⇒ GLIBC 下限与崩溃形态可控）
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          chmod +x "$ZIG"
+          echo "CC=$ZIG cc" >> "$GITHUB_ENV"
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zigcache" >> "$GITHUB_ENV"
+          "$ZIG" version
+
+      # ★ 工厂同期真头（bootlin63）：与交付版同一套 sysroot 头，否则诊断版的
+      #   崩溃形态会与交付版不同 ⇒ 诊断结论失真（DIAG-RUNBOOK 第二节口径）。
+      - name: 抓取 Bootlin 2017.05 工厂同期真头
+        run: |
+          cd 1to1
+          sh tools/fetch_bootlin63.sh
+          test -d cache_tc/bootlin63 || { echo '::error::bootlin63 未就绪'; exit 1; }
+
+      # ★ 与交付版同一份 link_full.sh + factory_image.S（仓库内已提交），
+      #   唯一差别 = 插桩 + wrap + 诊断仪自身（build_diag.sh 内部处理）。
+      - name: 构建诊断版（CGM_UPGRADE 默认 both ⇒ evdev/sram 观测点全开）
+        run: |
+          cd 1to1
+          mkdir -p build report
+          UPGR="${{ github.event.inputs.upgrade || 'both' }}"
+          echo "CGM_UPGRADE=$UPGR"
+          PY=python3 CGM_UPGRADE="$UPGR" OPT=-Os sh tools/build_diag.sh build/rkgame.diag 2>&1 | tail -25
+
+      - name: 产物终检（诊断仪 7 符号 + 双升级观测点在场）
+        run: |
+          cd 1to1
+          ls -la build/rkgame.diag
+          sha256sum build/rkgame.diag | tee build/rkgame.diag.sha256
+          python3 - <<'PY'
+          d = open('build/rkgame.diag','rb').read()
+          need = [b'cgm_diag_boot', b'__wrap_open', b'__wrap_ioctl',
+                  b'__wrap___libc_start_main', b'__cyg_profile_func_enter', b'cgm_putline',
+                  # R259：both 诊断版的升级观测点（DIAG-RUNBOOK 第十一节）
+                  b'cgm_evdev_poll', b'cgm_evdev_ready', b'cgm_sram_poll', b'controller_db.txt']
+          miss = [n.decode() for n in need if n not in d]
+          if miss:
+              print('::error::诊断产物缺少关键符号: %s' % miss)
+              raise SystemExit(1)
+          print('诊断仪 6 关键符号 + evdev/sram 观测点全部在场')
+          PY
+
+      - name: 上传诊断版产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rkgame-diag
+          path: |
+            1to1/build/rkgame.diag
+            1to1/build/rkgame.diag.sha256
+          if-no-files-found: error
