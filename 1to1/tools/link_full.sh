@@ -284,6 +284,19 @@ if [ "${LINK_DRIVER:-lld}" = "lld" ]; then
         exit 3
     fi
     echo "  链接器（ld.lld）来自 = $ZIGEXE"
+    # ★★★ R259：诊断版 wrap 标志透传（2026-10-23 实测缺口）。
+    #   病灶：ld.lld 直驱路径自 2026-10-01（第 112 轮）引入起**从未接收 DIAG_LDFLAGS**
+    #   ⇒ 诊断版链接报 `undefined symbol: __real_open/__real___libc_start_main/...`
+    #   （__real_X 由链接器的 wrap 机制自动提供；没收到 -wrap 就没有）。
+    #   诊断版最后一次成功构建是 09-23（那时走 $CC 驱动路径，带 DIAG_LDFLAGS）。
+    #   修法：DIAG_LDFLAGS 的形式是 `-Wl,-wrap=SYM`（diag_wraps.sh 按 $CC 分派），
+    #   ld.lld 直驱要剥掉 `-Wl,` 前缀并归一为 lld 的 `--wrap=` 形式。
+    #   ★ 不传 DIAG_LDFLAGS（交付版/主链）⇒ 本变量为空 ⇒ 链接行逐字不变（fail-safe）。
+    DIAG_LD_LLD=""
+    if [ -n "${DIAG_LDFLAGS:-}" ]; then
+        DIAG_LD_LLD=$(printf '%s' "$DIAG_LDFLAGS" | sed 's/-Wl,//g; s/-wrap=/--wrap=/g')
+        echo "  诊断版 wrap（lld 形式）: $(printf '%s' "$DIAG_LD_LLD" | wc -w) 个"
+    fi
     LLIBS="$(winpath "$LIBZ_W")
 $(winpath "$LGCC")
 $(winpath "$SL/libdl.so.2")
@@ -320,6 +333,7 @@ $(winpath "$LGCC")"
         --eh-frame-hdr \
         --build-id=none \
         -T "$(winpath "$ROOT/linker/factory.ld")" \
+        ${DIAG_LD_LLD:-} \
         "$(winpath "$SU/crt1.o")" $WOBJS $LLIBS \
         ${EXTRA_LDFLAGS:-} \
         -o "$(winpath "$OUT")" 2>"$ROOT/report/link_full_err.txt"
