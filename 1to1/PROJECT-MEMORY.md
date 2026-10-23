@@ -6594,3 +6594,36 @@ R255/R256 重编只传 `CGM_UPGRADE=sram` ⇒ `ReadUSBJoy.c` 的 `#ifdef CGM_ENA
 
 ### 6. 三处同步状态（本轮处置）
 本地工作区 = R258 最新；CNB/GitHub 由 `sync_mirror.py --remote cnb` + `push_1to1.py` 双工具同步（不走本地 commit，本地 git HEAD 停在 R187 是历史设计，非滞后事故）。
+
+---
+
+## R259（2026-10-23）—— 板上诊断仪 both 化就绪（真机验收就绪态）
+
+### 1. 交付物
+- **both 诊断版**：`build/rkgame.diag` sha256 `b8e624c2fd80de5a`（5,460,216 B），
+  由 GitHub Actions `diag-build.yml`（run 39908481673，success）构建，本地 sha 与 CI 自记一致。
+- **SD 投放包**：`_sdcard_drop/`（7 文件：rkgame + controller_db.txt + rkgame.probe + _diag/cfg.ini + READ-ME-FIRST + DEPLOY-MANIFEST + _PUT-ONLY 说明）。
+- 本地独立复核：诊断仪 6 关键符号 + `cgm_evdev_poll/ready` + `cgm_sram_poll/bind` + `controller_db.txt` + `_diag` 路径全部在场；ABI PASS（DT_NEEDED 7 库同工厂）。
+
+### 2. 改造（4 项）
+① `tools/cgm_upgrade_flags.sh`（新）= CGM_UPGRADE 规则唯一来源（纪律 69），link_audit/build_diag 共用，六种取值 --print-cflags 验证等价；
+② `build_diag.sh` 支持 CGM_UPGRADE（默认 both；[2b/5] 编升级模块**不插桩**；[4.5/5] 上游缺则构建）；
+③ `.github/workflows/diag-build.yml`（新）= CNB 云开发额度耗尽后的正式构建路径；
+④ `stage_sd_diag.py` 补 controller_db.txt（both 运行时依赖，缺它 evdev 只走兜底）。
+
+### 3. ★ 三个真实缺陷（已修，铁证在 PROGRESS R259）
+- **诊断版 10-01 起静默编不出**：link_full.sh 的 ld.lld 直驱路径（第 112 轮引入）从未收 DIAG_LDFLAGS ⇒ `__real_*` 全 undefined。修：剥 `-Wl,` 前缀透传 `--wrap=`。
+- 独立构建缺上游组件 ⇒ mxmlLoadFile/libiconv_open undefined。修：[4.5/5] 调 build_upstream.sh。
+- "单侧未建模门禁"误杀 wrap 诊断版。修：`CGM_SKIP_MODEL_GATE=1`（默认不跳，仅 build_diag 设）。
+- 另修我自引入的 2 个 workflow 假绿：`cmd | tail` 吞 rc；`bash -e` 下 rc=$? 不执行 ⇒ 必须 `|| rc=$?`。
+
+### 4. 部署要点（红线相关）
+- drop-in **不需要改 setting.xml**（启动链写死拉起 cubegm/rkgame）；第九节 autorun 劫持仅用于"直进游戏"实验。
+- 投放：备份 rkgame.factory.orig → 覆盖 rkgame → **同时放 controller_db.txt** → 放 _diag/。回退 = 还原 + 删这两个。
+- 判据口诀：`ioctl req 高字节=0x45 + read len=16` = evdev 通；`[evdev] db 载入 426 条` = 全量库装载；`[sram] flush/load ... .srm` = SRAM 读写。
+
+### 5. 阻塞与下一步
+- C1（both 产物 diff_exec 全量 + 4 函数豁免登记）：等 CNB 云开发额度恢复。
+- C2（shim 合成 /dev/input/event*）：解锁 evdev qemu 全链验证；同样需额度。
+- 真机验收：按 R258 第六节判据清单，一次做全（等用户）。
+- 卫生：`.pat`（GitHub PAT 明文在本机）待用户轮换；垃圾文件/死目录本轮处置。
