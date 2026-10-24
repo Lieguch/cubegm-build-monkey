@@ -89,10 +89,10 @@ gh_u4 FilePreEmu(char *param_1)
     }
     else {
     RARCH_LOG("FilePreEmu: OpenZipU OK\n");
-        GetZipItemA(iVar3,0xffffffff,&local_158);
+        GetZipItemA(iVar3,0xffffffff,(ZIPENTRY *)&local_158);   /* R284：304B 缓冲（=sizeof(ZIPENTRY)）；cast 对齐严格原型 */
         RARCH_LOG("zipcount %d\n",*(int *)(void *)local_158);
         if (local_158 < 2) {
-          iVar4 = GetZipItemA(iVar3,0,&local_158);
+          iVar4 = GetZipItemA(iVar3,0,(ZIPENTRY *)&local_158);   /* R284：同上 */
           RARCH_LOG("FilePreEmu: GetZipItemA0 result=%d\n",iVar4);
           if (iVar4 == 0) {
             strupr(auStack_154);

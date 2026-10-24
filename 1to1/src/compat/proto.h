@@ -163,7 +163,7 @@ extern void EmuCore_list(int param_1,gh_u4 param_2,int param_3);
 extern int SeletEmuCore(gh_byte *param_1); /* 调用点传 char[256]；体内作 mui_outputxy_t 的 gh_byte* 实参 */
 extern gh_u4 GetFileCore(char *param_1);
 extern gh_u4 ui_GetVolume(void);  /* R267：原 K&R 空参 → 精确原型（形参取自定义；编译器从此校验实参个数） */
-extern void SoundClose(int);  /* R267：原 K&R 空参 → 精确原型（形参取自定义；编译器从此校验实参个数） */
+extern void SoundClose(int param_1, ...);  /* R284：原 K&R → 变参原型。工厂调用点 1 参/2 参并存（语料：ui_deinit/filelist_run_game/mui_run_game 均 1 参，Mp3DecodeLoop 2 参）⇒ 非变参无法同时兼容；.text 实测与非变参一致（zig cc -Os ARM32 对拍） */
 extern void ui_deinit(void);  /* R267：原 K&R 空参 → 精确原型（形参取自定义；编译器从此校验实参个数） */
 extern void SoundPlay(int param_1,int *param_2);
 extern gh_u4 filelist_run_game(char *param_1);
@@ -221,10 +221,10 @@ extern gh_u4 TGB_Load(char *param_1,int param_2);
 extern gh_u4 prosystem_Load(char *param_1,int param_2);
 extern gh_u4 stella_Load(char *param_1,int param_2);
 extern gh_u4 PCSX_Load(char *param_1);
-extern gh_u4 FBA_Load(char *);  /* R267：原 K&R 空参 → 精确原型（形参取自定义；编译器从此校验实参个数） */
+extern gh_u4 FBA_Load(char *param_1, ...);  /* R284：原 K&R → 变参原型。工厂 run_game.c:35 传 1 参、:50 传 2 参（Filetype）⇒ 变参兼容 */
 extern gh_u4 Core_Load(char *param_1,char *param_2); /* 体内 sprintf("%s/cores/%s",...,param_2) → char* */
 extern gh_u4 Gpsp_Load(char *param_1,int param_2);
-extern gh_u4 run_game(char *);  /* R267：原 K&R 空参 → 精确原型（形参取自定义；编译器从此校验实参个数） */
+extern gh_u4 run_game(char *param_1, ...);  /* R284：原 K&R → 变参原型。工厂 mui_run_game.c:242 传 2 参（acStack_52c,0）⇒ 变参兼容 */
 extern void autorun(char *param_1,char *param_2);
 extern gh_u4 NES_Load(char *param_1,int param_2);
 extern gh_u4 GBC_Load(char *param_1,int param_2);

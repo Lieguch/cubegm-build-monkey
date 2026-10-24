@@ -1,20 +1,24 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ours=fc0ed0e7b974bf88c6104393b4e4fe7439ee5fbf09f544bad5fc97da758e0cbe
 # ruler=c85f9763c0b1226b702bce6f6988094a33199edbb89657ffada782b7952b3656
-# rebaseline: R219: 门禁本体（commit 3c689fb）自己的 R219 测量：PASS774/DIVERGE5/TRUNC5/DEADEQ6(合计790自洽)，产物 sha fc0ed0e7；ruler 因 R218 fp_key 越界归因修正由 d3c1a9d2 变 c85f9763
-# ★ 本台账由 tools/ledger_from_report.py 从**门禁环境自己的**测量报告机械重建（不人工挑选）—— 见文件头注释里的事故经过。
+# ours=2215fcea8e23b24915a774334ffad3b0118641a6d0a83f9fb5e642fb6ff29171
+# rebaseline: R284: restored 3 factory 2-arg call sites (run_game/SoundClose/FBA_Load now variadic prototypes), fixed 22 strict type errors, stb v1.22+noinline; void-fn set changed => ruler changed
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
+# ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
+Core_Load
 DisplayPage_list
 MP3InitDecoder
+TestLibz0
 TestRun
 TestUSBJoy
 WaitNMI
+_Z40unzlocal_CheckCurrentFileCoherencyHeaderP5unz_sPjPmS1_
 get_item_from_line
 mui_DisplayInputBuffer
 mui_DisplayLine_t
+mui_InitFont
 outputblankxy
 outputxy1
 progress

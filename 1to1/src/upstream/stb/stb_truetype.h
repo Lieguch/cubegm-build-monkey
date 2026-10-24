@@ -1900,7 +1900,8 @@ static void stbtt__csctx_rmove_to(stbtt__csctx *ctx, float dx, float dy)
    stbtt__csctx_v(ctx, STBTT_vmove, (int)ctx->x, (int)ctx->y, 0, 0, 0, 0);
 }
 
-static void stbtt__csctx_rline_to(stbtt__csctx *ctx, float dx, float dy)
+/* R204/R284：noinline —— 工厂 ELF 有 stbtt__csctx_rline_to 实体符号（72B）；不加则被 -Os 内联 ⇒ s48 FAIL。 */
+static __attribute__((noinline)) void stbtt__csctx_rline_to(stbtt__csctx *ctx, float dx, float dy)
 {
    ctx->x += dx;
    ctx->y += dy;
@@ -3114,7 +3115,8 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill, 
 }
 
 // directly AA rasterize edges w/o supersampling
-static void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e, int n, int vsubsample, int off_x, int off_y, void *userdata)
+/* R204/R284：noinline —— 工厂 ELF 有 stbtt__rasterize_sorted_edges.isra.16 实体；v2 rasterizer 不加则被内联 ⇒ s48 FAIL。 */
+static __attribute__((noinline)) void stbtt__rasterize_sorted_edges(stbtt__bitmap *result, stbtt__edge *e, int n, int vsubsample, int off_x, int off_y, void *userdata)
 {
    stbtt__hheap hh = { 0, 0, 0 };
    stbtt__active_edge *active = NULL;
@@ -4353,7 +4355,8 @@ static int stbtt__compute_crossings_x(float x, float y, int nverts, stbtt_vertex
    return winding;
 }
 
-static float stbtt__cuberoot( float x )
+/* R204/R284：noinline —— 工厂 ELF 有 stbtt__cuberoot 实体符号（84B）；不加则被内联进 stbtt__solve_cubic ⇒ s48 FAIL。 */
+static __attribute__((noinline)) float stbtt__cuberoot( float x )
 {
    if (x<0)
       return -(float) STBTT_pow(-x,1.0f/3.0f);

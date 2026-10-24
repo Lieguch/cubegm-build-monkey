@@ -23,7 +23,7 @@ gh_u4 gpsp_unzip(gh_u4 param_1,char *param_2)
   iVar1 = OpenZipU(param_2,0,2);
   if (iVar1 != 0) {
     RARCH_LOG("Open ZIP file ok\n");
-    iVar2 = GetZipItemA(iVar1,0,auStack_140);
+    iVar2 = GetZipItemA(iVar1,0,(ZIPENTRY *)auStack_140);   /* R284：ZIPENTRY* cast（304B 缓冲） */
     if (iVar2 == 0) {
       iVar2 = UnzipItem(iVar1,0,(void *)param_1,0,3);
       CloseZipU(iVar1);

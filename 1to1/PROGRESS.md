@@ -11783,3 +11783,126 @@ R273 的目标是"回退到第 6 版形态 + 关掉定时器"。R273-后记（§
 ### 七、真正卡交付的当前阻塞（诚实）
 
 不是 P0/P1/P2（大半已闭环），而是 **R273 把源码库卷进了"回退不一致"状态，且没有干净 git 锚点**。在重建干净基线并离线验证前，任何"再改一版"都只会重演第 11 轮。故本轮**不写代码、不上真机、不跑 CI**，只交付这份根因定位。
+
+> 追加前 `old_intact=True`（旧文 899084 B / sha dcbc3ff08172283e…）；由 `tools/append_progress.py` 原子追加。
+## R283（2026-10-24）—— ★★★ 推送通道纠错 + B6A 修复推送 main + CI 手动触发
+
+### 一、R282 的 CI 失败真因：不是代码，是**推错了分支**
+
+R282（stb_truetype v1.26→v1.22）本地全绿，但 GitHub CI `1to1-verify #303` / `1to1-qemu-behav #272`
+**双双 32-54 秒快速失败**（P2-A stb_truetype 版本锁定 job 报 48 errors）。
+
+取证链：
+1. WebFetch GitHub Actions 页：R278-R282 五个 commit 的 master 分支运行全部 32-54s 失败；
+   而 main 分支 `1to1-verify #299`（手动触发）**success 8m32s**。
+2. workflow 每一步都 `cd 1to1` 后跑 `tools/...`；master 分支是**根布局** ⇒ `cd 1to1` 必败。
+3. `tools/push_1to1.py` 头部文件映射证实：本地根目录 → 远端 **main** 分支的 `1to1/` 前缀
+   （`filelist.py`：`REMOTE_PREFIX = '1to1'`）。
+
+⇒ 双错：① 分支错（权威是 **main**）；② 布局错（必须挂 `1to1/` 前缀）。
+⇒ 此前 R275 轮的 CI success 是走 push_1to1.py → main 的；本轮我图省事直接 git push，自建了坏分支。
+
+### 二、修复动作（全部已完成）
+
+| 动作 | 结果 |
+|---|---|
+| `python3 tools/push_1to1.py` 增量推送 | main = `27bb67b3fe18`；上传 64 blob / 跳过 935；**VERIFY 999/999 blobs match** |
+| 关键文件就位 | `1to1/src/upstream/stb/stb_truetype.h`（191,757 B，v1.22）+ 全部 R276-R282 更改 |
+| 删除远端 master | `git push github --delete master`（我误建的根布局分支，无价值） |
+| 手动触发 CI | workflow_dispatch API（`{"ref":"main"}`）→ `1to1-verify.yml` + `1to1-qemu-behav.yml` 均 204 |
+
+### 三、为什么手动触发是必要的（机制事实，非遗漏）
+
+`push_1to1.py` 走 **Git Data API** 更新 ref ⇒ **不产生 push 事件** ⇒ GitHub Actions 的
+`on: push` 不触发。这是 API 更新的固有语义，不是漏配置。项目既有做法即手动
+workflow_dispatch（今日 17:25 的 #299 先例）。
+
+### 四、B6A 修复的验证状态
+
+- 本地（本机，zig 0.16.0 + Bootlin63）：arity 214/214 零错误 + link_full 12 道门禁全 PASS，
+  产物 `build/rkgame.rebuilt.elf` sha256 `1c71ab45...`（5,499,508 B）。
+- CI（main，刚触发）：`1to1-qemu-behav` 将验证 **B6A frame_hash_abi** 是否与 factory
+  `dfdaf563` 收敛（stb v1.22 对齐后的预期）。
+- 预期时长：1to1-verify ~9 min；1to1-qemu-behav ~17-20 min。
+
+### 五、下一步
+
+1. 收 CI 结果：B6/B6A 全绿 ⇒ 按 R274 铁律进真机验收（7 项判据一次做全）；
+   仍红 ⇒ 下载 artifact 逐帧对拍定位残余差异。
+2. 纪律已入 PROJECT-MEMORY §纪律 178：**GitHub 侧唯一通道 = push_1to1.py → main；禁止直接
+   git push github master**。
+
+> 追加前 `old_intact=True`（旧文 901938 B / sha 3df4c41088837b47…）；由 `tools/append_progress.py` 原子追加。
+## R284（2026-10-24）—— ★★★★★ 推送通道纠错后首轮 CI 的 6 个失败逐条根因 + 全修 + rebaseline
+
+### 一、CI 结果（main @ 27bb67b3fe，手动 dispatch）
+
+`1to1-verify #304/#305` 失败，`门禁总账` 报 **6 步失败**：s05 / s20 / s26 / s36 / s45 / s48
+（s45 是 s36 的下游 casualty：s36 exit 3 未产出 `report/_rows.json`）。
+`1to1-qemu-behav #273/#274` 失败于 step 12 行为差分（B6 诚实红 + **B6A 仍分歧**，见七）。
+
+### 二、逐条根因（全部有取证）
+
+| 门禁 | 根因 | 证据 |
+|---|---|---|
+| **s05** 调用点实参对拍 | R275 把 3 处调用改成 1 参，**工厂调用点是 2 参** | 语料 `mui_run_game.c:242` = `run_game(acStack_52c,0)`；`Mp3DecodeLoop.c:34` = `SoundClose(param_1,piVar4+1)`；`run_game.c:50` = `FBA_Load(param_1,Filetype)`（同文件 :35 是 1 参） |
+| **s20** 重建编译（严格类型轨） | proto.h.strict 暴露 **22 处真实类型错**（7 文件）：`gh_u1[304]` 缓冲传 `ZIPENTRY*`；`&DAT_002dd860` 传 `char*` | 本地用同一口径复现，与 CI 逐条一致（`report/_r284_strict_werror.txt`） |
+| **s26** 上游 API 对拍 | v1.22 **没有** SVG API（`FindSVGDoc`/`GetCodepointSVG`/`GetGlyphSVG`/`GetKerningTable*` 是 **v1.23** 引入）⇒ 门禁自证锚点失效 + 台账多 5 行 | 本地 `grep` 产物符号确认不存在；P2-A 报告 v1.22 为最佳结构匹配 |
+| **s48** 符号分类 | **v1.22 库存版丢了 R204 的 3 处 `noinline` 补丁** ⇒ 3 个 stb 实体符号被内联掉 | s48 报 `stbtt__csctx_rline_to` / `stbtt__cuberoot` / `stbtt__rasterize_sorted_edges.isra.16` 缺失 |
+| **s36** 差分棘轮 | 台账 ruler 与当前尺子不一致（**口径真变了**） | 见三（本轮把成因量化到 void 集合） |
+| **s45** 访存交叉核对 | 缺 `report/_rows.json` = s36 提前 exit 3 的下游后果 | 日志明示 "缺明细 ⇒ fail-closed" |
+
+### 三、s36 ruler 变更的**机械成因**（本轮新增结论）
+
+`ruler_protocol_fingerprint()` 含 `void-src = sha256(sorted(void_fns_from_sources()))`，
+而 `void_fns_from_sources()` 的正则是
+`(?:static|inline|STBTT_DEF|extern)* void NAME(` —— **不识别 `__attribute__((noinline))`**。
+
+| 变体 | void 函数数 | ruler |
+|---|---|---|
+| v1.26（旧台账时代） | — | `c85f9763` |
+| v1.22 无 noinline（R282 CI） | **102**（含 `stbtt__csctx_rline_to`） | `60f7623e` |
+| v1.22 + noinline（本轮） | **101** | `c85f9763` |
+
+⇒ 同一份"口径"下 ruler 稳定；本轮显式 `--rebaseline` 重记账（20 项：发散 8 + 不可判 12，
+`ours=2215fcea`），**未静默沿用旧账**。
+
+### 四、修复动作（全部落地）
+
+1. **s05**：3 处调用点恢复工厂 2 参；`SoundClose/FBA_Load/run_game` 改**变参原型**
+   `(T, ...)` —— 工厂调用点 1/2 参并存（SoundClose 4×1 参 + 1×2 参），非变参无法兼容。
+   **机器码中立已实测**：`void f(int)` vs `void f(int, ...)` 的 `.text` 逐字节相同（zig cc -Os ARM32）。
+2. **s20**：9 处 `GetZipItemA/FindZipItemA` 加 `(ZIPENTRY *)` cast；`mui_setting.c` 13 处
+   `&DAT_002dd860` 加 `(char *)` cast（改 globals 声明会波及字节偏移宏，选择最小面）。
+3. **s26**：`upstream_api_pending.txt` 删 5 行 SVG/kerning API（留档说明）；自证锚点
+   `stbtt_FindSVGDoc` → `stbtt__GetGlyphInfoT2`（v1.22 仍多出的那个）。
+4. **s48**：v1.22 重打 3 处 `noinline`（带 R204/R284 注释）；产物符号复验：
+   `stbtt__csctx_rline_to` 84B / `stbtt__cuberoot` 72B / `stbtt__rasterize_sorted_edges` 2160B 全部回来。
+5. **s36**：`--rebaseline` 重记账；**s45** 随 s36 恢复自动产出 `_rows.json`。
+
+### 五、本地验证（全绿，可复跑）
+
+| 判据 | 结果 |
+|---|---|
+| Arity 门禁 | **214/214 零错误** |
+| 严格类型轨（s20 同口径） | **0 error**（22 → 0） |
+| link_full 12 道门禁 | 全 PASS |
+| 产物 | `build/rkgame.rebuilt.elf` sha256 **`2215fcea8e23b249…`**（5,499,684 B） |
+| stb 符号 | 3 个 noinline 符号在场；5 个 SVG API 确认 absent |
+
+### 六、B6A 现状（未闭合，诚实红）
+
+- v1.22 使 rebuild 帧哈希从 `ae825958`（v1.26）变为 **`ffc51130`**（证明版本确实影响渲染），
+  但仍 ≠ 工厂 `dfdaf563`。
+- P2-A 结构指纹定版：**v1.22 最佳**（S1=10 S2=22 覆盖76/78 候选85；v1.23+ 均候选90）。
+  即工厂 ≈ v1.22 源码；残余像素差异更可能来自**编译器**（工厂 `.comment` = GCC 6.2.0，我方 zig clang）。
+- 下一单变量实验（待验证）：**仅上游 stb 用 Bootlin63 GCC 6.3 编译**（其余保持 zig），
+  看 B6A 是否收敛 + `stbtt__GetGlyphInfoT2` 是否如工厂一样被内联掉。
+
+### 七、下一步
+
+1. 推送本轮全部修改（push_1to1.py → main）+ 手动 dispatch CI，确认 6 个门禁转绿。
+2. 若 verify 全绿 ⇒ 静态/构建层收敛；B6A 单变量实验（stb 用 GCC 6.3）。
+3. 纪律 178 继续生效：**禁止 git push github master**。
+
+> 追加前 old_intact 由 append_progress.py 原子保证。

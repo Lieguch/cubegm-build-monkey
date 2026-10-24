@@ -7317,3 +7317,17 @@ tag=J a=<*GPIO0+0x50 原值> b=<*GPIO2+0x50 原值>
 3. **真机只回答硬件在环事实**（SPI 握手 / DRM 出图 / evdev 事件），不回答软件层 bug。
    （qemu 结构性限制见 DIAG-RUNBOOK §10.4：无 RK3036 模型、无 `/dev/input/event*`。）
 4. 每轮上真机前，在交付说明里**明确写清**：这版离线已验到什么、还剩哪几条只能真机验、对应判据是什么。
+
+## 纪律 178（2026-10-24，R283）★★★ GitHub 侧唯一通道 = push_1to1.py → main（1to1/ 前缀）；**禁止直接 git push github master**
+
+- 病灶：R278-R282 我直接 `git push github master`，CI 全部 32-54s 快速失败（P2-A job 48 errors）。
+  根因 = **双错**：① 推错分支（GitHub 侧权威分支是 **main**）；② 布局错（本地根目录在远端必须挂
+  `1to1/` 前缀，而 workflow 每一步都 `cd 1to1` 后跑 `tools/`；根布局分支的 `cd 1to1` 必然失败）。
+- 正确通道：`python3 tools/push_1to1.py`（Git Data API，本地根 → 远端 `1to1/`，增量推送 + blob SHA 逐
+  个校验 + 999/999 VERIFY）。它更新 main **不触发 push 事件** ⇒ 要跑 CI 必须 workflow_dispatch
+  （API POST /actions/workflows/<wf>.yml/dispatches {"ref":"main"}，token 在 .pat）。
+- 旁证：main 分支 CI #299 success（8m32s，手动触发）；master 分支 #300-#303 全 32-54s 失败。
+- 已处置：远端 master 分支已删除（我误建，无价值且每推必触发失败 CI、白烧 Actions 预算）。
+- 本地 master 分支保留作历史账本，但**永不直接推 github**。后续所有轮次：push_1to1.py → main →
+  需要验证时 workflow_dispatch。
+

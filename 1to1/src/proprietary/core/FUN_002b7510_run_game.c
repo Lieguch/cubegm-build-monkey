@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 run_game(char *param_1)
+gh_u4 run_game(char *param_1, ...)   /* R284：变参原型（工厂 mui_run_game 传 2 参）；.text 与非变参一致 */
 
 {
   char *pcVar1;
@@ -46,8 +46,8 @@ gh_u4 run_game(char *param_1)
     memset(&local_158,0,0x130);
     iVar3 = OpenZipU(param_1,0,2);
     if (iVar3 != 0) {
-      GetZipItemA(iVar3,0xffffffff,&local_158);
-      iVar4 = GetZipItemA(iVar3,0,&local_158);
+      GetZipItemA(iVar3,0xffffffff,(ZIPENTRY *)&local_158);   /* R284：ZIPENTRY* cast（304B 缓冲） */
+      iVar4 = GetZipItemA(iVar3,0,(ZIPENTRY *)&local_158);   /* R284：同上 */
       if (iVar4 == 0) {
         strupr(acStack_154);
         pcVar1 = (char *)GetFilenameExt(acStack_154);
@@ -55,7 +55,7 @@ gh_u4 run_game(char *param_1)
         if (1 < *(int *)(void *)local_158) {
           Filetype = Filetype | 1;
           CloseZipU(iVar3);
-          FBA_Load(param_1);   /* R268：FBA_Load 只有 1 个形参（多传的 Filetype 被丢弃） */
+          FBA_Load(param_1,Filetype);   /* R284：恢复工厂调用点（语料 run_game.c:50 = 2 参）；FBA_Load 为变参原型 */
           return 1;
         }
         iVar2 = GetCoreIndex(acStack_160);

@@ -101,7 +101,7 @@ void UpdateROM(char *param_1)
     __s = (void *)0x0;
   }
   else {
-    iVar2 = GetZipItemA(iVar1,0,auStack_158);
+    iVar2 = GetZipItemA(iVar1,0,(ZIPENTRY *)auStack_158);   /* R284：ZIPENTRY* cast（zipent 304B 缓冲，字节偏移宏依赖字节数组形态） */
     if (iVar2 == 0) {
       printf("%s,size:%08X,crc:%08X ",auStack_154,local_30,local_2c);
       printf("time:");

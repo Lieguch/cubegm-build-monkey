@@ -66,7 +66,7 @@ LAB_00023eb8:
     }
     else {
       RARCH_LOG("find %s ok!\n",acStack_42c);
-      GetZipItemA(hz,0xffffffff,ze);
+      GetZipItemA(hz,0xffffffff,(ZIPENTRY *)ze);   /* R284：ze 是 304B 全局缓冲（globals.h:4606） */
       zr = FindZipItemA(hz,"filelist.txt",1,&local_434,ze);
       if (zr == 0) {
         DAT_003af2a8 = malloc((ze_blob)._296_4_ + 1);
@@ -236,7 +236,7 @@ LAB_0002475c:
       }
       else {
         RARCH_LOG("find %s ok!\n",acStack_42c);
-        GetZipItemA(hz,0xffffffff,ze);
+        GetZipItemA(hz,0xffffffff,(ZIPENTRY *)ze);   /* R284：ze 是 304B 全局缓冲（globals.h:4606） */
         zr = FindZipItemA(hz,"filelist.txt",1,&local_434,ze);
         if (zr == 0) {
           if (DAT_003af2a8 != (void *)0x0) {

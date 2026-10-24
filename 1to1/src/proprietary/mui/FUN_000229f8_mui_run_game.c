@@ -244,7 +244,7 @@ LAB_00022d70:
   iVar8 = GetFileCore(acStack_52c);
   if (iVar8 == 0) {
     file_info_list_ext[0x80] = 0;
-    uVar3 = run_game(acStack_52c);   /* R267：run_game 只有 1 个形参 */
+    uVar3 = run_game(acStack_52c,0);   /* R284：恢复工厂调用点（语料 mui_run_game.c:242 = 2 参）；run_game 为变参原型 */
   }
   else {
     FilePreEmu(acStack_52c);

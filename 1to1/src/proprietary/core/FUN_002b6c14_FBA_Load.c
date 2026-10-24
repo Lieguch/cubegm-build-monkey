@@ -8,7 +8,7 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 FBA_Load(char *param_1)
+gh_u4 FBA_Load(char *param_1, ...)   /* R284：变参原型（工厂调用点 1/2 参并存）；.text 与非变参一致 */
 
 {
   int iVar1;

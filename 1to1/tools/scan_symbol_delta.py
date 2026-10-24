@@ -16,7 +16,7 @@
   · 工厂多出而我们缺失 ⇒ 报告（可能是我们漏了，也可能是被内联）。
   · 尺寸差异只做报告（同版本不同编译器/优化级别也会差，不能当判据）。
 
-自证（铁律 101）：内置锚点 —— `stbtt_FindSVGDoc` 必须被报为"我们多出"，
+自证（铁律 101）：内置锚点 —— `stbtt__GetGlyphInfoT2` 必须被报为"我们多出"（R284：stb 换 v1.22 后 SVG API 已不存在，锚点随之更换），
 `mxmlLoadFile` 必须两侧都在；不符就拒绝出结论。
 """
 import argparse
@@ -41,7 +41,7 @@ ALLOW_EXTRA = {
     'stbtt__bridge_placeholder': '本工程自建桥接，非上游 API',
 }
 
-ANCHORS_EXTRA = ['stbtt_FindSVGDoc']
+ANCHORS_EXTRA = ['stbtt__GetGlyphInfoT2']  # R284：stb v1.22 起无 SVG API（FindSVGDoc 等是 v1.23+），锚点换为仍多出的 GetGlyphInfoT2
 ANCHORS_BOTH = ['mxmlLoadFile', 'unzLocateFile', 'stbtt_InitFont']
 
 

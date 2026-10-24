@@ -22,13 +22,15 @@ mp3_unused_GetNextFrameInfo
 #   修复后 mxml_fd_read 两边配对成功，此条不再被报。
 #   已删：mxml_fd_read
 # ----------------------------------------------------------------
-stbtt_FindSVGDoc
-stbtt_GetCodepointSVG
-stbtt_GetGlyphSVG
-stbtt_GetKerningTable
-stbtt_GetKerningTableLength
 stbtt__GetGlyphInfoT2
 #   （新增 2026-10-19）工厂 ELF 确无此符号（无 isra/part 变体），重建侧有。
 #   推测：工厂 GCC 6.2 把它内联进 GetGlyphInfoT 的调用方；或工厂 stb 版本
 #   更旧（此函数在 v1.06+ RASTERIZER_VERSION==2 引入）。需在 CNB 云开发
 #   用正式产物复测后定性。
+
+# ---- 2026-10-24 R284：stb v1.26 -> v1.22（B6A 修复）后删行留档 -------------------
+#   stbtt_FindSVGDoc / stbtt_GetCodepointSVG / stbtt_GetGlyphSVG / stbtt_GetKerningTable /
+#   stbtt_GetKerningTableLength —— 这些是 **v1.23**（2020-02-02 'query SVG data for glyphs'）
+#   才引入的 API；v1.22 没有它们 ⇒ 换成 v1.22 后自动不再"多出"（反而向工厂靠拢：
+#   工厂二进制同样无这些符号）。已删 5 行。
+#   stbtt__GetGlyphInfoT2 保留在台账（v1.22 仍有此符号，工厂侧无 —— 疑 GCC 内联，待定性）。

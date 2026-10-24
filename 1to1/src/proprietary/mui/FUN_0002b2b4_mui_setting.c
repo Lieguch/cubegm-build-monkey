@@ -305,7 +305,7 @@ LAB_0002be88:
       memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
              (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
       mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,2);
-      iVar6 = dir_serial_list(iVar9,&DAT_002dd860);
+      iVar6 = dir_serial_list(iVar9,(char *)&DAT_002dd860);
       DisplayPage_list(iVar9,iVar10,iVar6);
       ForceFlashCount = 0;
       dispFlip(DAT_003af29c,DAT_003af2a0,DAT_003af2a4,DAT_003af2a0 << 1);
@@ -322,7 +322,7 @@ LAB_0002c008:
         if (iVar11 == 0) {
           if ((int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10) <= DAT_003af720) goto LAB_0002c094;
           iVar11 = 1;
-          iVar6 = dir_serial_list(DAT_003af278,&DAT_002dd860);
+          iVar6 = dir_serial_list(DAT_003af278,(char *)&DAT_002dd860);
         }
         else if (iVar9 < DAT_003af394) {
           if (iVar10 + iVar9 == 0) {
@@ -339,11 +339,11 @@ LAB_0002c008:
             iVar7 = 0;
             iVar14 = 0;
           }
-          iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
+          iVar6 = dir_serial_list(iVar14,(char *)&DAT_002dd860);
         }
         else {
           iVar14 = iVar9 - DAT_003af394;
-          iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
+          iVar6 = dir_serial_list(iVar14,(char *)&DAT_002dd860);
           iVar7 = iVar10;
         }
       }
@@ -363,7 +363,7 @@ LAB_0002c500:
                 m_menulog[sVar4 + 0x1bb] = 0;
                 myStrrstr(path,(char *)&DAT_002dd64c);
                 RARCH_LOG(DAT_002dd878,path);  /* 数组名而非 & 数组（类型正确、数值等价） */
-                iVar6 = dir_serial_list(0,&DAT_002dd860);
+                iVar6 = dir_serial_list(0,(char *)&DAT_002dd860);
                 iVar7 = 0;
                 iVar14 = 0;
               }
@@ -371,7 +371,7 @@ LAB_0002c500:
                 sVar4 = strlen(path);
                 path[sVar4] = 0x2f;
                 strcpy(path + sVar4 + 1,&file_info_list + iVar14);
-                iVar6 = dir_serial_list(0,&DAT_002dd860);
+                iVar6 = dir_serial_list(0,(char *)&DAT_002dd860);
                 iVar7 = 0;
                 iVar14 = 0;
               }
@@ -405,7 +405,7 @@ LAB_0002c1dc:
               sVar4 = strlen(path);
               m_menulog[sVar4 + 0x1bb] = 0;
               myStrrstr(path,(char *)&DAT_002dd64c);
-              iVar6 = dir_serial_list(0,&DAT_002dd860);
+              iVar6 = dir_serial_list(0,(char *)&DAT_002dd860);
               iVar7 = 0;
               iVar14 = 0;
             }
@@ -421,7 +421,7 @@ LAB_0002c094:
             if (iVar10 < 1) {
               if (iVar9 == 0) goto LAB_0002c094;
               iVar14 = iVar9 + -1;
-              iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
+              iVar6 = dir_serial_list(iVar14,(char *)&DAT_002dd860);
               iVar7 = 0;
             }
             else {
@@ -446,19 +446,19 @@ LAB_0002c094:
           if (iVar11 == 0) {
             if (DAT_003af720 <= (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10)) goto LAB_0002c094;
             iVar11 = 1;
-            iVar6 = dir_serial_list(DAT_003af278,&DAT_002dd860);
+            iVar6 = dir_serial_list(DAT_003af278,(char *)&DAT_002dd860);
           }
           else {
             iVar7 = iVar6 + -1;
             if (iVar10 + iVar9 + DAT_003af394 < iVar7) {
               iVar14 = iVar9 + DAT_003af394;
-              iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
+              iVar6 = dir_serial_list(iVar14,(char *)&DAT_002dd860);
               iVar7 = iVar10;
             }
             else {
               iVar14 = iVar9 + DAT_003af394;
               if (iVar14 < iVar7) {
-                iVar6 = dir_serial_list(iVar14,&DAT_002dd860);
+                iVar6 = dir_serial_list(iVar14,(char *)&DAT_002dd860);
                 iVar7 = iVar7 - iVar14;
               }
               else if (DAT_003af720 < (int)(gh_uint)*(gh_ushort *)(DAT_003af294 + 10)) {
@@ -469,7 +469,7 @@ LAB_0002c094:
                 DAT_003af27c = iVar10;
               }
               else {
-                iVar6 = dir_serial_list(0,&DAT_002dd860);
+                iVar6 = dir_serial_list(0,(char *)&DAT_002dd860);
                 iVar7 = 0;
                 iVar14 = 0;
               }
@@ -641,7 +641,7 @@ LAB_0002c7b8:
           }
           else {
             if (iVar6 + -1 <= iVar10 + iVar9) goto LAB_0002c094;
-            iVar6 = dir_serial_list(iVar9 + 1,&DAT_002dd860);
+            iVar6 = dir_serial_list(iVar9 + 1,(char *)&DAT_002dd860);
             iVar7 = iVar10;
             iVar14 = iVar9 + 1;
           }

@@ -84,7 +84,7 @@ LAB_00025144:
     }
     else {
       RARCH_LOG("find %s ok!\n",acStack_42c);
-      GetZipItemA(hz,0xffffffff,ze);
+      GetZipItemA(hz,0xffffffff,(ZIPENTRY *)ze);   /* R284：ze 是 304B 全局缓冲 */
       zr = FindZipItemA(hz,"fileinfo.txt",1,(int *)&local_430,ze);
       if (zr == 0) {
         DAT_003af2ac = malloc((ze_blob)._296_4_ + 1);
