@@ -1,0 +1,8 @@
+# check_argcount 基线（R262）：已登记、待逐点核对工厂实参的调用点
+# 格式：相对路径|函数名|实参个数|形参个数
+src/proprietary/core/FUN_00021aa4_EmuCore_Line.c|EmuCore_Blank|3|4
+src/proprietary/input/FUN_0002a00c_JoystickTest.c|mui_DispBlock|3|4
+src/proprietary/input/FUN_0002a00c_JoystickTest.c|mui_UnDispBlock|3|4
+src/proprietary/misc/FUN_00021774_DisplayLine_list.c|outputblankxy|3|4
+src/proprietary/mui/FUN_0002b2b4_mui_setting.c|mui_DispBlock|3|4
+src/proprietary/mui/FUN_0002ff8c_PauseMenu.c|mui_DispBlock|3|4

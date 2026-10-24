@@ -82,6 +82,7 @@ static int      g_prof_n;
 static int      g_db_loaded;
 
 static int g_fd[4] = { -1, -1, -1, -1 };
+
 static unsigned int g_key[4];
 static int g_btn_code[4][32];     /* 序号 → keycode */
 static int g_btn_n[4];
@@ -237,6 +238,10 @@ int cgm_evdev_open(int slot)
     struct dirent *e;
     if (slot < 0 || slot > 3) return -1;
     if (g_fd[slot] >= 0) return g_fd[slot];
+    /* ★★★ R272（回退到第 6 轮形态）：这里曾有"失败退避 1 s"的早退。
+     *   第 6 轮（无退避、无去重）实测：tag=K=549、用户证实"按键无迟滞"；
+     *   第 7/9 轮（有退避+去重）实测：tag=K=0。用户明确要求"在第 6 轮基础上只修间歇重启"，
+     *   因此把这段改动整体撤回，恢复第 6 轮行为。 */
     /* ★ R257：懒加载 controller_db.txt（幂等）。此前 load_db 只在 cgm_evdev_init 里被调，
      *   而主链 ReadUSBJoy 只调 cgm_evdev_poll→cgm_evdev_open，从不调 cgm_evdev_init
      *   ⇒ 426 条 profile 从未装载，match_prof 恒返回 NULL，只剩兜底映射（全量库形同虚设）。 */
@@ -266,6 +271,11 @@ int cgm_evdev_open(int slot)
         memset(&id, 0, sizeof id);
         if (ioctl(fd, EVIOCGID, &id) < 0) got = -1;
         if (got < 0 || !is_gamepad(keyb, absb)) { close(fd); continue; }
+        /* ★★★ R272（回退到第 6 轮形态）：这里曾有"同一台设备只分给一个 slot"的去重，
+         *   导致 slot1..3 打不开、只能走工厂 jsdev 路径。第 6 轮没有这段，四个 slot 各自
+         *   打开同一台设备、各自有条事件队列 —— 实测按键正常。故撤回。
+         *   代价（已知）：下拉时四个队列各拿一份事件，可能出现 0x10|0x20 之类的组合值；
+         *   但那是第 6 轮"能用"的状态，先恢复可用，再单独评估是否值得改。 */
         pr = match_prof(id.vendor, id.product, name);
         g_match[slot] = pr;
         build_btn_order(slot, keyb);
@@ -278,7 +288,7 @@ int cgm_evdev_open(int slot)
         return fd;
     }
     closedir(d);
-    return -1;
+    return -1;   /* ★ R272：不再设退避时间戳（随去重一并撤回） */
 }
 
 int cgm_evdev_db_count(void) { return g_prof_n; }

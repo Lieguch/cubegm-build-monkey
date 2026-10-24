@@ -8,6 +8,11 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_ZIP
+/* 诊断版探针（原型与 src/diag/cgm_diag.h 一致）；交付版不编译 */
+extern void cgm_probe_zip(const char *path, void *handle, const void *retaddr);
+#endif
+
 gh_u4 * OpenZipU(void *param_1,gh_uint param_2,gh_uint param_3)
 
 {
@@ -35,8 +40,15 @@ gh_u4 * OpenZipU(void *param_1,gh_uint param_2,gh_uint param_3)
     puVar1 = _Znwj(8);
     puVar1[1] = (gh_u4)this;
     *puVar1 = 1;
+#ifdef CGM_DIAG_TRACE_ZIP
+    /* ★ R261：zip 打开结果 + 调用者地址 + key2 现值（诊断版专用；交付版零成本） */
+    if (param_3 == 2) cgm_probe_zip((const char *)param_1, puVar1, __builtin_return_address(0));
+#endif
     return puVar1;
   }
   _ZdlPv(this);
+#ifdef CGM_DIAG_TRACE_ZIP
+  if (param_3 == 2) cgm_probe_zip((const char *)param_1, 0, __builtin_return_address(0));
+#endif
   return (gh_u4 *)0x0;
 }

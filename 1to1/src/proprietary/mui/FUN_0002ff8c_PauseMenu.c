@@ -35,7 +35,7 @@ gh_u4 PauseMenu(void)
     local_70 = (void *)0x0;
   }
   else {
-    video_driver_set_colormode();
+    video_driver_set_colormode(1);   /* R267：工厂 30454/3057c `mov r0,#1` */
     iVar3 = this_frame._8_4_ * this_frame._4_4_;
     local_70 = malloc(iVar3 * 2);
     rgb8888_to_rgb565(local_70,this_frame._0_4_,iVar3 * 4);
@@ -55,7 +55,7 @@ gh_u4 PauseMenu(void)
     }
     memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
            (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
-    mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8);
+    mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,1);   /* R267：工厂 30070 `mov r3,#1` */
     if (__ptr == (gh_u2 *)0x0) {
       __ptr = malloc(0x96000);
     }

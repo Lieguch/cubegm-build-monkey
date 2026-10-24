@@ -8,9 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_INPUT
+extern void cgm_probe_tick(void);
+#endif
+
 gh_u4 ReadJoystick(void)
 
 {
+#ifdef CGM_DIAG_TRACE_INPUT
+  cgm_probe_tick();   /* ★ R266：UI 主循环心跳（卡死判定的唯一基准） */
+#endif
   gh_u4 uVar1;
   
   /* ★ R256：SRAM 每帧 poll 已挪到 Load_Proc2 游戏主循环。原挂在此 ReadJoystick()，

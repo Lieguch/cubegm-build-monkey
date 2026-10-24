@@ -98,7 +98,7 @@ LAB_000182c4:
             }
             if (local_228[0] == '\0') {
               strcpy(local_228,local_328);
-              strupr();
+              strupr(local_228);   /* R267：工厂此处 r0 = 上一条 strcpy 的目标缓冲 */
             }
             if (local_2a8[0] == '\0') {
               strcpy(local_2a8,local_328);

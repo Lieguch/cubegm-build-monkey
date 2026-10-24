@@ -105,7 +105,7 @@ LAB_000194ac:
         iVar14 = iVar13 * 0x404;
         if ((&DAT_003b2424)[iVar14] == '\0') {
           strcpy(&DAT_003b2424 + iVar14,&DAT_003b2324 + iVar14);
-          strupr();
+          strupr(local_f0);   /* R267：r0 = 上一条 strcpy 的目标 */
         }
         if ((&DAT_003b23a4)[iVar13 * 0x404] == '\0') {
           strcpy(&DAT_003b23a4 + iVar14,&DAT_003b2324 + iVar14);

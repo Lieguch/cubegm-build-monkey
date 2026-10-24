@@ -62,9 +62,11 @@ LAB_0002b3b4:
     mui_LoadUIResource(&DAT_003af294,"setting.raw");
   }
   iVar11 = 0;
-  memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
-  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
+  memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+         (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
+  /* ★ 2026-10-23（R262）第 4 实参修复：工厂该处 `mov r3,#1` ⇒ 块索引 1（不是省略）。
+   *   同函数后续调用依次是 2/3/4，构成"背景块 1,2,3,4"的序列 ⇒ 丢参数会画错块。 */
+  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,1);
   OutRect._16_4_ = 0x500;
   OutRect._20_4_ = 0x2d0;
   OutRect._8_4_ = 0;
@@ -140,8 +142,10 @@ LAB_0002b5dc:
       if (local_728 == m_ui) {
 LAB_0002b5f4:
         if (-1 < DAT_003af27c) {
-          UnDrawSelectBar(local_56c + DAT_003af27c * 4,(int)DAT_003af294,0);
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
+          UnDrawSelectBar(local_56c + DAT_003af27c * 4,(void *)DAT_003af294,0);
+          /* ★ 2026-10-23（R262）第 4 实参修复：工厂该处 `mov r3,#1` ⇒ 块索引 1（不是省略）。
+   *   同函数后续调用依次是 2/3/4，构成"背景块 1,2,3,4"的序列 ⇒ 丢参数会画错块。 */
+  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,1);
           mui_outputxy_t(DAT_003af29c,local_56c[DAT_003af27c * 4] + 8,
                          local_56c[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af700,DAT_003af704,
                          (gh_byte *)(&m_ui)[DAT_003af27c + 0x16]);
@@ -205,9 +209,11 @@ LAB_0002b828:
             piVar13 = piVar12;
           } while (local_56c + DAT_003af30c * 4 != piVar12);
         }
-        memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-               (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294);
+        memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+               (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
+        /* ★ 2026-10-23（R262）第 4 实参修复：工厂该处 `mov r3,#1` ⇒ 块索引 1（不是省略）。
+   *   同函数后续调用依次是 2/3/4，构成"背景块 1,2,3,4"的序列 ⇒ 丢参数会画错块。 */
+  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,1);
         if (0 < DAT_003af30c) {
           puVar15 = &DAT_003af2b8;
           iVar9 = 0;
@@ -296,8 +302,8 @@ LAB_0002be88:
       if (DAT_003af294 == (int *)0x0) {
         mui_LoadUIResource(&DAT_003af294,"setting.raw");
       }
-      memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-             (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
+      memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+             (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
       mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,2);
       iVar6 = dir_serial_list(iVar9,&DAT_002dd860);
       DisplayPage_list(iVar9,iVar10,iVar6);
@@ -478,8 +484,8 @@ LAB_0002c094:
               mui_LoadUIResource(&DAT_003af294,"setting.raw");
             }
 LAB_0002c7b8:
-            memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                   (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) *
+            memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+                   (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) *
                    2);
             mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,3);
             OutRect._8_4_ = 0;
@@ -503,8 +509,8 @@ LAB_0002c7b8:
                   if (DAT_003af294 == (int *)0x0) {
                     mui_LoadUIResource(&DAT_003af294,"setting.raw");
                   }
-                  memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) *
+                  memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+                         (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) *
                          (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
                   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af294,4);
                   OutRect._16_4_ = 0x500;
@@ -556,8 +562,8 @@ LAB_0002c7b8:
                   if (DAT_003af298 != 0) {
                     mui_LoadUIResource(&DAT_003af298,"type.raw");
                   }
-                  memcpy(DAT_003af29c,(void *)((int)DAT_003af294 + *DAT_003af294),
-                         (gh_uint)*(gh_ushort *)((int)DAT_003af294 + 6) *
+                  memcpy(DAT_003af29c,(void *)(DAT_003af294 + *DAT_003af294),
+                         (gh_uint)*(gh_ushort *)(DAT_003af294 + 6) *
                          (gh_uint)*(gh_ushort *)(DAT_003af294 + 1) * 2);
                   uVar8 = (gh_u4)GetWorkPath();
                   sprintf(acStack_42c,"%s/setting.xml",uVar8);

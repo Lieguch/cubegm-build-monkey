@@ -55,7 +55,9 @@ gh_u4 main(void)
       else {
         iVar2 = strcmp(autorunfile,"/JoystickTest");
         if (iVar2 == 0) {
-          JoystickTest();
+          /* R267：工厂 9cc4 `mov r0,r5`（r5 就是上面 strcmp 的那个串）⇒ 实参 = autorunfile。
+           *   原写法 `JoystickTest(autorunfile)` 让 r0 变成残留值。 */
+          JoystickTest((int)autorunfile);   /* 工厂把指针值直接放在 r0；形参类型是 int，故显式取整 */
         }
         else {
           autorun(autorunfile,autorundriver);

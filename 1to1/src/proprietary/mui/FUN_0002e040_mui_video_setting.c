@@ -83,8 +83,8 @@ LAB_0002e19c:
   if (DAT_003af2b8 == (int *)0x0) {
     mui_LoadUIResource(&DAT_003af2b8,"game.raw");
   }
-  memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-         (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
+  memcpy(DAT_003af29c,(void *)(DAT_003af2b8 + *DAT_003af2b8),
+         (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,5);
   /* R179 根修：12 槽数组化，槽名→blk 索引（见声明处注释） */
   blk[4]  = DAT_003af82c;                  /* local_a8 = param_2[4] */
@@ -142,7 +142,7 @@ LAB_0002e19c:
       if (uVar6 == DAT_003af27c) goto LAB_0002e5ac;
 LAB_0002e400:
       if (-1 < (int)DAT_003af27c) {
-        UnDrawSelectBar(local_88 + DAT_003af27c * 4,(int)DAT_003af2b8,0);
+        UnDrawSelectBar(local_88 + DAT_003af27c * 4,(void *)DAT_003af2b8,0);
         mui_outputxy_t(DAT_003af29c,local_88[DAT_003af27c * 4] + 8,
                        local_88[DAT_003af27c * 4 + 1] + 6,(gh_u1)DAT_003af840,DAT_003af844,
                        (gh_byte *)(_menu.item0 + DAT_003af27c * 8));
@@ -199,8 +199,8 @@ LAB_0002e544:
           goto LAB_0002e400;
         }
         if ((uVar1 != 0x2000) || (uVar8 == 0)) goto joined_r0x0002e5a8;
-        UnDrawSelectBar(local_88,(int)DAT_003af2b8,0);
-        UnDrawSelectBar(local_88 + 4,(int)DAT_003af2b8,0);
+        UnDrawSelectBar(local_88,(void *)DAT_003af2b8,0);
+        UnDrawSelectBar(local_88 + 4,(void *)DAT_003af2b8,0);
         uVar10 = (gh_uint)(uVar9 == 0);
         DrawSelectBar(local_88 + DAT_003af27c * 4);
         mui_outputxy_t(DAT_003af29c,local_88[0] + 8,local_88[1] + 6,(gh_u1)DAT_003af840,

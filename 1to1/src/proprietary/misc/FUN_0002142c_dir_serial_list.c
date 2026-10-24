@@ -8,7 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
-int dir_serial_list(int param_1)
+/* ★ R268：工厂调用点是**两实参**（2bef4 `mov r0,fp` + 2bef8 `add r1,pc,lit`）⇒ 定义少了第 2 形参。
+ *   TODO(1:1)：函数体目前仍用全局 `path` 做 scandir；工厂把路径放在 r1 传入，
+ *   后续应按 param_2 使用（已登记为语义待办，不影响编译门禁）。 */
+int dir_serial_list(int param_1, char *param_2)
 
 {
   char cVar1;

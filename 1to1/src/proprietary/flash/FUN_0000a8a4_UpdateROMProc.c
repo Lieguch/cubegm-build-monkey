@@ -46,7 +46,7 @@ gh_u4 UpdateROMProc(int param_1,int param_2)
         pvVar6 = __ptr;
         do {
           pvVar7 = (void *)((int)pvVar6 + 0x100);
-          iVar3 = spi_read((iVar1 - (int)__ptr) + (int)pvVar6,pvVar6);
+          iVar3 = spi_read((iVar1 - (int)__ptr) + (int)pvVar6,pvVar6, 0x100);   /* R267：工厂 a9e4 `mov r2,#0x100` */
           if (iVar3 < 0) goto LAB_0000aa00;
           pvVar6 = pvVar7;
         } while (pvVar7 != (void *)((int)__ptr + 0x10000));
@@ -74,7 +74,7 @@ gh_u4 UpdateROMProc(int param_1,int param_2)
           iVar3 = local_44;
           do {
             iVar8 = iVar3 + 0x100;
-            iVar3 = spi_write((iVar1 - local_44) + iVar3,iVar3);
+            iVar3 = spi_write((iVar1 - local_44) + iVar3,iVar3, 0x100);   /* R267：工厂 ab5c `mov r2,#0x100` */
             if (iVar3 < 0) break;
             iVar3 = iVar8;
           } while (iVar8 != local_44 + 0x10000);

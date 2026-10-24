@@ -16,7 +16,9 @@ gh_u4 PlayFrame(gh_u4 param_1,gh_u4 param_2)
   timeval local_18;
   
   gettimeofday(&local_20,(__timezone_ptr_t)0x0);
-  PlaySound(param_1,param_2);
+  /* ★ R264：工厂此处 r0 是"缓冲指针"（PlayFrame 的形参在 Ghidra 里被当成整数），
+   *   这里显式转成指针，语义与工厂一致（r0 原样透传给 driver.so）。 */
+  PlaySound((void *)param_1,param_2);
   gettimeofday(&local_18,(__timezone_ptr_t)0x0);
   iVar1 = ((local_18.tv_sec - local_20.tv_sec) * 1000000 + local_18.tv_usec) - local_20.tv_usec;
   if (8000 < iVar1) {

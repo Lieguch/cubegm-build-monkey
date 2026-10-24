@@ -30,7 +30,7 @@ void mui_SoundplayThread(void)
       AudioProcess();
       if (&UNK_000d2f00 < puVar3) {
         puVar3 = (gh_undef *)0x0;
-        SoundClose();
+        SoundClose(0);   /* R267：工厂 224c0/22740/22ab8 都是 `mov r0,#0` */
         (SoundPlayer_blob)._0_4_ = 0;
         (SoundPlayer_blob)._36_4_ = 0;
         usleep(1000);

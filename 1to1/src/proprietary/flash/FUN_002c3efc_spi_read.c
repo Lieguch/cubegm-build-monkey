@@ -8,7 +8,8 @@
 #include "globals.h"
 #include "proto.h"
 
-gh_u4 spi_read(gh_u4 param_1,gh_u4 param_2,gh_u4 param_3) /* 原厂 r0 = sfc_request 返回值 */
+/* ★ R268：r1 = 目标缓冲**指针**（工厂把指针放进 r1 传给 sfc_request），写成 gh_u4 才是错的。 */
+gh_u4 spi_read(gh_u4 param_1,void *param_2,gh_u4 param_3) /* 原厂 r0 = sfc_request 返回值 */
 
 {
   gh_u4 cmd[2];  /* ★★ 原厂：命令行是**连续的 2 个字**（cmd[0]=命令，cmd[1]=参数，sfc_request 会对 cmd[1] 置 bit1）。

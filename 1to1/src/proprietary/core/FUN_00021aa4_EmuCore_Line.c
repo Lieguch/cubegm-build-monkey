@@ -21,7 +21,7 @@ void EmuCore_Line(int param_1,int param_2,int param_3)
     return;
   }
   iVar1 = mui_outputxy_length_isra_19(OutRect._8_4_,(gh_u1)DAT_003af738,acStack_118);
-  EmuCore_Blank(OutRect._8_4_,DAT_003af744 * param_2 + OutRect._12_4_,iVar1 - OutRect._8_4_);
+  EmuCore_Blank(OutRect._8_4_,DAT_003af744 * param_2 + OutRect._12_4_,iVar1 - OutRect._8_4_, DAT_003af744);   /* R267：第 4 实参 = DAT_003af744（工厂 21b44 `ldr r3,[r6,#0x4e0]`，与 r1 的 mla 同一乘数） */
   mui_outputxy_t(DAT_003af29c,OutRect._8_4_,DAT_003af744 * param_2 + OutRect._12_4_,
                  (gh_u1)DAT_003af738,DAT_003af73c,acStack_118);
   return;

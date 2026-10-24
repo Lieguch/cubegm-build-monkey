@@ -8,6 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_INPUT
+extern void cgm_probe_io(int tag, unsigned a, unsigned b);
+#endif
+
 void InitRFJoystick(void)
 
 {
@@ -29,6 +33,9 @@ void InitRFJoystick(void)
   SPI_Write(0x25,0xa5);
   osDelay(0x32);
   iVar1 = SPI_Read(5);
+#ifdef CGM_DIAG_TRACE_INPUT
+  cgm_probe_io(iVar1 == 0xa5 ? 'T' : 'F', (unsigned)iVar1, 5);
+#endif
   if (iVar1 != 0xa5) {
     RARCH_LOG("RF_IC Test Fail !\n");
     return;
@@ -62,6 +69,9 @@ void InitRFJoystick(void)
   SPI_Write(0x25,(gh_u1)CHANNEL_TBL);
   RF_joy_key_blob._0_4_ = 0;
   RF_joy_key_blob._4_4_ = 0;
+#ifdef CGM_DIAG_TRACE_INPUT
+  cgm_probe_io('J', 1, 0);
+#endif
   pthread_create(&pStack_14,(pthread_attr_t *)0x0,(void *(*)(void *))RF_Joystick_timer_isr,(void *)0x0);
   return;
 }

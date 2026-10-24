@@ -8,7 +8,8 @@
 #include "globals.h"
 #include "proto.h"
 
-void mui_UnDispBlock(int param_1,int param_2,int *param_3,int param_4)
+/* ★ R268：r0=dst 指针（工厂同 mui_DispBlock），原重建写成 int。 */
+void mui_UnDispBlock(void *param_1,int param_2,int *param_3,int param_4)
 
 {
   int iVar1;

@@ -57,7 +57,7 @@ esac
 # ★ 与工厂/交付版**逐字一致**的保真标志（否则崩溃形态会变，诊断就失真了）
 FIDELITY="-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 INST="-finstrument-functions"
-BASE="-c $OPT -w -Wno-error=implicit-function-declaration $ARCH $FIDELITY"
+BASE="-c $OPT -w -Wno-error=implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types $ARCH $FIDELITY -DCGM_DIAG_TRACE_ZIP -DCGM_DIAG_TRACE_INPUT ${CGM_EXTRA_DEFS:-}"
 # ★ R259：专有函数 + 升级模块的编译口径 = BASE + 升级宏/头（诊断仪自身**不用**它）
 PRIBASE="$BASE$CGM_DEFS $CGM_HDR"
 
@@ -70,6 +70,17 @@ rm -f "$OBJD"/*.o "$SELFD"/*.o 2>/dev/null
 #   失败要快：旧版本把它放在 [4/5]，一个列表错误要先白编 213 个文件。
 #   门禁本体在 tools/diag_wraps.sh（单独一个文件 ⇒ 可独立反证）。
 . "$ROOT/tools/diag_wraps.sh" || exit 11
+
+# ★★★ R262：编译前先跑"实参个数"门禁（fail-closed）。
+#   理由（真机代价换来的）：7 处 `sunxi_gpio_output(...)` 丢了第 2 实参，
+#   而 proto.h 把它声明成 K&R 空参 ⇒ 编译器不校验 ⇒ 静默编过 ⇒ 位带 SPI 全乱
+#   ⇒ RF 按键芯片自检失败 ⇒ 按键线程不建 ⇒ 画面静止（第 4 轮真机症状）。
+#   这类缺陷 100% 静态可查，**不该再靠真机发现**。
+#   基线外的"实参 < 形参"调用点 → 直接失败（基线见 tools/argcount_baseline.txt）。
+if [ -x "$ROOT/tools/check_argcount.py" ] || [ -f "$ROOT/tools/check_argcount.py" ]; then
+    echo "== [0/5] 实参个数门禁 =="
+    "$PY" "$ROOT/tools/check_argcount.py" || { echo "!!! 实参门禁失败（见上）；这是硬失败" >&2; exit 12; }
+fi
 
 echo "== [1/5] 编译诊断仪自身（不插桩，避免递归）=="
 SELFOBJS=""
@@ -182,12 +193,14 @@ for s in S:
         k = d.index(b'\x00', stro + nmn)
         names.add(d[stro + nmn:k].decode('utf-8', 'replace'))
 need = ['cgm_diag_boot', '__wrap_open', '__wrap_ioctl', '__wrap___libc_start_main',
-        '__cyg_profile_func_enter', '__cyg_profile_func_exit', 'cgm_putline']
+        '__cyg_profile_func_enter', '__cyg_profile_func_exit', 'cgm_putline',
+        'cgm_probe_zip', 'cgm_probe_cmp']
 miss = [x for x in need if x not in names]
 if miss:
     print('   ✗ 诊断仪符号缺失: %s' % miss); sys.exit(1)
-print('   ✓ 诊断仪 7 个关键符号全部落进产物（cgm_diag_boot / __wrap_open / __wrap_ioctl /')
-print('     __wrap___libc_start_main / __cyg_profile_func_enter/exit / cgm_putline）')
+print('   ✓ 诊断仪 9 个关键符号全部落进产物（cgm_diag_boot / __wrap_open / __wrap_ioctl /')
+print('     __wrap___libc_start_main / __cyg_profile_func_enter/exit / cgm_putline /')
+print('     cgm_probe_zip / cgm_probe_cmp）')
 sys.exit(0)
 PYEOF
     then :; else echo "   ✗ 诊断仪未完整链入 —— 产物不可用于诊断（这必须是硬失败，否则设备上会静默 0 日志）"; exit 9; fi

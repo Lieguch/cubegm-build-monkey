@@ -2900,6 +2900,18 @@ int unzStringFileNameCompare (const char*fileName1,const char*fileName2,int iCas
  *   地址与工厂逐字节一致 ⇒ 两侧看到的 key2 内容必然相同，判定天然对齐。 */
 extern unsigned char key2[28];
 
+/* ★ 2026-10-23（R261）：诊断探针声明（只在 -DCGM_DIAG_TRACE_ZIP 的诊断版生效）。
+ *   为什么放在这里而不是 include 头文件：本文件在**三个环境**（本机 zig / CI arm-gcc /
+ *   云开发）都要能编，避免相对路径差异导致 `-I` 缺失。原型必须与 cgm_diag.h 一致。 */
+#ifdef CGM_DIAG_TRACE_ZIP
+/* ★ 必须 `extern "C"`：本文件是 C++ 编译单元，而探针实现在 cgm_diag.c（C 链接）。
+ *   实测（R261 第一次链接）：漏了它 ⇒ ld.lld 报
+ *   `undefined symbol: cgm_probe_cmp(int, char const*, int, char const*, int, void const*)`
+ *   —— 这是**好事**：符号自检把"探针没进产物"变成了硬失败，而不是设备上静默 0 日志。 */
+extern "C" void cgm_probe_cmp(int idx, const char *got, int gotlen,
+                              const char *want, int cmp, const void *retaddr);
+#endif
+
 uLong unzlocal_SearchCentralDir(LUFILE *fin)
 /* ★★★★ 1:1（第八个真实分歧·收尾）：**必须比对全局 `key2[8]`，不能用字面量 `PK`**。
  *
@@ -3096,30 +3108,44 @@ int unzlocal_GetCurrentFileInfoInternal (unzFile file, unz_file_info *pfile_info
 
 
 	// we check the magic
-	/* ★★★★★ 1:1（第 10 个真实分歧主体，R169 三探针定位·R170 反汇编语义重建）：
-	 * 工场 0x113ac-0x113f0：magic getLong 后与 **key2[12..15]（CD 签名 "PK\1\2"）**
-	 * 比较，相等 → 视为已校验继续（0x1153c）；不等再与 **key2[8..11]（LFH 签名
-	 * "PK\3\4"）** 比较，相等 → err 清 0 继续（0x113ec moveq）；都不等 →
-	 * err=UNZ_BADZIPFILE（0x113e8 mvnne r4,#102）。key2 指针经 GOT 槽（字面量
-	 * -0x1b4，与补六 filename XOR 同一 GOT 槽）间接取得。
-	 * ⇒ GAP 16.62「厂商删掉了 magic 比对」是**误读**（当时只看了 0x11128 起的
-	 * 字段循环，漏了 seek 成功分支 0x11118 beq 113ac 这段）：比对存在，只是
-	 * 比较对象从上游字面量 0x02014b50 换成了 key2 槽位。
-	 * ⇒ 沙箱内 key2[8..15]=0（旧 seed 只注入前 8B）⇒ 工厂 GoToFirst 必然
-	 * BADZIPFILE ⇒ current_file_ok=0 ⇒ unzLocateFile 直接 END_OF_LIST ⇒
-	 * find ui.cfg/menu.raw fail——与 R169 三探针实测（46B 头全 fread 成功、
-	 * 零 filename 读、零 strcmp）逐条吻合。 */
+	/* ★★★★★ 2026-10-23（R261-c，**真机反证后的定案**；修正 R170 对这段的一处误读）
+	 *
+	 * 工厂 0x113ac-0x113f0 的**真实语义**（逐条机器码）：
+	 *   113b4: bl unzlocal_getLong        ; 113bc: str r0,[sp,#8]   → [sp,#8] = err
+	 *   113c0: bne 1111c                  → 读失败直接走错误路径
+	 *   113cc: ldr r2,[sp,#20]            → r2 = 读到的 uMagic
+	 *   113d4: ldr r3,[r0,#12]            → key2[12..15] = "WQW\2"
+	 *   113d8: cmp r3,r2 ; beq 1153c      → **命中 WQW 容器**（厂商自有容器）
+	 *   1153c: ldr r4,[sp,#8] ; mov r3,#1 ; str r3,[sp,#8]   → **flag = 1**
+	 *   113e0: ldr r3,[r0,#8]             → key2[8..11] = "PK\1\2"
+	 *   113e8/113ec: 不等 ⇒ err=-102(BADZIPFILE)；相等 ⇒ err=0，**flag 仍是 0**
+	 *
+	 * 而 XOR 段的入口条件（0x1156c）是：
+	 *   1156c: ldr r3,[sp,#8] ; cmp r3,#0 ; beq 112b0   → **flag==0 就跳过 XOR**
+	 *
+	 * ⇒ 结论：**文件名 XOR 只对"WQW 容器"做，标准 PK zip 一个字都不碰。**
+	 *   这才是厂商能同时吃下两种包的原因：
+	 *     cubegm/ui_cn.zip  （PK 容器，**明文**文件名）→ 不解密，直接比对 ✓
+	 *     cubegm/003.dat    （WQW 容器，**密文**文件名）→ 解密后再比对 ✓
+	 *
+	 * ★ 我们此前把开关写成 `err==UNZ_OK`（= 无条件 XOR）⇒ 把明文名解成乱码
+	 *   ⇒ `FindZipItem` 一个都匹配不上 ⇒ 上层拿到 NULL 资源指针 ⇒ 崩在 mui_setting。
+	 *   **这是我方缺陷，不是资源包问题**（用户实测：原厂 rkgame 配同一批包一切正常）。
+	 *   第 3 轮真机探针 `ZIPNAME got=908ccb868382` 正是"明文 `ui.cfg` ^ 0xE5"的铁证。 */
+	int uVendorContainer = 0;
 	if (err==UNZ_OK)
 		if (unzlocal_getLong(s->file,&uMagic) != UNZ_OK)
 			err=UNZ_ERRNO;
 		else
 		{
 			uLong uKeyCD  = (uLong)key2[12] | ((uLong)key2[13]<<8)
-			              | ((uLong)key2[14]<<16) | ((uLong)key2[15]<<24);
+			              | ((uLong)key2[14]<<16) | ((uLong)key2[15]<<24);   /* "WQW\2" */
 			uLong uKeyLFH = (uLong)key2[8]  | ((uLong)key2[9]<<8)
-			              | ((uLong)key2[10]<<16) | ((uLong)key2[11]<<24);
+			              | ((uLong)key2[10]<<16) | ((uLong)key2[11]<<24);   /* "PK\1\2" */
 			if (uMagic!=uKeyCD && uMagic!=uKeyLFH)
 				err=UNZ_BADZIPFILE;
+			else if (uMagic==uKeyCD)
+				uVendorContainer = 1;        /* ← 工厂 0x1153c：只有这里置 1 */
 		}
 
 	if (unzlocal_getShort(s->file,&file_info.version) != UNZ_OK)
@@ -3193,9 +3219,13 @@ int unzlocal_GetCurrentFileInfoInternal (unzFile file, unz_file_info *pfile_info
 		 *   filename XOR 密钥(第 24B)。证据链与判决过程见 GAP.md G1·补六。
 		 * 沙箱里 key2[0x18]=0 ⇒ XOR 恒等、行为不变（C5 已实测差分不受影响）；
 		 * 真机上 key2[0x18]=K≠0 ⇒ 与工厂同构（明文^K），不再是我们与工厂的硬分歧。
-		 * ★ 精确复刻工厂的条件：进 XOR 段要求「lufread 恰好返回 1 且缓冲非空且
-		 *   size_filename>0」（0x11500 beq / 0x1156c-0x1157c），读满才 XOR。 */
-		if ((err==UNZ_OK) && (file_info.size_filename>0) && (fileNameBufferSize>0))
+		 * ★ 精确复刻工厂的条件：进 XOR 段要求「**本条记录的 magic == key2[12..15]
+		 *   （WQW 容器）** 且 lufread 恰好返回 1 且缓冲非空且 size_filename>0」
+		 *   —— 工厂 0x1156c 的第一条判断就是 `[sp,#8]`（WQW 标志）。
+		 *   ★★★ 2026-10-23 修正：旧写法用 `err==UNZ_OK` 当开关 ⇒ 标准 PK zip
+		 *   （明文文件名）也被 XOR ⇒ 全条目匹配失败 ⇒ 崩 mui_setting。
+		 *   真机第 3 轮 `ZIPNAME got=908ccb868382`（= 明文 ^ 0xE5）就是这条缺陷的指纹。 */
+		if (uVendorContainer && (file_info.size_filename>0) && (fileNameBufferSize>0))
 		{
 			unsigned char *k2p = (unsigned char *)key2 + 0x18;
 			unsigned char *fn = (unsigned char *)szFileName;
@@ -3349,14 +3379,32 @@ int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensitivity)
 
 	err = unzGoToFirstFile(file);
 
+#ifdef CGM_DIAG_TRACE_ZIP
+	uLong kIdx = 0;
+#endif
 	while (err == UNZ_OK)
 	{
 		char szCurrentFileName[UNZ_MAXFILENAMEINZIP+1];
+#ifdef CGM_DIAG_TRACE_ZIP
+		szCurrentFileName[0] = '\0';
+#endif
 		unzGetCurrentFileInfo(file,NULL,
 								szCurrentFileName,sizeof(szCurrentFileName)-1,
 								NULL,0,NULL,0);
+#ifdef CGM_DIAG_TRACE_ZIP
+		/* ★ R261：把"候选名的真实字节 + 比较结果"落盘。
+		 *   前两轮真机只能看到"读了 6 个名字" ⇒ 只能猜"没匹配"，无法区分
+		 *   "名字被改坏" / "want 传错" / "比较函数不一致"。这一行直接给出答案。 */
+		{ int cmp = unzStringFileNameCompare(szCurrentFileName,szFileName,iCaseSensitivity);
+		  int gl = 0; while (szCurrentFileName[gl] && gl < 64) gl++;
+		  cgm_probe_cmp((int)kIdx, szCurrentFileName, gl, szFileName, cmp,
+		                __builtin_return_address(0));
+		  if (cmp == 0) return UNZ_OK; }
+		kIdx++;
+#else
 		if (unzStringFileNameCompare(szCurrentFileName,szFileName,iCaseSensitivity)==0)
 			return UNZ_OK;
+#endif
 		err = unzGoToNextFile(file);
 	}
 

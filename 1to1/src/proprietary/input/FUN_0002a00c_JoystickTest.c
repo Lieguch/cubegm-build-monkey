@@ -165,7 +165,7 @@ LAB_0002b268:
     if ((uVar13 & 1) == 0) {
       if ((uVar10 & 1) == 0) goto LAB_0002a258;
       if ((P1_Table_blob)._64_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xfffffffe;
       bVar2 = true;
@@ -173,7 +173,7 @@ LAB_0002b268:
 LAB_0002a60c:
       if ((uVar10 & 8) == 0) goto LAB_0002a27c;
       if ((P1_Table_blob)._68_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xfffffff7;
       bVar2 = true;
@@ -181,7 +181,7 @@ LAB_0002a60c:
 LAB_0002a630:
       if ((int)uVar10 < 0) goto LAB_0002a28c;
       if ((P1_Table_blob)._72_4_ != 0) {
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 | 0x80000000;
       bVar2 = true;
@@ -189,7 +189,7 @@ LAB_0002a630:
 LAB_0002a654:
       if ((uVar10 & 0x1000) == 0) goto LAB_0002a2b0;
       if ((P1_Table_blob)._76_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xffffefff;
       bVar2 = true;
@@ -197,7 +197,7 @@ LAB_0002a654:
 LAB_0002a678:
       if ((uVar10 & 0x8000) == 0) goto LAB_0002a2d4;
       if ((P1_Table_blob)._80_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xffff7fff;
       bVar2 = true;
@@ -205,7 +205,7 @@ LAB_0002a678:
 LAB_0002a69c:
       if ((uVar10 & 0x2000) == 0) goto LAB_0002a2f8;
       if ((P1_Table_blob)._84_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xffffdfff;
       bVar2 = true;
@@ -213,7 +213,7 @@ LAB_0002a69c:
 LAB_0002a6c0:
       if ((uVar10 & 0x4000) == 0) goto LAB_0002a31c;
       if ((P1_Table_blob)._88_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xffffbfff;
       bVar2 = true;
@@ -221,7 +221,7 @@ LAB_0002a6c0:
 LAB_0002a6e4:
       if ((uVar10 & 0x100) == 0) goto LAB_0002a340;
       if ((P1_Table_blob)._92_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xfffffeff;
       bVar2 = true;
@@ -229,7 +229,7 @@ LAB_0002a6e4:
 LAB_0002a708:
       if ((uVar10 & 0x200) == 0) goto LAB_0002a364;
       if ((P1_Table_blob)._96_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xfffffdff;
       bVar2 = true;
@@ -237,7 +237,7 @@ LAB_0002a708:
 LAB_0002a72c:
       if ((uVar10 & 0x400) == 0) goto LAB_0002a388;
       if ((P1_Table_blob)._100_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar10 = uVar10 & 0xfffffbff;
       bVar2 = true;
@@ -245,7 +245,7 @@ LAB_0002a72c:
 LAB_0002a750:
       if ((uVar10 & 0x800) != 0) {
         if ((P1_Table_blob)._104_4_ != 0) {
-          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 & 0xfffff7ff;
         bVar2 = true;
@@ -254,7 +254,7 @@ LAB_0002a750:
     else {
       if ((uVar10 & 1) == 0) {
         if ((P1_Table_blob)._64_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 1;
         bVar2 = true;
@@ -264,7 +264,7 @@ LAB_0002a258:
 LAB_0002a260:
       if ((uVar10 & 8) == 0) {
         if ((P1_Table_blob)._68_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 8;
         bVar2 = true;
@@ -274,7 +274,7 @@ LAB_0002a27c:
 LAB_0002a284:
       if ((int)uVar10 < 0) {
         if ((P1_Table_blob)._72_4_ != 0) {
-          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 & 0x7fffffff;
         bVar2 = true;
@@ -284,7 +284,7 @@ LAB_0002a28c:
 LAB_0002a294:
       if ((uVar10 & 0x1000) == 0) {
         if ((P1_Table_blob)._76_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x1000;
         bVar2 = true;
@@ -294,7 +294,7 @@ LAB_0002a2b0:
 LAB_0002a2b8:
       if ((uVar10 & 0x8000) == 0) {
         if ((P1_Table_blob)._80_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x8000;
         bVar2 = true;
@@ -304,7 +304,7 @@ LAB_0002a2d4:
 LAB_0002a2dc:
       if ((uVar10 & 0x2000) == 0) {
         if ((P1_Table_blob)._84_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x2000;
         bVar2 = true;
@@ -314,7 +314,7 @@ LAB_0002a2f8:
 LAB_0002a300:
       if ((uVar10 & 0x4000) == 0) {
         if ((P1_Table_blob)._88_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x4000;
         bVar2 = true;
@@ -324,7 +324,7 @@ LAB_0002a31c:
 LAB_0002a324:
       if ((uVar10 & 0x100) == 0) {
         if ((P1_Table_blob)._92_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x100;
         bVar2 = true;
@@ -334,7 +334,7 @@ LAB_0002a340:
 LAB_0002a348:
       if ((uVar10 & 0x200) == 0) {
         if ((P1_Table_blob)._96_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x200;
         bVar2 = true;
@@ -344,7 +344,7 @@ LAB_0002a364:
 LAB_0002a36c:
       if ((uVar10 & 0x400) == 0) {
         if ((P1_Table_blob)._100_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x400;
         bVar2 = true;
@@ -354,7 +354,7 @@ LAB_0002a388:
 LAB_0002a390:
       if ((uVar10 & 0x800) == 0) {
         if ((P1_Table_blob)._104_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar10 = uVar10 | 0x800;
         bVar2 = true;
@@ -376,7 +376,7 @@ LAB_0002a390:
     if ((uVar14 & 1) == 0) {
       if ((uVar8 & 1) == 0) goto LAB_0002a3fc;
       if ((P1_Table_blob)._172_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xfffffffe;
       bVar2 = true;
@@ -384,7 +384,7 @@ LAB_0002a390:
 LAB_0002a814:
       if ((uVar8 & 8) == 0) goto LAB_0002a420;
       if ((P1_Table_blob)._176_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xfffffff7;
       bVar2 = true;
@@ -392,7 +392,7 @@ LAB_0002a814:
 LAB_0002a838:
       if ((int)uVar8 < 0) goto LAB_0002a430;
       if ((P1_Table_blob)._180_4_ != 0) {
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 | 0x80000000;
       bVar2 = true;
@@ -400,7 +400,7 @@ LAB_0002a838:
 LAB_0002a85c:
       if ((uVar8 & 0x1000) == 0) goto LAB_0002a454;
       if ((P1_Table_blob)._184_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xffffefff;
       bVar2 = true;
@@ -408,7 +408,7 @@ LAB_0002a85c:
 LAB_0002a45c:
       if ((uVar8 & 0x8000) == 0) {
         if ((P1_Table_blob)._188_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x8000;
         bVar2 = true;
@@ -418,7 +418,7 @@ LAB_0002a478:
 LAB_0002a480:
       if ((uVar8 & 0x2000) == 0) {
         if ((P1_Table_blob)._192_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x2000;
         bVar2 = true;
@@ -428,7 +428,7 @@ LAB_0002a49c:
 LAB_0002a4a4:
       if ((uVar8 & 0x4000) == 0) {
         if ((P1_Table_blob)._196_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x4000;
         bVar2 = true;
@@ -438,7 +438,7 @@ LAB_0002a4c0:
 LAB_0002a4c8:
       if ((uVar8 & 0x100) == 0) {
         if ((P1_Table_blob)._200_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x100;
         bVar2 = true;
@@ -447,7 +447,7 @@ LAB_0002a4c8:
     else {
       if ((uVar8 & 1) == 0) {
         if ((P1_Table_blob)._172_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 1;
         bVar2 = true;
@@ -457,7 +457,7 @@ LAB_0002a3fc:
 LAB_0002a404:
       if ((uVar8 & 8) == 0) {
         if ((P1_Table_blob)._176_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 8;
         bVar2 = true;
@@ -467,7 +467,7 @@ LAB_0002a420:
 LAB_0002a428:
       if ((int)uVar8 < 0) {
         if ((P1_Table_blob)._180_4_ != 0) {
-          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 & 0x7fffffff;
         bVar2 = true;
@@ -477,7 +477,7 @@ LAB_0002a430:
 LAB_0002a438:
       if ((uVar8 & 0x1000) == 0) {
         if ((P1_Table_blob)._184_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x1000;
         bVar2 = true;
@@ -487,7 +487,7 @@ LAB_0002a454:
 LAB_0002a880:
       if ((uVar8 & 0x8000) == 0) goto LAB_0002a478;
       if ((P1_Table_blob)._188_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xffff7fff;
       bVar2 = true;
@@ -495,7 +495,7 @@ LAB_0002a880:
 LAB_0002a8a4:
       if ((uVar8 & 0x2000) == 0) goto LAB_0002a49c;
       if ((P1_Table_blob)._192_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xffffdfff;
       bVar2 = true;
@@ -503,7 +503,7 @@ LAB_0002a8a4:
 LAB_0002a8c8:
       if ((uVar8 & 0x4000) == 0) goto LAB_0002a4c0;
       if ((P1_Table_blob)._196_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xffffbfff;
       bVar2 = true;
@@ -511,7 +511,7 @@ LAB_0002a8c8:
 LAB_0002a8ec:
       if ((uVar8 & 0x100) != 0) {
         if ((P1_Table_blob)._200_4_ != 0) {
-          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 & 0xfffffeff;
         bVar2 = true;
@@ -520,7 +520,7 @@ LAB_0002a8ec:
     if ((uVar14 & 0x200) == 0) {
       if ((uVar8 & 0x200) == 0) goto LAB_0002a508;
       if ((P1_Table_blob)._204_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar8 = uVar8 & 0xfffffdff;
       bVar2 = true;
@@ -528,7 +528,7 @@ LAB_0002a8ec:
 LAB_0002a7ac:
       if ((uVar8 & 0x400) == 0) goto LAB_0002a934;
       if ((P1_Table_blob)._208_4_ != 0) {
-        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+        mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
       }
       uVar15 = uVar8 & 0xfffffbff;
       uVar13 = uVar8;
@@ -548,7 +548,7 @@ LAB_0002a564:
     else {
       if ((uVar8 & 0x200) == 0) {
         if ((P1_Table_blob)._204_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x200;
         bVar2 = true;
@@ -558,7 +558,7 @@ LAB_0002a508:
 LAB_0002a510:
       if ((uVar8 & 0x400) == 0) {
         if ((P1_Table_blob)._208_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar15 = uVar8 | 0x400;
         uVar13 = uVar8;
@@ -569,7 +569,7 @@ LAB_0002a934:
         if ((uVar8 & 0x800) != 0) goto LAB_0002a944;
 LAB_0002a53c:
         if ((P1_Table_blob)._212_4_ != 0) {
-          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 | 0x800;
 LAB_0002a550:
@@ -581,7 +581,7 @@ LAB_0002a928:
       if ((uVar8 & 0x800) != 0) {
 joined_r0x0002a7e0:
         if ((P1_Table_blob)._212_4_ != 0) {
-          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr);
+          mui_UnDispBlock(DAT_003af29c,DAT_003af2a0 << 1,__ptr,1);   /* R268：补块索引 */
         }
         uVar8 = uVar8 & 0xfffff7ff;
         goto LAB_0002a550;

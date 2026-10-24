@@ -8,9 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_INPUT
+extern void cgm_probe_io(int tag, unsigned a, unsigned b);
+#endif
+
 gh_u4 dispFlip(void *param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
 
 {
+#ifdef CGM_DIAG_TRACE_INPUT
+  { static int dc; if (dc++ < 16) cgm_probe_io('D', (unsigned)DisplayThread, (unsigned)DisplayThreadflag); }
+#endif
   if (DisplayThread == 0) {
     if (video_driver_frame == (gh_code *)0x0) {
       return 0;
@@ -40,6 +47,12 @@ gh_u4 dispFlip(void *param_1,gh_u4 param_2,gh_u4 param_3,gh_u4 param_4)
   }
                     /* WARNING: Could not recover jumptable at 0x0000d9c4. Too many branches */
                     /* WARNING: Treating indirect jump as call */
+#ifdef CGM_DIAG_TRACE_INPUT
+  { static int dc2; if (dc2++ < 16) cgm_probe_io('d', (unsigned)param_2, (unsigned)param_3); }
+#endif
   gh_u4 ret = (*video_driver_frame)(param_1,param_2,param_3,param_4);
+#ifdef CGM_DIAG_TRACE_INPUT
+  { static int dc3; if (dc3++ < 16) cgm_probe_io('V', (unsigned)ret, 0); }
+#endif
   return ret;
 }

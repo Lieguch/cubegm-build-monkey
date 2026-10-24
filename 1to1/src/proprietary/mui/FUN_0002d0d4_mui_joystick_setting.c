@@ -40,10 +40,10 @@ LAB_0002d16c:
   if (DAT_003af2b8 == (int *)0x0) {
     mui_LoadUIResource(&DAT_003af2b8,"game.raw");
   }
-  memcpy(DAT_003af29c,(void *)((int)DAT_003af2b8 + *DAT_003af2b8),
-         (gh_uint)*(gh_ushort *)((int)DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
+  memcpy(DAT_003af29c,(void *)(DAT_003af2b8 + *DAT_003af2b8),
+         (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 6) * (gh_uint)*(gh_ushort *)(DAT_003af2b8 + 1) * 2);
   mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,6);
-  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
+  mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,8);
   /* R179 根修：12 槽数组化，槽名→blk 索引对照（见声明处注释） */
   blk[3]  = DAT_003af828;                  /* local_14c = param_2[3] */
   blk[7]  = DAT_003af820;                  /* local_13c = param_1[1] */
@@ -131,7 +131,7 @@ LAB_0002d38c:
           puVar9 = *(gh_undef **)(p_name + iVar10 * 4);
         }
 LAB_0002dbb4:
-        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,(int)DAT_003af2b8,8);
+        mui_DispBlock(DAT_003af29c,DAT_003af2a0 << 1,DAT_003af2b8,8);
         if ((local_194 & 0x10) == 0) {
           DrawSelectBar((int *)0x3afc44);
         }
@@ -168,7 +168,7 @@ LAB_0002da14:
               DrawSelectBar((int *)0x3afc44);
             }
             else {
-              UnDrawSelectBar((int *)0x3afc44,(int)DAT_003af2b8,8);
+              UnDrawSelectBar((int *)0x3afc44,(void *)DAT_003af2b8,8);
             }
             mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,
                            0x871c,(gh_byte *)*(gh_u4 *)(p_name + iVar10 * 4));
@@ -252,7 +252,7 @@ LAB_0002d454:
 LAB_0002d468:
         if ((int)DAT_003af27c < 1) {
           if (DAT_003af27c == 0) {
-            UnDrawSelectBar((int *)0x3afc44,(int)DAT_003af2b8,8);
+            UnDrawSelectBar((int *)0x3afc44,(void *)DAT_003af2b8,8);
             mui_outputxy_t(DAT_003af29c,(m_joysticktab_blob)._100_4_ + 0xf,(m_joysticktab_blob)._104_4_,0x2a,
                            0xffff,(gh_byte *)*(gh_u4 *)(p_name + iVar10 * 4));
           }
@@ -260,7 +260,7 @@ LAB_0002d468:
         else {
           iVar6 = iVar10 * 6;
 LAB_0002d6ac:
-          UnDrawSelectBar((int *)(DAT_003af27c * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
+          UnDrawSelectBar((int *)(DAT_003af27c * 0x84 + 0x3afc44),(void *)DAT_003af2b8,8);
           uVar5 = *(gh_uint *)(keyMapping + (DAT_003af27c + iVar6 + -1) * 4);
           if ((uVar5 & 0xffff0000) == 0) {
             iVar6 = DAT_003af27c * 0x84;
@@ -348,7 +348,7 @@ LAB_0002d57c:
       iVar4 = uVar3 + iVar10 * 6 + -1;
       if (*(int *)(keyMapping + iVar4 * 4) != iVar6) {
         *(int *)(keyMapping + iVar4 * 4) = iVar6;
-        UnDrawSelectBar((int *)(uVar5 * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
+        UnDrawSelectBar((int *)(uVar5 * 0x84 + 0x3afc44),(void *)DAT_003af2b8,8);
         DAT_003af27c = 0xffffffff;
         ChangeSeting = 1;
         if (uVar3 == 0xffffffff) goto LAB_0002d5f4;
@@ -394,7 +394,7 @@ LAB_0002d848:
         strcpy(pcVar2,*(char **)(KayName + uVar1 * 4));
       }
       else {
-        UnDrawSelectBar((int *)(uVar3 * 0x84 + 0x3afc44),(int)DAT_003af2b8,8);
+        UnDrawSelectBar((int *)(uVar3 * 0x84 + 0x3afc44),(void *)DAT_003af2b8,8);
         uVar3 = DAT_003af27c;
         uVar1 = *(gh_uint *)(keyMapping + (DAT_003af27c + iVar10 * 6 + -1) * 4);
         pcVar2 = local_128;

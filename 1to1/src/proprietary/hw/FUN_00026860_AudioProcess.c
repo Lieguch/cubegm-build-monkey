@@ -8,9 +8,16 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_INPUT
+extern void cgm_probe_io(int tag, unsigned a, unsigned b);
+#endif
+
 void AudioProcess(void)
 
 {
+#ifdef CGM_DIAG_TRACE_INPUT
+  { static int ac; if (ac++ < 16) cgm_probe_io('A', (unsigned)Soundplayflag, (unsigned)(SoundPlayer_blob)._0_4_); }
+#endif
   gh_byte bVar1;
   gh_byte bVar2;
   gh_u2 uVar3;
@@ -42,7 +49,7 @@ void AudioProcess(void)
     Mp3DecodeLoop(0);
   }
   if (((SoundPlayer_blob)._36_4_ != 0) && ((SoundPlayer_blob)._68_4_ = 0, (SoundPlayer_blob)._40_4_ == 1)) {
-    Mp3DecodeLoop();
+    Mp3DecodeLoop(0);
   }
   fVar18 = 0.0;
   local_74 = SoundBuffer;

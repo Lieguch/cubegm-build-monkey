@@ -8,7 +8,9 @@
 #include "globals.h"
 #include "proto.h"
 
-void UnDrawSelectBar(int *param_1,int param_2,int param_3)
+/* ★ R268：工厂 r2 = 源块表**指针**（函数体里 `param_2 + param_3*0x10` 就是按指针寻址），
+ *   原重建写成 int ⇒ 调用点传 DAT_003af2b8（gh_u4*）时编译器报"指针转整数"。 */
+void UnDrawSelectBar(int *param_1,void *param_2,int param_3)
 
 {
   int iVar1;

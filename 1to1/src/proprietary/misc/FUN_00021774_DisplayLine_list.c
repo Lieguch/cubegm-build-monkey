@@ -26,7 +26,7 @@ void DisplayLine_list(gh_u4 param_1,int param_2,int param_3)
     return;
   }
   iVar1 = mui_outputxy_length_isra_19(DAT_003af720,(gh_u1)DAT_003af738,acStack_110);
-  outputblankxy(DAT_003af720,DAT_003af744 * param_2 + DAT_003af724,iVar1 - DAT_003af720);
+  outputblankxy(DAT_003af720,DAT_003af744 * param_2 + DAT_003af724,iVar1 - DAT_003af720, DAT_003af744);   /* R267：第 4 实参 = DAT_003af744（工厂 21824 `ldr r3,[r6,#0x4e0]`） */
   mui_outputxy_t(DAT_003af29c,DAT_003af720,DAT_003af744 * param_2 + DAT_003af724,
                  (gh_u1)DAT_003af738,DAT_003af73c,acStack_110);
   return;

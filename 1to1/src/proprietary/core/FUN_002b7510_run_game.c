@@ -55,7 +55,7 @@ gh_u4 run_game(char *param_1)
         if (1 < *(int *)(void *)local_158) {
           Filetype = Filetype | 1;
           CloseZipU(iVar3);
-          FBA_Load(param_1,Filetype);
+          FBA_Load(param_1);   /* R268：FBA_Load 只有 1 个形参（多传的 Filetype 被丢弃） */
           return 1;
         }
         iVar2 = GetCoreIndex(acStack_160);

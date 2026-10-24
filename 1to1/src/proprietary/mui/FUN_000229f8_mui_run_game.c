@@ -31,7 +31,7 @@ gh_u4 mui_run_game(char *param_1)
   char local_1a8 [388];
   pthread_t *ppVar6;
   
-  RARCH_LOG("mui_run_game:%s\n",param_1);
+  RARCH_LOG("mui_run_game:%s\n");
   mui_extract_basename(RomName,param_1,0x100);
   RARCH_LOG("RomName:%s\n",RomName);
   sprintf(acStack_52c,"%s/%s",root_path,param_1);
@@ -132,7 +132,7 @@ LAB_00022f48:
               if (local_228[0] != '\0') goto LAB_00022f30;
 LAB_00022ff4:
               strcpy(local_228,local_328);
-              strupr();
+              strupr(local_2a8);   /* R267：r0 = 上一条 strcpy 的目标缓冲 */
               if (local_2a8[0] == '\0') goto LAB_0002301c;
 LAB_00022f3c:
               if (local_1a8[0] != '\0') goto LAB_00022f48;
@@ -244,7 +244,7 @@ LAB_00022d70:
   iVar8 = GetFileCore(acStack_52c);
   if (iVar8 == 0) {
     file_info_list_ext[0x80] = 0;
-    uVar3 = run_game(acStack_52c,0);
+    uVar3 = run_game(acStack_52c);   /* R267：run_game 只有 1 个形参 */
   }
   else {
     FilePreEmu(acStack_52c);

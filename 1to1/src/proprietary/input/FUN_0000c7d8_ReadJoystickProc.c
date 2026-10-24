@@ -8,6 +8,10 @@
 #include "globals.h"
 #include "proto.h"
 
+#ifdef CGM_DIAG_TRACE_INPUT
+extern void cgm_probe_io(int tag, unsigned a, unsigned b);
+#endif
+
 void ReadJoystickProc(void)
 
 {
@@ -25,6 +29,9 @@ void ReadJoystickProc(void)
   joy_key_blob._12_4_ = ReadUSBJoy(3);
   joy_key_blob._0_4_ = uVar1 | uVar3;
   joy_key_blob._4_4_ = uVar2 | uVar4;
+#ifdef CGM_DIAG_TRACE_INPUT
+  if (joy_key_blob._0_4_ != 0) cgm_probe_io('K', (unsigned)joy_key_blob._0_4_, (unsigned)joy_key_blob._4_4_);
+#endif
   joy_key_blob._8_4_ = uVar5;
   return;
 }

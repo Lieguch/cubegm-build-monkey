@@ -3,7 +3,11 @@
 # build_upstream.sh — 编译上游组件（1:1 符号级对齐工厂）
 #
 # 组件与证据：
-#   stb   : stb_truetype v1.26（头文件版本宏）→ C 编译
+#   stb   : stb_truetype v1.22（头文件版本宏）→ C 编译
+#           ★ B6A 修复（R277）：原厂 ≤1.22，CI 此前误用 v1.26。
+#           v1.26 (2021-08-28) "fix broken rasterizer" 会改变字体 rasterization 输出，
+#           导致 frame_hash_abi 与原厂分歧（Factory=dfdaf563 vs Rebuild=ae825958）。
+#           与原厂 ≤1.22 对齐，消除字体渲染版本差异。
 #   mxml  : mini-XML **v2.9**（工厂实证：mxmlDelete 真递归⇒<2.10；无 mxml_free⇒<2.10；
 #           无 2.11 新 API⇒<2.11；有 mxmlFindPath/mxmlGet*⇒>=2.7。换 2.9 后 DIVERGE 75->57）
 #           ★ 旧注释写「v3.3.1（16 个静态函数全集比对）」—— 那个判据**没有判别力**：
@@ -190,7 +194,7 @@ say() { echo "== $* =="; }
 if [ "${ICONV_ONLY:-0}" != "1" ]; then
 
 # ---------- 1) stb_truetype ----------
-say "stb_truetype v1.26"
+say "stb_truetype v1.22"
 SDL="$ROOT/src/upstream/stb"
 if $CC $CFLAGS -I"$(winpath "$SDL")" ${EXTRA_INC_TRAIL:-$CGM_HDR} "$(winpath "$SDL/stb_truetype_impl.c")" -o "$(winpath "$OUT/stb_truetype.o")" 2>"$OUT/_err_stb.txt"; then
     echo "  OK stb_truetype.o"

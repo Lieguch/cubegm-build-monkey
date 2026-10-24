@@ -25,14 +25,15 @@
 ### 约束 1 —— 部署架构（唯一形态）
 
 ```
-CNB 代码托管  +  CNB 云开发  +  GitHub 提交触发 CI 构建
+CNB 代码托管  +  CNB 云开发（额度耗尽 → ModelScope mynotebook 替代）  +  GitHub 提交触发 CI 构建
 ```
 
 - **CNB** = 代码托管（`lieguch/cubeGM`，main 分支为权威线）
-- **CNB 云开发** = 唯一的编译 / 测试 / 调试执行环境
-    
+- **CNB 云开发** = 编译 / 测试 / 调试执行环境（**额度已耗尽**，不可再用）
+
   （工作区是**临时**的 ⇒ 缓存不跨区 ⇒ 换区必须能自举，见 `XUNZIP-BOOTSTRAP.md`）
-- **GitHub 提交触发 CI** = 构建验证路径
+- **ModelScope mynotebook** = CNB 替代构建环境（CPU 8核32G，长期免费，持久化 /mnt/workspace，见 `MODELSCOPE_BUILD_GUIDE.md`）
+- **GitHub 提交触发 CI** = 构建验证路径（推送后自动运行 1to1-verify + 1to1-qemu-behav）
 - ❌ 不得提出"在本机开服务/端口/常驻进程"的方案
 - ❌ 不得把构建、差分、门禁跑到本机
 
@@ -11725,3 +11726,60 @@ R258 审计裁定"功能可用的替代二进制已就绪"，真机验收前最�
 
 真机验收按 PROGRESS R258 第六节判据清单执行（一次做全）；判据口诀见 DIAG-RUNBOOK 13.3。
 C1（both 产物 diff_exec 全量 + 豁免登记）待 CNB 云开发额度恢复；C2（shim 合成 event*）可独立推进。
+
+> 追加前 `old_intact=True`（旧文 893129 B / sha addec0d2b3f01269…）；由 `tools/append_progress.py` 原子追加。
+## R275（2026-10-24）—— ★★★ R273 回退不一致（新铁证）：proto.h 回退成 K&R，但 .c 定义保留精确签名 ⇒ 19 文件调用约定脱节
+
+### 一、背景
+
+R273 的目标是"回退到第 6 版形态 + 关掉定时器"。R273-后记（§0.45）已指出"回退没回退对"（tag=K 549→0、运行 45s→1.5s、主循环停摆）。本轮**不再重复该结论**，转而从编译期找它到底"哪里不一致"的机械证据。
+
+### 二、确定性发现（本机静态验证：zig cc 全量编译，零带宽/零真机/零 CI）
+
+方法：用 `proto.h.strict` 临时替换 `proto.h`，跑 `tools/check_arity_compile.sh`（全量编译 214 个专有源文件），随后立即原子恢复 `proto.h`（已核对恢复后与 `proto.h.bak_knr` 逐字节一致）。
+
+**结果：22 个文件报调用约定错误**（完整清单 `report/arity_compile.txt`，4034 B，可复跑，`check_arity_compile.sh` 汇总行「编译 214 个文件，失败 22 个」）：
+
+| 类别 | 错误行数 | 位置（节选） |
+|---|---|---|
+| too few arguments（丢实参） | 25 | `EmuCore_Line`、`UpdateROMProc`×2、`AudioProcess`:`Mp3DecodeLoop()` 无参、`JoystickTest`×5、`main`:`JoystickTest` 无参、`shoucang`、`mui_do_file_list`、`mui_search_file_list`、`mui_run_game`、`mui_SoundplayThread`、`mui_recent`、`mui_setting`×2、`PauseMenu`×3、`DisplayLine_list` |
+| too many arguments（多传） | 4 | `run_game`×2、`Mp3DecodeLoop`、`mui_run_game` |
+| conflicting types（定义↔声明脱节） | 5 | `spi_read`、`UnDrawSelectBar`、`dir_serial_list`、`mui_DispBlock`、`mui_UnDispBlock` |
+| incompatible integer→pointer（-Wint-conversion） | 4 | `mui_setting`、`mui_video_setting`×3（`UnDrawSelectBar` 第 2 参应为指针） |
+
+### 三、根因：R273 的"回退"是**不一致的部分回退**
+
+- `proto.h` 确已回退成 K&R 空参（`cmp src/compat/proto.h src/compat/proto.h.bak_knr` ⇒ 逐字节一致）。
+- 但 **`.c` 里若干函数定义仍保留 R267/R268 改过的精确签名**，与 K&R 空参声明脱节。K&R 空参声明在 C 里**不校验实参个数/类型** ⇒ "丢参/类型颠倒"静默编进产物。
+- 硬实证（`spi_read` 第 2 参）：R268 定案是**指针**（r1 放目标缓冲，`proto.h.strict` 记为 `void *`）；现在 `.c` 定义又变回 `gh_u4`（整数）。ARM32 上指针/int 同宽，机器码可能逐字节相同 ⇒ 编译通过、运行"看起来正常"，实为 UB 定时炸弹。
+
+⇒ 这解释了为什么"回退到第 6 版"会得到"5 秒死"而非"可用但重启"：**它既不是干净的第 6 版，也不是故意增强，而是一个定义/声明脱节的不协调中间态。**
+
+### 四、与第 11 轮死亡的关系（分层标注，不混为一谈）
+
+- **已实测事实**（第 11 轮 trace.log）：无 `crash.txt`、无 `EXIT`/`ABORT` 打点；进程在 `5028 IO read fd=10 ret=16`（收到 1 次 16 字节手柄事件）后约 0.4 s 静默终止；`tag=D/d/V` 各 16 次（达打点上限），`tag=K` 0 次。
+- **未实测推断**：`cgm_wrap.c` 只 wrap 了 `exit`/`_exit`/`abort`，**没有 wrap `exit_group`** ⇒ 进程极可能被 driver.so 内部或内核 `exit_group` 终止（绕过 glibc exit wrap），或启动器杀掉。候选触发：`Mp3DecodeLoop` 丢参 → 音频线程用垃圾缓冲 → driver.so 内部终止。
+- **要坐实必须离线复现**（qemu + 假桩）或在诊断版补 `exit_group` wrap 后取证。**在坐实前，以上只是假设，不得当结论。**
+
+### 五、结论与下一步（遵守 R274 铁律：不上真机、不交半成品）
+
+1. **当前工作区是无 git 快照的脏区**（`git log` 仅到 R187；R188 之后全是未提交工作区）⇒ 不存在可一键回退的"第 6 版"快照。重建干净基线是首要任务，不是可选项。
+2. 正确路径（离线，不烧带宽）：
+   ① 把上述 **22 个文件（38 条错误行）逐一对照 §0.39/§0.40 的记录 + 工厂调用约定**，形成"R273 回退偏差清单"（清单化，非逐点打补丁）；
+   ② 重建"第 6 版源码 + 定时器 id 改 0"的干净基线并锁 sha（补齐第 6 轮没能锁基线的债）；
+   ③ 在云开发 qemu + 假桩里过 R274 门禁（我方代码路径无新增 bug）后，才谈真机验收。
+
+### 六、用户消息 P0/P1/P2 的现状对照（R223 待办 → 已被 R224–R259 消化）
+
+| 待办 | 现状 |
+|---|---|
+| P0 云开发逐帧对拍 B6A 分歧 | ✅ R224 闭环（裁决=真实渲染差异，像素级定位到局部 UI 块 245×51） |
+| P0 B6 降级 KNOWN-LIMITATION | 部分闭环，"是否降级"仍待用户裁决（用户：真机验证成功后再讨论） |
+| P1 qemu T11→T13（真 core） | ✅ 大幅完成（R225 T11 达成；R247/R253/R256 T13 存档 + SRAM 双向闭环实证） |
+| P1 18 项 DIVERGE 归因 | ⏳ 未完成（`tools/diff_exec_pending.txt` 18 项，需云开发 qemu） |
+| P2 L4 草稿云端语法校验 | ✅ SRAM 已合入主链（R256）、evdev 已入（R252） |
+| P2 libiconv-legacy-stub 移出 | ✅ 已移出（`src/upstream/` 下目录不存在；`filelist.py`/`dup_symbol_gate.py` 残留 `EXCLUDE_DIRS` 引用，无害） |
+
+### 七、真正卡交付的当前阻塞（诚实）
+
+不是 P0/P1/P2（大半已闭环），而是 **R273 把源码库卷进了"回退不一致"状态，且没有干净 git 锚点**。在重建干净基线并离线验证前，任何"再改一版"都只会重演第 11 轮。故本轮**不写代码、不上真机、不跑 CI**，只交付这份根因定位。

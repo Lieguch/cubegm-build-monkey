@@ -37,11 +37,30 @@
 
 #include <stdint.h>
 
+/* 本头文件可能被 C++ 编译单元（xunzip/unzip.cpp 等）包含 ⇒ 接口一律 C 链接。
+ * 实测（R261）：漏了这层 ⇒ ld.lld 报 undefined symbol（C++ 修饰名与 C 定义不匹配）。 */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ---------- 配置 ---------- */
 #define CGM_DIAG_ROOT        "/sdcard/cubegm/_diag"
 #define CGM_RING_FRAMES      (1u << 16)   /* 65536 帧 × 12 B = 768 KB（.bss） */
 #define CGM_LOG_MAX_BYTES    (24u << 20)  /* trace.log 超过 24 MB 就轮转一次 */
-#define CGM_SNAP_MS          5000u        /* 周期快照 / 心跳间隔（毫秒） */
+#define CGM_SNAP_MS          5000u        /* 周期快照间隔（毫秒） */
+/* ★★★ R270（单变量回退）：定时器**默认关闭**（0 = 不 setitimer、不装信号处理器）。
+ *
+ * 证据链（同一台机、同一批按键）：
+ *   第 6 轮（21:03 构建，定时器**从未生效**）：read=2738、tag=K=549 ⇒ 主循环 ~40 Hz，按键正常；
+ *   第 7 轮（21:39 构建，定时器改为 ITIMER_REAL 1 s）：read=2、tag=K=0   ⇒ 循环几乎停摆；
+ *   第 8 轮（22:49 构建，同样带定时器）：read=11、tag=K=0                ⇒ 同上。
+ * 而第 6 轮唯一的毛病"间歇重启"，根因就是这个定时器写错 id（ITIMER_VIRTUAL ⇒ SIGVTALRM ⇒ 默认终止进程）。
+ * ⇒ 结论：**这个定时器既造成重启、又让主循环变慢**（SIGALRM 打断驱动/音频线程的 sleep 与 ioctl）。
+ *   因此默认不装；需要心跳/卡死取证时显式 `-DCGM_ALARM_MS=1000` 单独构建（诊断专用，不进投放件）。 */
+#ifndef CGM_ALARM_MS
+#define CGM_ALARM_MS         0u
+#endif
+#define CGM_STALL_MS         700u         /* ★ R263：无进展超过此值即判定"卡死"，dump 卡点 */
 #define CGM_SUMMARY_MS       15000u       /* 周期汇总间隔 */
 
 /* 级别：cfg.ini 的 `level = N`；文件缺失 ⇒ 默认 2 */
@@ -64,5 +83,22 @@ void cgm_frame_exit(uint32_t addr);
 void cgm_lifecycle(const char *ev, int code);         /* 退出/异常等 */
 int  cgm_lvl(void);
 int  cgm_want(int need);
+
+/* ---------- 语义探针（R261 新增；只在 -DCGM_DIAG_TRACE_ZIP 的诊断版生效） ----------
+ * 为什么需要：前两轮真机日志只能靠 **IO 顺序** 反推语义，代价是大量错误推断
+ * （例如把 "CD 全表扫描" 读成 "没匹配"，再据此去猜 key2/XOR）。
+ * 这两个探针把**判定输入本身**写进 trace.log：谁在找什么、每个候选名的真实字节、
+ * 比较结果、以及 key2 的当前 28 字节 —— 一次真机就能定案，不再靠猜。
+ * 纪律：探针**只在诊断版**（-DCGM_DIAG_TRACE_ZIP）编译进去，交付版零成本、与工厂同构。 */
+void cgm_probe_zip(const char *path, void *handle, const void *retaddr);
+/* R262：输入链探针（tag: 'W'=SPI写 'R'=SPI读 'T'=RF自检过 'F'=自检失败 'J'=按键线程已建 'K'=读到按键） */
+void cgm_probe_io(int tag, unsigned a, unsigned b);
+void cgm_probe_tick(void);   /* UI 主循环心跳（ReadJoystick 调用；卡死判定基准） */
+void cgm_probe_cmp(int idx, const char *got, int gotlen,
+                   const char *want, int cmp, const void *retaddr);
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
 
 #endif /* CGM_DIAG_H */

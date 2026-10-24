@@ -8,7 +8,9 @@
 #include "globals.h"
 #include "proto.h"
 
-void mui_DispBlock(int param_1,int param_2,int param_3,int param_4)
+/* ★ R268：工厂调用约定 r0=dst 指针 / r1=pitch / r2=源块表指针 / r3=块索引。
+ *   原重建把 r0/r2 写成 int ⇒ 35 处调用点传指针时编译器报"指针转整数"（那才是真相）。 */
+void mui_DispBlock(void *param_1,int param_2,void *param_3,int param_4)
 
 {
   int iVar1;

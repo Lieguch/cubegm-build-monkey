@@ -36,7 +36,7 @@ gh_u4 Mp3DecodeLoop(int param_1)
       iVar2 = MP3FindSyncWord((gh_byte *)iVar2,iVar1);
       if (-1 < iVar2) break;
       if (*(int *)(SoundPlayer + param_1 * 0x24 + 0x14) == 0) {
-        SoundClose(param_1,piVar4 + 1);
+        SoundClose(param_1);   /* R267：SoundClose 只有 1 个形参（多传的第二个实参被丢弃） */
         return 1;
       }
       iVar2 = piVar4[7];

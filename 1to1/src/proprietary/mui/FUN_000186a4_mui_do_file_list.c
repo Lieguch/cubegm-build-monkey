@@ -154,7 +154,7 @@ LAB_00018a98:
         iVar8 = iVar10 * 0x404;
         if ((&DAT_003b2424)[iVar8] == '\0') {
           strcpy(&DAT_003b2424 + iVar8,&DAT_003b2324 + iVar8);
-          strupr();
+          strupr(local_8c);   /* R267：r0 = 上一条 strcpy 的目标 */
         }
         iVar8 = iVar10 * 0x404;
         if ((&DAT_003b23a4)[iVar8] == '\0') {
