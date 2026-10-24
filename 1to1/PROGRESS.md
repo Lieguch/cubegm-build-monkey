@@ -11906,3 +11906,58 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 3. 纪律 178 继续生效：**禁止 git push github master**。
 
 > 追加前 old_intact 由 append_progress.py 原子保证。
+
+> 追加前 `old_intact=True`（旧文 907145 B / sha db8da20796b7e213…）；由 `tools/append_progress.py` 原子追加。
+## R285（2026-10-24 23:2x）
+
+### 日期
+
+2026-10-24（R284 修复后的 CI 验证轮）
+
+### 完成事项
+
+1. **CI 验证（commit `8f2c19fc6548`，GitHub Actions）**
+   - `1to1-verify` #306/#307 **success** —— R284 修的 6 个门禁（s05/s20/s26/s36/s45/s48）全部转绿。
+   - `1to1-qemu-behav` #276 failure，仅 2 项红：
+     B6 `frame_hash` `b5449dc5 vs b5449dc5`（全零基线，R171b 钉死的诚实红）；
+     B6A `frame_hash_abi` `dfdaf563 vs ffc51130`（仍分歧）。
+     其余 B1 exit=124/124、B2 228/228、B3/B4 0/0、B5 menu.log sha 相同、B6R 3072/3072、
+     B7 1/1、B8a 4/4、B8b 180/180 全 PASS。
+   - `rkgame-rebuild` #1179、`toolchain-ab` #41 均 success。
+2. **本地重建（调试用）**：按 link_audit 口径重编对象 + link_full 重链，产物 sha `60f7c1a0…`，
+   12 道门禁全 PASS；导入表复验 **bcmp 已消失**（与工厂一致）。
+
+### 新发现与决策
+
+1. **s36 ruler 差异的机械成因（新增结论）**：
+   `ruler_protocol_fingerprint()` 含 `void-src = sha256(sorted(void_fns_from_sources()))`，
+   而该函数的正则 `(?:static|inline|STBTT_DEF|extern)* void NAME(` **不识别
+   `__attribute__((noinline))`**。v1.22 无 noinline ⇒ 102 个 void 函数 ⇒ ruler `60f7623e`；
+   v1.22 + noinline ⇒ 101 个 ⇒ ruler `c85f9763`（恰与 v1.26 时代旧台账同值）。
+   ⇒ 这说明"口径变更"是可机械解释的，且 rebaseline 记录值与当前树自洽。
+2. **`mui_InitFont` 的 bcmp 发散是本地陈旧对象伪影（已证伪，非源码缺陷）**：
+   工厂语料与本方源码两处比较均为 `strcmp(x,"字面量")`；clang 会把它变成 `bcmp`。
+   `tools/link_audit.sh` 的 CFLAGS 已带 `-fno-builtin-strcmp`（实测：带 flag 的 .o 只有
+   `strcmp`，不带 flag 才出现 `bcmp`）。先用旧 `build/obj`（无该 flag 口径产出）链接的 ELF
+   导入了 `bcmp`，导致本地 diff_exec 把 `mui_InitFont` 记成发散；按 link_audit 口径重编后
+   **bcmp 消失**。⇒ CI 构建（走 link_audit）不含此问题；台账保留该条为"债务"不影响棘轮方向。
+3. **stb 尺寸取证（本地双编译器对照，工厂 vs 我方 zig -Os）**：
+   - `stbtt_MakeCodepointBitmapSubpixel`（UI 光栅入口）**104 B = 104 B 精确一致**；
+   - `stbtt__csctx_rline_to` 84/84、`stbtt__cuberoot` 72/72 精确一致；
+   - `stbtt__rasterize_sorted_edges` 2412 vs 2160（-10%）；
+   - `stbtt__GetGlyphInfoT2` 工厂**无该符号**（被 GCC 内联），我方 168 B（CFF 专用，ttf 不触发）；
+   - 工厂 6 个小 wrapper 为 16 B（尾调用），我方 40–100 B（call+ret）——编译器差异，未被 UI 使用。
+   - 工厂 81 个 stbtt_ 符号中，尺寸精确命中 19、±10% 内 23。
+   ⇒ 决定：**暂不改编译器**（证据不足；改为先把 diff_exec 对文字链的可判性补齐）。
+4. **B6A 根因收窄**：已排除 `mui_InitFont`/bcmp；`outputxy1`、`mui_DisplayLine_t`（文字绘制链）
+   在 diff_exec 中为 **TRUNC 不可判**（两侧触步数上限），而 B6A 差异块 245×51 与文字行尺寸吻合
+   ⇒ 下一步优先让这两个函数"可判"，而不是继续换版本/换编译器。
+
+### 下一步待办
+
+1. **B6A 根因（唯一实质阻塞）**：让 `outputxy1` / `mui_DisplayLine_t` 在 diff_exec 中可判
+   （补沙箱前提：字体上下文/调用参数），拿到真实语义结论后再谈像素。
+2. **B6A 像素级对拍**：需要在 CI 侧开 `CGM_ABI_DUMP` 拉取两侧首帧原文，用
+   `tools/_b6a_pixel_diff.py` 定位差异区域（当前 CI 未开 dump）。
+3. **B6 定性**：保持诚实红；是否降级 KNOWN-LIMITATION 仍待用户裁决（用户口径：真机验证成功后再议）。
+4. **真机验收**：待 B6A 有结论后，按 R258 判据清单一次做全。
