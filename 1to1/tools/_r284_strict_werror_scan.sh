@@ -32,5 +32,6 @@ for f in $(find "$ROOT/src/proprietary" -name '*.c' | sort); do
   fi
 done
 mv -f "$BK" "$PH"
-echo "严格类型轨：编译 $n 个文件，失败 $fail 个"
+errlines=$(grep -cE "error:" "$OUT" 2>/dev/null); errlines=${errlines:-0}
+echo "严格类型轨：编译 $n 个文件，error 行数 $errlines（有 warning 的文件不计失败）"
 echo "明细: $OUT"
