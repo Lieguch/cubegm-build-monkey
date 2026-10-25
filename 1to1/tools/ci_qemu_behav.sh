@@ -245,7 +245,7 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE CGM_ABI_PROBE; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE CGM_ABI_PROBE CGM_ABI_DUMP CGM_STATE_DUMP; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done
@@ -792,9 +792,22 @@ run_side() {
         cp "$SHIM" "$WORK/guest_shim.so" || { echo "!! shim 拷贝失败"; SHIM=""; }
     fi
 
+    # ★★★ R293（G2 前哨）：**每侧独立 wrapper**（opt-in）。
+    #   为什么：`-E` 的值在 wrapper **生成时**就被展开；共用 wrapper ⇒ 两侧 CGM_ABI_DUMP 只能是
+    #   同一路径 ⇒ 后跑的一侧覆盖前一侧（"看起来有 dump，其实只剩一侧"）。故按侧生成。
+    #   默认不设 CGM_ABI_DUMP_DIR ⇒ 行为与原先逐字一致（不改硬门禁语义）。
+    _WRAP_USE="$WRAP"
+    if [ -n "${CGM_ABI_DUMP_DIR:-}" ] || [ -n "${CGM_STATE_DUMP_DIR:-}" ]; then
+        mkdir -p "${CGM_ABI_DUMP_DIR:-/tmp}" "${CGM_STATE_DUMP_DIR:-/tmp}" 2>/dev/null || true
+        _WRAP_USE="$OUT/run_guest_side_$label.sh"
+        CGM_ABI_DUMP="${CGM_ABI_DUMP_DIR:+$CGM_ABI_DUMP_DIR/frame_$label.bin}" \
+        CGM_STATE_DUMP="${CGM_STATE_DUMP_DIR:+$CGM_STATE_DUMP_DIR/state_$label.bin}" \
+            mk_wrap "$_WRAP_USE" ""
+    fi
+
     CGM_WORK="$WORK" CGM_RUNDIR="$OUT/rundir_$label" CGM_TIMEOUT="$TIMEOUT" \
         CGM_BIN_REAL="$GUEST" CGM_GUEST_PRELOAD="$SHIM" \
-        sh "$ROOT/tools/behav_capture.sh" "$WRAP" "$label" "$OUT/behav_$label.json" \
+        sh "$ROOT/tools/behav_capture.sh" "$_WRAP_USE" "$label" "$OUT/behav_$label.json" \
         || echo "  [note] behav_capture 返回非零（超时/异常退出也照样产出指纹，继续）"
 
     echo "--- ${label} stdout（前 20 行）---"

@@ -205,6 +205,35 @@ jobs:
       #   于是 mui 模块（42 函数 / 70,396 B = 重构量的 57%）**永远跑不到**，覆盖率天花板 25%。
       #   ★ 本步骤是**观测（非门禁）**：场景 B 尚在建立基线期（首跑可能仍两侧同崩或立刻暴露新分歧），
       #     故用 `|| true` 只为拿数据。**基线稳定后必须去掉 `|| true` 升级为硬门禁**（否则等于白测）。
+      # ★★★ R293（G2 前哨）：把 B6A 从"整帧哈希不同"降到"哪一块/什么颜色/是否平移"。
+      #   为什么单独一步：step 12 是**硬门禁**，往里塞 dump/像素比对会扩大失败面；
+      #   而 dump 属**观测**，失败也不能影响判决。
+      #   `if: always()`：硬门禁当前必红（rc=2 诚实红）⇒ 不加就永远被跳过（死代码）。
+      #   dump 只在 CI 内比对并打印摘要，**不外传**（符合带宽约束）。
+      - name: 帧像素级定位（观测；dump 不外传）★ 非门禁
+        if: always()
+        continue-on-error: true
+        run: |
+          cd 1to1
+          mkdir -p report/frames
+          set +e
+          SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
+          CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
+          CGM_ABI_DUMP_DIR="$PWD/report/frames" \
+            sh tools/ci_qemu_behav.sh \
+              build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_frames
+          echo "dump 采集 rc=$?"
+          set -e
+          echo '--- 落盘文件 ---'
+          ls -la report/frames || true
+          if [ -s report/frames/frame_factory.bin ] && [ -s report/frames/frame_rebuild.bin ]; then
+            echo '--- 像素级差异摘要（CI 内打印）---'
+            python3 tools/_b6a_pixel_diff.py \
+              report/frames/frame_factory.bin report/frames/frame_rebuild.bin 2>&1 | tail -70
+          else
+            echo '!! 缺一侧 dump ⇒ 通道未打通（观测步骤不判红；下一轮修通道，不要改判据）'
+          fi
+
       - name: 行为采集·场景 C（补 libkms 桩解锁 driver.so，观测非门禁）
         continue-on-error: true
         run: |
