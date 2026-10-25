@@ -1009,7 +1009,61 @@ FDCT32_BUF_SEED = _fdct32_buf_seed()
 #     dest 覆盖源码里全部 d[0]/d[8] 写址（dct32.c:207-264，最远 dest+0xC27 < 0x1000）。
 FDCT32_OUT = [('buf', 0x3cfac8, 0x80), ('dest', 0x3d3948, 0x1000)]
 
+# ★★★ R288：`outputxy1`（8×16 ASCII 字形扫描 = 文字渲染核心）的**直接等价测试**。
+#
+#   取证（两侧符号表逐项核对，全部 SAME）：
+#     scr_data   0x3b218c ｜ scr_h_size 0x3e1a94 ｜ scr_v_size 0x3e1a98
+#     output_x   0x3e1a6c ｜ output_y   0x3e1a70 ｜ Rowspacing 0x3af01c
+#   帧缓冲借用**具名对象** `items` @0x3d3948（size 0x3e80 = 16000 B）；
+#   需要的写窗 320×16×2 = 10240 B (0x2800)，'A\0' 串放 +0x3000 与之不重叠。
+#   ★ 为什么必须落在具名对象：访存指纹与输出窗只认 PT_LOAD 内地址；
+#     用 SCRATCH（0x7D000000，工具自己 map 的）会让 `_validate_fn_corpus` 直接抛错。
+#   ★ 判据：两侧把 'A' 画到同一帧缓冲后，**输出窗字节逐位比较**。
+#     这正是 B6A 差异（245×51 文字块）的最小可判单元。
+def _le32(x):
+    return int(x).to_bytes(4, 'little', signed=False)
+
+
+OUTPUTXY1_OUT = [('scr', 0x3d3948, 0x2800)]
+OUTPUTXY1_SEED = [
+    (0x3b218c, _le32(0x3d3948)),   # scr_data   = items（帧缓冲）
+    (0x3e1a94, _le32(320)),        # scr_h_size = 320
+    (0x3e1a98, _le32(240)),        # scr_v_size = 240
+    (0x3e1a6c, _le32(0)),          # output_x   = 0
+    (0x3e1a70, _le32(0)),          # output_y   = 0
+    (0x3af01c, _le32(16)),         # Rowspacing = 16
+    (0x3d6948, b'A\x00'),         # 待绘字符串（NUL 结尾 ⇒ 循环必然终止）
+]
+
+# ★★★ R288：`stbtt_InitFont` —— **stb 解析行为**的直接等价测试（B6A 的关键一环）。
+#
+#   取证：真机字体 `golden/sdcard_min/font.ttf` 共 1,840,376 B；表目录 + head/hhea/maxp/
+#   cmap/loca/OS2 全部落在前 166,326 B 内（glyf 在 0x185bc、name/post/GPOS 更后）；
+#   `stbtt_InitFont` 只读表目录与 head/maxp（ghlyf 仅记录偏移，不读内容）⇒ 前 166 KB 足够。
+#   目标缓冲借用**具名大对象** `cns11643_inv_2charset` @0x33231c（166,326 B，两侧同址）——
+#   它在本函数执行期间不被读取，且两侧种子逐位相同 ⇒ 不构成差异源。
+#   判据：输出窗 `font`（124 B 结构，@0x3bc41c，两侧同址）**逐位比较**。
+#   若两侧 `font` 相同 ⇒ 表解析/glyph 数/定位一致；不同 ⇒ 版本或实现差异（B6A 候选）。
+def _font_head_bytes(n=166326):
+    import os as _os
+    p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                      '..', 'golden', 'sdcard_min', 'font.ttf')
+    with open(p, 'rb') as f:
+        return f.read(n)
+
+
+FONT_HEAD = _font_head_bytes()
+STBTT_INITFONT_OUT = [('font', 0x3bc41c, 124)]
+
 FN_CORPUS = {
+    # ★ R288：stb 解析行为（真机字体前 166 KB）。只有 --fn stbtt_InitFont 时启用。
+    'stbtt_InitFont': [
+        ('ttf-head', [0x3bc41c, 0x33231c, 0], [(0x33231c, FONT_HEAD)], STBTT_INITFONT_OUT),
+    ],
+    # ★ R288：文字渲染核心（ASCII 8×16 路径）。只有 --fn outputxy1 时启用。
+    'outputxy1': [
+        ('ascii-A', [0x3d6948], OUTPUTXY1_SEED, OUTPUTXY1_OUT),
+    ],
     # ★ 只在 `--fn xmp3_FDCT32` 时启用；`--fn` 不写棘轮台账（只有 --batch 写）。
     'xmp3_FDCT32': [
         # (组名, [buf, dest, offset, oddBlock, gb], [(vaddr, bytes)...], out_windows)

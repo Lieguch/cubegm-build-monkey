@@ -12037,3 +12037,48 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 1. **B6A（唯一实质阻塞）**：`outputxy1` / `mui_DisplayLine_t` 在 diff_exec 为 TRUNC（两侧触步数上限）⇒ 补沙箱前提（字体上下文/参数）使其可判；拿到语义结论后再谈像素。
 2. **把 `import_delta_gate` 与 `check_upstream_patches` 接进 `1to1-verify`**（当前只在本地 precheck；CI 侧应各加一步，`continue-on-error: true` 起步观察一轮再升硬门禁）。
 3. **`ledger/upstream_patches.tsv` 扩容**：mxml / mp3 / libiconv 若有本地补丁，一并登记（当前只登记了 stb 三条）。
+
+> 追加前 `old_intact=True`（旧文 919200 B / sha 017fe73ed79d2a92…）；由 `tools/append_progress.py` 原子追加。
+## R288（2026-10-25 10:4x）
+
+### 日期
+
+2026-10-25（B6A 根因：文字路径首次获得合法入参并判为等价）
+
+### 完成事项
+
+1. **推翻"TRUNC"误判并定位真因**：`outputxy1` 在 `--fn`（20 万步）下并非截断，而是 **DEADEQ**——
+   全局 `scr_data=0` ⇒ 写址 0x0 早死。即**沙箱从未合法执行过文字路径**，不是因为预算不够。
+2. **新增 `FN_CORPUS['outputxy1']`（合法入参）⇒ PASS**
+   - 取证：`scr_data 0x3b218c`、`scr_h_size 0x3e1a94`、`scr_v_size 0x3e1a98`、`output_x 0x3e1a6c`、
+     `output_y 0x3e1a70`、`Rowspacing 0x3af01c` 六全局**两侧逐项同址**（符号表比对）。
+   - 帧缓冲借用**具名对象** `items @0x3d3948`（0x3e80）；写窗 320×16×2=0x2800；`'A\0'` 放 +0x3000 不重叠。
+   - 结果：F 1452 / O 1297 条指令，**两侧都跑到 return**，输出窗 0x2800 字节**逐位相同** ⇒ 8×16 ASCII 渲染等价。
+3. **新增 `FN_CORPUS['stbtt_InitFont']`（真机字体）⇒ PASS**
+   - 取证：`golden/sdcard_min/font.ttf` 1,840,376 B；表目录 + head/hhea/maxp/cmap/loca/OS2 全在
+     前 166,326 B 内（glyf@0x185bc 之后），`stbtt_InitFont` 只读目录与 head/maxp。
+   - 缓冲借用 `cns11643_inv_2charset @0x33231c`（166,326 B，两侧同址，本函数不读它）。
+   - 结果：两侧 ret=0x1，输出窗 `font`（124 B 结构 @0x3bc41c）**逐位相同**
+     （data-reads 有访问模式差异，但输出等价 ⇒ 按第 160 轮"输出等价降级"口径记为 note）。
+4. **新增可复跑证据脚本 `tools/text_path_equiv.sh`**：跑上面两条 `--fn`，任一非 PASS 即非 0。实跑两项全 PASS。
+
+### 新发现与决策
+
+1. **文字路径的"不可判"是配置问题，不是仪器量程问题**：CORPUS 的假参数让 6 个屏幕全局为 0，
+   函数必在首次写像素时撞未映射页。用 `FN_CORPUS`（R160 就有的机制）配合具名对象即可合法驱动。
+   ⇒ 决策：**凡"早死/截断"的函数，先问"是不是缺合法前提"，再谈预算或放宽判据**。
+2. **B6A 的两个候选已被排除**：ASCII 光栅（outputxy1）与 TTF 解析（stbtt_InitFont）在两侧等价。
+   剩余唯一未判的是**TTF 字形光栅化**（`stbtt_MakeCodepointBitmapSubpixel`，10 参数）。
+3. **发现 runner 的硬限制（会被静默吞掉）**：实参只写 r0–r3，`args[4:]` **被静默丢弃**
+   （源码注释已承认）。这意味着任何 ≥5 参函数目前都**无法**被判据驱动 ⇒ 必须先补 AAPCS 栈参，
+   否则"测不了"会被误读成"没问题"。
+4. 决策：raster 判据分两步落地——(a) 给 `FN_CORPUS` 加**前置钩子**（同一 Unicorn 实例先跑
+   `stbtt_InitFont` 再跑目标，才能拿到合法 `font` 结构）；(b) 补**栈参**（≥5 参）。
+
+### 下一步待办
+
+1. `diff_exec` 增加 `FN_CORPUS` 前置钩子（prefix），并给 `args[4:]` 补 AAPCS 栈参（或改 fail-loud）。
+2. 用 ① 驱动 `stbtt_MakeCodepointBitmapSubpixel`（同一 codepoint/scale/shift），**逐位比较字形位图** ——
+   这就是 B6A 差异（245×51 文字块）的最小可判单元。
+3. 若字形位图等价 ⇒ B6A 差异不在 stb 侧，转向 UI 几何/颜色（`mui_outputxy_t` 的坐标与颜色入参）。
+4. 把 `text_path_equiv.sh` 接进 `local_precheck`（L5）作为文字路径的常驻证据。
