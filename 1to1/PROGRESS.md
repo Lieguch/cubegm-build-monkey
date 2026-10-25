@@ -12544,3 +12544,42 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 1. 用户按 `DEPLOY.md` 下载最新 artifact → 校验 → 上机 → 回填 `ACCEPTANCE.md` 记录。
 2. 若 A/B/C 任一项失败，该项即为唯一根因入口，直接从该项对应的源码/仪器入手。
 3. 观测侧遗留：B6A 定性（`factory↔control` 对照 + bbox/颜色映射）随下一次 qemu-behav 出数。
+
+> 追加前 `old_intact=True`（旧文 958081 B / sha c5363acc64a6e319…）；由 `tools/append_progress.py` 原子追加。
+## R299（2026-10-25 16:3x）—— 角色纠错：验收=你三步，判读归我
+
+### 日期
+
+2026-10-25（用户指出："你把用户当 AI 了；过往都是拿文件+上机+回传日志"）
+
+### 完成事项
+
+1. **认错并回滚流程**：R298 的 DEPLOY.md 把 19 项链路（拍照/录音/跑 sha256/逐项勾选）丢给用户，
+   等于把用户当 QA 操作员 —— 与既有分工（第 1–11 轮）相反。
+   - 证据：历史回传目录 `_sdcard_drop/真机验收日志/1..11/` 只有 4 个文件
+     （`env.txt` / `maps.start.txt` / `trace.log` / `frames.bin`），全部由**诊断版自动生成**。
+2. **DEPLOY.md 重写为 3 步**（用户视角）：① 下载两个产物（`rkgame-diag` 取证版 / `rkgame-rebuilt` 交付版）
+   → ② 备份原厂并替换 `/sdcard/cubegm/rkgame`，开机进菜单按几下键 30–60 s
+   → ③ 回传设备上的 `/sdcard/cubegm/_diag/`（4 个文件）。
+   并写明"判读、归因、回填记录全由我做"；唯一需要用户的是**一张主菜单照片**（A2 画面）与**一句声音描述**（B5）。
+3. **ACCEPTANCE.md 顶部更正**：明确它是**我的判据表**（不是用户操作手册），
+   并写明每条判据我将从 `trace.log`/`env.txt`/`maps.start.txt` 的哪类标记判读。
+4. **诊断版按当前提交重建**：`diag-build` 触发路径不含 `1to1/src/proprietary/**`
+   ⇒ 源码改动不会自动重建诊断版；本次已 `workflow_dispatch`（run #8，commit `5375468705a8`）。
+5. **交付物校验闭环生效**：`rkgame-rebuilt-5375468705a8…`（id `12592665793`，4,046,349 B）
+   比上一版大 218 B = 内含 `.sha256`。
+
+### 新发现与决策
+
+1. **`trace.log` 的可判面比我原先估计的大**：格式为 `jiffies + 标记 + 明细`，
+   标记含 `BOOT` / `DL dlopen/dlsym` / `IO fopen/fread/write` / `VARCHK` / 输入观测点
+   ⇒ A1/A3/A4/A5/A6、B2（core 的 dlopen）、C1（saves/*.srm 写）**都能从日志判**，不需要用户操作。
+2. **诊断版不会随源码自动重建**（触发路径缺 `src/proprietary/**`）⇒ 每次交付前必须显式 dispatch，
+   否则"取证版"与源码不同提交（这类"看似新其实旧"与 GAP 16.56 同族）。已在本轮记录。
+3. 决策：**验收流程固定为**「用户三步 / 我判读」；不再出现要求用户跑命令或逐项拍照的清单。
+
+### 下一步待办
+
+1. 用户回传 `_diag/` 后：我解析 `trace.log` → 回填 `ACCEPTANCE.md` → 失败项定位到函数/源码。
+2. 若 `trace.log` 缺失或进程未起（历史第 11 轮即此形态），直接用 `env.txt` + `maps.start.txt` 判死因。
+3. 交付版 `rkgame-rebuilt` 待 A 类日志判后再换（B/C 类在第二次日志里判）。
