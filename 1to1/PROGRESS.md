@@ -12000,3 +12000,40 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 2. **上游本地补丁登记**：`ledger/upstream_patches.tsv`（文件/函数/补丁类型/理由/门禁），换上游版本时按表复打；本轮 noinline 丢失即此类。
 3. **链接前强制 `check_obj_fresh.py`**（防重演陈旧对象导致的伪影与假判据）。
 4. **B6A 根因（唯一实质阻塞）**：让 `outputxy1` / `mui_DisplayLine_t` 在 diff_exec 可判（补齐字体上下文），再谈像素。
+
+> 追加前 `old_intact=True`（旧文 915459 B / sha d7f8ef58917ed563…）；由 `tools/append_progress.py` 原子追加。
+## R287（2026-10-25 09:5x）
+
+### 日期
+
+2026-10-25（R286 待办 1–3 落地：三道新门禁 + 接线 + 自证）
+
+### 完成事项
+
+1. **新增 `tools/import_delta_gate.py`（导入表全集对照）+ `tools/import_delta_pending.txt` 台账**
+   - 判据：`.dynsym` UND 集合做双向差集；`我方多出`与`工厂多出`**未登记即 FAIL**；别名对（`__strdup ~ strdup`）与样板符号（4 个 `_ITM_*`/`_Jv_*`/`__gmon_start__`）走台账。
+   - 自证 5 条（双向）：我方多出 `bcmp` ⇒ FAIL；工厂多出未知 ⇒ FAIL；别名对 ⇒ PASS；台账豁免 ⇒ PASS；豁免无关符号不掩盖 `bcmp` ⇒ FAIL。**5/5 通过**。
+   - 实跑：我方 109 / 工厂 113 / 台账 4 豁免 + 1 别名 ⇒ 结论 PASS（差集全部有定性）。
+2. **新增 `tools/obj_manifest.py` + 接线（对象↔源码内容级新鲜度）**
+   - `link_audit.sh` 成功后写 `build/obj/.obj_manifest.tsv`（214 对象，obj/src 双哈希）；
+   - `link_full.sh` 开头 **fail-closed** 校验（`CGM_OBJ_MANIFEST=off` 仅限实验路径）；`build_diag.sh` 为 `build/diag_obj` 同样写清单。
+   - **判别力实测**：向 `FUN_00009b58_main.c` 追加一行注释但不重编 ⇒ `link_full` 拒绝链接并指名"1 项源码改动"；恢复后可正常链接。
+3. **新增 `ledger/upstream_patches.tsv` + `tools/check_upstream_patches.py`（源级补丁在场）**
+   - 登记 stb v1.22 的 3 处 `noinline`（锚点必须**唯一命中**）；自证 3 条（在场 PASS / 缺失 FAIL / 文件不存在 FAIL）全过。
+   - 与 ELF 级 L3 解耦：换版本后即使"符号仍在"（新版本自己不内联），源级也能发现补丁丢失。
+4. **`tools/local_precheck.sh` 升级为带子门禁的四层**：L3 = 源级补丁 + ELF 符号 + SVG absent；L4 = `import_delta_gate`。全量实跑 **ALL 4 LAYERS PASS**。
+5. **CI 状态**：`1to1-verify #309`（commit `8247828`）success；`1to1-qemu-behav #278` 仍仅 B6/B6A 红；`toolchain-ab` 未被文档/工具推送触发（paths 收窄生效）。
+
+### 新发现与决策
+
+1. **导入表差集的真实规模极小且可解释**：干净构建下 `ours_only=['strdup']`、`factory_only=['__strdup','_ITM_deregisterTMCloneTable','_ITM_registerTMCloneTable','_Jv_RegisterClasses','__gmon_start__']`。
+   ⇒ 这证明 R285 的 `bcmp` 确系**旧对象口径污染**，不是源码问题；也说明"逐符号定性"可以做到零遗漏、零噪声。
+2. **对象新鲜度的正确判据是内容哈希，不是 mtime**：git checkout 后 mtime 全部重置（本项目已踩过 `-nt` 的坑）。清单用 obj/src 双 sha16，既防"源码改了没重编"，也防"对象被替换成别的口径"。
+3. **"补丁在场"与"符号在场"必须分开验**：ELF 符号可能因新版本自身不内联而存在，源级锚点检查才代表"补丁真的打上了"。
+4. 决策：新增门禁一律**先自证判别力**（正反例都跑），再接线到 `local_precheck`；任何新门禁没有反例证据不得视为"已生效"。
+
+### 下一步待办
+
+1. **B6A（唯一实质阻塞）**：`outputxy1` / `mui_DisplayLine_t` 在 diff_exec 为 TRUNC（两侧触步数上限）⇒ 补沙箱前提（字体上下文/参数）使其可判；拿到语义结论后再谈像素。
+2. **把 `import_delta_gate` 与 `check_upstream_patches` 接进 `1to1-verify`**（当前只在本地 precheck；CI 侧应各加一步，`continue-on-error: true` 起步观察一轮再升硬门禁）。
+3. **`ledger/upstream_patches.tsv` 扩容**：mxml / mp3 / libiconv 若有本地补丁，一并登记（当前只登记了 stb 三条）。

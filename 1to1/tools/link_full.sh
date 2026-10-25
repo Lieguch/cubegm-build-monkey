@@ -155,6 +155,17 @@ fi
 DIAG_OBJD="${DIAG_OBJD:-$ROOT/build/obj}"
 DIAG_XUNZIP="${DIAG_XUNZIP:-$ROOT/src/upstream/xunzip/XUnzip.o}"
 
+# ★★★ R286：**对象新鲜度 fail-closed**（血泪：手工单跑 link_full ⇒ 链到无
+#   `-fno-builtin-strcmp` 口径的旧对象 ⇒ 产物导入 bcmp + diff_exec 误判 mui_InitFont 发散）。
+#   清单由 link_audit.sh 生成（内容级哈希，不用 mtime —— git checkout 后 mtime 不可靠）。
+#   诊断/实验路径显式设 CGM_OBJ_MANIFEST=off 放行（仅限已知非交付产物）。
+if [ "${CGM_OBJ_MANIFEST:-on}" = "on" ]; then
+    $PY "$(winpath "$ROOT/tools/obj_manifest.py")" check "$(winpath "$DIAG_OBJD")" || {
+        echo "★★ 对象与源码不同源 ⇒ 禁止链接（先跑 tools/link_audit.sh）" >&2
+        exit 9
+    }
+fi
+
 OBJS=""
 for o in "$DIAG_OBJD"/*.o; do [ -f "$o" ] && OBJS="$OBJS $o"; done
 # ★★ 2026-09-28：`LINK_DRIVER=lld` 时**不链 cxx_ops.o**。

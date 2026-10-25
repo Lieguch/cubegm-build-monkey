@@ -291,4 +291,6 @@ $PY "$(winpath "$ROOT/tools/link_audit.py")" \
     "$(winpath "$REP")"
 rc=$?
 echo "报告: $REP"
+# ★ R286：写「对象↔源码」内容级清单（link_full 开头校验；防链到旧口径对象）
+$PY "$(winpath "$ROOT/tools/obj_manifest.py")" write "$(winpath "$ROOT/build/obj")" || true
 exit $rc

@@ -40,6 +40,9 @@ echo "  严格类型轨 error 行数 = $n_err"
 [ "$n_err" -eq 0 ] || { echo "L2 FAIL"; exit 2; }
 
 echo "================ L3 上游补丁在场（s48/s26 符号面）================"
+# 源级：换上游版本时"补丁丢了但符号仍在"也能抓到（与 ELF 级解耦）
+"$PY" "$ROOT/tools/check_upstream_patches.py" --self-test >/dev/null 2>&1 || { echo "L3 FAIL（补丁门禁自证不过）"; exit 3; }
+"$PY" "$ROOT/tools/check_upstream_patches.py" || exit 3
 "$PY" - "$ELF" <<'PYEOF' || exit 3
 import sys
 from elftools.elf.elffile import ELFFile
@@ -56,22 +59,8 @@ if gone:
 print('  OK SVG API 均 absent（v1.22 形态）')
 PYEOF
 
-echo "================ L4 导入表污染探针（bcmp 等单侧符号）================"
-"$PY" - "$ELF" "$ROOT/golden/factory.rkgame.bin" <<'PYEOF' || exit 4
-import sys
-from elftools.elf.elffile import ELFFile
-def imports(p):
-    e = ELFFile(open(p, 'rb'))
-    return set(s.name for s in e.get_section_by_name('.dynsym').iter_symbols() if s.name)
-ours, fac = imports(sys.argv[1]), imports(sys.argv[2])
-# bcmp：clang 把 strcmp(x,"lit")==0 变成 bcmp；工厂 GCC 不做 ⇒ 出现即口径污染
-suspect = ['bcmp']
-bad = [s for s in suspect if s in ours and s not in fac]
-if bad:
-    print('  FAIL 我方导入工厂没有的符号（口径污染，常见于旧 build/obj）:', bad)
-    print('       修法：用 link_audit 口径重编（带 -fno-builtin-strcmp）后重链')
-    sys.exit(4)
-print('  OK 无单侧污染符号（bcmp: %s）' % ('absent' if 'bcmp' not in ours else 'present-both'))
-PYEOF
+echo "================ L4 导入表全集对照（import_delta_gate）================"
+"$PY" "$ROOT/tools/import_delta_gate.py" --self-test >/dev/null 2>&1 || { echo "L4 FAIL（门禁自证不过）"; exit 4; }
+"$PY" "$ROOT/tools/import_delta_gate.py" "$ELF" "$ROOT/golden/factory.rkgame.bin" || exit 4
 
 echo "================ LOCAL PRECHECK: ALL 4 LAYERS PASS ================"

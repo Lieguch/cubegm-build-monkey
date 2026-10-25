@@ -1,0 +1,20 @@
+# import_delta_gate 台账 —— 导入表差集的"已定性"条目
+#
+# 规则（见 tools/import_delta_gate.py 头部）：
+#   未登记的差集条目一律 FAIL；每条都要写明"为什么不是缺陷"。
+#   别名等价写：  <A> ~ <B>
+#   单侧豁免写：  <符号>
+#
+# ---- glibc 别名：工厂用内建别名，我们用公开名 -------------------------------
+#   证据：diff_exec 的 libc_model ALIASES 已建模同一对（__strdup ⇒ strdup），
+#   行为尺三组（zero/strs/misc）实测一致。R286 登记。
+__strdup ~ strdup
+#
+# ---- 链接期样板符号：来自工厂 crt，与行为无关 -------------------------------
+#   证据：这四个是 glibc crt 的构造函数样板（ITM 事务内存桩 / Java 注册桩 / gmon 起始），
+#   工厂因自带 crt 而留下未定义引用；我方 zig 链接不产生。二者都不被程序体调用。
+#   已在 diff_exec「单侧未建模」门禁中登记为已建模（R219-era）。
+_ITM_deregisterTMCloneTable
+_ITM_registerTMCloneTable
+_Jv_RegisterClasses
+__gmon_start__

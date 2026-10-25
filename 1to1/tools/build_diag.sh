@@ -154,6 +154,8 @@ if [ -z "$(ls "$ROOT/build/upstream"/*.o 2>/dev/null)" ]; then
 fi
 echo "   upstream 对象 $(ls "$ROOT/build/upstream"/*.o 2>/dev/null | wc -l) 个"
 
+# ★ R286：诊断对象目录也要写清单（link_full 开头会校验 DIAG_OBJD 的新鲜度）
+"$PY" "$(winpath "$ROOT/tools/obj_manifest.py")" write "$(winpath "$OBJD")" || true
 echo "== [5/5] 链接 =="
 # ★ R259：CGM_SKIP_MODEL_GATE=1 —— 诊断版 wrap 故意重定向 65 个 libc 符号，
 #   link_full.sh 的"单侧未建模门禁"（防 diff_exec 假发散）对诊断版不适用

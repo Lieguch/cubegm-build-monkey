@@ -1,0 +1,10 @@
+# 上游本地补丁登记表（R286）
+#
+# 为什么需要：上游源码（stb/mxml/mp3）不是"原样编译"，我们对其打了少量行为/保真补丁。
+# 换上游版本时会静默丢失 —— R277 换 stb v1.22 就丢了 R204 的 3 处 noinline，直到 CI 的 s48 才暴露。
+# 本表 + tools/check_upstream_patches.py 把这条变成机械门禁（源级），与 ELF 级 L3 解耦。
+#
+# 格式（TAB 分隔）：文件 <TAB> 行内锚点（必须唯一命中） <TAB> 类型 <TAB> 理由 <TAB> 门禁
+src/upstream/stb/stb_truetype.h	static __attribute__((noinline)) void stbtt__csctx_rline_to(	noinline	工厂 ELF 有该实体符号(84B)；不加则被 -Os 内联 ⇒ CI s48「真漏实现」	L3/ELF符号
+src/upstream/stb/stb_truetype.h	static __attribute__((noinline)) void stbtt__rasterize_sorted_edges(	noinline	工厂 ELF 有该实体符号(2412B)；v2 rasterizer 不加则被内联 ⇒ s48	L3/ELF符号
+src/upstream/stb/stb_truetype.h	static __attribute__((noinline)) float stbtt__cuberoot(	noinline	工厂 ELF 有该实体符号(72B)；不加则被内联进 solve_cubic ⇒ s48	L3/ELF符号
