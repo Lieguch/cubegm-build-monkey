@@ -875,11 +875,21 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
             mu.reg_write(ac.UC_ARM_REG_SP, _sp0)
             mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
             _arm_write_args(mu, ac, _pargs, _sp0)
+            _ins0 = ctx['insns']
             try:
                 mu.emu_start(_paddr, SENTINEL, count=steps)
             except UcError as _pe:
                 raise ValueError('前缀 %r 执行失败: %s' % (_pf, _pe))
-            _pre_insns += ctx['insns']
+            _used = ctx['insns'] - _ins0
+            _pre_insns += _used
+            # ★★★ R292：**前缀未终止 ⇒ fail-loud**。
+            #   真实事故（R291）：corpus 漏了字体种子 ⇒ 前缀 `stbtt_InitFont` 把 libiconv 表
+            #   当 TTF 解析 ⇒ `stbtt__find_table` 死循环 ⇒ 目标函数被饿死，报告成"目标 TRUNC"。
+            #   ⇒ 症状与"产物有缺陷"同形，极易误判。故：前缀吃满预算即报错并指名。
+            if _used >= steps:
+                raise ValueError(
+                    '前缀 %r 在预算 %d 内未终止（很可能缺它需要的种子；'
+                    '参考 R291：stbtt_InitFont 需要字体数据种子）' % (_pf, steps))
         for _r in (ac.UC_ARM_REG_R0, ac.UC_ARM_REG_R1, ac.UC_ARM_REG_R2, ac.UC_ARM_REG_R3,
                    ac.UC_ARM_REG_R4, ac.UC_ARM_REG_R5, ac.UC_ARM_REG_R6, ac.UC_ARM_REG_R7,
                    ac.UC_ARM_REG_R8, ac.UC_ARM_REG_R9, ac.UC_ARM_REG_R10, ac.UC_ARM_REG_R11,

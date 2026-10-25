@@ -12223,3 +12223,50 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
    先做"最小可判"：只播 `m_ui` 必要字段 + 1 行标签数据，比较函数返回的推进量与 `OutRect` 变化。
 2. `_validate_fn_corpus` 增"pre 所需种子"检查（防再犯本轮漏种子）。
 3. `text_path_equiv.sh`（6 项）接进 `local_precheck` 作 L5。
+
+> 追加前 `old_intact=True`（旧文 933744 B / sha f1763066eed0f7ec…）；由 `tools/append_progress.py` 原子追加。
+## R292（2026-10-25 12:1x）
+
+### 日期
+
+2026-10-25（两道防复发门禁落地 + B6A 像素定位方案确立）
+
+### 完成事项
+
+1. **新增硬门禁：前置函数未终止 ⇒ fail-loud**
+   - 位置：`run_func` 的 `pre` 循环。判据：前缀自身吃满预算 ⇒ 立即抛 `ValueError` 并**指名**前缀函数，
+     提示"很可能缺它需要的种子"。
+   - 为什么必须：R291 真实事故——corpus 漏字体种子 ⇒ `stbtt_InitFont` 把 libiconv 表当 TTF 解析 ⇒
+     `stbtt__find_table` 死循环 ⇒ **目标函数被饿死**，报告成"目标 TRUNC"，与"产物有缺陷"**同形**。
+   - **判别力自证**：临时删掉 `empty-str` 组的字体种子 ⇒ 报
+     `ValueError: 前缀 'stbtt_InitFont' 在预算 3000 内未终止（…参考 R291…）`；恢复后正常跑完。
+2. **`local_precheck.sh` 扩为五层**：新增 L5 = `text_path_equiv.sh`（6 项文字路径判据）；
+   同时修正 L5 的 `ZIG`/`PY` 环境传递（否则脚本内解析不到 zig）。
+3. **五层全量实跑（本地，零带宽）**：
+   L1 arity 214/214 ｜ L2 严格类型轨 error=0 ｜ L3 上游补丁锚点全命中 + 符号在场 ｜
+   L4 导入表全集 PASS ｜ L5 六项文字判据全 PASS。
+4. **B6A 的下一步方案取证（不是计划臆想）**：
+   - `CGM_ABI_DUMP` 由 `tools/guest_shim/abi_probe.c:125` 实现（首帧 RGB565 落盘）；
+   - `tools/_b6a_pixel_diff.py` 已存在，消费两份 dump 出差异区域/颜色统计；
+   - **缺口**：`tools/ci_qemu_behav.sh` **没有 per-side dump 支持**（两侧会用同一路径互覆盖）⇒ 需要加
+     opt-in 开关（如 `CGM_ABI_DUMP_DIR`，两侧分别写 `frame_factory.bin` / `frame_rebuild.bin`）。
+
+### 新发现与决策
+
+1. **"仪器配置错"与"产物错"必须由门禁分开**：本轮把这条从"经验"变成机械判据（前缀未终止即报错）。
+   ⇒ 决策：凡使用 `pre` 前置钩子的判据组，必须能因"前缀异常"而**显式失败**，不得让目标函数背负 TRUNC。
+2. **不改硬门禁脚本换取信息**：`1to1-qemu-behav` 的 step 12 是硬门禁，直接往里塞 dump/像素比对会扩大
+   失败面（且 dump 属观测）。⇒ 决策：加**独立的 continue-on-error 观测步骤**，复用同一脚本 + opt-in 开关，
+   并把 diff 摘要**在 CI 内打印**（不外传产物，符合带宽约束）。
+3. 五层预检现在同时覆盖：编译一致性、类型严格性、上游补丁在场、导入表口径、文字渲染等价。
+   这五条正是本会话前半段"6 个门禁全红"的每一类根因。
+
+### 下一步待办
+
+1. `ci_qemu_behav.sh` 加 `CGM_ABI_DUMP_DIR`（opt-in，两侧不同文件；默认不落盘，行为不变）+ 在
+   `1to1-qemu-behav.yml` 增加观测步骤（`continue-on-error: true`）：跑一次带 dump 的采集 → 调
+   `_b6a_pixel_diff.py` → 打印差异 bbox / 颜色映射 / 平移匹配摘要。**这是把 B6A 从"哈希不同"推进到
+   "哪一块、什么颜色、是否整体平移"的唯一可判路径。**
+2. 依 1 的结果决定：若差异块是文字且形状一致但整体平移 ⇒ 查调用方坐标（`mui_DisplayLine_t` 的
+   `OutRect` 与推进量）；若颜色不同 ⇒ 查调色板/前景色来源；若形状不同 ⇒ 回到字形选择/cmap。
+3. 把"前缀未终止 ⇒ fail-loud"与"克隆函数配对归一"两条写入 `PROJECT-MEMORY.md` 纪律。

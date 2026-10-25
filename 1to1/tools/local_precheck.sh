@@ -63,4 +63,10 @@ echo "================ L4 导入表全集对照（import_delta_gate）==========
 "$PY" "$ROOT/tools/import_delta_gate.py" --self-test >/dev/null 2>&1 || { echo "L4 FAIL（门禁自证不过）"; exit 4; }
 "$PY" "$ROOT/tools/import_delta_gate.py" "$ELF" "$ROOT/golden/factory.rkgame.bin" || exit 4
 
-echo "================ LOCAL PRECHECK: ALL 4 LAYERS PASS ================"
+echo "================ L5 文字路径等价（6 项 --fn 判据，约 1-2 分钟）================"
+ZIG="$ZIG" PY="$PY" sh "$ROOT/tools/text_path_equiv.sh" > "$ROOT/report/_precheck_L5.txt" 2>&1
+L5RC=$?
+tail -7 "$ROOT/report/_precheck_L5.txt"
+[ "$L5RC" = "0" ] || { echo "L5 FAIL"; exit 5; }
+
+echo "================ LOCAL PRECHECK: ALL 5 LAYERS PASS ================"
