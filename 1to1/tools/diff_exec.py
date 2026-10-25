@@ -1133,7 +1133,51 @@ GLYPH_SCALE = 16.0 / _UNITS_PER_EM
 GLYPH_W = 32
 GLYPH_OUT = [('bmp', 0x3d3948, GLYPH_W * GLYPH_W)]
 
+# ★★★ R290：`stbtt_GetGlyphBitmapBoxSubpixel` —— **字形落点 bbox** 的等价判据。
+#   为什么它比光栅化更接近 B6A：位图已证等价（R289），若文字块仍偏移，机制只可能在
+#   "字形画到屏幕的哪个位置" —— 即 bbox（+ advance）。
+#   权威签名（本仓 stb_truetype.h）：(font, glyph, sx, sy, shx, shy, *ix0, *iy0, *ix1, *iy1)
+#   ⇒ core 参 6 个（r0/r1/r2/r3 + [sp]/[sp+4]），float 4 个（s0–s3）。
+#   输出窗 = 4 个 int（16 B），落在 items 内偏移 0x800（与帧缓冲 0x0..0x400 不重叠）。
+GLYPH_BOX_ADDR = 0x3d3948 + 0x800
+GLYPH_BOX_OUT = [('box', GLYPH_BOX_ADDR, 16)]
+
 FN_CORPUS = {
+    # ★ R290：**字形前进宽度**（hmtx 读表 + 单位换算）—— 决定文字行总宽与后续元素落点。
+    #   签名（本仓 stb_truetype.h）：(info, codepoint, int *advanceWidth, int *leftSideBearing)
+    #   ⇒ 4 个 core 参全在 r0–r3；输出窗 = 8 B（两个 int）。
+    'stbtt_GetCodepointHMetrics': [
+        ('A', [0x3bc41c, 0x41, 0x3d3948 + 0x900, 0x3d3948 + 0x904],
+         [(0x33231c, FONT_HEAD)], [('hm', 0x3d3948 + 0x900, 8)],
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        ('U+4E00', [0x3bc41c, 0x4E00, 0x3d3948 + 0x900, 0x3d3948 + 0x904],
+         [(0x33231c, FONT_HEAD)], [('hm', 0x3d3948 + 0x900, 8)],
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+    ],
+    # ★ R290：文本宽度累加（决定后续元素布局）；返回 int ⇒ **返回值即判据**。
+    #   args = (x=0, 字号代码 12 ⇒ 16px, 字符串)；OutRect.clip 播 300 允许两字符。
+    'mui_outputxy_length.isra.19': [
+        # 隔离组：空串 ⇒ 必须立刻返回 0（自证"字符串指针/种子确实生效"）
+        ('empty-str', [0, 12, 0x3d6948],
+         [(0x3d6948, b'\x00'), (0x3bc4a4 + 16, _le32(300))], None,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        # 隔离组：clip=0 ⇒ 首字符后必停（自证"循环终止条件可被观测"）
+        ('clip0', [0, 12, 0x3d6948],
+         [(0x3d6948, b'AB\x00'), (0x3bc4a4 + 16, _le32(0))], None,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        ('ascii-AB', [0, 12, 0x3d6948],
+         [(0x3d6948, b'AB\x00'), (0x3bc4a4 + 16, _le32(300))], None,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+    ],
+    # ★ R290：字形落点 bbox（glyph 8，16px）。
+    'stbtt_GetGlyphBitmapBoxSubpixel': [
+        ('g8-16px', [0x3bc41c, 8,
+                     GLYPH_BOX_ADDR, GLYPH_BOX_ADDR + 4,
+                     GLYPH_BOX_ADDR + 8, GLYPH_BOX_ADDR + 12,
+                     F32(GLYPH_SCALE), F32(GLYPH_SCALE), F32(0.0), F32(0.0)],
+         [(0x33231c, FONT_HEAD)], GLYPH_BOX_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+    ],
     # ★ R289：字形光栅化（真机字体 glyph 8，scale=16px）。只有 --fn stbtt_MakeGlyphBitmapSubpixel 时启用。
     'stbtt_MakeGlyphBitmapSubpixel': [
         # 组名自带 glyph 号；空字形（0）是"harness 自证"：无轮廓 ⇒ 必须极快返回。
@@ -1879,7 +1923,52 @@ def _apply_out_equiv(diffs, note, out_ok, out_names_ok):
     return kept, note, suppressed
 
 
-def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
+# ★★★ R290：**克隆函数配对归一**（判据先行）
+#
+#   问题（实测）：工厂 `mui_outputxy_length.isra.19` vs 我方 `mui_outputxy_length_isra_19`，
+#   名字不同 ⇒ 旧实现 `set(BF.funcs) & set(BO.funcs)` 里根本不存在这一对 ⇒
+#   **从未被比较**。工厂共 12 个 `.isra/.part/.constprop` 克隆，其中 9 个属于这种情况。
+#
+#   判据（保守，宁可"不配对并公示"也不猜）：
+#     ① 完全同名 ⇒ 直接配对（原行为）；
+#     ② 否则按"去克隆后缀"的键配对，且**仅当两侧在该键上都恰好 1 个**；
+#     ③ 两侧同键多候选（歧义）⇒ **不配对**，记入 `ambiguous` 并在报告里逐条公示；
+#     ④ `_pair_key` 只剥离**尾部** `.{isra,part,constprop}.N` 或 `_{isra,part,constprop}_N`。
+CLONE_RE = re.compile(r'(?:[._])(isra|part|constprop)(?:[._])(\d+)$')
+
+
+def _pair_key(name):
+    """去克隆后缀的配对键（幂等）。"""
+    return CLONE_RE.sub('', name)
+
+
+def build_pairs(BF, BO):
+    """→ (pairs: {工厂名: (工厂名, 我方名)}, ambiguous: [(键, 工厂候选, 我方候选)])"""
+    exact = set(BF.funcs) & set(BO.funcs)
+    pairs = {n: (n, n) for n in exact}
+    fk, ok = {}, {}
+    for n in BF.funcs:
+        if n not in exact:
+            fk.setdefault(_pair_key(n), []).append(n)
+    for n in BO.funcs:
+        if n not in exact:
+            ok.setdefault(_pair_key(n), []).append(n)
+    ambiguous = []
+    for k in sorted(set(fk) & set(ok)):
+        if len(fk[k]) == 1 and len(ok[k]) == 1:
+            pairs[fk[k][0]] = (fk[k][0], ok[k][0])
+        else:
+            ambiguous.append((k, sorted(fk[k]), sorted(ok[k])))
+    return pairs, ambiguous
+
+
+def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None, o_name=None):
+    """★ R290：`o_name` —— 我方侧函数名（配对归一后可能与工厂侧不同）：
+
+    工厂 GCC 的克隆名是 `X.isra.16`，我方 clang 是 `X` 或 `X_isra_16`；
+    旧实现只按**完全同名**配对 ⇒ 这类函数**从未被比较**（覆盖漏洞，实测 12 个克隆里 9 个未配对）。
+    显示名一律用工厂侧（读者按工厂符号定位），执行时才使用各自的真实符号名。
+    """
     rows, verdict = [], 'PASS'
     # ★★★ 2026-09-29 新增：**逐组机器可读明细**（`--dump-rows`）。
     #   为什么必须（否则归类只能看人类的"前 80 行"截断）：
@@ -1902,7 +1991,7 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     ret_unjudged = False
     for cname, args, cseed, outs, cpre in _unpack_cps(corpus or CORPUS):
         rf = run_func(bf, fname, args, seed=cseed, out_windows=outs, pre=cpre, **kw)
-        ro = run_func(bo, fname, args, seed=cseed, out_windows=outs, pre=cpre, **kw)
+        ro = run_func(bo, o_name or fname, args, seed=cseed, out_windows=outs, pre=cpre, **kw)
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
             _x('SKIP', None, None, err=str(rf.get('error') or ro.get('error'))[:100])
@@ -2589,6 +2678,25 @@ def self_test():
             c('正例  `_unpack_cps` 4 元组 → out_windows 透传、pre=None',
               list(_unpack_cps([('a', [1], None, [('w', 2, 4)])])),
               [('a', [1], None, [('w', 2, 4)], None)])
+            # ★ R290：克隆后缀配对归一（双向）
+            c('正例  _pair_key 剥工厂点号形 .isra.16',
+              _pair_key('stbtt__rasterize_sorted_edges.isra.16'),
+              'stbtt__rasterize_sorted_edges')
+            c('正例  _pair_key 剥我方下划线形 _isra_19',
+              _pair_key('mui_outputxy_length_isra_19'),
+              'mui_outputxy_length')
+            c('正例  _pair_key 幂等（无后缀名不变）',
+              _pair_key('stbtt_InitFont'), 'stbtt_InitFont')
+
+            class _FB(object):
+                def __init__(self, d):
+                    self.funcs = {k: (0, 1) for k in d}
+            _pr, _am = build_pairs(_FB({'A.isra.1': 1, 'B': 1}), _FB({'A_isra_1': 1, 'B': 1}))
+            c('正例  build_pairs 克隆名唯一 ⇒ 跨名配对',
+              _pr.get('A.isra.1'), ('A.isra.1', 'A_isra_1'))
+            _pr2, _am2 = build_pairs(_FB({'C.isra.1': 1}), _FB({'C': 1, 'C_isra_1': 1}))
+            c('反例  build_pairs 我方同键多候选 ⇒ 歧义不配对',
+              (('C.isra.1' in _pr2), len(_am2)), (False, 1))
             c('正例  `_unpack_cps` 5 元组 → pre 必须被透传（R289 新增）',
               list(_unpack_cps([('a', [1], None, None, [('initfont', [0])])])),
               [('a', [1], None, None, [('initfont', [0])])])
@@ -2846,7 +2954,9 @@ def main():
     sys.stderr.write('  对照 = %s\n    sha256=%s\n' % (fac, _sha[fac]))
     sys.stderr.write('  被测 = %s\n    sha256=%s\n' % (ours, _sha[ours]))
     BF, BO = Bin(fac), Bin(ours)
-    common = sorted(set(BF.funcs) & set(BO.funcs))
+    # ★ R290：配对归一（含克隆后缀）；`_PAIRS` 供 --list/--batch 共用
+    _PAIRS, _AMBIG = build_pairs(BF, BO)
+    common = sorted(_PAIRS)
 
     # ★★ 台账口径门禁：**跑之前**就判（口径不一致 ⇒ 直接 exit 3，不白跑一轮）。
     _cur_ruler = ruler_protocol_fingerprint()
@@ -2864,8 +2974,14 @@ def main():
         print('  两侧共有函数 %d 个（工厂 %d / 我们 %d）；数据区 F=%s O=%s'
               % (len(common), len(BF.funcs), len(BO.funcs), BF.dregion, BO.dregion))
         for n in common[:a.limit or 30]:
-            print('   %-46s F@0x%08x(%d) O@0x%08x(%d)'
-                  % (n, BF.funcs[n][0], BF.funcs[n][1], BO.funcs[n][0], BO.funcs[n][1]))
+            _on = _PAIRS[n][1]
+            print('   %-46s F@0x%08x(%d) O@0x%08x(%d)%s'
+                  % (n, BF.funcs[n][0], BF.funcs[n][1], BO.funcs[_on][0], BO.funcs[_on][1],
+                     ('' if _on == n else '  [配对 ⇄ %s]' % _on)))
+        if _AMBIG:
+            print('   ★ 配对歧义（不比较，逐条公示）：%d 项' % len(_AMBIG))
+            for k, fc, oc in _AMBIG[:10]:
+                print('      键 %-40s 工厂%s 我方%s' % (k, fc, oc))
         return 0
 
     if a.fn:
@@ -2884,7 +3000,8 @@ def main():
                 return 9
         else:
             cps_fn = cps
-        v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps_fn, void_fns=vf, out=o)
+        v, rows = compare(BF, BO, a.fn, a.steps, corpus=cps_fn, void_fns=vf, out=o,
+                         o_name=_PAIRS.get(a.fn, (a.fn, a.fn))[1])
         print('  %s ⇒ %s' % (a.fn, v))
         if o.get('ret_unjudged'):
             print('     [ret] 该函数返回类型为 void ⇒ r0 是残留值，**未作判据**（GAP 17.12）')
@@ -2921,11 +3038,13 @@ def main():
         all_x = []          # ★ `--dump-rows` 用：逐组机器可读明细（**不截断**）
         for i, n in enumerate(names):
             o = {}
-            v, rows = compare(BF, BO, n, a.steps, corpus=cps, void_fns=void_fns, out=o)
+            v, rows = compare(BF, BO, n, a.steps, corpus=cps, void_fns=void_fns, out=o,
+                             o_name=_PAIRS.get(n, (n, n))[1])
             if v == 'TRUNC':
                 # ★ 放大重试：只对"确实截断"的函数付费，避免把分歧藏进"不可判"
                 o2 = {}
-                v2, rows2 = compare(BF, BO, n, esc_steps, corpus=cps, void_fns=void_fns, out=o2)
+                v2, rows2 = compare(BF, BO, n, esc_steps, corpus=cps, void_fns=void_fns, out=o2,
+                                  o_name=_PAIRS.get(n, (n, n))[1])
                 if v2 != 'TRUNC':
                     v, rows, o = v2, rows2, o2
                     n_esc += 1

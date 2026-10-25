@@ -12128,3 +12128,50 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 2. **`stbtt_GetCodepointBitmapBoxSubpixel`**（8 参，含 2 个 float）补一组：它是"字形在屏幕上的 bbox"，
    直接决定文字落点 —— 若 bbox 不同，B6A 的偏移就有了机制解释。
 3. 把 `text_path_equiv.sh` 接进 `local_precheck` 作为 L5（注意耗时：约 1–2 分钟）。
+
+> 追加前 `old_intact=True`（旧文 926439 B / sha 75402c4566811e16…）；由 `tools/append_progress.py` 原子追加。
+## R290（2026-10-25 11:3x）
+
+### 日期
+
+2026-10-25（文字原语全证等价 + 修掉"克隆函数从未比较"的结构性覆盖漏洞）
+
+### 完成事项
+
+1. **`stbtt_GetCodepointHMetrics`（字形前进宽度）⇒ PASS**
+   新增 FN_CORPUS 组（'A' 与 U+4E00 各一组，输出窗 = advance/leftBearing 8 B）：
+   两侧 **8 B 逐位相同**（F 1582 / O 1328 条指令）。前进宽度直接决定文字行总宽与后续元素落点。
+2. **`stbtt_GetGlyphBitmapBoxSubpixel`（字形落点 bbox）⇒ PASS**
+   10 参（6 core + 4 float 走 s0–s3）由 R289 的 `F32`/栈参能力驱动；输出窗 16 B **逐位相同**。
+3. **修掉结构性覆盖漏洞：克隆函数配对归一**
+   - 事实：工厂共 12 个 `.isra/.part/.constprop` 克隆函数，其中 **9 个因两端命名不同
+     （`X.isra.19` vs `X_isra_19`）从未与我们对拍** —— `set(BF.funcs) & set(BO.funcs)` 里根本不存在这一对。
+   - 实现：`_pair_key()` 只剥**尾部**克隆后缀；`build_pairs()` **仅当两侧在该键上都唯一**时才配对，
+     歧义则**不配对并逐条公示**（`--list` 打印）。`compare()` 新增 `o_name`，显示名仍用工厂符号。
+   - 自证：新增 5 条（两种命名形态、幂等、唯一配对、歧义不配对），**203 条 0 失败**。
+4. **口径因配对与 `compare()` 改动而变更 ⇒ 显式重记账**
+   - 新统计：**PASS 781 ｜ DIVERGE 5 ｜ TRUNC 5 ｜ DEADEQ 7 ｜ REFDEAD 1**（此前 PASS 770 / DIVERGE 8）。
+   - **REAL 发散归零**（ABI 2 / NOISE 2 / UNDECIDABLE 1）；此前的 `TestLibz0` REAL 项消失。
+   - 新 ruler `8b681d99…`；台账 18 项（发散 5 + 不可判 13），`ours=60f7c1a0`，原因已留痕。
+5. **`text_path_equiv.sh` 扩到五项**（outputxy1 / InitFont / HMetrics / bbox / MakeGlyphBitmap），实跑 **五项全 PASS**。
+
+### 新发现与决策
+
+1. **文字渲染链路已全部证等价（五项原语，全部逐位相同）**：
+   解析 → 前进宽度 → 落点 bbox → 字形光栅化（3 个真实 CJK 字形）→ 8×16 ASCII 位图。
+   ⇒ B6A 的 245×51 差异**不在字体/渲染任何一个环节**，只能在 **UI 层**（坐标/颜色/绘制顺序/裁剪）。
+2. **"从未被比较"比"比较了但发散"更危险**：9 个克隆函数此前在报告里**不存在**，
+   报告却显示"共 790 个函数"看起来完整。⇒ 分母必须能自证覆盖：任何"因名字对不上而缺席"的函数
+   都必须在报告里出现（本次用"配对⇄"标注 + 歧义公示落实）。
+3. **`mui_outputxy_length.isra.19` 挂起（规则 4）**：空串组在 3k/6k/12k/20k 四档预算下
+   `insns` 恒等于预算+1 ⇒ **不终止**（两侧对称），排除了"字形复杂/预算不足"。
+   已加隔离组（空串 / clip=0 / AB）证明不是字符串循环长度问题；疑点在本轮 corpus 形状
+   （`OutRect` 字段偏移或 param 语义），**不再盲试**，下轮先取入口寄存器/PC 现场。
+
+### 下一步待办
+
+1. 用 `CGM_DBG_REGS=1` + PC 采样定位 `mui_outputxy_length` 的不终止点（先取证再改 corpus）。
+2. `mui_outputxy_t`（UI 文字绘制：坐标/颜色/混合）合法入参 —— 需帧缓冲 ≤ 具名对象容量
+   （`items` 16 KB ⇒ 把 `scr_h_size` 播成 32，窗口 32×64×2 = 4 KB 可行）。
+3. CI 验证：本轮推送后 `1to1-verify` 的 s36 必须用新 ruler 通过（台账已重记）。
+4. `text_path_equiv.sh`（5 项）接进 `local_precheck` 作 L5；耗时约 1–2 分钟。

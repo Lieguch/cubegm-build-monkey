@@ -17,7 +17,8 @@ cd "$ROOT" || exit 9
 rc=0
 # 第三项需要更大预算：真机 CJK 字形 16px 单字实测 21 万~80 万条指令
 # （g3 21.2万 / g4 23.6万 / g8 80.5万，F/O 两侧同量级）⇒ 用 300 万步上限。
-for spec in "outputxy1:" "stbtt_InitFont:" "stbtt_MakeGlyphBitmapSubpixel:--steps 3000000"; do
+for spec in "outputxy1:" "stbtt_InitFont:" "stbtt_GetCodepointHMetrics:" \
+             "stbtt_GetGlyphBitmapBoxSubpixel:" "stbtt_MakeGlyphBitmapSubpixel:--steps 3000000"; do
     fn=${spec%%:*}; extra=${spec#*:}
     out=$("$PY" tools/diff_exec.py --fn "$fn" $extra 2>&1)
     verdict=$(printf '%s\n' "$out" | grep -E "^  $fn ⇒" | head -1)
@@ -29,7 +30,7 @@ for spec in "outputxy1:" "stbtt_InitFont:" "stbtt_MakeGlyphBitmapSubpixel:--step
 done
 
 if [ "$rc" = "0" ]; then
-    echo "文字路径等价证据：三项均 PASS"
+    echo "文字路径等价证据：五项均 PASS"
 else
     echo "文字路径等价证据：存在非 PASS 项（见上）"
 fi

@@ -1,28 +1,26 @@
 # diff_exec 发散棘轮台账（只允许减少）
 # steps=3000
 # escalate=60000
-# ruler=c85f9763c0b1226b702bce6f6988094a33199edbb89657ffada782b7952b3656
-# ours=2215fcea8e23b24915a774334ffad3b0118641a6d0a83f9fb5e642fb6ff29171
-# rebaseline: R284: restored 3 factory 2-arg call sites (run_game/SoundClose/FBA_Load now variadic prototypes), fixed 22 strict type errors, stb v1.22+noinline; void-fn set changed => ruler changed
+# ruler=8b681d99c9eb98a5bf7221aa8bef71b59529a467850c11faa394113d3570f50b
+# ours=60f7c1a0b845597c47246e1a0c845db5acc858247edb0522562e7dda8a041564
+# rebaseline: R290: 克隆函数配对归一（.isra/.part/.constprop 两端命名不同导致 9 个函数从未比较）+ compare() 新增 o_name ⇒ 分母与尺子均变更
 # 生成：python tools/diff_exec.py --batch --steps 3000 --ledger <本文件> --update-ledger
 # ★ 评测时必须用**相同的 steps/escalate/ruler**，否则本工具 fail-closed (exit 3) —— 见 GAP 17.10 / §0.36
 # ★ ruler = 判据口径指纹（compare() 源码 + 判据常量，机械推导）；口径变了必须 --rebaseline --reason "..." 留痕
 Core_Load
 DisplayPage_list
 MP3InitDecoder
-TestLibz0
 TestRun
 TestUSBJoy
 WaitNMI
-_Z40unzlocal_CheckCurrentFileCoherencyHeaderP5unz_sPjPmS1_
 get_item_from_line
 mui_DisplayInputBuffer
 mui_DisplayLine_t
-mui_InitFont
 outputblankxy
 outputxy1
 progress
 stbtt__get_subrs
+stbtt__handle_clipped_edge.part.9
 stbtt__tesselate_curve
 strtrim
 xmp3_AllocateBuffers
