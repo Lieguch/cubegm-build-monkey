@@ -786,10 +786,22 @@ jobs:
       #   仅在链接门禁成功时上传（s23），避免把半成品当交付物。
       - name: 上传可部署产物（真机验收用）★ 交付物
         if: steps.s23.outcome == 'success'
+        run: |
+          cd 1to1
+          # ★ R298：交付物必须**自带校验**。验收方下载后先 `sha256sum -c` 再上机，
+          #   否则"设备上那个二进制是不是这次 CI 的产物"无法证明（此前设备仍是 R273）。
+          sha256sum build/rkgame.rebuilt.elf | sed 's#  .*/#  #' | tee build/rkgame.rebuilt.elf.sha256
+          echo "--- 交付物 ---"
+          ls -la build/rkgame.rebuilt.elf build/rkgame.rebuilt.elf.sha256
+
+      - name: 上传可部署产物（ELF + sha256）
+        if: steps.s23.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: rkgame-rebuilt-${{ github.sha }}
-          path: 1to1/build/rkgame.rebuilt.elf
+          path: |
+            1to1/build/rkgame.rebuilt.elf
+            1to1/build/rkgame.rebuilt.elf.sha256
           if-no-files-found: error
           retention-days: 30
 

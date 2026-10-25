@@ -12508,3 +12508,39 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
    与 `factory↔control` 确定性结论 ⇒ 对 B6A 定性。
 2. 真机按 `ACCEPTANCE.md` 验收，**首验 B 类（core 启动/音频）与 C 类（存档）**。
 3. G1 回放：用 factory 快照对 TRUNC 5 + DEADEQ 7 一次性重判。
+
+> 追加前 `old_intact=True`（旧文 955718 B / sha 38e11991bc16730a…）；由 `tools/append_progress.py` 原子追加。
+## R298（2026-10-25 16:2x）—— 验收交付闭环：产物自带 sha256 + DEPLOY.md 操作手册
+
+### 日期
+
+2026-10-25（用户问"给我什么做验收、怎么验、文件路径"）
+
+### 完成事项
+
+1. **交付物自带校验**：`1to1-verify` 的上传步骤拆为两步 —— 先 `sha256sum` 生成
+   `rkgame.rebuilt.elf.sha256`（只留文件名，便于 `sha256sum -c`），再把 ELF 与该文件一起上传。
+   ⇒ 验收方下载后 `sha256sum -c` 即可证明"设备上那个二进制是哪次提交的产物"。
+   YAML 校验通过（56 步）。
+2. **新增 `DEPLOY.md`（验收操作手册）**，回答三件事：
+   - **交付物**：`rkgame-rebuilt-<sha>`（zip，内含 `rkgame.rebuilt.elf` + `.sha256`），
+     下载方式二选一（网页 Artifacts / API curl），上机前必须 `sha256sum -c`。
+   - **怎么验**：按 `ACCEPTANCE.md` 的 A（启动/菜单 6 项）/ B（列表·启动 core·音频 6 项）/
+     C（存档 3 项）逐项，每项写明**动作 + 证据形式**（照片/录屏/录音/`ls`+`sha256sum`/`menu.log` 尾部）。
+   - **文件路径**：替换 `/sdcard/cubegm/rkgame`；**先备份** `/sdcard/cubegm/rkgame.factory.bak`；
+     `ui_cn.zip`/`joystick.zip`/`cores/`/`saves/` 不动；日志 `/sdcard/cubegm/menu.log`；
+     并给出落地三条命令与回滚一条命令。
+3. **如实标注产物版本差异**：现存两个 artifact（`04738955ed16…` / `0ce4864a2056…`，各 4,046,131 B）
+   **不含 `.sha256`**（早于本改动）；本次推送后的新产物才完整。
+
+### 新发现与决策
+
+1. **"能验收"= 产物可追溯 + 判据可执行 + 路径明确**，三者缺一都不算交付。本轮补齐前两项，
+   第三项（真机）必须由用户完成。
+2. 决策：产物命名带 commit sha，校验文件与二进制**同包上传**；不再依赖"口头说明版本"。
+
+### 下一步待办
+
+1. 用户按 `DEPLOY.md` 下载最新 artifact → 校验 → 上机 → 回填 `ACCEPTANCE.md` 记录。
+2. 若 A/B/C 任一项失败，该项即为唯一根因入口，直接从该项对应的源码/仪器入手。
+3. 观测侧遗留：B6A 定性（`factory↔control` 对照 + bbox/颜色映射）随下一次 qemu-behav 出数。
