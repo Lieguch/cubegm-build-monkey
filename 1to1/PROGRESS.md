@@ -12082,3 +12082,49 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
    这就是 B6A 差异（245×51 文字块）的最小可判单元。
 3. 若字形位图等价 ⇒ B6A 差异不在 stb 侧，转向 UI 几何/颜色（`mui_outputxy_t` 的坐标与颜色入参）。
 4. 把 `text_path_equiv.sh` 接进 `local_precheck`（L5）作为文字路径的常驻证据。
+
+> 追加前 `old_intact=True`（旧文 922711 B / sha fbc1e0dc07d1eaba…）；由 `tools/append_progress.py` 原子追加。
+## R289（2026-10-25 11:0x）
+
+### 日期
+
+2026-10-25（B6A 判定：整条 stb/文字渲染链路等价，差异不在 stb 侧）
+
+### 完成事项
+
+1. **diff_exec 仪器升级（两处，均带自证）**
+   - **`F32` 类型化实参**：hard-float ABI 下 float 形参走 `s0–s15`；旧实现把 `args[4:]` 一律按整数写 `[sp]`，
+     于是任何带 float 形参的函数都被喂垃圾（失败形态是"结果离谱"而非报错）。新增 `_arm_write_args()` 统一分配：
+     整数/指针 → `r0–r3` 再 `[sp..]`，`F32` → `s0..s15`。
+   - **`FN_CORPUS` 前置钩子 `pre`**：同一 Unicorn 实例内先执行前缀函数，再执行目标（fail-loud：任一侧缺该函数即抛）。
+     用于有状态函数 —— `stbtt_MakeGlyphBitmapSubpixel` 必须先 `stbtt_InitFont` 填好 `font` 结构。
+   - 元组契约升级为 **5 元组**（第 5 项 = pre）；`_unpack_cps` 成为唯一真源（`_validate_fn_corpus` 改为复用它，
+     此前手写 4 元解包 ⇒ 加 pre 后直接崩）。**自证 198 条 0 失败**（含新反例：6 元组必须报错）。
+2. **新增 `FN_CORPUS['stbtt_MakeGlyphBitmapSubpixel']`（4 组：空字形 + glyph 3/4/8）⇒ PASS**
+   - 权威签名取自本仓 `src/upstream/stb/stb_truetype.h:885`（不凭记忆）。
+   - glyph 选择依据：`loca` 实测 397 个 glyph 的数据完整落在已播种的 166,326 B 内（`glyf@0x185bc` 之后无法播种）。
+   - 实测指令量：g3 211,998/228,689；g4 236,050/266,613；g8 **805,459/794,081**（F/O）——均跑到 `return`，
+     **输出窗 32×32 位图逐位相同**（空字形 g0 为 harness 自证，1532 步）。
+3. **`tools/text_path_equiv.sh` 扩为三项**（outputxy1 / stbtt_InitFont / stbtt_MakeGlyphBitmapSubpixel，后者 `--steps 3000000`），
+   实跑三项全 PASS。
+
+### 新发现与决策
+
+1. **B6A 的 stb 假设被证伪（有硬证据）**：TTF 解析（`font` 结构 124 B 逐位相同）、ASCII 8×16 位图渲染、
+   **真实 CJK 字形光栅化（3 个 glyph 位图逐位相同）** 三项全等价。
+   ⇒ 差异**不在** stb 版本、不在编译器对光栅器的影响。
+   ⇒ 决策：**停止一切"换 stb 版本 / 换编译器"方向**（R277 以来的主线之一就此关闭），B6A 转向 UI 层。
+2. **"跑不完"曾被我误读两次**：先是把 DEADEQ 当 TRUNC（R288），这次又把"正常复杂度"当病态循环。
+   实测指令量（单字 21 万~80 万）证实是**正常量级**，只要预算足够即可判。
+   ⇒ 决策：`--fn` 判据给出 TRUNC 时，**必须先测同函数在两组预算下的斜率**，再判断是病态还是预算不足。
+3. 仪器缺陷的共同形态值得记：`args[4:]` 静默丢参数、`_unpack_cps` 手写解包 —— 都是"形状变了但消费者没跟上"。
+   ⇒ 已用"单一真源 + fail-loud"处理；同类风险点是 `_validate_fn_corpus`（已修）。
+
+### 下一步待办
+
+1. **B6A 转向 UI 层**：差异块 245×51 = 一行文字，但字形位图相同 ⇒ 差异只能是**位置/颜色/绘制顺序**。
+   下一步对 `mui_outputxy_t`（`param: scr, x, y, color_fg, color_bg, str`）做合法入参等价判据：
+   需要前置钩子把 `font` 初始化 + 少量 UI 全局（`DAT_003af29c` 等）播种。
+2. **`stbtt_GetCodepointBitmapBoxSubpixel`**（8 参，含 2 个 float）补一组：它是"字形在屏幕上的 bbox"，
+   直接决定文字落点 —— 若 bbox 不同，B6A 的偏移就有了机制解释。
+3. 把 `text_path_equiv.sh` 接进 `local_precheck` 作为 L5（注意耗时：约 1–2 分钟）。

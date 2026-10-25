@@ -624,8 +624,34 @@ def _machine_for(b, mode):
 
 
 
+class F32(float):
+    """typed float 实参：走 VFP 寄存器 s0..s15（hard-float AAPCS）。
+
+    ★ 为什么必须有（R289）：本目标 ABI 是 armv7 **hard-float**；`stbtt_MakeGlyphBitmapSubpixel`
+      的 4 个 float 参数按 AAPCS-VFP 进 s0–s3，而旧实现把 `args[4:]` 一律按整数写到 [sp]
+      ⇒ float 被塞进栈上整数槽，被调函数读到的 s0 是复用实例残留（失败形态是"结果离谱"而非报错）。
+    """
+
+
+def _arm_write_args(mu, ac, args, sp0):
+    """按 AAPCS-VFP 写实参：整数/指针→r0..r3 再 [sp..]；F32→s0..s15。"""
+    import struct as _st
+    core = [a for a in list(args) if not isinstance(a, F32)]
+    vfp = [a for a in list(args) if isinstance(a, F32)]
+    for i, v in enumerate(core[:4]):
+        mu.reg_write(ac.UC_ARM_REG_R0 + i, int(v) & 0xFFFFFFFF)
+    for i, v in enumerate(core[4:]):
+        mu.mem_write(sp0 + i * 4, (int(v) & 0xFFFFFFFF).to_bytes(4, 'little'))
+    for i, v in enumerate(vfp[:16]):
+        reg = getattr(ac, 'UC_ARM_REG_S%d' % i, None)
+        if reg is None:
+            raise ValueError('本 Unicorn 无 UC_ARM_REG_S%d，无法传递 float 实参' % i)
+        mu.reg_write(reg, _st.unpack('<I', _st.pack('<f', float(v)))[0])
+    return len(core), len(vfp)
+
+
 def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_final=None,
-             mode=None, _retry=True, stop_at=None, seed=None, out_windows=None):
+             mode=None, _retry=True, stop_at=None, seed=None, out_windows=None, pre=None):
     """执行 fname(args)。mode=None 时自动判 ARM/Thumb（先 ARM，遇 INSN_INVALID 再试 Thumb）。
 
     ★ 2026-10-01 新增 `stop_at`（**共同视野前缀**用，见 `compare()` 的两侧早死判据）：
@@ -821,10 +847,45 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     mu.hook_add(UC_HOOK_MEM_WRITE_UNMAPPED, fhook)
     mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, fhook)
 
-    mu.reg_write(ac.UC_ARM_REG_SP, STACK_BASE + STACK_SIZE - 0x100)
+    _sp0 = STACK_BASE + STACK_SIZE - 0x100
+    # ★★★ R289：**前置钩子**（同一 Unicorn 实例内先执行 pre 里的函数，再执行目标）。
+    #   用途：有状态函数——`stbtt_MakeGlyphBitmapSubpixel` 必须先 `stbtt_InitFont` 填好
+    #   `font` 结构，否则读到的全是 0（表现为"没渲染"而不是"报错"）。
+    #   ★ 两侧跑**同一份**前缀 ⇒ 对称；前缀写入的内存保留给目标。
+    #   ★ fail-loud：前缀函数在任一侧不存在就抛，不得静默跳过。
+    _pre_insns = 0
+    if pre:
+        for _pf, _pargs in (pre or ()):
+            if _pf not in b.funcs:
+                raise ValueError('FN_CORPUS 前缀函数 %r 在 %r 中不存在' % (_pf, getattr(b, 'path', '?')))
+            _paddr, _ = b.funcs[_pf]
+            for _r in (ac.UC_ARM_REG_R0, ac.UC_ARM_REG_R1, ac.UC_ARM_REG_R2, ac.UC_ARM_REG_R3,
+                       ac.UC_ARM_REG_R4, ac.UC_ARM_REG_R5, ac.UC_ARM_REG_R6, ac.UC_ARM_REG_R7,
+                       ac.UC_ARM_REG_R8, ac.UC_ARM_REG_R9, ac.UC_ARM_REG_R10, ac.UC_ARM_REG_R11,
+                       ac.UC_ARM_REG_R12, ac.UC_ARM_REG_LR, ac.UC_ARM_REG_CPSR):
+                try:
+                    mu.reg_write(_r, 0)
+                except UcError:
+                    pass
+            mu.reg_write(ac.UC_ARM_REG_SP, _sp0)
+            mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
+            _arm_write_args(mu, ac, _pargs, _sp0)
+            try:
+                mu.emu_start(_paddr, SENTINEL, count=steps)
+            except UcError as _pe:
+                raise ValueError('前缀 %r 执行失败: %s' % (_pf, _pe))
+            _pre_insns += ctx['insns']
+        for _r in (ac.UC_ARM_REG_R0, ac.UC_ARM_REG_R1, ac.UC_ARM_REG_R2, ac.UC_ARM_REG_R3,
+                   ac.UC_ARM_REG_R4, ac.UC_ARM_REG_R5, ac.UC_ARM_REG_R6, ac.UC_ARM_REG_R7,
+                   ac.UC_ARM_REG_R8, ac.UC_ARM_REG_R9, ac.UC_ARM_REG_R10, ac.UC_ARM_REG_R11,
+                   ac.UC_ARM_REG_R12, ac.UC_ARM_REG_LR, ac.UC_ARM_REG_CPSR):
+            try:
+                mu.reg_write(_r, 0)
+            except UcError:
+                pass
+    mu.reg_write(ac.UC_ARM_REG_SP, _sp0)
     mu.reg_write(ac.UC_ARM_REG_LR, SENTINEL)
-    for i, v in enumerate(list(args)[:4]):
-        mu.reg_write(ac.UC_ARM_REG_R0 + i, v & 0xFFFFFFFF)
+    _arm_write_args(mu, ac, args, _sp0)
     # ★★★ 2026-10-07（第 160 轮）：**AAPCS 栈参数**（第 5 个及以后的参数）。
     #   ARM 过程调用标准：前 4 个参数走 r0-r3，第 5 个起**由调用方压栈**，
     #   被调函数从 [sp], [sp+4], … 读取。
@@ -832,9 +893,6 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     #   `args[4:]` 被静默丢弃 ⇒ 被调函数从栈读到的是复用实例的**残留**或零
     #   ⇒ 语料组里写了第 5 个参数等于没写，`gb`（guard bits）恒定走旧分支。
     #   ★ 栈内容已在上方被 `_zeros` 清过（第 108 轮的残留泄漏修复），此处只覆写。
-    _sp0 = STACK_BASE + STACK_SIZE - 0x100
-    for i, v in enumerate(list(args)[4:]):
-        mu.mem_write(_sp0 + i * 4, (v & 0xFFFFFFFF).to_bytes(4, 'little'))
 
     if os.environ.get('CGM_DBG_REGS') == '1':
         sys.stderr.write('   [entry] %-30s mode=%s addr=0x%x (lowbit=%d) r0=0x%x r1=0x%x r2=0x%x r3=0x%x\n'
@@ -930,11 +988,14 @@ def _unpack_cps(items):
     """
     for it in items:
         if len(it) == 2:
-            yield it[0], it[1], None, None
+            yield it[0], it[1], None, None, None
         elif len(it) == 3:
-            yield it[0], it[1], it[2], None
+            yield it[0], it[1], it[2], None, None
         elif len(it) == 4:
-            yield it[0], it[1], it[2], it[3]
+            yield it[0], it[1], it[2], it[3], None
+        elif len(it) == 5:
+            # R289：(组名, args, seed, out_windows, pre)
+            yield it[0], it[1], it[2], it[3], it[4]
         else:
             raise ValueError('语料条目必须是 2/3/4 元组'
                              '（名字, args[, seed[, out_windows]]）：%r' % (it,))
@@ -1055,7 +1116,44 @@ def _font_head_bytes(n=166326):
 FONT_HEAD = _font_head_bytes()
 STBTT_INITFONT_OUT = [('font', 0x3bc41c, 124)]
 
+# ★★★ R289：`stbtt_MakeGlyphBitmapSubpixel` —— **字形光栅化**的直接等价判据
+#   （B6A 差异块 245×51 文字行的最小可判单元）。
+#
+#   依赖链：必须先 `stbtt_InitFont(font, data, 0)` 把 `font` 结构填好（前置钩子 pre），
+#   否则目标函数读到的 info 全 0 ⇒ 表现为"没渲染"而非报错。
+#   参数（权威签名 `src/upstream/stb/stb_truetype.h:885`）：
+#     (info, output, out_w, out_h, out_stride, scale_x, scale_y, shift_x, shift_y, glyph)
+#   ① hard-float ABI：4 个 float 走 **s0–s3**（`F32` 类型化实参），
+#      整数参数里第 5 个（out_stride）与第 6 个 core 参（glyph）走 [sp]/[sp+4]。
+#   ② glyph 选 **8**：loca 实测其数据 [99,772+484, +176) 完全落在已播种的 166 KB 内
+#      （glyf@0x185bc 之后的数据无法播种 —— 二进制里没有第二个 16 KB 以上的可写对象）。
+#   ③ scale 取 `16 / unitsPerEm` ⇒ 与 UI 实际 16 px 字号同量级；输出窗 32×32。
+_UNITS_PER_EM = struct.unpack('>H', FONT_HEAD[18:20])[0]
+GLYPH_SCALE = 16.0 / _UNITS_PER_EM
+GLYPH_W = 32
+GLYPH_OUT = [('bmp', 0x3d3948, GLYPH_W * GLYPH_W)]
+
 FN_CORPUS = {
+    # ★ R289：字形光栅化（真机字体 glyph 8，scale=16px）。只有 --fn stbtt_MakeGlyphBitmapSubpixel 时启用。
+    'stbtt_MakeGlyphBitmapSubpixel': [
+        # 组名自带 glyph 号；空字形（0）是"harness 自证"：无轮廓 ⇒ 必须极快返回。
+        ('g0-empty', [0x3bc41c, 0x3d3948, GLYPH_W, GLYPH_W, GLYPH_W,
+                      F32(GLYPH_SCALE), F32(GLYPH_SCALE), F32(0.0), F32(0.0), 0],
+         [(0x33231c, FONT_HEAD)], GLYPH_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        ('g3', [0x3bc41c, 0x3d3948, GLYPH_W, GLYPH_W, GLYPH_W,
+                F32(GLYPH_SCALE), F32(GLYPH_SCALE), F32(0.0), F32(0.0), 3],
+         [(0x33231c, FONT_HEAD)], GLYPH_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        ('g4', [0x3bc41c, 0x3d3948, GLYPH_W, GLYPH_W, GLYPH_W,
+                F32(GLYPH_SCALE), F32(GLYPH_SCALE), F32(0.0), F32(0.0), 4],
+         [(0x33231c, FONT_HEAD)], GLYPH_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        ('g8', [0x3bc41c, 0x3d3948, GLYPH_W, GLYPH_W, GLYPH_W,
+                F32(GLYPH_SCALE), F32(GLYPH_SCALE), F32(0.0), F32(0.0), 8],
+         [(0x33231c, FONT_HEAD)], GLYPH_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+    ],
     # ★ R288：stb 解析行为（真机字体前 166 KB）。只有 --fn stbtt_InitFont 时启用。
     'stbtt_InitFont': [
         ('ttf-head', [0x3bc41c, 0x33231c, 0], [(0x33231c, FONT_HEAD)], STBTT_INITFONT_OUT),
@@ -1088,7 +1186,8 @@ def _validate_fn_corpus(bf, bo, fname):
       「输出不同」却报「读不到」，判据被悄悄换成更弱的那条。
     ★ fail-loud（第 98 轮纪律：装不上/不对就抛，绝不静默退化）。
     """
-    for cname, _args, seed, outs in FN_CORPUS.get(fname, ()):
+    # ★ R289：元组形状由 `_unpack_cps` 单一真源解析（此前这里手写 4 元解包 ⇒ 加 pre 后崩）
+    for cname, _args, seed, outs, _pre in _unpack_cps(FN_CORPUS.get(fname, ())):
         for va, _bs in (seed or ()):
             for tag, b in (('工厂', bf), ('我方', bo)):
                 if b.seg_of(va) is None:
@@ -1801,9 +1900,9 @@ def compare(bf, bo, fname, steps=20000, corpus=None, void_fns=None, out=None):
     # ★ 最终内容两侧共用**工厂的符号名**（同址同名才可比）
     kw = dict(steps=steps, spans=spans, syms_for_final=bf.data_syms)
     ret_unjudged = False
-    for cname, args, cseed, outs in _unpack_cps(corpus or CORPUS):
-        rf = run_func(bf, fname, args, seed=cseed, out_windows=outs, **kw)
-        ro = run_func(bo, fname, args, seed=cseed, out_windows=outs, **kw)
+    for cname, args, cseed, outs, cpre in _unpack_cps(corpus or CORPUS):
+        rf = run_func(bf, fname, args, seed=cseed, out_windows=outs, pre=cpre, **kw)
+        ro = run_func(bo, fname, args, seed=cseed, out_windows=outs, pre=cpre, **kw)
         if rf.get('error') or ro.get('error'):
             rows.append((cname, 'SKIP', rf.get('error'), ro.get('error')))
             _x('SKIP', None, None, err=str(rf.get('error') or ro.get('error'))[:100])
@@ -2479,21 +2578,26 @@ def self_test():
               read_width_only([('A', 0x10, 4, 'R')], [('A', 0x10, 4, 'W')])[0], False)
             # ★★★ 2026-10-07（第 160 轮）：**输出窗逐位判据**（`_out_window_diffs` +
             #   `_apply_out_equiv`，两个纯函数）。先离线自证判据本身，再端到端跑 FDCT32。
-            c('正例  `_unpack_cps` 2 元组 → (名, args, None, None)',
+            # ★ R289：契约升级为 5 元组（第 5 项 = pre 前置钩子）。以下四条同步更新，
+            #   并保留"5 元组的第 5 项必须被透传（不是被忽略）"与"6 元组仍非法"两个方向。
+            c('正例  `_unpack_cps` 2 元组 → (名, args, None, None, None)',
               list(_unpack_cps([('a', [1])])),
-              [('a', [1], None, None)])
-            c('正例  `_unpack_cps` 3 元组 → seed 透传、out=None',
+              [('a', [1], None, None, None)])
+            c('正例  `_unpack_cps` 3 元组 → seed 透传、out/pre=None',
               list(_unpack_cps([('a', [1], [(2, b'x')])])),
-              [('a', [1], [(2, b'x')], None)])
-            c('正例  `_unpack_cps` 4 元组 → out_windows 透传',
+              [('a', [1], [(2, b'x')], None, None)])
+            c('正例  `_unpack_cps` 4 元组 → out_windows 透传、pre=None',
               list(_unpack_cps([('a', [1], None, [('w', 2, 4)])])),
-              [('a', [1], None, [('w', 2, 4)])])
+              [('a', [1], None, [('w', 2, 4)], None)])
+            c('正例  `_unpack_cps` 5 元组 → pre 必须被透传（R289 新增）',
+              list(_unpack_cps([('a', [1], None, None, [('initfont', [0])])])),
+              [('a', [1], None, None, [('initfont', [0])])])
             try:
-                list(_unpack_cps([('a', 1, 2, 3, 4)]))
+                list(_unpack_cps([('a', 1, 2, 3, 4, 5)]))
                 _bad5 = 'no-raise'
             except ValueError:
                 _bad5 = 'raised'
-            c('反例  `_unpack_cps` 5 元组必须报错（不得静默截断）', _bad5, 'raised')
+            c('反例  `_unpack_cps` 6 元组必须报错（不得静默截断）', _bad5, 'raised')
             _OW = [('w', 0x1000, 8)]
             _same = b'\x01\x02\x03\x04\x05\x06\x07\x08'
             c('正例  无输出窗 ⇒ 不比、不降级（[], False, []）',
