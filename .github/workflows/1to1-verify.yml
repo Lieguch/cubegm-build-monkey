@@ -778,6 +778,21 @@ jobs:
           path: 1to1/report/
           if-no-files-found: warn
 
+      # ★★★ R296（G5）：**把可部署产物作为 CI 产物上传**。
+      #   为什么必须：此前 CI 只上传 report/，设备上的 rkgame 只能来自"本地构建"，
+      #   既违反"正式构建走 GitHub Actions"，也让"设备上那个二进制是哪次提交"无法追溯
+      #   （实测：设备上仍是 R273 `1347f099`，而源码已到 R296）。
+      #   命名带 commit sha ⇒ 部署清单可直接引用，形成"提交 → 产物 → 设备"的证据链。
+      #   仅在链接门禁成功时上传（s23），避免把半成品当交付物。
+      - name: 上传可部署产物（真机验收用）★ 交付物
+        if: steps.s23.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rkgame-rebuilt-${{ github.sha }}
+          path: 1to1/build/rkgame.rebuilt.elf
+          if-no-files-found: error
+          retention-days: 30
+
       - name: 中间产物新鲜度门禁（陈旧 .o 会污染判据，必须最先跑）
         id: s51
         continue-on-error: true

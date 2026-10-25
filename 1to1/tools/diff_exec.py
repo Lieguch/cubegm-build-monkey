@@ -3199,6 +3199,11 @@ def main():
                 stats['DIVERGE'] -= len(imv_names)
                 stats['PASS'] += len(imv_names)      # 与 calls_ext 的内联等价同待遇：计入 PASS
                 div_names_all[:] = [x for x in div_names_all if x not in _s]
+                # ★★★ R296：**必须同步 verdicts**。否则 `stats['DIVERGE']` 已减、`verdicts` 未改
+                #   ⇒ 同一轮同一产物出现"DIVERGE 5"与"DIVERGE 12"两个值（实测踩到）。
+                #   纪律：同一分母只允许一个值，派生表必须跟着主统计一起改。
+                for _x in imv_names:
+                    verdicts[_x] = 'PASS'
                 det[:] = [(n, t) for n, t in det if n not in _s]
         # ★★★ 2026-10-05（第 153 轮）：DIVERGE **信号强度**分档（派生报告，只读不改）。
         #   见 classify_signal()：把 DIVERGE 拆成 REAL（合法输入下就有差异）/ ABI
