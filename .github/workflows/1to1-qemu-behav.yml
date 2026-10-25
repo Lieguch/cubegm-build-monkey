@@ -205,12 +205,11 @@ jobs:
       #   于是 mui 模块（42 函数 / 70,396 B = 重构量的 57%）**永远跑不到**，覆盖率天花板 25%。
       #   ★ 本步骤是**观测（非门禁）**：场景 B 尚在建立基线期（首跑可能仍两侧同崩或立刻暴露新分歧），
       #     故用 `|| true` 只为拿数据。**基线稳定后必须去掉 `|| true` 升级为硬门禁**（否则等于白测）。
-      # ★★★ R293（G2 前哨）：把 B6A 从"整帧哈希不同"降到"哪一块/什么颜色/是否平移"。
-      #   为什么单独一步：step 12 是**硬门禁**，往里塞 dump/像素比对会扩大失败面；
-      #   而 dump 属**观测**，失败也不能影响判决。
-      #   `if: always()`：硬门禁当前必红（rc=2 诚实红）⇒ 不加就永远被跳过（死代码）。
-      #   dump 只在 CI 内比对并打印摘要，**不外传**（符合带宽约束）。
-      - name: 帧像素级定位（观测；dump 不外传）★ 非门禁
+      # ★★★ R293/R295：B6A 的**判据级观测**（本步不判红，只产出事实）。
+      #   三件事：① 两侧首帧 dump + 状态快照；② 主差分（factory↔rebuild）的 bbox/颜色映射；
+      #   ③ **对照端确定性**（factory↔control = 同一二进制复跑）——没有 ③ 就无法区分
+      #   "我们的代码不同"与"dump 时机不同"，B6A 会永远悬着。
+      - name: 帧像素级定位 + 对照端确定性（观测，不外传）★ 非门禁
         if: always()
         continue-on-error: true
         run: |
@@ -229,22 +228,29 @@ jobs:
           ls -la report/frames || true
           echo '--- 状态快照（G1）：头部自校验 ---'
           for f in report/frames/state_factory.bin report/frames/state_rebuild.bin; do
-            [ -s "$f" ] && python3 tools/state_snapshot_info.py "$f" || echo "  缺 $f"
+            if [ -s "$f" ]; then python3 tools/state_snapshot_info.py "$f"; else echo "  缺 $f"; fi
           done
           if [ -s report/frames/frame_factory.bin ] && [ -s report/frames/frame_rebuild.bin ]; then
-            echo '--- 像素级差异摘要（CI 内打印）---'
-            # ★ R294：**必须全量输出**。R293 首次跑用 `tail -70` 把 `sizes:`/`[1] bbox`/
-            #   `[2] b0..b4` 全截掉了 —— 而 bbox 与颜色映射恰恰是判"哪一块/什么颜色"的关键。
-            #   ⇒ 先落文件再分段打印（先头部决定性段落，再尾部），避免任何截断歧义。
+            echo '=== 主差分 factory ↔ rebuild ==='
             python3 tools/_b6a_pixel_diff.py \
               report/frames/frame_factory.bin report/frames/frame_rebuild.bin \
               > report/frames/diff.txt 2>&1 || true
-            echo '--- [头部] sizes + [1] 差异像素/bbox ---'
+            echo '--- 头部：sizes + [1] 差异像素/bbox ---'
             sed -n '1,6p' report/frames/diff.txt
-            echo '--- [尾部] [5] 中心相同率 + [6] 颜色映射 + 最高频映射 ---'
+            echo '--- 尾部：[5] 中心相同率 + [6] 颜色映射 ---'
             sed -n '/\[5\]/,$p' report/frames/diff.txt | head -30
           else
-            echo '!! 缺一侧 dump ⇒ 通道未打通（观测步骤不判红；下一轮修通道，不要改判据）'
+            echo '!! 缺 factory/rebuild 之一 ⇒ 主差分跳过（观测步骤不判红）'
+          fi
+          if [ -s report/frames/frame_factory.bin ] && [ -s report/frames/frame_control.bin ]; then
+            echo '=== 对照端确定性 factory ↔ control（同一二进制复跑）==='
+            python3 tools/_b6a_pixel_diff.py \
+              report/frames/frame_factory.bin report/frames/frame_control.bin \
+              > report/frames/diff_control.txt 2>&1 || true
+            sed -n '1,6p' report/frames/diff_control.txt
+            sed -n '/\[5\]/,$p' report/frames/diff_control.txt | head -12
+          else
+            echo '!! 缺 factory/control 之一 ⇒ 对照端确定性跳过'
           fi
 
       - name: 行为采集·场景 C（补 libkms 桩解锁 driver.so，观测非门禁）

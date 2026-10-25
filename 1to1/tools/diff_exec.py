@@ -3109,6 +3109,7 @@ def main():
         voidret_names = []
         info_names = []
         det = []
+        verdicts = {}                # ★ R295：fn -> 最终等级（供 G3 全表）
         div_names_all = []
         trunc_names = []
         refdead_names = []
@@ -3137,6 +3138,7 @@ def main():
                 if len(voidret_names) < 40:
                     voidret_names.append(n)
             stats[v] += 1
+            verdicts[n] = v          # ★ R295（G3）：每函数最终等级，全量落盘
             if (i + 1) % 25 == 0:
                 gc.collect()          # ★ 见 run_func 末尾注释：不周期回收会 MemoryError
             if v == 'DIVERGE':
@@ -3401,7 +3403,7 @@ def main():
                         inline_move_off=(os.environ.get('CGM_INLINE_MOVE_OFF') == '1'),
                         inline_move_equiv=sorted(imv_names))
             with open(a.dump_rows, 'w', encoding='utf-8', newline='\n') as fh:
-                json.dump(dict(meta=meta, rows=all_x), fh, ensure_ascii=False)
+                json.dump(dict(meta=dict(meta, verdicts=verdicts), rows=all_x), fh, ensure_ascii=False)
             print('  ★ 逐组明细已写出：%s（%d 行；含两侧归一化访存/调用指纹）'
                   % (a.dump_rows, len(all_x)))
         return rc
