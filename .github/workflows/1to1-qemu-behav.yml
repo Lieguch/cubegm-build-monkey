@@ -216,10 +216,15 @@ jobs:
           cd 1to1
           mkdir -p report/frames
           set +e
+          # ★ R297：状态快照范围必须**机械计算**为两侧数据段交集
+          #   （教训：写死 0x3ae000..0x3f3000 越过我方段尾 ⇒ write EFAULT ⇒ body=0）
+          STATE_RANGE=$(python3 tools/state_range_for.py golden/factory.rkgame.bin build/rkgame.rebuilt.elf)
+          echo "STATE_RANGE=$STATE_RANGE"
           SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
           CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
           CGM_ABI_DUMP_DIR="$PWD/report/frames" \
           CGM_STATE_DUMP_DIR="$PWD/report/frames" \
+          CGM_STATE_RANGE="$STATE_RANGE" \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_frames
           echo "dump 采集 rc=$?"
@@ -228,7 +233,9 @@ jobs:
           ls -la report/frames || true
           echo '--- 状态快照（G1）：头部自校验 ---'
           for f in report/frames/state_factory.bin report/frames/state_rebuild.bin; do
-            if [ -s "$f" ]; then python3 tools/state_snapshot_info.py "$f"; else echo "  缺 $f"; fi
+            # ★ R297：`|| true` —— 该工具对 BAD 返回 1，而本步在 `bash -e` 下会**整步中断**
+            #   （实测 #287：状态检查一行把后面的像素 diff / 对照端确定性全掐掉了）
+            if [ -s "$f" ]; then python3 tools/state_snapshot_info.py "$f" || true; else echo "  缺 $f"; fi
           done
           if [ -s report/frames/frame_factory.bin ] && [ -s report/frames/frame_rebuild.bin ]; then
             echo '=== 主差分 factory ↔ rebuild ==='
