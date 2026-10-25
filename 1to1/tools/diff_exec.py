@@ -83,6 +83,13 @@ except ImportError as e:  # pragma: no cover
 SENTINEL = 0x7FFFF000
 STACK_BASE = 0x7E000000
 STACK_SIZE = 0x00040000
+# ★★★ R294（G1 主体）：**真实状态快照**。`--from-state <file>` 时，两侧都先写入同一份
+#   数据区字节（由 guest shim 的 CGM_STATE_DUMP 在真实运行时落盘），再执行目标函数。
+#   为什么是"根本解"而不是补丁：它把"每个函数都要手工造合法输入"降级为"一次快照、任意复用"，
+#   从而消掉"因状态缺失而不可判"这整类（UI 链至今都卡在这里）。
+#   格式：magic "CGMST001"(8B) + u32 lo + u32 hi + raw[lo..hi)。
+_STATE_BLOB = None          # (lo, bytes) 或 None
+
 SCRATCH = 0x7D000000
 SCRATCH_SIZE = 0x00010000
 MAX_TRACE = 3000
@@ -741,6 +748,10 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     # ★★★ 2026-10-07（第 160 轮）：**函数特设输入的内存种子**。
     #   必须在段内容 / SCRATCH 标准重置**之后**写，否则会被上面的重置覆盖。
     #   两侧用同一份 bytes ⇒ 种子本身不构成差异源（判据仍是两侧被测代码）。
+    # ★ R294：真实状态快照（在段内容与 SCRATCH 重置之后写，避免被覆盖；两侧同一份字节）。
+    if _STATE_BLOB is not None:
+        _lo, _bytes = _STATE_BLOB
+        mu.mem_write(_lo, _bytes)
     for _va, _bs in (seed or ()):
         mu.mem_write(_va, _bs)
     # ★★ 2026-10-03（第121 轮，判据见 PSEUDOSYM-CORPUS.md）：`core` 组专用入参。
@@ -2940,6 +2951,9 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--steps', type=int, default=20000)
     ap.add_argument('--out')
+    ap.add_argument('--from-state', dest='from_state', default=None,
+                    help='G1：真实状态快照（由 guest shim 的 CGM_STATE_DUMP 产出）；'
+                         '两侧先写入同一份数据区字节再执行')
     ap.add_argument('--dump-rows', dest='dump_rows',
                     help='把**逐组机器可读明细**（含两侧归一化后的访存/调用指纹）写成 JSON。'
                          '★ 归类（差异类别收敛）必须用它，不得用报告里的"前 80"截断摘要。')
@@ -3002,6 +3016,23 @@ def main():
     sys.stderr.write('  对照 = %s\n    sha256=%s\n' % (fac, _sha[fac]))
     sys.stderr.write('  被测 = %s\n    sha256=%s\n' % (ours, _sha[ours]))
     BF, BO = Bin(fac), Bin(ours)
+    # ★ R294：加载状态快照（fail-loud：magic/尺寸不符立即报错，不静默降级成"没状态"）
+    global _STATE_BLOB
+    if getattr(a, 'from_state', None):
+        _raw = open(a.from_state, 'rb').read()
+        if len(_raw) < 16 or _raw[:8] != b'CGMST001':
+            sys.stderr.write('★★ --from-state 文件头不合法（需 CGMST001）：%s\n' % a.from_state)
+            return 12
+        _lo = int.from_bytes(_raw[8:12], 'little')
+        _hi = int.from_bytes(_raw[12:16], 'little')
+        _body = _raw[16:]
+        if _hi <= _lo or len(_body) != _hi - _lo:
+            sys.stderr.write('★★ --from-state 尺寸不符：lo=0x%x hi=0x%x body=%d\n'
+                             % (_lo, _hi, len(_body)))
+            return 12
+        _STATE_BLOB = (_lo, _body)
+        sys.stderr.write('  状态快照 = %s  [0x%08x,0x%08x) %d B\n'
+                         % (a.from_state, _lo, _hi, len(_body)))
     # ★ R290：配对归一（含克隆后缀）；`_PAIRS` 供 --list/--batch 共用
     _PAIRS, _AMBIG = build_pairs(BF, BO)
     common = sorted(_PAIRS)

@@ -68,6 +68,8 @@ static unsigned slen(const char *s);
 #define MSG_HOOKED  "[abiprobe] HOOKED video_driver_disp_frame -> wrapper\n"
 #define MSG_DUMPED  "[abiprobe] dump OK (first frame written)\n"
 #define MSG_DUMPFAIL "[abiprobe] dump FAIL (open/write error)\n"
+#define MSG_STATEDUMP     "[abiprobe] state dump OK (data region snapshot)\n"
+#define MSG_STATEDUMPFAIL "[abiprobe] state dump FAIL (open/write error)\n"
 
 static dlsym_t      g_real_dlsym;
 static disp_frame_t g_real_disp;
@@ -78,6 +80,15 @@ static int          g_probe_on;
 static unsigned     g_last_hash;      /* 上次已判定的哈希（变化检测）*/
 static int          g_keyprint;       /* R230：按键状态打印计数（限 30 条）*/
 static char        *g_dump_path;      /* CGM_ABI_DUMP：把首帧原文落盘（NULL=不落盘）*/
+/* ★★★ R294（G1 主体）：**状态快照落盘**。CGM_STATE_DUMP=<path> 时，在首帧触发点
+ *   把数据区 [lo,hi) 原样写盘（CGM_STATE_RANGE 可覆盖，十六进制 lo,hi）。
+ *   为什么要它：diff_exec 过去只能喂**合成输入**，凡依赖真实运行时状态（菜单模型、
+ *   OutRect、字体上下文）的函数一律 DEADEQ/TRUNC ⇒ "判不了"被当成"没问题"。
+ *   有了真实快照，任何函数都能用**同一份真实状态**在两侧起跑（G1 的目标）。
+ *   格式：magic(8B) + u32 lo + u32 hi + raw[lo..hi) —— 自描述、可机械校验。 */
+static char        *g_state_path;
+static unsigned     g_state_lo = 0x003ae000u;
+static unsigned     g_state_hi = 0x003f3000u;
 
 /* ---- ARM EABI 直调 SVC（**必须**绕过 glibc：本 shim 自己也包装了 open）----
  * ★ 为什么不用 libc 的 open/write：guest_shim 的 open 被 wrap 过，
@@ -124,6 +135,33 @@ static void abi_probe_init(void)
     /* 首帧原文落盘（诊断用；未设置则完全不影响行为）*/
     g_dump_path = getenv("CGM_ABI_DUMP");
     if (g_dump_path != 0 && g_dump_path[0] == '\0') g_dump_path = 0;
+    /* R294：状态快照的路径与范围（范围缺省 = 镜像数据区 0x3ae000..0x3f3000） */
+    g_state_path = getenv("CGM_STATE_DUMP");
+    if (g_state_path != 0 && g_state_path[0] == '\0') g_state_path = 0;
+    {
+        char *rg = getenv("CGM_STATE_RANGE");
+        if (rg != 0) {
+            unsigned lo = 0, hi = 0; int i = 0;
+            while (rg[i] && rg[i] != ',') {                      /* 十六进制 lo */
+                unsigned d = (rg[i] >= '0' && rg[i] <= '9') ? (unsigned)(rg[i] - '0')
+                           : (rg[i] >= 'a' && rg[i] <= 'f') ? (unsigned)(rg[i] - 'a' + 10)
+                           : (rg[i] >= 'A' && rg[i] <= 'F') ? (unsigned)(rg[i] - 'A' + 10) : 99u;
+                if (d > 15u) break;
+                lo = (lo << 4) | d; i++;
+            }
+            if (rg[i] == ',') {
+                i++;
+                while (rg[i]) {                                  /* 十六进制 hi */
+                    unsigned d = (rg[i] >= '0' && rg[i] <= '9') ? (unsigned)(rg[i] - '0')
+                               : (rg[i] >= 'a' && rg[i] <= 'f') ? (unsigned)(rg[i] - 'a' + 10)
+                               : (rg[i] >= 'A' && rg[i] <= 'F') ? (unsigned)(rg[i] - 'A' + 10) : 99u;
+                    if (d > 15u) break;
+                    hi = (hi << 4) | d; i++;
+                }
+            }
+            if (hi > lo && (hi - lo) <= (16u << 20)) { g_state_lo = lo; g_state_hi = hi; }
+        }
+    }
 }
 
 /* ---- 极简输出（零 stdio 依赖：只用 write(2)，与桩同风格）---- */
@@ -244,6 +282,32 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
                     emit(MSG_DUMPED, slen(MSG_DUMPED));
                 } else {
                     emit(MSG_DUMPFAIL, slen(MSG_DUMPFAIL));
+                }
+            }
+
+            if (g_state_path != 0) {
+                long fd = sc3(SYS_OPEN, (long)g_state_path, 0x241, 0644);
+                if (fd >= 0) {
+                    char hdr[16]; int k;
+                    const char *mg = "CGMST001";
+                    for (k = 0; k < 8; k++) hdr[k] = mg[k];
+                    hdr[8]  = (char)(g_state_lo      ); hdr[9]  = (char)(g_state_lo >>  8);
+                    hdr[10] = (char)(g_state_lo >> 16); hdr[11] = (char)(g_state_lo >> 24);
+                    hdr[12] = (char)(g_state_hi      ); hdr[13] = (char)(g_state_hi >>  8);
+                    hdr[14] = (char)(g_state_hi >> 16); hdr[15] = (char)(g_state_hi >> 24);
+                    if (sc3(SYS_WRITE, fd, (long)hdr, 16) == 16) {
+                        unsigned long off = 0, sz = (unsigned long)(g_state_hi - g_state_lo);
+                        long wr = 1;
+                        while (wr > 0 && off < sz) {
+                            wr = sc3(SYS_WRITE, fd, (long)((const char *)g_state_lo + off),
+                                     (long)(sz - off));
+                            if (wr > 0) off += (unsigned long)wr;
+                        }
+                    }
+                    sc3(SYS_CLOSE, fd, 0, 0);
+                    emit(MSG_STATEDUMP, slen(MSG_STATEDUMP));
+                } else {
+                    emit(MSG_STATEDUMPFAIL, slen(MSG_STATEDUMPFAIL));
                 }
             }
 

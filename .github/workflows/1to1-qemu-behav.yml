@@ -220,16 +220,29 @@ jobs:
           SYSROOT=/arm-root-device CGM_WORK=/sdcard/cubegm CGM_TIMEOUT=30 \
           CGM_LIBKMS_STUB=1 CGM_DRM_STUB=1 CGM_ALSA_STUB=1 CGM_KEY2_SEED=1 CGM_KEY2_HOOK=1 \
           CGM_ABI_DUMP_DIR="$PWD/report/frames" \
+          CGM_STATE_DUMP_DIR="$PWD/report/frames" \
             sh tools/ci_qemu_behav.sh \
               build/rkgame.rebuilt.elf golden/factory.rkgame.bin report/qemu_frames
           echo "dump 采集 rc=$?"
           set -e
           echo '--- 落盘文件 ---'
           ls -la report/frames || true
+          echo '--- 状态快照（G1）：头部自校验 ---'
+          for f in report/frames/state_factory.bin report/frames/state_rebuild.bin; do
+            [ -s "$f" ] && python3 tools/state_snapshot_info.py "$f" || echo "  缺 $f"
+          done
           if [ -s report/frames/frame_factory.bin ] && [ -s report/frames/frame_rebuild.bin ]; then
             echo '--- 像素级差异摘要（CI 内打印）---'
+            # ★ R294：**必须全量输出**。R293 首次跑用 `tail -70` 把 `sizes:`/`[1] bbox`/
+            #   `[2] b0..b4` 全截掉了 —— 而 bbox 与颜色映射恰恰是判"哪一块/什么颜色"的关键。
+            #   ⇒ 先落文件再分段打印（先头部决定性段落，再尾部），避免任何截断歧义。
             python3 tools/_b6a_pixel_diff.py \
-              report/frames/frame_factory.bin report/frames/frame_rebuild.bin 2>&1 | tail -70
+              report/frames/frame_factory.bin report/frames/frame_rebuild.bin \
+              > report/frames/diff.txt 2>&1 || true
+            echo '--- [头部] sizes + [1] 差异像素/bbox ---'
+            sed -n '1,6p' report/frames/diff.txt
+            echo '--- [尾部] [5] 中心相同率 + [6] 颜色映射 + 最高频映射 ---'
+            sed -n '/\[5\]/,$p' report/frames/diff.txt | head -30
           else
             echo '!! 缺一侧 dump ⇒ 通道未打通（观测步骤不判红；下一轮修通道，不要改判据）'
           fi
