@@ -687,6 +687,9 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
     #   所以正确做法是把 `mem_map` 提出来只做一次，per-call 只重写内容 + 复位寄存器/模型。
     #   ⇒ commit 峰值 ~4700×11 MB → **2×11 MB**；顺带省掉每函数重复的段 mem_write。
     mu, _model, _gaps = _machine_for(b, mode)
+    # ★ R291 诊断探针：CGM_DBG_PC=1 时统计热点 PC（只在"被预算砍断"时有意义）。
+    #   为什么要它：TRUNC 只说"没跑完"，说不出"卡在哪" —— 没有 PC 现场就只剩猜。
+    _pc_hist = {} if os.environ.get('CGM_DBG_PC') == '1' else None
     # ★ 寄存器必须显式复位：复用实例会把上一个函数的 r0/sp/pc 带进来（会伪造 PASS/发散）
     for _r in (ac.UC_ARM_REG_R0, ac.UC_ARM_REG_R1, ac.UC_ARM_REG_R2, ac.UC_ARM_REG_R3,
                ac.UC_ARM_REG_R4, ac.UC_ARM_REG_R5, ac.UC_ARM_REG_R6, ac.UC_ARM_REG_R7,
@@ -772,6 +775,8 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
 
     def code_hook(m, address, size_, user):
         ctx['insns'] += 1
+        if _pc_hist is not None:
+            _pc_hist[address] = _pc_hist.get(address, 0) + 1
         # ★ 逐指令探针（CGM_DBG_REGS=1）：打印**前 6 条**指令 + CPSR 的 T 位。
         #   为什么需要它（2026-09-27）：ARM/Thumb **混编**是工厂的真实形态
         #   （804 个函数里 308 个是 Thumb）。任何"两侧行为不同"的结论，
@@ -903,6 +908,10 @@ def run_func(b, fname, args, steps=20000, stub_ret=None, spans=None, syms_for_fi
         mu.emu_start(addr, SENTINEL, count=budget)
     except UcError as e:
         stopped = 'uc-error: %s @0x%x' % (e, mu.reg_read(ac.UC_ARM_REG_PC))
+    if _pc_hist and ctx['insns'] >= budget:
+        _top = sorted(_pc_hist.items(), key=lambda kv: -kv[1])[:6]
+        sys.stderr.write('   [dbg-pc] %-32s 热点 PC: %s\n'
+                         % (fname, ', '.join('0x%x×%d' % (a, c) for a, c in _top)))
     r0 = mu.reg_read(ac.UC_ARM_REG_R0)
     # ★ 截断运行若把预算用尽，`stopped` 仍是 'return'（无异常）⇒ 必须显式标记，
     #   否则调用方会把"被砍断"误读成"跑完了"（那是把仪器限制当成程序行为）。
@@ -1142,7 +1151,33 @@ GLYPH_OUT = [('bmp', 0x3d3948, GLYPH_W * GLYPH_W)]
 GLYPH_BOX_ADDR = 0x3d3948 + 0x800
 GLYPH_BOX_OUT = [('box', GLYPH_BOX_ADDR, 16)]
 
+# ★★★ R291：`mui_outputxy_t` —— **UI 文字绘制本体**（坐标 + 颜色混合 + 裁剪）的等价判据。
+#
+#   这是 B6A 最后一个"文字侧"候选：字形位图/前宽度/bbox 已证逐位相同（R288–R290），
+#   若绘制与混合也相同，则文字像素必相同 ⇒ B6A 只能来自 UI 几何（画什么、画在哪）或非文字元素。
+#   事实（两侧同址，符号表核对）：OutRect@0x3bc4a4(24B) ｜ fontbitmap@0x3bc4bc(4096B 静态数组)。
+#   OutRect 字段（由源码用法反推）：
+#     +0  = 行 stride（像素）  ｜ +8 = clip top ｜ +12 = clip left ｜ +16 = clip bottom ｜ +20 = clip right
+#   参数（源码定义）：(scr, x, y, 字号代码→height=(code+4)&0xff, 前景 RGB565, 字符串)
+#   输出窗 = 帧缓冲 32×32×2 = 2048 B（混合后的最终像素）。
+OUTRECT_OUT = [('scr', 0x3d3948, 2048)]
+OUTRECT_SEED = [
+    (0x33231c, FONT_HEAD),                     # 字体数据（前缀 InitFont 使用）
+    (0x3bc4a4, _le32(32) + _le32(0) + _le32(0) + _le32(0) + _le32(32) + _le32(32)),
+    (0x3d6948, b'A\x00'),                     # 待绘字符
+]
+
 FN_CORPUS = {
+    # ★ R291：UI 文字绘制（'A'，16px，白字，32×32 帧缓冲，clip 全开）。
+    'mui_outputxy_t': [
+        ('A-16px-white', [0x3d3948, 0, 0, 12, 0xFFFF, 0x3d6948],
+         OUTRECT_SEED, OUTRECT_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+        # 反例对照组：颜色取反（若两侧绘制等价，两个组的差异应只体现在颜色上）
+        ('A-16px-red', [0x3d3948, 0, 0, 12, 0xF800, 0x3d6948],
+         OUTRECT_SEED, OUTRECT_OUT,
+         [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
+    ],
     # ★ R290：**字形前进宽度**（hmtx 读表 + 单位换算）—— 决定文字行总宽与后续元素落点。
     #   签名（本仓 stb_truetype.h）：(info, codepoint, int *advanceWidth, int *leftSideBearing)
     #   ⇒ 4 个 core 参全在 r0–r3；输出窗 = 8 B（两个 int）。
@@ -1159,14 +1194,17 @@ FN_CORPUS = {
     'mui_outputxy_length.isra.19': [
         # 隔离组：空串 ⇒ 必须立刻返回 0（自证"字符串指针/种子确实生效"）
         ('empty-str', [0, 12, 0x3d6948],
-         [(0x3d6948, b'\x00'), (0x3bc4a4 + 16, _le32(300))], None,
+         [(0x33231c, FONT_HEAD), (0x3d6948, b'\x00'),
+          (0x3bc4a4 + 16, _le32(300))], None,
          [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
         # 隔离组：clip=0 ⇒ 首字符后必停（自证"循环终止条件可被观测"）
         ('clip0', [0, 12, 0x3d6948],
-         [(0x3d6948, b'AB\x00'), (0x3bc4a4 + 16, _le32(0))], None,
+         [(0x33231c, FONT_HEAD), (0x3d6948, b'AB\x00'),
+          (0x3bc4a4 + 16, _le32(0))], None,
          [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
         ('ascii-AB', [0, 12, 0x3d6948],
-         [(0x3d6948, b'AB\x00'), (0x3bc4a4 + 16, _le32(300))], None,
+         [(0x33231c, FONT_HEAD), (0x3d6948, b'AB\x00'),
+          (0x3bc4a4 + 16, _le32(300))], None,
          [('stbtt_InitFont', [0x3bc41c, 0x33231c, 0])]),
     ],
     # ★ R290：字形落点 bbox（glyph 8，16px）。

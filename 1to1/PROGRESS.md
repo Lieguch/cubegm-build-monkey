@@ -12175,3 +12175,51 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
    （`items` 16 KB ⇒ 把 `scr_h_size` 播成 32，窗口 32×64×2 = 4 KB 可行）。
 3. CI 验证：本轮推送后 `1to1-verify` 的 s36 必须用新 ruler 通过（台账已重记）。
 4. `text_path_equiv.sh`（5 项）接进 `local_precheck` 作 L5；耗时约 1–2 分钟。
+
+> 追加前 `old_intact=True`（旧文 930098 B / sha 50011f6d34637db8…）；由 `tools/append_progress.py` 原子追加。
+## R291（2026-10-25 11:5x）
+
+### 日期
+
+2026-10-25（UI 文字绘制本体证等价 —— 文字侧候选全部关闭）
+
+### 完成事项
+
+1. **新增诊断仪器：PC 热点采样（`CGM_DBG_PC=1`）**
+   TRUNC/截断只说"没跑完"，说不出"卡在哪"。探针在 `code_hook` 内计数、仅在"被预算砍断"时打印前 6 个热点 PC。
+   实测立刻定位本轮问题（见 2）。
+2. **`mui_outputxy_length.isra.19` 不终止的根因（是我的 corpus 缺陷，不是产物缺陷）**
+   - PC 热点两侧都落在 `stbtt__find_table`（factory 0x136b4 / 我方 0x535d94）。
+   - 根因：该组种子**漏了字体数据** ⇒ 前置 `stbtt_InitFont` 把 `cns11643_inv_2charset`（libiconv 表）
+     当 TTF 解析 ⇒ `num_tables` 是垃圾值 ⇒ `find_table` 死循环。
+   - 补齐 `(0x33231c, FONT_HEAD)` 后三组全部跑完，**返回值完全一致**（空串 0/0、clip0 0x9/0x9、AB 0x11/0x11）。
+   - 残留差异仅为**表读取访问模式**（GCC 逐字节 vs clang 字/半字），属项目已定性的编译策略差异（FDCT32 同族）。
+3. **`mui_outputxy_t`（UI 文字绘制本体）⇒ PASS**
+   - 依据两侧同址事实：`OutRect@0x3bc4a4`(24 B) ｜ `fontbitmap@0x3bc4bc`(4096 B 静态数组)。
+   - `OutRect` 字段由源码用法反推：`+0`=行 stride ｜ `+8`=clip top ｜ `+12`=clip left ｜ `+16`=clip bottom ｜ `+20`=clip right。
+   - 两组（白字 0xFFFF / 红字 0xF800，'A'、16px、32×32 帧缓冲）：
+     **输出窗 2048 B 逐位相同**，返回值同为 0x9（F 15996 / O 15280 条指令）。
+   - 该函数覆盖：字形光栅 → RGB565 逐像素混合（`((fg|fg<<16)&0x7e0f81f)` 掩码路径）→ 坐标换算 → 裁剪。
+4. **`text_path_equiv.sh` 扩到六项**（outputxy1 / InitFont / HMetrics / bbox / mui_outputxy_t / MakeGlyphBitmap），
+   实跑 **六项全 PASS**。
+5. **仪器自证**：改动后 `--self-test` **203 条 0 失败**（PC 探针为 env 门控，不影响判据）。
+
+### 新发现与决策
+
+1. **文字绘制全链路等价（含混合与坐标）**：从字符串到帧缓冲像素的每一步都逐位相同。
+   ⇒ **B6A 的 245×51 差异与"文字渲染"彻底无关**，只可能来自：
+   ① 画的是**不同内容**（菜单状态/字符串内容/滚动位置）；② 画在**不同位置**（调用方几何）；
+   ③ 颜色取值不同（调用方传的 fg）；④ 该块里**根本不是文字**。
+2. **"不终止"必须先取 PC 现场**：本轮一次采样就把原因从"两个候选（预算/病态）"收敛到
+   "corpus 漏种子"。⇒ 决策：`TRUNC` 类问题一律先跑 `CGM_DBG_PC=1`，再谈预算或代码。
+3. **corpus 的种子完备性需要门禁**：漏一个种子会表现为"函数死循环"，与"产物有缺陷"同形。
+   决策：前置钩子涉及的全局（font 数据）必须在组里显式列出；后续可在 `_validate_fn_corpus` 加
+   "pre 函数所需种子"检查（下一步待办）。
+
+### 下一步待办
+
+1. **B6A 转入调用方几何**：`mui_DisplayLine_t`（用 `sprintf` 拼 `"%04d.%s"` 标签 + `OutRect` 定位）
+   需要合法菜单状态（`m_ui` 指向的结构、文本缓冲 `DAT_003b2324`、`DAT_003af398..` 矩形表）。
+   先做"最小可判"：只播 `m_ui` 必要字段 + 1 行标签数据，比较函数返回的推进量与 `OutRect` 变化。
+2. `_validate_fn_corpus` 增"pre 所需种子"检查（防再犯本轮漏种子）。
+3. `text_path_equiv.sh`（6 项）接进 `local_precheck` 作 L5。
