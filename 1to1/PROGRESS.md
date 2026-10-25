@@ -12318,3 +12318,56 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 3. 实现 G1 主体：`tools/guest_shim` 增 `CGM_STATE_DUMP`（数据区 + 堆 + 寄存器到文件）→
    `diff_exec --from-state <file>`（种子改为"整块真实状态"）→ 用真实状态重跑 UI 链函数。
 4. G3：报告增"因状态缺失而不可判"的显式清单（与克隆缺席并列）。
+
+> 追加前 `old_intact=True`（旧文 941120 B / sha 2272ecfab028a11f…）；由 `tools/append_progress.py` 原子追加。
+## R294（2026-10-25 15:2x）—— G2 首个事实 + G1 主体落地（真实状态快照 + 回放）
+
+### 日期
+
+2026-10-25（推进全局方案 G1/G2）
+
+### 完成事项
+
+1. **G2 首个结果（per-side dump 通道打通后的第一次像素级事实）**
+   - 三侧 dump 均落盘：`frame_factory.bin` / `frame_rebuild.bin` / `frame_control.bin` 各 **1,843,200 B**
+     （1280×720 RGB565 pitch=2560，尺寸正确）。
+   - `[4] 平移匹配 100.00% @ dx=0 dy=0`、`[5] 中心区（x=150..600, y=200..520）逐像素相同率 100.00%`
+     ⇒ **不是整体平移、中心区域逐像素一致**。
+   - `[2] 16 条带全 DIFF` 与 `[3] 缩略图` 一致地显示差异集中在外围：
+     `x≈0..100` 与 `x≈670..1280` 两块（中间 `x≈117..670` 全 `.`=无差异）。
+   - ⇒ B6A **不是"全图毁坏"，也不是文字渲染**（R288–R291 已证文字链逐位等价），
+     而是**右侧区域 + 左侧窄条**的内容差异 —— 典型的"面板/边框/背景块"级差异。
+   - **工具输出被截断**（`tail -70` 把 `sizes`/`[1] bbox`/`b0..b4` 全截掉）⇒ 已修：改为落文件后
+     分段打印头部（sizes + bbox）与尾部（`[5]`/`[6]` 颜色映射），下一轮即可拿到 bbox 与颜色集中度。
+2. **G1 主体：真实状态快照 + 回放（本轮核心）**
+   - **shim 侧**（`tools/guest_shim/abi_probe.c`）：新增 `CGM_STATE_DUMP=<path>`（+ `CGM_STATE_RANGE=lo,hi`，
+     缺省 `0x3ae000..0x3f3000` 即镜像数据区），在**与帧落盘同一触发点**把数据区原样写盘；
+     格式 `CGMST001`(8B) + `u32 lo` + `u32 hi` + `raw[lo..hi)`。零 stdio，纯 raw syscall，与既有帧落盘同构。
+     **本地编译校验通过**（zig，arm-linux-gnueabihf，29,836 B .o）。
+   - **工具侧**（`tools/diff_exec.py`）：新增 `--from-state <file>`；加载时 fail-loud 校验
+     magic/范围/体长；`run_func` 在"段内容 + SCRATCH 重置之后、语料 seed 之前"把同一份字节写入两侧
+     ⇒ 目标函数从**真实运行时状态**起跑。
+   - **新增 `tools/state_snapshot_info.py`**：快照头部自校验（OK/BAD + 非 0 退出）。
+   - CI：观测步骤同时产出 `state_factory.bin` / `state_rebuild.bin` 并打印自校验。
+   - **本地验证**：① 自造快照 `--from-state` ⇒ `outputxy1` 仍 PASS（状态被正确加载）；
+     ② 坏 magic ⇒ `★★ --from-state 文件头不合法（需 CGMST001）`；③ `--self-test` **203 条 0 失败**。
+3. **修 YAML 事故**：heredoc 内列首 `PY` 终止了块标量 ⇒ `could not find expected ':'`。
+   改为调用独立脚本（不再在 YAML 里写 heredoc）。YAML 校验通过。
+
+### 新发现与决策
+
+1. **B6A 的形状变了**：从 R224 时代的"245×51 单个文字块"变成"右侧 ~48% 区域 + 左侧 ~100 px 窄条"。
+   这说明 v1.22 + R204 补丁后**差异位置已改变**，此前基于旧 dump 的推断一律作废（与纪律 180 同类：
+   观测对象变了，旧结论不能沿用）。
+2. **G1 把"手搓 corpus"这条路正式废掉**：以后任何"因状态缺失而不可判"的函数，用 `--from-state`
+   从真实快照起跑，不再逐个函数猜输入。这消掉的是**整类**问题，而不是某个函数。
+3. 决策：下一轮优先用真实状态驱动 **UI 链**（`mui_DisplayLine_t` → `mui_outputxy_t`），而不是继续在
+   合成 corpus 上打转；同时把 `[6] 颜色映射集中度` 作为**判据**读出来（集中度高 ⇒ 调色板错误；
+   低 ⇒ 位置/内容不同）。
+
+### 下一步待办
+
+1. 读下一轮 CI 的 `[1] bbox` 与 `[6] 颜色映射最高频 8 组`：直接判定右侧差异是"同形不同色"还是"不同内容"。
+2. 用 `--from-state`（factory 快照）驱动 `mui_DisplayLine_t` / `mui_outputxy_t` / `mui_menu*`，
+   把 UI 链从 DEADEQ 变为可判；若出现 DIVERGE，即 B6A 的根因函数。
+3. G3：报告增"因状态缺失而不可判"的显式清单（与克隆缺席并列）。
