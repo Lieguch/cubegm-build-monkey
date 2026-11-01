@@ -7351,3 +7351,16 @@ tag=J a=<*GPIO0+0x50 原值> b=<*GPIO2+0x50 原值>
   歧义**不配对并在 `--list` 逐条公示**；`compare(o_name=…)` 用工厂名显示、各自真实符号名执行。
 - 教训通则：**"从未被比较"比"比较了但发散"更危险**（前者连分母都不对）。任何按名字配对的判据，
   都必须回答"哪些对象因名字差异而缺席"。
+
+## §0.47 R301（2026-11-01）000.dat 修复交付完成：等真机第 14 轮
+
+- **R300 根因 → 修复 → 产物链已闭环**：unzip.cpp（`bf96d81a…`，central dir 跳过
+  `uncompressed_size` + local header 填充）⇒ push（commit `13ca95380562`，增量 1/1017）
+  ⇒ CI 双构建成功（1to1-verify #323 交付版 `c289e55d…`；diag-build #9 诊断版
+  `8689bb73…`）⇒ 本地 `_sdcard_drop/`（`cubegm/rkgame` = 新诊断版，DELIVERY-R301.txt）。
+- **等用户三步**（R299 口径）：备份→覆盖→回传 `_diag/`。判据先写死：trace.log 里
+  000.dat 遍历正常结束 + `CGM-DIAG BEGIN` 仍 1 次。诊断版判过才换交付版。
+- **已知非阻塞红**：qemu-behav #290 = 既有诚实红（B6 全零基线，R171b 钉死；#288/289
+  修复前已同形）⇒ 观测环境缺口，单独待办。
+- **复核确立**：本机 Windows 无法构建（bootlin63 是 Linux ELF、无 zig、CNB 额度耗尽）
+  ⇒ CI 是唯一构建通道；**诊断版 push 路径不含 xunzip**，每次必须显式 dispatch。

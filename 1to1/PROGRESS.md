@@ -12626,3 +12626,64 @@ workflow_dispatch（今日 17:25 的 #299 先例）。
 2. **量化喂狗**：确认看门狗喂狗间隔与喂狗点（`UpdateROM` 的 reboot / driver.so 的 tick），
    判断是"喂狗间隔太短"还是"我们少了喂狗调用"。
 3. 依 1/2 定修复：可能性包括 ① 恢复工厂的宽块读（若工厂宽读）② 把 filelist 遍历改成缓存/异步 ③ 补喂狗调用。
+
+> 追加前 `old_intact=True`（旧文 964621 B / sha 51e93a1f9c4e8ccc…）；由 `tools/append_progress.py` 原子追加。
+## R301（2026-11-01）—— 000.dat 修复落地：推送 → CI 双构建 → 本地投放包
+
+### 日期
+
+2026-11-01（接 R300：第 13 轮真机定案 `unzlocal_GetCurrentFileInfoInternal` 多读 4B）
+
+### 完成事项
+
+1. **推送修复（纪律 178 唯一通道）**：`python3 tools/push_1to1.py`
+   - 本地 vs 远端逐 blob diff：**仅 1 个文件差异** = `1to1/src/upstream/xunzip/unzip.cpp`
+     （sha256 `bf96d81a…`；xunzip 目录从未入 git，由 filelist 直推）
+   - 增量上传 1/1017 blob，new commit `13ca95380562974ed02ebcd65339c414df7b2f7c`，
+     VERIFY 1017/1017 通过。
+2. **CI 双构建（主动监控到完成，非被动等失败）**：
+
+   | workflow | run | 结论 | 产物 | 耗时 |
+     |---|---|---|---|---|
+     | 1to1-verify | #323 | success | `rkgame.rebuilt-13ca9538…`（4,046,343 B） | ~9 min |
+     | diag-build | #9（workflow_dispatch） | success | `rkgame-diag`（4,086,368 B） | ~2 min |
+     | toolchain-ab | #52 | success | — | — |
+     | rkgame-rebuild | #1198 | success | — | — |
+     | 1to1-qemu-behav | #290 | **failure（既有诚实红）** | — | — |
+
+   - qemu-behav #290：失败 step = "行为采集 + 差分 ★ 硬门禁"，`rc=2` = **B6 全零基线
+     （R171b 单变量已钉死）**；#288/#289（10-25，**修复前**）同 step 同形态失败
+     ⇒ **非本轮引入**。沙箱缺 `ui.cfg`/`font.ttf`/`setting.raw` ⇒ frame_commits=0。
+     属观测环境缺口，单列待办，不阻塞交付。
+3. **下载并校验（本地 `_sdcard_drop/`）**：
+   - `latest_rebuilt/rkgame.rebuilt.elf` 5,404,120 B `c289e55d3a80…` —— `sha256sum -c` OK
+   - `latest_diag/rkgame.diag` 5,464,692 B `8689bb739f0f…` —— `sha256sum -c` OK
+   - diag_build.log：XUnzip **自举编译 OK**（147,692 B，源码即修复版），9 个诊断符号全落产物
+     （`cgm_diag_boot` / `__wrap_open` / `cgm_probe_zip` / `cgm_probe_cmp` 等）
+4. **投放包（`_sdcard_drop/`）**：
+   - `cubegm/rkgame` = 新诊断版（8689bb73…）；旧 R273 基线（1347f099）移入 `_archive/` 留档
+   - `DELIVERY-R301.txt` 清单：含 commit/run/sha256 证据链 + 三步用户操作（R299 口径：
+     用户只做 备份→覆盖→回传 `_diag/`；判读归我）+ 先写死的判据
+   - `controller_db.txt` / `ui_cn.zip` / `joystick.zip` / `_diag/cfg.ini` 原样随包
+
+### 新发现与决策
+
+1. **"本地无法构建"的既有结论复核**：bootlin63 是 Linux ELF（本机 Windows 跑不了）、
+   zig 本机无（`zig_resolve.py` fail-closed）、ziglang 包未装 ⇒ 本地确实无法构建，
+   CI 是唯一可用构建通道（CNB 云开发额度 10-23 已耗尽，diag-build.yml 注释为证）。
+   与上一轮结论一致，本次**独立复核**而非沿用。
+2. **诊断版 push 触发路径不含 `src/upstream/xunzip/**`**（R299 已记同类问题）⇒
+   xunzip 修复**必须显式 workflow_dispatch diag-build**，否则诊断版会"看似新其实旧"。
+   本轮已执行（#9 = 修复版）。
+3. **旧诊断版的"同名不同源"陷阱**：`latest_diag/rkgame`（旧下载，commit 53754687）
+   与新版同为 5,464,692 B，**仅差一字节起**（byte 357）—— size 相等不代表同源，
+   已改名 `rkgame.PREFIX-5375468705a8.bak` 消歧。
+
+### 下一步待办
+
+1. **真机第 14 轮（用户）**：`DELIVERY-R301.txt` 三步；我判 `trace.log`：
+   ① 000.dat 遍历是否正常结束（cmp 不再持续 -1 / fread 走完 240695719→240935817）
+   ② `CGM-DIAG BEGIN` 是否仍 1 次（不重启）
+2. 诊断版判过 ⇒ 换 `latest_rebuilt/rkgame.rebuilt.elf` 做最终验收（A/B/C 类）。
+3. qemu-behav 诚实红（B6 全零基线）：补 golden 资产（ui.cfg/font.ttf/setting.raw）
+   进 behav 场景，属单独工作项。
