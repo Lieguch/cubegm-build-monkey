@@ -3171,9 +3171,11 @@ int unzlocal_GetCurrentFileInfoInternal (unzFile file, unz_file_info *pfile_info
 	if (unzlocal_getLong(s->file,&file_info.compressed_size) != UNZ_OK)
 		err=UNZ_ERRNO;
 
-	if (unzlocal_getLong(s->file,&file_info.uncompressed_size) != UNZ_OK)
-		err=UNZ_ERRNO;
-
+	/* ★★ 1:1 工厂：不读取 uncompressed_size（4B），直接读 size_filename。
+	 * 工厂机器码 0x110d4..0x115ec（GetCurrentFileInfoInternal）跳过此字段，
+	 * 文件指针不前移 4B。保留读取会导致 size_filename/size_file_extra/
+	 * size_file_comment 全部错位，central directory 遍历错乱，000.dat
+	 * 找不到目标条目，触发 watchdog 重置。 */
 	if (unzlocal_getShort(s->file,&file_info.size_filename) != UNZ_OK)
 		err=UNZ_ERRNO;
 
@@ -3491,9 +3493,8 @@ int unzlocal_CheckCurrentFileCoherencyHeader (unz_s *s,uInt *piSizeVar,
 
 	if (unzlocal_getLong(s->file,&uData) != UNZ_OK) // size uncompr
 		err=UNZ_ERRNO;
-	else if ((err==UNZ_OK) && (uData!=s->cur_file_info.uncompressed_size) &&
-							  ((uFlags & 8)==0))
-		err=UNZ_BADZIPFILE;
+	else
+		s->cur_file_info.uncompressed_size = uData;  /* ★★ 1:1 工厂：从 local header 填充，不与 central directory 比较 */
 
 
 	if (unzlocal_getShort(s->file,&size_filename) != UNZ_OK)
