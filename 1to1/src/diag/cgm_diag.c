@@ -8,6 +8,7 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <errno.h>
 #include <signal.h>
 #include <ucontext.h>
 #include <sys/syscall.h>
@@ -27,12 +28,20 @@ static int  sys_open(const char *p, int fl, int mode) {
 static int  sys_close(int fd) { return (int)sc3(SYS_close, fd, 0, 0); }
 static int  sys_mkdir1(const char *p) { return (int)sc3(SYS_mkdirat, -100, (long)p, 0755); }
 
+/* ★★★★★ R303（2026-11-02）：写盘失败必须**可见**。
+ *   旧实现 `if (r <= 0) return;` 把错误**静默吞掉** ⇒ 真机第 4/7/8/11 轮
+ *   「frames.snap.bin = 0 字节、却存在 25~35 条 ## snapshot 记录」无法区分
+ *   「没触发」与「触发了但写失败」；trace.log 尾部"干净停住"同样不可判读。
+ *   现在记录错误次数 + errno（libc 的 syscall() 失败返回 -1 并置 errno），
+ *   由 5 s 周期行带出（见 cgm_do_snap）。 */
+static volatile unsigned g_werr;
+static volatile int      g_werr_no;
 static void wraw(int fd, const void *p, unsigned n) {
     if (fd < 0) return;
     const char *c = (const char *)p;
     while (n) {
         long r = sc3(SYS_write, fd, (long)c, (long)n);
-        if (r <= 0) return;
+        if (r <= 0) { g_werr++; g_werr_no = errno; return; }
         c += r; n -= (unsigned)r;
     }
 }
@@ -468,21 +477,46 @@ static void dump_ring(int fd)
         if ((i & 0x3FF) == 0 && total) { /* 让出一点，避免长阻塞 */ }
     }
 }
+static unsigned g_nsnap;
 static void cgm_do_snap(void)
 {
-    if (g_snapfd < 0) return;
-    sc3(SYS_lseek, g_snapfd, 0, 0 /*SEEK_SET*/);
-    dump_ring(g_snapfd);
-    wstr(g_logfd, "  ## snapshot\n");
+    /* ★★★★★ R303（2026-11-02）：**周期快照不再落盘**。
+     *   旧实现每次快照 dump_ring() = 65536 × 12 B = **786 KB** 写 SD 卡；
+     *   配合 cadence 的无符号下溢 bug（见 cgm_tick），真机第 4/7/8/11 轮末尾
+     *   出现 25~35 次**同一 jiffies** 的连发 ⇒ 单次突发 ~27 MB 写盘
+     *   ⇒ SD 卡写爆 / 写阻塞 ⇒ 进程定格、日志终止
+     *   （frames.snap.bin = 0 字节 即「写失败」的直接证据）。
+     *   ⇒ R303：周期只留一行计数；环形帧历史改由**崩溃/退出**路径一次性落盘
+     *     （cgm_lifecycle → frames.bin；crash handler → crash.txt）。 */
+    g_nsnap++;
+    char b[192]; int n = 0;
+    n += vfmt(b + n, (int)sizeof(b) - n,
+              "  ## snapshot n=%u werr=%u errno=%d frames=%u\n",
+              g_nsnap, g_werr, g_werr_no, g_rpos);
+    wraw(g_logfd, b, (unsigned)n);
+    g_logbytes += (unsigned)n;
 }
 
 /* 周期任务：由 instrument 每次调用顺带驱动，**不需要线程** */
+/* ★ R303（2026-11-02）：内核侧取证钩子（在 cgm_wrap.c 用 libc 实现：
+ *   statfs 剩余空间 / shm 心跳活性 / watchdog sysfs）。
+ *   弱符号 ⇒ 没有 wrap.o 时也能链上（不会变成未定义引用）。 */
+extern void cgm_kernel_periodic(void) __attribute__((weak));
+
 static void cgm_tick(void)
 {
     unsigned m = g_ms;
-    if (m - g_last_snap >= CGM_SNAP_MS) { g_last_snap = m + 1; cgm_do_snap(); }
-    if (m - g_last_sum >= CGM_SUMMARY_MS) {
-        g_last_sum = m + 1;
+    /* ★★★★★ R303：cadence 改为**有符号差**（32 位回绕安全），且不再用
+     *   `g_last_snap = m + 1`。旧写法让下一次 `m - g_last_snap` = -1 ⇒
+     *   无符号下溢成 4.29e9 ⇒ **每个 instrument 调用都触发一次快照**
+     *   ⇒ 真机末尾 25~35 次同 jiffies 连发 ⇒ ~27 MB 突发写盘 ⇒ 卡写爆。 */
+    if ((int)(m - g_last_snap) >= (int)CGM_SNAP_MS) {
+        g_last_snap = m;
+        cgm_do_snap();
+        if (cgm_kernel_periodic) cgm_kernel_periodic();
+    }
+    if ((int)(m - g_last_sum) >= (int)CGM_SUMMARY_MS) {
+        g_last_sum = m;
         if (g_logfd >= 0 && g_lvl >= CGM_LVL_CORE) {
             char b[640]; int n = 0;
             n += vfmt(b + n, (int)sizeof(b) - n,
@@ -750,6 +784,21 @@ static void on_crash(int sig, siginfo_t *si, void *uc_)
     sc3(SYS_exit_group, 139, 0, 0);
 }
 
+/* ★ R303（2026-11-02）：定时器类信号的「记录 + 转发」处理器。
+ *   **绝不吞掉**：记录一行 → 恢复默认动作 → 重发给自己（进程按原厂语义死）。
+ *   目的：既留证据，又不改变被测对象的结局（诊断仪纪律：不能改变被测行为）。 */
+static void on_timer_sig(int sig, siginfo_t *si, void *uc)
+{
+    char b[160]; int n = 0;
+    n += vfmt(b + n, (int)sizeof(b) - n,
+              "  ## SIGNAL sig=%d (%s) -> forward default action\n", sig, signame(sig));
+    wraw(g_logfd, b, (unsigned)n);
+    sc4(SYS_rt_sigaction, sig, 0, 0, 8);                 /* 恢复默认动作 */
+    sc3(SYS_tgkill, (long)sc3(SYS_getpid, 0, 0, 0),
+        (long)sc3(SYS_gettid, 0, 0, 0), sig);            /* 重发给自己 */
+    sc3(SYS_exit_group, 139, 0, 0);                      /* 兜底 */
+}
+
 static void cgm_install_signals(void)
 {
     /* ★★★★★ 2026-10-23（R261，**本轮最重要的修复**）：按**内核** ABI 排结构体。
@@ -795,12 +844,17 @@ static void cgm_install_signals(void)
     int sigs[] = { 4, 6, 7, 8, 11, 5, 31, 15, 2 };
     for (unsigned i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
         sc4(SYS_rt_sigaction, sigs[i], (long)&sa, 0, 8);
-    /* SIGALRM 心跳：不需要 siginfo，但沿用同一布局（SA_SIGINFO 下多余实参被忽略） */
-    sa.handler = (void (*)(int, siginfo_t *, void *))on_alarm;
+    /* ★★★★★ R303（2026-11-02）：定时器类信号**记录但不吞**。
+     *   R265 的做法是把 SIGALRM/SIGVTALRM/SIGPROF 全挂到 on_alarm（= 吞掉），
+     *   以防「仪器自己误武装 ITIMER_VIRTUAL」导致自杀（第 6 轮那个坑）。
+     *   但 R270 起 diag **默认不再武装任何定时器**（CGM_ALARM_MS=0），
+     *   继续吞这三个信号只剩副作用：**若真正的杀手用它们杀进程，我们会把它
+     *   伪装成「正常退出」，从而掩盖根因**。
+     *   ⇒ R303：记录一行 → 恢复默认动作 → 重发该信号（进程按原厂语义死，
+     *     证据留在 trace.log）。 */
+    sa.handler = (void (*)(int, siginfo_t *, void *))on_timer_sig;
     sa.sa_flags = 4; sa.sa_restorer = 0; sa.sa_mask[0] = 0; sa.sa_mask[1] = 0;
-    sc4(SYS_rt_sigaction, 14 /*SIGALRM*/, (long)&sa, 0, 8);
-    /* ★ R265：防御性挂载——若别处误武装 ITIMER_VIRTUAL/PROF，也只会多写日志，
-     *   绝不让默认动作(终止)把被测进程杀掉（第 6 轮"每几秒重启"就是这么来的）。 */
+    sc4(SYS_rt_sigaction, 14 /*SIGALRM*/,  (long)&sa, 0, 8);
     sc4(SYS_rt_sigaction, 26 /*SIGVTALRM*/, (long)&sa, 0, 8);
     sc4(SYS_rt_sigaction, 27 /*SIGPROF*/,   (long)&sa, 0, 8);
 }

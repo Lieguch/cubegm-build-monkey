@@ -45,6 +45,7 @@
 extern void cgm_putline(const char *tag, const char *fmt, ...);
 extern void cgm_tick_public(void);
 extern void cgm_bump(const char *nm);
+extern void cgm_kernel_boot(void);   /* ★ R303：启动时采一次内核侧证据 */
 
 #define LOG(...)  cgm_putline(__VA_ARGS__)
 #define TICK()    cgm_tick_public()
@@ -62,6 +63,8 @@ int __wrap___libc_start_main(main_fn_t main_fn, int argc, char **ubp_av,
                              void (*rtld_fini)(void), void *stack_end)
 {
     cgm_diag_boot("libc_start_main");
+    /* ★ R303：启动即采一次内核侧证据（进程表 / watchdog sysfs / statfs 剩余空间 / shm） */
+    cgm_kernel_boot();
     /* ★★★ 2026-09-23（设备实测）：上一版只打 `argc` + `argv0`，得到
      *   `argc=-1098883456 argv0="(null)"` —— 且 6 次运行**完全一致**（非竞争），
      *   而同一份 trace.log 里所有 %d/%s/%p 都像栈地址 ⇒ 必须一次分清是
@@ -174,7 +177,14 @@ size_t __real_fread(void *, size_t, size_t, FILE *);
 size_t __wrap_fread(void *b, size_t sz, size_t n, FILE *f)
 {
     size_t r = __real_fread(b, sz, n, f);
-    if (cgm_want(CGM_LVL_IO)) { LOG("IO", "fread %p sz=%u n=%u ret=%u", (void *)f, (unsigned)sz, (unsigned)n, (unsigned)r); cgm_bump("fread"); }
+    if (cgm_want(CGM_LVL_IO)) {
+        /* ★ R303（2026-11-02）：**1 字节读只计数、不写行**。
+         *   真机第 13 轮：18,216 次 1 字节读（zip 中央目录逐字节）⇒ 每行 ~50 B
+         *   ⇒ 单轮 ~900 KB 的**纯日志写放大**（真机 SD 卡，主循环每帧都要写）。
+         *   降噪后总量仍可从 ctr("fread1") 读到，不丢信息。 */
+        if (sz == 1) cgm_bump("fread1");
+        else { LOG("IO", "fread %p sz=%u n=%u ret=%u", (void *)f, (unsigned)sz, (unsigned)n, (unsigned)r); cgm_bump("fread"); }
+    }
     TICK();
     return r;
 }
@@ -438,6 +448,143 @@ int __wrap_statfs(const char *p, struct statfs *s)
         LOG("IO", "statfs \"%s\" ret=%d  <== FAIL", PN(p), r);
     return r;
 }
+/* ================= R303（2026-11-02）：内核侧取证 =================
+ * 目的：把「死亡到底是谁干的」从推断变成**证据**。
+ *   ① statfs：SD 卡剩余空间（判定 ENOSPC；此前写失败被 wraw 静默吞掉）
+ *   ② shm 心跳活性：shmget(0x4d2)+shmat，读 shm[1] 增量
+ *      （与原厂 ShareMemCreat 的 key/大小一致；增量>0 ⇒ 心跳活着 ⇒ 可排除
+ *       「设备守护进程按心跳超时杀进程」这一猜测）
+ *   ③ watchdog sysfs + /proc/sys/kernel/watchdog*：设备侧 WDT 状态
+ *   ④ /proc 全进程表：找设备上的看门狗守护进程
+ * 全部走 __real_* 原函数 ⇒ 不经过 --wrap ⇒ 不递归、不污染 trace.log。
+ */
+#include <sys/shm.h>
+
+static int      g_ks_busy;
+static unsigned g_ks_seq;
+static unsigned g_shm_last;
+static int      g_shm_have;
+
+static void ks_copy(const char *src, FILE *out, const char *title)
+{
+    fprintf(out, "--- %s : %s ---\n", title, src);
+    int fd = __real_open(src, O_RDONLY, 0);
+    if (fd < 0) { fprintf(out, "(open fail)\n\n"); return; }
+    char b[1024]; long n;
+    while ((n = __real_read(fd, b, (long)sizeof(b))) > 0)
+        __real_fwrite(b, 1, (size_t)n, out);
+    __real_close(fd);
+    fprintf(out, "\n");
+}
+
+static void ks_proc_scan(FILE *out)
+{
+    fprintf(out, "--- /proc process table (R303) ---\n");
+    DIR *d = __real_opendir("/proc");
+    if (!d) { fprintf(out, "(opendir /proc fail)\n"); return; }
+    struct dirent *e;
+    while ((e = __real_readdir(d)) != NULL) {
+        const char *nm = e->d_name;
+        if (!nm[0]) continue;
+        int num = 1;
+        for (const char *q = nm; *q; q++)
+            if (*q < '0' || *q > '9') { num = 0; break; }
+        if (!num) continue;
+        char path[96], comm[128], cmd[512];
+        comm[0] = cmd[0] = 0;
+        snprintf(path, sizeof(path), "/proc/%s/comm", nm);
+        int fd = __real_open(path, O_RDONLY, 0);
+        if (fd >= 0) {
+            long n = __real_read(fd, comm, (long)sizeof(comm) - 1);
+            __real_close(fd);
+            if (n > 0) comm[n] = 0; else comm[0] = 0;
+        }
+        snprintf(path, sizeof(path), "/proc/%s/cmdline", nm);
+        fd = __real_open(path, O_RDONLY, 0);
+        if (fd >= 0) {
+            long n = __real_read(fd, cmd, (long)sizeof(cmd) - 1);
+            __real_close(fd);
+            if (n > 0) { cmd[n] = 0; for (long i = 0; i < n; i++) if (!cmd[i]) cmd[i] = ' '; }
+        }
+        fprintf(out, "pid=%s comm=%s cmd=%s\n", nm, comm, cmd);
+    }
+    __real_closedir(d);
+    fprintf(out, "\n");
+}
+
+static void ks_watchdog(FILE *out)
+{
+    ks_copy("/proc/sys/kernel/watchdog",      out, "watchdog");
+    ks_copy("/proc/sys/kernel/watchdog_thresh", out, "watchdog_thresh");
+    ks_copy("/proc/sys/kernel/panic",          out, "panic");
+    DIR *d = __real_opendir("/sys/class/watchdog");
+    if (!d) { fprintf(out, "--- /sys/class/watchdog : (opendir fail) ---\n\n"); return; }
+    struct dirent *e;
+    while ((e = __real_readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        char p[160];
+        const char *names[4] = { "identity", "state", "timeout", "bootstatus" };
+        const char *titles[4] = { "wdt identity", "wdt state", "wdt timeout", "wdt bootstatus" };
+        for (int k = 0; k < 4; k++) {
+            snprintf(p, sizeof(p), "/sys/class/watchdog/%s/%s", e->d_name, names[k]);
+            ks_copy(p, out, titles[k]);
+        }
+    }
+    __real_closedir(d);
+}
+
+void cgm_kernel_periodic(void)
+{
+    if (g_ks_busy) return;
+    g_ks_busy = 1;
+    struct statfs sf;
+    unsigned long total_b = 0, free_b = 0, avail_b = 0;
+    int sfr = __real_statfs("/mnt/sdcard", &sf);
+    if (sfr != 0) sfr = __real_statfs("/sdcard", &sf);
+    if (sfr == 0) {
+        total_b = (unsigned long)sf.f_blocks * (unsigned long)sf.f_bsize;
+        free_b  = (unsigned long)sf.f_bfree  * (unsigned long)sf.f_bsize;
+        avail_b = (unsigned long)sf.f_bavail * (unsigned long)sf.f_bsize;
+    }
+    /* shm 心跳：与原厂 ShareMemCreat 同 key(0x4d2)/同大小(8B)；flags=0 = 只附着不创建 */
+    unsigned hb = 0; int hb_ok = 0;
+    int sid = shmget(0x4d2, 8, 0);
+    if (sid >= 0) {
+        void *p = shmat(sid, 0, 0);
+        if (p != (void *)-1) {
+            hb = ((volatile unsigned *)p)[1];
+            hb_ok = 1;
+            shmdt(p);
+        }
+    }
+    unsigned d = (hb_ok && g_shm_have) ? (hb - g_shm_last) : 0;
+    LOG("KS", "seq=%u sd_total=%lu sd_free=%lu sd_avail=%lu shm_hb=%u shm_delta=%u statfs=%d",
+        ++g_ks_seq, total_b, free_b, avail_b, hb, d, sfr);
+    if (hb_ok) { g_shm_last = hb; g_shm_have = 1; }
+    g_ks_busy = 0;
+}
+
+void cgm_kernel_boot(void)
+{
+    static int done;
+    if (done) return;
+    done = 1;
+    if (g_ks_busy) return;
+    g_ks_busy = 1;
+    FILE *out = __real_fopen(CGM_DIAG_ROOT "/proc.txt", "w");
+    if (out) {
+        ks_proc_scan(out);
+        ks_watchdog(out);
+        ks_copy("/proc/uptime",        out, "uptime");
+        ks_copy("/proc/loadavg",       out, "loadavg");
+        ks_copy("/proc/cmdline",       out, "kernel cmdline");
+        ks_copy("/proc/self/environ",  out, "self environ");
+        __real_fclose(out);
+    }
+    g_ks_busy = 0;
+    cgm_kernel_periodic();
+}
+
 int __real_select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
 int __wrap_select(int n, fd_set *r, fd_set *w, fd_set *e, struct timeval *t)
 {
