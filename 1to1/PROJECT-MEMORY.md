@@ -7419,3 +7419,64 @@ P0 待办（两步都不需要用户操作）：
 ② **真机观测数据与主张一致**。R301 只做了机器码侧的单点读图，没拿第 13 轮 trace 交叉验证，
 导致"修复"反向引入回归。—— 与用户红线「"我没试过"≠"改不到"」同族：
 越是有"机器码证据"的结论，越要找一份**独立观测**交叉验证；单点证据不成定案。
+
+
+## §0.49 R303（2026-11-02）—— R300 根因线作废；真凶指向**诊断仪自伤**；交付去自伤 + 内核取证版
+
+### A. **更正 §0.48 C 节**：「有效根因线 = 000.dat 中央目录遍历超时」**已被证伪**
+跨 `_sdcard_drop/真机验收日志/{1..13}` 全量逐轮解析（BOOT enter / 末行 jiffies /
+事件直方图 / snapshot 位置 / fd 映射）：
+- **round 4~11 从未打开 000.dat**，fread 仅 **1,515** 次（round 13 开 000.dat 是 20,971 次），
+  却在**同一绝对 jiffies 窗口 4999~5079** 死亡 ⇒ 与 zip/IO 负载无关。
+- round 1 存活 **792 s / 11 次进程重启**、round 6 存活 **450 s / 4 次重启**
+  ⇒ **设备不会在"开机 50 s"整机复位** ⇒ "设备/内核固定超时复位"猜测同样否掉。
+- 所有 trace 末行**以完整换行结束**（无半行截断）⇒ 非写盘中途撕裂。
+⇒ 结论：§0.48 C 节（以及 R300 的根因定案）**作废**，不得再作为判据。
+
+### B. 新根因线：**诊断仪自身的快照风暴 → SD 写放大 → 进程定格**
+- 形态：round 4/7/8/11 的全部 25~35 条 `## snapshot` **集中在同一个 jiffies**
+  （5008 / 4962~5028 / 4999~5000）；同批 `frames.snap.bin` = **0 字节**（写入全失败）。
+- 机制（`src/diag/cgm_diag.c`）：`cgm_tick()` 用 `g_last_snap = m + 1` ⇒ 下一次
+  `m - g_last_snap` = -1 ⇒ **无符号下溢 4294967295** ⇒ 每个 instrument 调用触发一次快照；
+  每次 `dump_ring()` = 65536 × 12 B = **786 KB 写 SD** ⇒ 末尾一次突发 **~27 MB**
+  ⇒ 卡写爆/写阻塞 ⇒ 帧呈现事件（IOEV D/d/V）在 4796 停止 ⇒ 日志定格。
+- 放大器（旧 `wraw()` 吞掉 write 错误 ⇒ 该矛盾此前无法判读）：1 字节 fread 逐条写行
+  （round 13：18,216 次 ≈ 900 KB/轮）；SIGALRM/SIGVTALRM/SIGPROF 被 on_alarm **吞掉**
+  （R270 起 diag 默认已不武装定时器 ⇒ 继续吞只会掩盖真凶）。
+
+### C. R303 改动与产物（**只动诊断仪两文件，零业务逻辑改动**）
+- `src/diag/cgm_diag.c`：① `wraw()` 记 `g_werr`/`g_werr_no`(errno)；② **周期快照不再落盘**
+  （只留计数行，ring 改由崩溃/退出一次性落盘）；③ cadence 改**有符号差** +
+  `g_last_snap = m`；④ 新增 `on_timer_sig()`：定时器类信号「记录 → 恢复默认 → 重发」
+  （留证据、不改结局）。
+- `src/diag/cgm_wrap.c`：⑤ 1 字节 fread 只计数不写行；⑥ 新增内核侧取证
+  `cgm_kernel_boot()`/`cgm_kernel_periodic()`：statfs 剩余空间 + shm 心跳增量
+  （shmget 0x4d2，与原厂 ShareMemCreat 同 key/大小）+ `/proc` 全进程表 + watchdog sysfs
+  ⇒ 落 `proc.txt`；全部走 `__real_*` 原函数，不经 --wrap（不递归、不污染日志）。
+- CI：commit `e5aef10e413946182210ff623f7398bec5f691b4`；`diag-build` run **41389453203 →
+  success**；门禁 PASS(0 失败)、0 warning；artifact id 13116469265。
+- 产物：`94715fe00db12ea5e15a77fc3a4f2bf1c7ef31c754417e81fb4b045ac9e44b86`（5,465,236 B）
+  ⇒ `_sdcard_drop/latest_diag/rkgame.diag` = `_sdcard_drop/cubegm/rkgame`；侧车同步。
+- 权威清单：`_sdcard_drop/DELIVERY-R303.txt`。
+- ★ 通道备注：artifact 302 到 `*.blob.core.windows.net`，**必须手动跳转且不带
+  Authorization 头**（带 Authorization 会被 Azure 判 401 InvalidAuthenticationToken）。
+
+### D. 待办（关键路径 = 用户一次 5~10 分钟的单变量对照）
+1. **实验 A（决定性）**：删/改名 SD 卡 `cubegm/_diag/` → 用
+   `latest_rebuilt/rkgame.rebuilt.elf`（`642df312…`，无诊断仪）覆盖 `cubegm/rkgame`
+   → 上电静置 3 分钟 → 回「重启了？首次重启距上电多少秒？」
+   · 不重启 ⇒ 故障在诊断仪/写盘侧（本轮已修）；· 仍固定 ~14.5 s ⇒ 设备/内核侧，
+   用新 diag 的 `proc.txt` + `## KS` 行取证。顺手查 SD 卡**剩余空间**（疑似 ENOSPC）。
+2. **实验 B**：换回 `94715fe0…` 跑 3 分钟，回传 `_diag/` 全目录；先看 `## KS`
+   （sd_free/shm_delta）、`## snapshot`（werr/errno）、`proc.txt`（watchdog/守护进程）。
+3. **待澄清**：上一轮"清洁版也无限重启（0.2s 闪无日志）"——第 12 轮目录为空、无文档
+   记录，且 0.2s 与第 4~13 轮签名（BOOT enter + ~14.5 s）对不上 ⇒ 按**未证实**处理。
+
+### E. 纪律教训（进"不要重复"清单）
+1. **仪器自身必须零干扰，且自身缺陷要能被自己看见**：本项目连续多轮被"诊断仪写放大 /
+   吞信号"带偏方向，被测对象反而被怀疑 8 轮。⇒ 周期落盘量必须与"真机 SD 写预算"对账；
+   写失败必须有 errno 计数；诊断仪**不得吞**被测对象可能被杀它的信号（记录 + 转发）。
+2. **反汇编/单点结论上真机前必须过两道独立检验**（承 §0.48 E）。
+3. **"多轮一致"既能证伪也能证真**：round 4~11 未开 000.dat 却同窗死亡 —— 正是它证伪了 R300。
+4. **"设备侧固定超时"这类猜测要先用"进程存活时长分布"否掉**：round 1/6 的 792 s/450 s
+   存活 + 多次重启，直接排除了"开机 50 s 整机复位"。
