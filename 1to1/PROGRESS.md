@@ -13169,3 +13169,36 @@ round 4~11 未开 000.dat 却同窗死亡，正是它证伪了 R300。
 2. **推送前先确认将要改动的文件是否落在"零触发白名单"**（根级 .md / `tools/_*` / `report/**`）；
    `tools/` 下**非下划线**的 .md 会触发两个 workflow。
 3. **附记推送若已误触发 CI**：源码未变 ⇒ 立即 cancel 仍在跑的 run（保留已完成的结论），并如实留档（不装作没发生）。
+
+> 追加前 `old_intact=True`（旧文 1008596 B / sha ea0389010a674cef…）；由 `tools/append_progress.py` 原子追加。
+## R305e（2026-11-03）—— CI 触发规则精确化：`rkgame-rebuild`（`build.yml`）**无 paths 过滤**，任何 main push 必触发
+
+### 1. 事实（直接从仓库根 workflow 文件取原文，非推断）
+
+| workflow 文件 | 触发条件（原文） | 文档推送触发吗 |
+|---|---|---|
+| 仓库根 `.github/workflows/build.yml`（run 名 **`rkgame-rebuild`**） | `on: push: branches: [main]`（**无 paths 过滤**）+ `workflow_dispatch`；`permissions: contents: write`；`concurrency: group: rkgame-build, cancel-in-progress: true` | ✅ **必触发** |
+| `1to1-verify` | `push.paths: 1to1/**` + 排除 `!1to1/*.md` / `!1to1/tools/_*` / `!1to1/report/**` | ❌（根级 .md / `tools/_*` / `report/**` 不触发） |
+| `1to1-qemu-behav` | 同上（3 个排除项一致） | ❌（同上） |
+| `gcc-vs-clang-fidelity` | 仅 `1to1/tools/{gcc_fidelity,fidelity_matrix,dwarf_repy,fidelity_compare,upstream_opt_matrix,upstream_cc_compare}.sh/py` + `ledger/size_short_exempt.tsv` + 自身 | ❌ |
+| `toolchain-ab` | 仅 `tools/toolchain_ab.sh` / `tools/link_full.sh` / `tools/diff_exec.py` / `1to1/src/**` + 自身 | ❌ |
+| `diag-build` | 仅 `src/diag/**` / `src/upgrade/**` / 指定 tools + 自身 | ❌ |
+
+- 实证：本轮两次文档推送 `2e954d6ec982` 与 `2e0d2081f305` 都触发了 `rkgame-rebuild`（`41580888960` / `41582338994`），
+  各约 **1 分 17 秒** 完成（success）——比 `1to1-qemu-behav` 的 8–12 分钟便宜 6 倍以上。
+- 推论（R305d 的「零触发白名单」需按此口径读）：**根级 .md / `tools/_*` / `report/**` 的推送，
+  可以做到不触发 `1to1-verify` + `1to1-qemu-behav` 这两个重 workflow；但 `rkgame-rebuild` 无法通过
+  路径规则规避**（该 workflow 自身设计即"每次 main 推送都重编并回写产物"，`concurrency` 会自取消上一轮）。
+- **不为它改 workflow**：改 `build.yml` 自身会触发它（`paths` 里通常显式含自身），且"给构建 workflow
+  加 paths 过滤"是架构决策，不是本轮的附记任务 ⇒ 记录事实、按 ~1min/次 接受；不做隐式优化。
+
+### 2. 本轮 CI 最终状态（收口）
+
+| run | workflow | head | 终态 |
+|---|---|---|---|
+| `41580888960` | `rkgame-rebuild` | `2e954d6ec982` | **success**（1 分 17 秒） |
+| `41580888908` | `1to1-verify` | `2e954d6ec982` | **cancelled**（附记误触发后取消） |
+| `41580888932` | `1to1-qemu-behav` | `2e954d6ec982` | **cancelled**（同上） |
+| `41582338994` | `rkgame-rebuild` | `2e0d2081f305`（R305d 文档更正推送） | **success**（不可规避，成本低） |
+
+- `src/**` 源码自 `c4caceed4a36` 起**未再改动** ⇒ 两次推送都是**纯附记**，无源码回归。

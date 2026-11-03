@@ -7653,3 +7653,14 @@ CI 不受影响的原因：workflow 有独立步骤「安装 zig」（`ziglang==
 2. **推送前先判定路径是否落在零触发白名单**（根级 .md / `tools/_*` / `report/**`）；
    `tools/` 下**非下划线** .md 会触发两个 workflow（qemu-behav 一轮 8–12 分钟）。
 3. **附记推送若已误触发 CI**：源码未变 ⇒ 立即 cancel 仍在跑的 run（保留已完成者的结论），并**如实留档**，不装作没发生。
+
+#### J. R305e（2026-11-03）—— CI 触发规则精确化：`build.yml`（`rkgame-rebuild`）**无 paths 过滤** ⇒ 任何 main push 必触发
+
+- 事实（仓库根 workflow 原文）：`.github/workflows/build.yml` = `on: push: branches: [main]`（**无 paths**）
+  + `workflow_dispatch`；`permissions: contents: write`；`concurrency: rkgame-build, cancel-in-progress: true`。
+  ⇒ 文档推送也会跑它，实测 **~1 分 17 秒**（比 `1to1-qemu-behav` 的 8–12 分钟便宜 6 倍以上）。
+- 精确口径（读 R305d/R305e 时按此理解）：**根级 `1to1/*.md` / `1to1/tools/_*` / `1to1/report/**` 的推送
+  不触发 `1to1-verify` + `1to1-qemu-behav`（两个重 workflow）；但 `rkgame-rebuild` 无法通过路径规则规避**。
+- 其余 workflow 各自 paths 白名单（源码/指定工具才触发）：`gcc-vs-clang-fidelity`、`toolchain-ab`、`diag-build`。
+- **纪律**：不为它改 `build.yml`（改 workflow 自身也触发，且加 paths 过滤属架构决策）——
+  按事实记录、按 ~1min/次 接受；**不做隐式优化**。
