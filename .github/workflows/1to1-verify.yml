@@ -153,6 +153,36 @@ jobs:
           python tools/scan_implicit_decl.py --root . --zig "$ZIG" \
             --ledger tools/implicit_decl_pending.txt
 
+      - name: Rule A 门禁（malloc 家族尺寸实参取自未初始化局部）★ 硬门禁
+        id: s54
+        continue-on-error: true
+        run: |
+          cd 1to1
+          # ★★ 2026-11-03（R306）引入。背景 = 真机 0.2–0.4s 闪重启的根因：
+          #   重建二进制里 **3 处 malloc 的尺寸实参取自从未赋值的局部** ⇒ 分配尺寸与
+          #   真实解压尺寸无关 ⇒ 16KB 块循环越界写 ⇒ 毁堆 ⇒ SIGSEGV。
+          #   工厂二进制按 ZIPENTRY+296（unc_size）分配；R305 已逐条对齐修正。
+          #   本门禁把这一类缺陷**固化成 CI 硬门禁**，防回归。
+          # 口径（两级，缺一不可）：
+          #   ① 编译器真值：clang `-Wuninitialized`（**必须用 `-c -o`**；zig 0.16 下
+          #      `-fsyntax-only` 报 FileNotFound 且**零诊断** ⇒ 会假绿）；
+          #   ② 源码窄化：诊断变量必须整词出现在 **malloc 家族调用的「尺寸实参」**里
+          #      （calloc 第2 / memalign 第2 / posix_memalign 第3 个实参才是尺寸）。
+          #      不做② ⇒ printf 实参、加法右值、return 值这 3 类同族噪声会永久红灯，
+          #      门禁很快被 continue-on-error 化掉 ⇒ 失去意义（本项目反复吃亏于此）。
+          # ★★ 缓存隔离（**本项目实测踩过的最隐蔽假绿源**）：
+          #   zig 的磁盘缓存**命中时不重放 warning** ⇒ 同一 TU 第二次编译输出 0 行，
+          #   看起来像「编译器不报该缺陷」。扫描器内部已为每次运行用**全新**
+          #   ZIG_GLOBAL_CACHE_DIR；此处再显式指定一次，双保险。
+          # 台账棘轮：tools/rule_a_pending.txt（当前 0 项 —— 修完即 0）：
+          #   任何**新增**命中 ⇒ 失败；台账条目不再命中 ⇒ 仅告警（提示删行）。
+          # fail-closed：任何 TU 编译失败 ⇒ FATAL ⇒ 门禁拒绝给绿。
+          export ZIG_GLOBAL_CACHE_DIR="$RUNNER_TEMP/zigcache_rule_a"
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          [ -x "$ZIG" ] || { echo "::error::无法定位 zig"; exit 1; }
+          python3 tools/scan_rule_a.py --root . --zig "$ZIG" \
+            --ledger tools/rule_a_pending.txt --skip tools/rule_a_skip.txt
+
       - name: proto.h 声明 vs 上游真签名对拍★ 硬门禁
         id: s10
         continue-on-error: true

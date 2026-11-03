@@ -43,12 +43,38 @@ memalign/valloc/posix_memalign）调用的**实参区**内，才算 Rule A。
 
 ## 地面真值校验（R306，CNB 云开发实测）
 
-| 树 | `-Wuninitialized` 命中 TU | Rule A 命中 | 判读 |
-|---|---|---|---|
-| R259（**修复前**镜像） | 6 | **3** | 恰为 R305 修的 3 处 ⇒ 仪器正确 |
-| R305f（修复后 GitHub main） | 3 | **0** | 修完即 0 ⇒ 棘轮可用 |
+★ 真值树 = **R305 修复提交的 parent**（`ad13c99b` = parent(c4caceed)），
+  **不是** CNB 镜像（镜像停在 R259，代码形态已变 ⇒ 不能当真值）。
 
-⇒ 仪器在**已修复**与**未修复**两侧都得到正确答案，不是只会报红的噪音门禁。
+| 树 | 身份 | Rule A 命中 | 判读 |
+|---|---|---|---|
+| `ad13c99b` | R305 **修复前**（同树同形态） | **TU=3 / 3 点** | 恰为 R305 修的 3 处 ⇒ 仪器能检出 |
+| `1e41a1c8`（main=R305f） | R305 **修复后** | **TU=0 / 0 点** | 修完即 0 ⇒ 棘轮可用 |
+
+命中清单（修复前树；每条带证据 = 编译器诊断原文 + 匹配到的尺寸实参原文 + 行号）：
+
+| 位置 | 匹配到的尺寸实参 |
+|---|---|
+| `core/FUN_00016f08_FilePreEmu.c:105:local_30` | `malloc(...) = (local_30 + 0x10)` @L106 |
+| `core/FUN_002b7510_run_game.c:67:local_30` | `malloc(...) = (local_30 + 0x10)` @L68 |
+| `mui/FUN_00014f84_mui_DisplayThumbnail.c:76:local_30` | `malloc(...) = (local_30)` @L76 |
+
+⇒ 仪器在**已修复**与**未修复**两侧都得到正确答案，不是只会报红的噪音门禁；
+  且 3 类同族噪声（printf 实参 / 加法右值 / return 值）在**两侧都是 0 命中**。
+
+## ★★★ 缓存隔离（**本项目踩过的最隐蔽假绿源**，勿删）
+
+zig 的磁盘缓存**命中时不重放 warning** ⇒ 同一个 TU **第二次**编译输出 **0 行**
+（连 `'NAN' macro redefined` 这种必然出现的 warning 都没有）⇒ 看起来像
+「编译器不报这个缺陷」。
+
+实测踩坑经过：CNB 云开发 workspace 是**长驻**实例（缓存跨轮次存活，已积 83 MB），
+地面真值一度被污染成「修复前树也 0 命中」，差点误判成「仪器口径错了」，
+实际真因是**缓存**，不是编译器行为。
+
+⇒ 根治：**每次运行用全新 `ZIG_GLOBAL_CACHE_DIR`**（扫描器内部已强制；
+CI 侧再显式指定一次，双保险）。
+**任何**靠编译诊断做判据的工具都必须做这件事 —— 否则门禁会「永远绿」而其实没编译过。
 
 ## 台账棘轮
 
@@ -373,15 +399,30 @@ def top_level_blocks(clean):
 
 
 # ───────────────────────────────── 单文件扫描 ─────────────────────────────────
-def scan_one(zig, root, path, outfile):
-    """返回 {'hits':[(line,col,var)], 'errors':[str], 'fatal':str|None}"""
+def scan_one(zig, root, path, outfile, cache_dir=None):
+    """返回 {'hits':[(line,col,var,evidence)], 'errors':[str], 'fatal':str|None}
+
+    ★ cache_dir = 本次运行**专用**的 zig 缓存目录（必传，见 main 里的说明）。
+    """
     try:
         raw = open(path, "rb").read()
     except Exception as e:
         return {"hits": [], "errors": [], "fatal": "读取失败 %s" % e}
 
+    env = dict(os.environ)
+    if cache_dir:
+        # ★★★ 必须隔离 zig 磁盘缓存 —— 这是本项目实测踩过的**最隐蔽**假绿源。
+        #   现象：zig 的缓存**命中时不重放 warning** ⇒ 同一个 TU 第二次编译
+        #         输出 **0 行**（连 'NAN' macro redefined 这种必然出现的 warning
+        #         都没有）⇒ 看起来像「编译器不报这个缺陷」。
+        #   后果（本项目实测）：① 地面真值被污染成 0 命中，误判仪器失效；
+        #         ② 长驻工作区（CNB 云开发）里缓存跨轮次存活 ⇒ 每轮结论都不可信。
+        #   根治：**每次运行用全新缓存目录** ⇒ 必然真编译 ⇒ 必然拿到真诊断。
+        #   （CI 的 runner 每次全新，但同一 job 内多个 step 若参数相同仍会互相命中，
+        #     故隔离是**每个 step 都要做**的纪律，不是可选项。）
+        env["ZIG_GLOBAL_CACHE_DIR"] = cache_dir
     r = subprocess.run([zig, "cc"] + cc_flags(root, outfile) + [path],
-                       capture_output=True)
+                       capture_output=True, env=env)
     out = r.stdout + r.stderr
 
     errs = [m.group(0).decode("utf-8", "replace")
@@ -459,7 +500,8 @@ def selftest(zig, root, tmpdir):
     res = {}
     for tag, p in paths.items():
         res[tag] = scan_one(zig, root, p,
-                            os.path.join(tmpdir, "self_%s.o" % tag))
+                            os.path.join(tmpdir, "self_%s.o" % tag),
+                            cache_dir=os.path.join(tmpdir, "zigcache_selftest"))
 
     problems = []
     bad_hits = set(res["bad"]["hits"])
@@ -532,11 +574,17 @@ def main():
         from concurrent.futures import ThreadPoolExecutor
         jobs = max(1, min(args.jobs, len(files) or 1))
 
+        # ★★ 本次运行**专用**的 zig 缓存目录（每次全新）——
+        #   杜绝「磁盘缓存命中 ⇒ warning 不重放 ⇒ 门禁假绿」。
+        #   放在 tmpdir 内 ⇒ 运行结束随 tmpdir 一起清理，不留垃圾。
+        cache_dir = os.path.join(tmpdir, "zigcache")
+
         def work(idx_f):
             idx, f = idx_f
             # ★ 每个 TU 独立输出文件 —— 共享会在线程间互相覆盖
             of = os.path.join(tmpdir, "tu_%04d.o" % idx)
-            return f, scan_one(zig, root, os.path.join(root, f), of)
+            return f, scan_one(zig, root, os.path.join(root, f), of,
+                               cache_dir=cache_dir)
 
         results = {}
         with ThreadPoolExecutor(max_workers=jobs) as ex:
