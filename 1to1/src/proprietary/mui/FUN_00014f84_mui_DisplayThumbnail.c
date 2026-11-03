@@ -38,8 +38,42 @@ void mui_DisplayThumbnail(void)
   gh_u1 auStack_2d8 [128];
   char acStack_258 [128];
   char acStack_1d8 [128];
-  gh_u1 auStack_158 [296];
-  size_t local_30;
+  /* ★★★ R305 根修（真机 SIGSEGV 归因 · ZIPENTRY 尺寸/取址族 · 本轮真机实证）：
+   *
+   * 【症状】真机 0.2-0.4s 闪重启；crash.txt = SIGSEGV si_code=1(MAPERR)
+   *   si_addr=0x10001000（不在 /proc/self/maps 任何区 ⇒ 野指针），ms=5868；
+   *   调用链 UnzipItem → TUnzip::Unzip → unzReadCurrentFile → inflate
+   *   → inflate_blocks → inflate_codes（pc=0x60d7d4 落在 inflate_codes sym@0x60d404+2384 内）。
+   *   寄存器 r3=0x10001000（= si_addr）、r2=0xb2f116d8（合法映射）⇒ 解压中读到坏指针。
+   *
+   * 【机制 · 我方 ELF 机器码实锤】本函数 `size_t local_30;` **声明后从未赋值**
+   *   ⇒ -Os 下 r0 残留 ⇒ `malloc(local_30)` 实为 **malloc(0)**（实测机器码 0x4e558c
+   *   `bl 0x4015d0`，其前 r0 的最后写入 = FindZipItemA 的返回值 0）。
+   *   随后 `UnzipItem(iVar1,local_38c,__ptr,0,3)` 走 ZIP_MEMORY 路径：工厂
+   *   TUnzip::Unzip 以 16KB 为块循环填满 dst（unzReadCurrentFile(uf,out,16384);
+   *   out += 16384;）⇒ dst 尺寸不足 ⇒ 连续越界写 ⇒ 堆破坏 ⇒ inflate 内部
+   *   解引用坏指针 ⇒ SIGSEGV ⇒ 设备重启（0.2-0.4s 闪重启即此因）。
+   *
+   * 【工厂真相 · 权威源 tool/factory_t1.txt（835 函数带符号反汇编）+ 字节指纹校准】
+   *   - 本函数工厂真实基址 = 0x14f84 - 0xb474 = **0x9B10**
+   *     （校准方式：`sub sp,sp,#884`（e24ddfdd）在 factory_text.bin 全 blob 唯一命中
+   *      @0xb478，且 +32 处 `mov r2,#128` 恰为 idx9 ⇒ 偏移 0xb474 对应 Ghidra 0x14f84）
+   *   - 工厂把 ZIPENTRY 放栈上：`add r9,sp,#576`（= sp+144*4）
+   *   - 工厂 malloc 尺寸 = `LDR r0,[sp,#872]` = ZIPENTRY + 296 = **unc_size**
+   *     （原始字 @0x15080 `e59d0368` = LDR r0,[sp,#872]；@0x15084 `ebffd1ac` = BL malloc）
+   *   ⇒ 工厂语义 = `malloc(unc_size)`，与 Find → Get 填充的
+   *      `ze->unc_size = ufi.uncompressed_size`（src/upstream/xunzip/unzip.cpp:3959）精确对应。
+   *
+   * 【布局】ZIPENTRY sizeof = **304**（工厂 `memset(r0,#304)` + Get 的 304B memcpy 自洽；
+   *   unc_size@296、额外字段@300）。原声明 **296B 少 4 字节** ⇒ unc_size 落在缓冲外。
+   *
+   * 【修复】本地 ZIPENTRY 改用 R284 基建 `ze_t`（304B、对齐 4、含 `_296_4_`），
+   *   malloc 实参 = `auStack_158._296_4_`（= unc_size），删除未赋值的 local_30。
+   *   顺带消除原 `gh_u1[296]` 的非对齐 int 访问隐患（改后偏移 296 处按对齐 4 访问）。
+   *
+   * 【回退】本段整体还原为 `gh_u1 auStack_158[296]` + `size_t local_30` +
+   *   `__ptr = malloc(local_30);` 即可（但会重新引入 malloc(0) 崩溃）。 */
+  ze_t auStack_158;
   
   puVar4 = auStack_358;
   mui_extract_basepath(puVar4,&file_info_list + DAT_003af27c * 0x404,0x80);
@@ -52,10 +86,10 @@ void mui_DisplayThumbnail(void)
   else {
     while( true ) {
       sprintf(acStack_1d8,"%s_%03d.raw",auStack_2d8,DAT_003af280,puVar4);
-      puVar4 = auStack_158;
+      puVar4 = (gh_u1 *)&auStack_158;   /* R305：auStack_158 改 ze_t union，需显式取字节址 */
       /* 证据：15028 add r9,sp,#0x240 + 15060 str r9,[sp]（AAPCS 第 5 参经栈传递）
          → 原厂此处传了 ZIPENTRY 输出缓冲；Ghidra C 漏参并留下死赋值 puVar4 = auStack_158 */
-      iVar2 = FindZipItemA(iVar1,acStack_1d8,1,&local_38c,(ZIPENTRY *)auStack_158);
+      iVar2 = FindZipItemA(iVar1,acStack_1d8,1,&local_38c,(ZIPENTRY *)&auStack_158);   /* R305：ze_t 304B 缓冲（对齐 4） */
       if (iVar2 == 0) break;
       if (DAT_003af280 == 0) {
         iVar2 = 0;
@@ -73,7 +107,7 @@ void mui_DisplayThumbnail(void)
       }
       DAT_003af280 = 0;
     }
-    __ptr = malloc(local_30);
+    __ptr = malloc(auStack_158._296_4_);   /* R305：= unc_size（工厂 LDR r0,[sp,#872] = ZIPENTRY+296）；原为 malloc(local_30) = malloc(0) ⇒ 越界写堆 ⇒ SIGSEGV */
     UnzipItem(iVar1,local_38c,__ptr,0,3);
     blk[3] = DAT_003af6c0;                 /* local_37c = param_2[3] 源高 */
     blk[7] = DAT_003af6b8;                 /* local_36c = param_1[1] 目标左 */

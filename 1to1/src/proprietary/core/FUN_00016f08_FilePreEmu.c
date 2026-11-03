@@ -18,9 +18,20 @@ gh_u4 FilePreEmu(char *param_1)
   int iVar4;
   gh_uint uVar5;
   /* 根修（UB）：同 run_game.c —— 这是 0x130 字节栈缓冲，非 4 字节 int。 */
-  gh_u1 local_158[0x130];
+  /* ★★★ R305 根修（真机 SIGSEGV 归因 · Rule A 同族）：本地 ZIPENTRY 缓冲改用
+   * R284 基建 `ze_t`（304B、对齐 4、含 `_296_4_`），并删除**声明后从未赋值**的
+   * `int local_30;`。
+   * 【机制】`malloc(local_30 + 0x10)` 的实参是栈垃圾 ⇒ 分配尺寸与真实解压后尺寸
+   *   无关 ⇒ TUnzip::Unzip 的 16KB 块循环越界写 ⇒ 堆破坏 ⇒ inflate 内部野指针
+   *   ⇒ SIGSEGV（真机 crash.txt：si_addr=0x10001000 不在任何映射区）。
+   * 【工厂真相 · tool/factory_t1.txt FilePreEmu 指令 143-151】
+   *   144: `ldr r2,[sp,#304]` = ZIPENTRY(sp+8) + 296 = **unc_size**
+   *   146: `add r0,r2,#16`      ⇒ malloc(unc_size + 16)
+   *   147: `str r2,[r4]`        ⇒ ZIP_BUF_SIZE = unc_size
+   *   ⇒ 工厂语义 = `ZIP_BUF_SIZE = unc_size; ZIP_BUF = malloc(unc_size + 0x10);`
+   * 【回退】还原 `gh_u1 local_158[0x130]` + `int local_30` + 原始两行即可。 */
+  ze_t local_158;
   gh_u1 auStack_154 [292];
-  int local_30;
   
   pcVar1 = (char *)GetFilenameExt(param_1);
   /* ★★★ 2026-10-04（第 132 轮）T09 根修：`(ze + 184)` 是 **Ghidra 重建的错误基址**。
@@ -80,7 +91,7 @@ gh_u4 FilePreEmu(char *param_1)
   else {
     pcVar1 = strstr(param_1,"000/");
     if (pcVar1 == (char *)0x0) {
-      memset(&local_158,0,0x130);
+      memset(&local_158,0,sizeof(local_158));   /* R305：ze_t 304B（= 0x130），与工厂 memset(r0,#304) 一致 */
       iVar3 = OpenZipU(param_1,0,2);
     if (iVar3 == 0) {
     RARCH_LOG("FilePreEmu: OpenZipU FAIL\n");
@@ -90,8 +101,19 @@ gh_u4 FilePreEmu(char *param_1)
     else {
     RARCH_LOG("FilePreEmu: OpenZipU OK\n");
         GetZipItemA(iVar3,0xffffffff,(ZIPENTRY *)&local_158);   /* R284：304B 缓冲（=sizeof(ZIPENTRY)）；cast 对齐严格原型 */
-        RARCH_LOG("zipcount %d\n",*(int *)(void *)local_158);
-        if (local_158 < 2) {
+        RARCH_LOG("zipcount %d\n",(int)local_158._0_4_);   /* R305：count = ZIPENTRY+0（工厂 ldr r8,[sp,#8]） */
+        /* ★ R305 根修（Rule B：数组 vs 数值的指针比较 = UB）：原 `local_158 < 2`
+         * 是把栈数组退化后的**指针**与 2 比较 ⇒ 恒为 false ⇒ 解压分支永不可达。
+         * 【工厂真相】tool/factory_t1.txt FilePreEmu 指令 97-98：
+         *     97: `cmp r8,#1`  98: `ble @FilePreEmu+0x1d8`
+         *   0x1d8 = 指令 118（每条 4 字节）= `mov r2,sl; mov r1,fp; mov r0,r7;
+         *   bl @GetZipItemA`（第二次 Get，index=0）⇒ **count ≤ 1 时走解压分支**；
+         *   count > 1 时走指令 99-105（Filetype |= 1; CloseZipU; return 1 = FBA 分支）。
+         * ⇒ 等价 C = `count < 2` ⇒ 解压分支；count > 1 ⇒ FBA 分支。
+         *   与 run_game.c 同族（R284 已用 `1 < *(int*)(void*)local_158` 修好，
+         *   工厂 run_game 指令 145-146 `cmp fp,#1; ble +0x438` 语义一致）。
+         * 【回退】还原 `if (local_158 < 2)` 即可（会退回恒假的 UB 比较）。 */
+        if (2 > (int)local_158._0_4_) {
           iVar4 = GetZipItemA(iVar3,0,(ZIPENTRY *)&local_158);   /* R284：同上 */
           RARCH_LOG("FilePreEmu: GetZipItemA0 result=%d\n",iVar4);
           if (iVar4 == 0) {
@@ -102,8 +124,8 @@ gh_u4 FilePreEmu(char *param_1)
             RARCH_LOG("FilenameExt %s\n",(char *)&FilenameExt);
             GetCoreIndex((char *)&FilenameExt);
             RARCH_LOG("Filetype %d\n",Filetype);
-            ZIP_BUF_SIZE = local_30;
-            ZIP_BUF = malloc(local_30 + 0x10);
+            ZIP_BUF_SIZE = local_158._296_4_;         /* R305：= unc_size（工厂指令 147 `str r2,[r4]`） */
+            ZIP_BUF = malloc(ZIP_BUF_SIZE + 0x10);    /* R305：工厂指令 146 `add r0,r2,#16` ⇒ malloc(unc_size+16) */
             if (ZIP_BUF == (void *)0x0) {
               ZIP_BUF_SIZE = 0;
             }

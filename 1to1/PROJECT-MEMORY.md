@@ -7504,3 +7504,60 @@ P0 待办（两步都不需要用户操作）：
 ### E. 纪律
 - doc-only 推送也监控到 closure；判回归第一问永远是「代码/二进制变了吗」。
 - 已知红也逐轮取证留痕，不允许「反正挂着」式沉默。
+
+
+### §0.51 R305（2026-11-02）—— 真机 0.2-0.4s 闪重启根因**反转**：真凶 = 重建二进制 ZIPENTRY 尺寸缺陷（已修 3 处）
+
+#### A. 根因反转（三条旧假设全被真机证据证伪，**不要再走回老路**）
+
+| 旧假设 | 证伪依据 |
+|---|---|
+| R303「诊断仪快照风暴自伤」 | 实验 A（清洁版 + 关 `_diag/`）与实验 B（诊断版）**观感完全一致**（均 0.2-0.4s 闪重启、伴随音乐） |
+| 「写爆 SD（ENOSPC）」 | SD 卡剩余 **2.36 GiB** |
+| 「真机启动链 / 内核侧」 | QEMU 侧**原厂二进制**全链路健康（rkgame v1.42 → driver.so → drm! → DRM 桩 → abiprobe 两侧 3072 帧；B1~B8b 全 PASS） |
+
+⇒ 真凶在**重建二进制自身**（ZIPENTRY 尺寸/取址族），不是设备、不是内核、不是诊断仪。
+
+#### B. 权威事实（工厂侧，1:1 取证 —— 优先用这些，别再自写解码器）
+
+- **权威源 = `tool/factory_t1.txt`**（835 函数带符号反汇编清单）+ `src/data/factory_text.bin`（原始 blob，字节指纹校准用）。
+  自写 ARM32 解码器已淘汰（连栽 4 次判别错误）；VMA→文件偏移基址须用**字节指纹**校准（`sub sp,sp,#884`/`e24ddfdd` 全 blob 唯一命中 @0xb478 ⇒ `mui_DisplayThumbnail` 真实基址 = 0x14f84-0xb474 = **0x9B10**；曾误用 0x10000/0x9000 均被推翻）。
+- **ZIPENTRY 布局定案：sizeof = 304**；`index@0 / name@4 / attr@264 / comp_size@292 / unc_size@296 / 额外字段@300`。
+  三方互证：`ghidra_compat.h` ZIPENTRY（300B union，`_296_4_`@296）+ `named_array_blobs.h` `ze_t`（304B，`_296_4_`@296）+ 工厂 memset/memcpy(#304)。
+- **工厂 malloc 尺寸 = `unc_size`**（不是任何"未初始化尺寸"）：
+  - `mui_DisplayThumbnail`（工厂基址 0x9B10）：`add r9,sp,#576` + `LDR r0,[sp,#872]`（= ZIPENTRY+296）
+  - `FilePreEmu`（ZIPENTRY@sp+8）：`ldr r2,[sp,#304]` / `add r0,r2,#16` / `str r2,[r4]`
+  - `run_game`（ZIPENTRY@sp+24）：`ldr r2,[sp,#320]` / `add r0,r2,#16` / `str r2,[r8]`
+- **工厂分支语义**：`cmp count,#1; ble` ⇒ **count≤1 走解压分支**、count>1 走 FBA 分支。
+  ⇒ Ghidra 写的 `if (local_158 < 2)` 是**指针比较 UB**（数组退化指针恒 > 2 ⇒ 恒假 ⇒ 解压分支永不可达）= **真缺陷**。
+
+#### C. 修复清单（Rule A 全仓恰 3 处，已全部修；回退点写在各文件注释里）
+
+| 文件 | 原形态（缺陷） | 新形态 |
+|---|---|---|
+| `mui/FUN_00014f84_mui_DisplayThumbnail.c` | `malloc(local_30)` ⇒ **malloc(0)**（local_30 声明后从未赋值）；缓冲 296B（少 4B） | `ze_t auStack_158;` + `malloc(auStack_158._296_4_)` |
+| `core/FUN_00016f08_FilePreEmu.c` | `malloc(local_30 + 0x10)`（栈垃圾尺寸）；`local_158 < 2` 指针比较 | `ZIP_BUF_SIZE = local_158._296_4_;` + `malloc(ZIP_BUF_SIZE + 0x10)`；`2 > (int)local_158._0_4_` |
+| `core/FUN_002b7510_run_game.c` | `malloc(local_30 + 0x10)`（栈垃圾尺寸） | `ZIP_BUF_SIZE = local_158._296_4_;` + `malloc(ZIP_BUF_SIZE + 0x10)` |
+
+- 本地 ZIPENTRY 缓冲统一用 R284 基建 `ze_t`（304B / alignof 4 / 含 `_296_4_`）⇒ **顺带消除原 `gh_u1[296]` 的非对齐 int 访问 UB**。
+- 全仓 Rule A 扫描（251 文件）：高置信候选 **3 → 0**；`DAT_*` 全局实参 2 处（`DAT_003af828` = 屏幕高，`mui_LoadConfig.c:655` 赋 `0x140` 或配置 sscanf）**非 Rule A**，登记为观察项。
+
+#### D. 真机证据（存档于 `_sdcard_drop/真机验收日志/14/`）
+
+- `crash.txt`：`SIGSEGV si_code=1(MAPERR) si_addr=0x10001000`（**不在 maps 任何区 ⇒ 野指针**）`ms=5868 depth=28`；
+  链 `UnzipItem → TUnzip::Unzip → unzReadCurrentFile → inflate → inflate_blocks → inflate_codes`；`r3=si_addr`、`r2=0xb2f116d8`（合法映射）。
+- `000.dat` 230 MB / **1710 条目**；中央目录解析正确（idx=1709 命中 `kof97_000.raw`，cmp=0）⇒ 崩在**提取阶段**。
+- 机制：`TUnzip::Unzip` 以 **16KB 块循环填满 dst**（`unzReadCurrentFile(uf,out,16384); out += 16384;`）⇒ dst 尺寸不足 ⇒ 越界写 ⇒ 堆破坏 ⇒ inflate 野指针 ⇒ SIGSEGV ⇒ 0.2-0.4s 闪重启。
+
+#### E. 分层标注 + 待办
+
+- **已实测**：crash.txt 全部字段；A/B 观感同形；SD 2.36 GiB；工厂指令逐条；我方 ELF `malloc(0)` 机器码（0x4e558c）；ZIPENTRY 304B 三方互证；全仓 Rule A 扫描。
+- **未实测的推断**：新二进制在真机不再闪重启 —— **须由用户换卡复测确认**。
+- **无证据**：崩溃由「哪一次具体越界写」触发（堆破坏时序未复现，不下根因结论）。
+- 待办：① Rule A 固化为 CI 门禁（模板 `tools/scan_implicit_decl.py`：编译器真值口径 + 正向/负向自证 + 台账棘轮；挂载 `1to1-verify.yml`，`continue-on-error: true` + 末尾按 `outcome` 聚合硬失败）——**本轮故意不做**，避免与崩溃修复混变量、便于失败归因；② 清理临时脚本；③ 用户换卡复测。
+
+#### F. 纪律新增（写给未来的自己）
+
+- **反编译残留的「未赋值标量」是一类可静态收敛的真缺陷**：Ghidra 会把 `malloc(尺寸)` 的尺寸变量声明出来却永不赋值 ⇒ `-Os` 下变成 `malloc(0)` / 栈垃圾 ⇒ 越界写 ⇒ 堆破坏。**全仓 Rule A 扫描是必做项，不是可选项**。
+- **Ghidra 反推的 `if (buf < 2)` 一律先判「数组 vs 数值」**：数组退化指针后恒真/恒假 ⇒ 分支永不可达（本次 FilePreEmu 踩中）。
+- **本地 git 长期落后于远端**（push 走 Git Data API，非 git commit）⇒ 推送前**必须**先做「本地 vs 远端 blob sha 差异核对」（`_r305_push_diff.py` 口径 = `tools/push_1to1.py`），确认待推集合恰为预期改动，防止旧版本回退远端。

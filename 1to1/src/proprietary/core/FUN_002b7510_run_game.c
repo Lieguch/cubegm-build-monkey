@@ -20,12 +20,21 @@ gh_u4 run_game(char *param_1, ...)   /* R284：变参原型（工厂 mui_run_gam
   gh_uint uVar6;
   char acStack_160 [8];
   /* 根修（UB）：这是**一块 0x130 字节栈缓冲**（Ghidra 误声明为 4 字节 int）。
-     `memset(&local_158,0,0x130)` / `GetZipItemA(...,&local_158)` /
-     `extract_basepath((char*)&local_158,...)` 都按缓冲用 ⇒ 原声明使 memset 越界 = UB。 */
-  gh_u1 local_158[0x130];
+     `memset(&local_158,0,sizeof(local_158))` / `GetZipItemA(...,&local_158)` /
+     `extract_basepath((char*)&local_158,...)` 都按缓冲用 ⇒ 原声明使 memset 越界 = UB。
+     ★★★ R305 根修（真机 SIGSEGV 归因 · Rule A 同族）：缓冲改用 R284 基建 `ze_t`
+     （304B = 0x130、对齐 4、含 `_296_4_`），并删除**声明后从未赋值**的 `size_t local_30;`
+     —— 原 `malloc(local_30 + 0x10)` 实参是栈垃圾 ⇒ 分配尺寸与真实解压后尺寸无关
+     ⇒ TUnzip::Unzip 的 16KB 块循环越界写 ⇒ 堆破坏 ⇒ inflate 野指针 ⇒ SIGSEGV
+     （真机 crash.txt：si_addr=0x10001000 不在任何映射区）。
+     【工厂真相 · tool/factory_t1.txt run_game 指令 277-281】
+       277: `ldr r2,[sp,#320]` = ZIPENTRY(sp+24) + 296 = **unc_size**
+       279: `add r0,r2,#16`      ⇒ malloc(unc_size + 16)
+       280: `str r2,[r8]`        ⇒ ZIP_BUF_SIZE = unc_size
+     【回退】还原 `gh_u1 local_158[0x130]` + `size_t local_30` + 原始两行即可。 */
+  ze_t local_158;
   char acStack_154 [4];
   char acStack_150 [288];
-  size_t local_30;
   
   ZIP_BUF = (void *)0x0;
   ZIP_BUF_SIZE = 0;
@@ -43,7 +52,7 @@ gh_u4 run_game(char *param_1, ...)   /* R284：变参原型（工厂 mui_run_gam
       FBA_Load(param_1);
       return 1;
     }
-    memset(&local_158,0,0x130);
+    memset(&local_158,0,sizeof(local_158));   /* R305：ze_t 304B（= 0x130），与工厂 memset(r0,#304) 一致 */
     iVar3 = OpenZipU(param_1,0,2);
     if (iVar3 != 0) {
       GetZipItemA(iVar3,0xffffffff,(ZIPENTRY *)&local_158);   /* R284：ZIPENTRY* cast（304B 缓冲） */
@@ -52,7 +61,7 @@ gh_u4 run_game(char *param_1, ...)   /* R284：变参原型（工厂 mui_run_gam
         strupr(acStack_154);
         pcVar1 = (char *)GetFilenameExt(acStack_154);
         strcpy(acStack_160,pcVar1);
-        if (1 < *(int *)(void *)local_158) {
+        if (1 < (int)local_158._0_4_) {   /* R305：count = ZIPENTRY+0（工厂 ldr fp,[sp,#24]）；工厂 cmp fp,#1; ble ⇒ count>1 走 FBA 分支 */
           Filetype = Filetype | 1;
           CloseZipU(iVar3);
           FBA_Load(param_1,Filetype);   /* R284：恢复工厂调用点（语料 run_game.c:50 = 2 参）；FBA_Load 为变参原型 */
@@ -64,8 +73,8 @@ gh_u4 run_game(char *param_1, ...)   /* R284：变参原型（工厂 mui_run_gam
           Gpsp_Load(param_1,Filetype);
           return 1;
         }
-        ZIP_BUF_SIZE = local_30;
-        ZIP_BUF = malloc(local_30 + 0x10);
+        ZIP_BUF_SIZE = local_158._296_4_;         /* R305：= unc_size（工厂指令 280 `str r2,[r8]`） */
+        ZIP_BUF = malloc(ZIP_BUF_SIZE + 0x10);    /* R305：工厂指令 279 `add r0,r2,#16` ⇒ malloc(unc_size+16) */
         if (ZIP_BUF == (void *)0x0) {
           CloseZipU(iVar3);
           return 0;
