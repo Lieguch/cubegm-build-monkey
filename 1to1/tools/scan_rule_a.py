@@ -87,6 +87,7 @@ memalign/valloc/posix_memalign）调用的**实参区**内，才算 Rule A。
     python3 tools/scan_rule_a.py --root . --zig "$ZIG" --ledger tools/rule_a_pending.txt
 """
 import argparse
+import bisect
 import os
 import re
 import shutil
@@ -236,6 +237,78 @@ def strip_c_bytes(src):
     return bytes(out)
 
 
+# ★★★ 各分配函数的「尺寸实参」在实参列表中的下标（0-based）。
+#
+#   malloc(size)                      calloc(nmemb, size)
+#   realloc(ptr, size)                aligned_alloc(size, alignment)
+#   memalign(alignment, size)         valloc(size)
+#   posix_memalign(&p, alignment, size)
+#
+# ★ 为什么必须区分：Rule A 的定义是「**尺寸**实参取自未初始化局部」。
+#   把 nmemb / alignment 也当尺寸 ⇒ `calloc(n, size)` 里 n 未初始化就会误报，
+#   `posix_memalign(&p, align, size)` 里 align 未初始化也会误报 ⇒ 假阳性。
+#   （glibc 的 memalign 原型是 memalign(alignment, size) ⇒ 尺寸是**第 2**个。）
+SIZE_ARG_IDX = {
+    "malloc": 0, "calloc": 1, "realloc": 1, "aligned_alloc": 0,
+    "memalign": 1, "valloc": 0, "posix_memalign": 2,
+}
+
+
+def alloc_calls(clean):
+    """返回每个分配调用的 (函数名, 左括号偏移, [各**顶层**实参区间])。
+
+    ★ 必须按**顶层逗号**切分实参：括号/方括号/花括号内的逗号不算分隔符，
+      否则 `malloc(a, f(b, c))` / `malloc(v[1], 2)` 会被切错。
+    ★ 字符串与注释已在 strip_c_bytes 里抹成等长空格 ⇒ 里面的逗号不会干扰。
+    """
+    out = []
+    n = len(clean)
+    for m in RE_FAMILY.finditer(clean):
+        name = m.group(1).decode("ascii")
+        open_pos = m.end() - 1          # '(' 的字节下标
+        depth = 0
+        close_pos = None
+        i = open_pos
+        while i < n:
+            ch = clean[i:i + 1]
+            if ch == b"(":
+                depth += 1
+            elif ch == b")":
+                depth -= 1
+                if depth == 0:
+                    close_pos = i
+                    break
+            i += 1
+        if close_pos is None:
+            close_pos = n - 1
+        args = []
+        depth = 0
+        start = open_pos + 1
+        for j in range(open_pos + 1, close_pos):
+            ch = clean[j:j + 1]
+            if ch in (b"(", b"[", b"{"):
+                depth += 1
+            elif ch in (b")", b"]", b"}"):
+                depth -= 1
+            elif ch == b"," and depth == 0:
+                args.append((start, j))
+                start = j + 1
+        args.append((start, close_pos))
+        out.append((name, open_pos, args))
+    return out
+
+
+def size_arg_spans(clean):
+    """返回每个分配调用的**尺寸实参**区间 [(函数名, start, end)]（闭区间）。"""
+    out = []
+    for (name, _open_pos, args) in alloc_calls(clean):
+        idx = SIZE_ARG_IDX.get(name, 0)
+        if idx < len(args):
+            s, e = args[idx]
+            out.append((name, s, e))
+    return out
+
+
 def alloc_arg_spans(clean):
     """返回每个分配调用**实参区**的字节区间 [(start_off, end_off)]（闭区间）。
 
@@ -316,15 +389,16 @@ def scan_one(zig, root, path, outfile):
     warns = []
     for m in list(RE_WARN.finditer(out)) + list(RE_MAYBE.finditer(out)):
         warns.append((int(m.group("line")), int(m.group("col")),
-                      m.group("var").decode()))
+                      m.group("var").decode(),
+                      m.group(0).decode("utf-8", "replace").strip()))
 
     clean = strip_c_bytes(raw)
-    spans = alloc_arg_spans(clean)
+    spans = size_arg_spans(clean)
     blocks = top_level_blocks(clean)
     ls = line_starts(raw)
 
     hits = []
-    for (line, col, var) in warns:
+    for (line, col, var, dmsg) in warns:
         if line - 1 >= len(ls):
             continue
         lstart = ls[line - 1]
@@ -342,14 +416,20 @@ def scan_one(zig, root, path, outfile):
         if body is None:
             continue
         vb = re.compile(rb"\b" + re.escape(var.encode("ascii", "replace")) + rb"\b")
-        for (s, e) in spans:
+        for (name, s, e) in spans:
             if e < body[0] or s > body[1]:
                 continue                       # 分配调用不在同一函数体里
             if vb.search(clean[s:e + 1]):
-                # ★ 只在「变量整词真的出现在该 malloc 家族调用的实参区」时才算命中。
+                # ★ 只在「变量整词真的出现在该分配调用的**尺寸实参**里」时才算命中。
                 #   （此处曾误留一条**无条件** hits.append，会把
                 #     「同函数体内存在任意 malloc」误判成 Rule A ⇒ 假阳性。）
-                hits.append((line, col, var))
+                # ★ 同时记下**证据**：编译器诊断原文 + 匹配到的尺寸实参原文 + 行号。
+                #   门禁报告必须能自证「为什么这一条算命中」，否则无法人工复核。
+                arg = clean[s:e + 1].decode("utf-8", "replace").strip()
+                mline = bisect.bisect_right(ls, s)   # 1-based 行号
+                ev = ("%s || 尺寸实参 %s(...) = (%s) @L%d"
+                      % (dmsg[:130], name, arg[:70], mline))
+                hits.append((line, col, var, ev))
                 break
     return {"hits": hits, "errors": errs,
             "fatal": None if r.returncode == 0 else
@@ -468,15 +548,19 @@ def main():
             r = results[rel]
             if r.get("fatal"):
                 fatals.append((rel, r["fatal"]))
-            for (ln, col, var) in r["hits"]:
-                all_hits.append("%s:%d:%s" % (rel, ln, var))
+            for (ln, col, var, ev) in r["hits"]:
+                all_hits.append((rel, ln, var, ev))
+
+        # 台账棘轮用的**稳定标识**（路径:行号:变量名）；证据单独存，不进台账。
+        hit_ids = ["%s:%d:%s" % (rel, ln, var) for (rel, ln, var, ev) in all_hits]
 
         print("\n== 全树扫描 ==")
         print("  受检 TU=%d（豁免 %d）；Rule A 命中 TU=%d，命中点数 %d"
               % (len(files), len(skipped),
-                 len({h.split(':')[0] for h in all_hits}), len(all_hits)))
-        for h in all_hits:
-            print("   RULE-A  %s" % h)
+                 len({h[0] for h in all_hits}), len(all_hits)))
+        for (rel, ln, var, ev) in all_hits:
+            print("   RULE-A  %s:%d:%s" % (rel, ln, var))
+            print("           证据: %s" % ev)
 
         # fail-closed：编译失败的 TU 一律 FATAL（不允许当作"无命中"）
         if fatals:
@@ -488,8 +572,8 @@ def main():
             print("   （确需豁免：写入 %s 并附理由，每行一条）" % args.skip)
             return 2
 
-        new = sorted(set(all_hits) - ledger)
-        gone = sorted(ledger - set(all_hits))
+        new = sorted(set(hit_ids) - ledger)
+        gone = sorted(ledger - set(hit_ids))
         if new:
             print("\n!! Rule A **新增**命中 ⇒ 失败（台账棘轮）")
             for h in new:
