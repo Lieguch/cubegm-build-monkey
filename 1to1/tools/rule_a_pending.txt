@@ -1,0 +1,16 @@
+# 「Rule A：malloc 家族尺寸实参取自未初始化局部」已知项台账（棘轮）。
+# 格式: <相对路径>:<行号>:<变量名>
+# 棘轮规则: ① **新增命中 ⇒ 门禁失败**（红）；② 台账条目不再命中 ⇒ 仅告警（请删行）。
+#
+# ★ 当前 **0 项**（R305 已把那 3 处 Rule A 全部按工厂二进制逐条对齐修正）：
+#   src/proprietary/mui/FUN_00014f84_mui_DisplayThumbnail.c  malloc(local_30)
+#   src/proprietary/core/FUN_00016f08_FilePreEmu.c           malloc(local_30 + 0x10)
+#   src/proprietary/core/FUN_002b7510_run_game.c             malloc(local_30 + 0x10)
+#   ⇒ 修完即 0 ⇒ 本台账为空即为期望状态；**任何新增行都是回归，必须当场修，不得登记**。
+#
+# ── 已知但**不属于** Rule A 的其它未初始化使用（当前无门禁覆盖，诚实登记）──
+#   src/proprietary/input/FUN_0000b014_TestUSBJoy.c   printf 实参（Ghidra 拆栈缓冲的别名）
+#   src/proprietary/misc/FUN_00029b44_progress.c      加法右值（in_d0 = 入参寄存器别名）
+#   src/proprietary/misc/FUN_002b4e20_gpsp_unzip.c    return 值（非分配尺寸）
+#   这 3 处**不写进本台账**（写了会让 Rule A 台账名不副实）；它们属于「未初始化使用」族的
+#   其它子类，若要覆盖需另立仪器。
