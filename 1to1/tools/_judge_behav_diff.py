@@ -24,6 +24,7 @@ BASES = [
     ("e5aef10e 轮", os.path.join(ROOT, "_qemu_behav_log_prev.txt")),
     ("288fa2d0 轮", os.path.join(ROOT, "_qemu_behav_log.txt")),
     ("ad13c99b 轮", os.path.join(ROOT, "_qemu_behav_log2.txt")),
+    ("R305 CI(c4cacee)", os.path.join(OUT, "ci_run41553016828_joblog.txt")),
 ]
 CUR = os.path.join(OUT, "behav_diff.txt")
 
@@ -127,7 +128,7 @@ def main():
     have = [b for b in base_rows if b]
     base_exact_same = bool(have) and all(b == have[0] for b in have)
     base_shape_same = bool(have) and all(sig(b, True) == sig(have[0], True) for b in have)
-    print("  三方 CI 基线：精确一致=%s  结构同形=%s" % (base_exact_same, base_shape_same))
+    print("  %d 方 CI 基线：精确一致=%s  结构同形=%s" % (len(have), base_exact_same, base_shape_same))
 
     cur = data["R305 CNB 复现"][0]
     if not cur:

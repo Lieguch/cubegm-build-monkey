@@ -13202,3 +13202,59 @@ round 4~11 未开 000.dat 却同窗死亡，正是它证伪了 R300。
 | `41582338994` | `rkgame-rebuild` | `2e0d2081f305`（R305d 文档更正推送） | **success**（不可规避，成本低） |
 
 - `src/**` 源码自 `c4caceed4a36` 起**未再改动** ⇒ 两次推送都是**纯附记**，无源码回归。
+
+> 追加前 `old_intact=True`（旧文 1011440 B / sha 97dfec8e0ef39c6e…）；由 `tools/append_progress.py` 原子追加。
+## R305f（2026-11-03）—— **铁证补齐**：R305 那轮 CI 判据行原文取到 ⇒ 「继承态」从强推断升级为**实测闭环**
+
+> 触发：用户质疑「本轮交付的意义 / 铁证在哪」。原缺口 = R305b 记录的「本轮 CI 判据行原文未取到」。
+> 本轮用 `GET actions/runs/41553016828/logs` 直接拿到（47,724 B zip → 214,776 B job log），
+> 与前三轮基线、CNB 同口径复现做**五方对照**，判据行**逐字一致**。
+> ★ 注：该端点此前被 FastGithub 判 401；本轮重试即通 ⇒ **端点可用性本身是波动的，别把单次失败当永久结论**。
+
+### 1. 本轮 CI 判据行原文（head=`c4caceed4a36`，run `41553016828`，step 12 主门禁）
+
+```
+参考端 sha=8ff3b4b70c253ff7  exit=124  stdout=27 行  menu.log/2 行
+重建端 sha=d34316b18485b861  exit=124  stdout=27 行  menu.log/2 行
+控制端 sha=8ff3b4b70c253ff7  exit=124  events=228 行；可复现前缀 = 228 行 ✓
+[PASS] B1 exit_code  124 vs 124
+[PASS] B2 events     228/228 行一致；重建侧共 228 行
+[PASS] B3 new_files 0 vs 0      [PASS] B4 changed_files 0 vs 0
+[PASS] B5 log_sha    d7c86a6f1f399930 vs d7c86a6f1f399930
+[FAIL] B6 frame_hash       b5449dc5 vs b5449dc5 —— 全零基线 b5449dc5 ⇒ 未观测到像素 / 全零基线 b5449dc5 ⇒ 未观测到像素
+[FAIL] B6A frame_hash_abi  dfdaf563(1280x720x2560) vs ffc51130(1280x720x2560)
+[PASS] B6R frame_commits   3072 vs 3072
+[PASS] B7 shm 1 vs 1   [PASS] B8a sfc_cmds 4 vs 4   [PASS] B8b sfc_faults 180 vs 180
+门禁结果: FAIL (2 项失败)        behav_diff 退出码 = 2
+```
+
+### 2. 五方对照结论（`tools/_judge_behav_diff.py`）
+
+| 判据行 | e5aef10e | 288fa2d0 | ad13c99b | **R305 CI 原文** | CNB 复现 |
+|---|---|---|---|---|---|
+| B1 / B3 / B4 / B5 / B6R / B7 / B8a / B8b | 全部一致 | 同 | 同 | **同** | **同** |
+| B6 frame_hash | FAIL `b5449dc5 vs b5449dc5` | 同 | 同 | **同** | **同** |
+| B6A frame_hash_abi | FAIL `dfdaf563 vs ffc51130` | 同 | 同 | **同** | **同** |
+| 门禁退出码 | 2 | 2 | 2 | **2** | **2**（`ci_qemu_behav rc=2`） |
+| B2 events 前缀 | 228/228 | 228/228 | 228/228 | **228/228** | 227/227 |
+
+- 机械判定：**四方 CI 日志精确一致 = True**；CNB vs CI 唯一差异 = B2 行数（228→227，**两侧同增减的 stdout 行数差**，见 R305c §4.2）。
+- ⇒ **R305 修复未改变任何判据行 ⇒ 本轮 qemu-behav FAIL = 继承态 ⇒ 「本轮交付把东西改坏了吗」= 没有。**
+  R305b 的缺口由此**关闭**（此前只能证"结构同形"，现在有本轮 CI 原文逐字一致）。
+
+### 3. 验收层级（用户 2026-11-03 14:10 强调复述，逐条对齐项目铁律）
+
+| 层级 | 手段 | 本轮状态 | 能否作为「修好了」的判据 |
+|---|---|---|---|
+| ① 源码层 | 3 处 Rule A 修复 + `ze_t` 布局三方互证 + 自证脚本 | **已完成**（R305） | 否 |
+| ② 构建层 | `rkgame-rebuild` ✓ / `toolchain-ab` ✓（5+ 轮 failure 后首次反转）/ `1to1-verify` ✓ | **已绿**（R305b） | 否 |
+| ③ QEMU 行为层 | 行为差分门禁：FAIL(2) 但**判据行逐字继承**、里程碑差集空 | **已取证**（R305c+本段） | **否** —— CI/QEMU 不代表真机 |
+| ④ **实体机验收** | 用户换卡复测：0.2–0.4s 闪重启是否消失 | **未发生** | **是（唯一最终判据）** |
+
+⇒ 本轮全部交付都停在 ③；**④ 未发生 ⇒ 不得宣称「闪重启已修复」**（R305c 已按此分层，本段复述确认）。
+
+### 4. 顺手修正的仪器精度
+
+- `_judge_behav_diff.py` 的 BASES 加入第 4 份 CI 原文（`report/_r305_cnb/ci_run41553016828_joblog.txt`），
+  标签由「三方」改为"N 方"（自动计数）⇒ 后续轮次新增基线不再漏改标签。
+- 新增留档文件：`report/_r305_cnb/ci_run41553016828_log.txt`（zip 原样）+ `…_joblog.txt`（解出 202,120 B）。
