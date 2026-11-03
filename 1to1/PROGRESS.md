@@ -13106,3 +13106,66 @@ round 4~11 未开 000.dat 却同窗死亡，正是它证伪了 R300。
 - 归档产物：`tools/_cnb_r305_repro.sh`（远端复现段）、`tools/_cnb_r305_driver.sh`（本机驱动）、
   `tools/_judge_behav_diff.py`（判据四方对照）、`tools/R305c_section.md`（完整留档）、
   `report/_r305_cnb/*`（首轮/二轮判据与日志）。
+
+> 追加前 `old_intact=True`（旧文 1003734 B / sha b542982732c208c9…）；由 `tools/append_progress.py` 原子追加。
+## R305d（2026-11-03）—— **更正一条被记录在案的错误认知**（「纯文档推送不触发 CI」是错的）＋ 本轮误触发事故留档
+
+> 本段是 R305c 的**事后订正**。两条结论都来自 GitHub REST API 实测（`commits/{sha}` + `actions/runs`），不是推断。
+
+### 1. 事实更正：`!1to1/*.md` **只排除仓库根级 .md**
+
+| 旧记录（PROGRESS / PROJECT-MEMORY 曾写） | 实测 | 判定 |
+|---|---|---|
+| 「纯文档单独推送**不触发任何 workflow**（paths 排除 `1to1/*.md`）」 | 上一次"纯文档"推送 `296289862f72` 实际改了 **3** 个文件：`1to1/PROGRESS.md`、`1to1/PROJECT-MEMORY.md`、**`1to1/tools/R305b_section.md`** ⇒ 该提交**实际触发了 3 个 run**（01:20:31：`rkgame-rebuild` ✓ / `1to1-verify` ✓ / `1to1-qemu-behav` ✗） | **旧记录作废** |
+| 同上 | 本轮推送 `2e954d6ec982` 同样含 `1to1/tools/R305c_section.md` ⇒ 触发 3 个 run（04:55:28） | 同上 |
+
+**根因（GitHub 路径过滤语义）**：排除模式 `!1to1/*.md` 里的 `*` **不跨 `/`** ⇒ 只匹配 `1to1/PROGRESS.md` 这类**仓库根级** .md；
+`1to1/tools/R305b_section.md` 这类 **tools/ 下的 .md** **不被排除**，而正向模式 `1to1/**` 命中 ⇒ **照常触发**。
+
+**修正后的零触发路径白名单**（唯一正确的口径）：
+
+| 路径形态 | 是否触发两个 workflow | 备注 |
+|---|---|---|
+| `1to1/*.md`（仓库根级 .md） | ❌ 不触发 | `PROGRESS.md` / `PROJECT-MEMORY.md` / `STATUS.md` 等 |
+| `1to1/tools/_*`（**下划线前缀**） | ❌ 不触发 | 归档脚本/细节文档都用这个前缀 |
+| `1to1/report/**` | ❌ 不触发 | 证据产物目录 |
+| `1to1/tools/*.md`（**非下划线前缀**） | ✅ **触发** | ★ 本轮两次踩中的就是它 |
+| `1to1/src/**`、`1to1/golden/**` 等 | ✅ 触发 | 源码/资产改动（本就该触发） |
+
+⇒ **逐轮细节文档若要入库，文件名必须带 `_` 前缀**（如 `tools/_R305c_section.md`）。
+本轮的 `tools/R305c_section.md` 已在 `2e954d6ec982` 入库（触发已发生），**后续不再改动它**即可不再触发；
+若将来要改名，改名提交本身也会触发（删除项同样计入 paths 判定），**不为此单独烧 CI**。
+
+### 2. 本轮事故（自曝）：`push_1to1.py --help` **不是看用法**，它**直接执行了推送**
+
+- 事实：`tools/push_1to1.py` **没有 `--help` 分支**（只认 `--list-only`）⇒ 未识别参数被忽略 ⇒ 脚本**照常跑完整推送流程**。
+  本机以 `python tools/push_1to1.py --help | head -20` 调用 ⇒ 推送已执行完成（远端 main `296289862f72` → `2e954d6ec982`）。
+- 推送内容核查（`GET commits/2e954d6ec982`）：**6 个文件**，父提交 = `296289862f72`
+  → `1to1/PROGRESS.md`(+91) / `1to1/PROJECT-MEMORY.md`(+44) / `1to1/tools/R305c_section.md`(+175, 新增) /
+  `1to1/tools/_cnb_r305_driver.sh`(+95, 新增) / `1to1/tools/_cnb_r305_repro.sh`(+156, 新增) /
+  `1to1/tools/_judge_behav_diff.py`(+180, 新增)
+  ⇒ **无任何源码改动**（源码自 `c4caceed4a36` 起未动），属**纯附记**推送。
+- 连带触发的 3 个 run 与处置：
+
+| run | workflow | 处置 | 理由 |
+|---|---|---|---|
+| `41580888960` | `rkgame-rebuild` | 已 completed **success**（1 分 17 秒，取消前就跑完） | 事实记录 |
+| `41580888908` | `1to1-verify` | **cancelled** | 源码未变，00:27 已绿；附记推送不应烧 CI |
+| `41580888932` | `1to1-qemu-behav` | cancel 已受理（HTTP 202），最终状态见 §3 | 结论已由 CNB 同口径复现证明为继承态，再跑一遍零信息增量 |
+
+- 判据依据：本次推送**不含源码变更** ⇒ 不满足"CI 只用于正式构建产出物"的门槛 ⇒ 按既有纪律
+  「不为附记单独烧 CI」取消仍在跑的 run。
+
+### 3. 本段结束时的 CI 终态（收口核对）
+
+- `1to1-verify`：`cancelled` ✔
+- `rkgame-rebuild`：`success` ✔（附件式白烧，但已完成且很快）
+- `1to1-qemu-behav`：cancel 受理后需复核最终状态（若已先跑完则是 failure —— 与继承态结论一致，不影响本轮判定）
+
+### 4. 新纪律（不要再踩）
+
+1. **`tools/push_1to1.py` 预览清单只能用 `--list-only`**；**绝不可给它传未定义参数**（如 `--help`）——
+   它没有参数白名单，未识别参数会被忽略并**直接执行推送**。
+2. **推送前先确认将要改动的文件是否落在"零触发白名单"**（根级 .md / `tools/_*` / `report/**`）；
+   `tools/` 下**非下划线**的 .md 会触发两个 workflow。
+3. **附记推送若已误触发 CI**：源码未变 ⇒ 立即 cancel 仍在跑的 run（保留已完成的结论），并如实留档（不装作没发生）。
