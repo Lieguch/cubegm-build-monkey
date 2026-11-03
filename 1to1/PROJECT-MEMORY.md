@@ -7561,3 +7561,14 @@ P0 待办（两步都不需要用户操作）：
 - **反编译残留的「未赋值标量」是一类可静态收敛的真缺陷**：Ghidra 会把 `malloc(尺寸)` 的尺寸变量声明出来却永不赋值 ⇒ `-Os` 下变成 `malloc(0)` / 栈垃圾 ⇒ 越界写 ⇒ 堆破坏。**全仓 Rule A 扫描是必做项，不是可选项**。
 - **Ghidra 反推的 `if (buf < 2)` 一律先判「数组 vs 数值」**：数组退化指针后恒真/恒假 ⇒ 分支永不可达（本次 FilePreEmu 踩中）。
 - **本地 git 长期落后于远端**（push 走 Git Data API，非 git commit）⇒ 推送前**必须**先做「本地 vs 远端 blob sha 差异核对」（`_r305_push_diff.py` 口径 = `tools/push_1to1.py`），确认待推集合恰为预期改动，防止旧版本回退远端。
+
+
+#### G. CI 结论（R305b，commit `c4caceed4a`，上传 7 blob / 跳过 1015，VERIFY 1022/1022）
+
+- 4 run：`rkgame-rebuild` ✓ / `toolchain-ab` **✓（先示连续 5+ 轮 failure 后首次反转）** / `1to1-verify` ✓ / `1to1-qemu-behav` ✗
+  （失败 step = 12「行为采集 + 差分 ★ 硬门禁」，与前三轮同 step；step 13 观测 success；14-28 观测 skipped，同前三轮）。
+- **缺口（未默认继承态）**：本轮 qemu-behav **判据行原文未取到**（本机 FastGithub 拦：job logs 401 / artifact zip 401 / run check-runs 404；GitHub connector `auth-required`，本回合授权被 skipped）
+  ⇒ **未证明**「本轮判据行与前三轮 diff 为空 ⇒ 继承态」。
+- 补证二选一：① 授权 GitHub connector → MCP check runs 拉 step 12 判据行，与 `_qemu_behav_log_prev.txt` / `_qemu_behav_log.txt` / `_qemu_behav_log2.txt` 做去时间戳 diff；② CNB 云开发按 `tools/ci_qemu_behav.sh` 同口径复现 step 12（不烧 Actions 预算）。
+- 分层：`toolchain-ab` 反转与 UB 修复（malloc 未初始化尺寸 / 指针比较 / 非对齐访问）的因果 = **未测推断**（双工具链对 UB 优化敏感性差异假说），不作根因结论。
+- 用户侧下一步：新二进制入卡复测（「不再闪重启」仍为未实测推断）。
