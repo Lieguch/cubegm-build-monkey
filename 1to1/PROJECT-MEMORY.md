@@ -7572,3 +7572,47 @@ P0 待办（两步都不需要用户操作）：
 - 补证二选一：① 授权 GitHub connector → MCP check runs 拉 step 12 判据行，与 `_qemu_behav_log_prev.txt` / `_qemu_behav_log.txt` / `_qemu_behav_log2.txt` 做去时间戳 diff；② CNB 云开发按 `tools/ci_qemu_behav.sh` 同口径复现 step 12（不烧 Actions 预算）。
 - 分层：`toolchain-ab` 反转与 UB 修复（malloc 未初始化尺寸 / 指针比较 / 非对齐访问）的因果 = **未测推断**（双工具链对 UB 优化敏感性差异假说），不作根因结论。
 - 用户侧下一步：新二进制入卡复测（「不再闪重启」仍为未实测推断）。
+
+#### H. R305c（2026-11-03）—— CNB 云开发同口径复现 qemu-behav：**该失败 = 继承态，R305 零回归**
+
+**一句话**：R305b 留下的唯一缺口已关闭 —— 本轮 `1to1-qemu-behav` 的 FAIL **与 R305 的 ZIPENTRY 修复无关**，
+是 **R305 之前既有的继承态**；判据行 **B6/B6A/B6R 逐字一致**（含哈希），里程碑差集为空。
+
+**判据行原文**（CNB 同口径复现 step 12，CNB workspace `sn=cnb-l6s-1k6fl7dmi`，已 stop）：
+
+| 判据 | 三方 CI 基线（e5aef10e / 288fa2d0 / ad13c99b，彼此精确一致） | R305 CNB 复现 | 判定 |
+|---|---|---|---|
+| B6 frame_hash | FAIL `b5449dc5 vs b5449dc5` | FAIL `b5449dc5 vs b5449dc5` | **逐字一致** |
+| B6A frame_hash_abi | FAIL `dfdaf563(1280x720x2560) vs ffc51130(1280x720x2560)` | 同左 | **逐字一致** |
+| B6R frame_commits | PASS `3072 vs 3072` | PASS `3072 vs 3072` | **逐字一致** |
+| B1/B3/B4/B5/B7/B8a/B8b | 124vs124 / 0vs0 / 0vs0 / 同 menu.log sha / 1vs1 / 4vs4 / 180vs180 | 全同 | 一致 |
+| B2 events 前缀 | 228/228 | 227/227 | 数值差 1（环境口径，见下） |
+| 门禁退出码 | 2 | 2（`ci_qemu_behav rc=2`） | 一致 |
+
+- 里程碑：M0–M7 + M6R **全 ✓**，两侧差集为空；三侧（factory/rebuild/control）均 `exit=124`、stdout 26 行、确定性控制 227/227 自洽。
+- **未取证**：B2 差的 1 行是 **guest stdout**（CI 27 行 vs CNB 26 行），**参考侧与重建侧同时出现**、CNB 内两侧逐行一致
+  ⇒ 属环境口径差异，与实现无关；具体是哪一行未取证（CI 的 `behav_*.json` artifact 因 FastGithub 401/502 不可得）。
+- **未实测推断**：新 ELF（`d34316b1…`，5,404,120 B）入卡后「是否还闪重启」仍待用户复测。
+- **不在范围**：B6A 像素哈希差异的**成因**（R171b/R224 起长期跟踪的既有观测项）——本段只证「与 R305 无关」。
+
+**CNB 首轮 INCONCLUSIVE 的真因（踩坑存档）**：`guest_shim.so: /arm-root-device/lib/libc.so.6: version 'GLIBC_2.38' not found`
+⇒ CNB 侧 shim 由 **Debian 13 的 gcc-14-arm-linux-gnueabihf（libc 2.41）** 交叉编译，引用新符号版本，
+而设备 rootfs 是 **glibc 2.29** ⇒ guest ld.so 拒绝加载 LD_PRELOAD ⇒ **guest 启动即 exit=1、stdout 0 行**，
+表现为「参考侧毫无观测」的 INCONCLUSIVE —— **极易被误读成"被测实现坏了"**。
+探测顺序证据：`tools/cgm_cc_probe.sh` ③`arm-linux-gnueabihf-gcc` 早于 ⑦`zig` ⇒ 选中了 gcc-14。
+CI 不受影响的原因：workflow 有独立步骤「安装 zig」（`ziglang==0.16.0` + `CC=$ZIG cc` 写进 `$GITHUB_ENV`）
+⇒ `build_guest_shim.sh` 走 `-target arm-linux-gnueabihf.2.29` 分支。
+
+**纪律（新增，跨轮适用）**
+
+1. 凡要在 **guest 内加载**的 `.so`（LD_PRELOAD 的 shim、dlopen 的桩），构建工具链必须**按设备 glibc 钉版本**；
+   发行版交叉 gcc（Debian 13 / gcc-14）会引入 `GLIBC_2.3x/2.38` 需求 ⇒ 设备 2.29 侧载失败。
+   ⇒ **预检**：`arm-linux-gnueabihf-objdump -T <so> | grep GLIBC_2.` 取最高次版本，> 设备版本即失败（fail-closed）。
+2. **「参考侧毫无观测」⇒ 先怀疑环境，再怀疑实现**。顺序：stdout 行数 → stderr 原文 → 动态链接器版本需求 → 资源铺设 → 最后才谈实现。
+3. **CNB 云开发 ≠ CI 等价**：镜像自带 **ziglang 0.17.0**（uv site-packages，可执行文件不在 PATH），
+   且 `cgm_cc_probe` 会优先命中 apt 装的 `arm-linux-gnueabihf-gcc` ⇒ 复现前必须**显式钉 CC 与 zig 版本**
+   （本轮用 `pip --target` 独立目录 + 版本断言实现）。
+4. **CI 判据行取不到时，用同口径云复现补证**：逐条对齐 workflow 步骤与 env ⇒ 先用 `objdump`/stderr 证据确认环境等价 ⇒ 再读判据行。
+   可复用三件套：`tools/_cnb_r305_repro.sh`（远端复现段）、`tools/_cnb_r305_driver.sh`（本机驱动）、
+   `tools/_judge_behav_diff.py`（判据行四方对照：按 outdir 定位主门禁段、保留哈希原文、双口径判定）。
+5. 归档脚本一律用 **`tools/_` 前缀**（两个 workflow 的 paths 均排除 `1to1/tools/_*`）⇒ 归档/留档**零 CI 触发**，不烧 Actions 预算。
