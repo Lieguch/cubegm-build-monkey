@@ -8066,3 +8066,15 @@ item[3] data_off=0x00248be8  x0=106 y0=96  x1=890  y1=358
 **新增纪律**：`sha256sum -c` 校验文件必须 LF 结尾（win32 纯文本写文件会带 `\r`），交付前必须实测 `-c` 通过。
 
 **待办**：① 真机换卡复测（唯一最终验收）② 投放包版本清理待用户明确 ③ B6A 长期线（InstaBox 就绪，可续逐帧对拍，非优先）。
+#### AA. R319 —— 交付阶段口径纠正 + 交付铁证链
+
+**★★ 口径纠正（用户点 1，记入"不要重复"）**：真机验收 = 约束 2 的**最终验收**（全项目只做一次、带完整 A/B/C 判据），**不是**「帮 R305 证实一个 bug 修好了」的换卡复测。我此前反复写「换卡验证闪重启是否消失」是**口径错误**——把最终验收窄化成 debug 回路。正确：R305 ZIPENTRY 缺陷已在三层证据闭环（源码对齐工厂反汇编 + CI 三绿 + qemu 继承态零回归），是**已修的产品缺陷**，不靠真机证实；真机验的是「重建二进制能否整体替代原厂」。凡表述出现「换卡验证 X 是否消失」一律视为口径错误。
+
+**交付铁证链（全部实测）**：
+- 交付物 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`，`.sha256` 校验 OK。
+- **★ 零漂移铁证（最强）**：构建来源 commit `c4caceed4a36`（R305 修复，2026-11-03）；GitHub API 实测 main「最近 15 个涉及 1to1/src 的 commit」中 `c4caceed4a36` 为最新，其后无 src 改动 ⇒ 交付物 = 当前源码产物。
+- 三层门禁：静态（787/835=94.3% + Rule A 门禁 PASS 0 命中）、行为（PASS 781 / DIVERGE 5 / REAL 归零）、模拟（qemu M0–M7 全绿 + exit=124 + 里程碑差集空）。
+- 验收文档链：`ACCEPTANCE.md`（A/B/C 判据）/ `DEPLOY.md`（三步）/ `GAPS.md` / `report/QEMU-BOOTCHAIN.md` / `_sdcard_drop/DELIVERY-R305.txt`。
+- R305 修复铁证：3 处 malloc 未初始化 ⇒ malloc(0) ⇒ 16KB 越界写堆 ⇒ inflate SIGSEGV（0x10001000）；修复 = 对齐工厂 `malloc(unc_size)` + ZIPENTRY 304B。
+
+**待办**：① 真机最终验收（A/B/C 判据一次做全，非 R305 单点复测）② B6A 长期线非阻塞。

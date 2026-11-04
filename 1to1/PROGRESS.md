@@ -14095,3 +14095,34 @@ R316 把 factory `0x14508..0x14584`（124 B）与 rebuild `0x4e5204..0x4e5280`�
 1. **真机复测（用户侧，唯一最终验收）**：换 `latest_rebuilt/rkgame.rebuilt.elf`（`d34316b18`），回传「是否还闪重启」或 `_diag/` 日志。
 2. **投放包版本清理（待用户明确）**：确认 `_sdcard_drop/cubegm/rkgame`（`94715fe0` 诊断版）是保留作诊断投放、还是应替换为交付版 `d34316b18` —— 两者用途不同，不擅自覆盖。
 3. B6A 长期线：InstaBox 就绪，可续做云主机逐帧对拍（`[abiprobe] disp#N` 序列 + 16 条带哈希，R224 仪器已在），非本轮优先。
+
+> 追加前 `old_intact=True`（旧文 1100155 B / sha 2d41a49e9aeb79bb…）；由 `tools/append_progress.py` 原子追加。
+## R319（2026-11-04）—— 交付阶段口径纠正 + 交付铁证链
+
+### 日期
+
+2026-11-04（用户两点指令：① 真机验收是最后一环，不是帮我证实 bug；② 交付阶段给铁证）
+
+### 完成事项
+
+1. **口径纠正（用户点 1，必须记录防再犯）**：
+   - 我此前多轮用「换卡验证闪重启是否消失」的表述，把**约束 2 的最终验收**窄化成了 **debug 回路**（「帮 R305 证实一个 bug」）。
+   - **正确口径**：R305 的 ZIPENTRY 缺陷已在三层证据闭环（源码对齐工厂反汇编 + CI 三绿 + qemu 继承态零回归），它是**已修的产品缺陷**，不靠真机"证实"。真机要验的是**「重建二进制能否整体替代原厂 rkgame」这件事本身**（约束 2：全项目只做一次、带完整 A/B/C 判据）。
+   - 分校：`ACCEPTANCE.md` 的 A/B/C 三类判据是**唯一的最终验收判据**，不是 R305 单点 bug 的复测。
+
+2. **交付铁证链核实（全部实测）**：
+   - **① 交付物自洽**：`_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`；`.sha256` 校验 `OK`（CRLF 已修）。
+   - **② 交付物 = 当前源码产物（零漂移，最关键的铁证）**：构建来源 commit `c4caceed4a36`（2026-11-03，R305 修复）；GitHub API 实测 main 上「最近 15 个涉及 `1to1/src` 的 commit」中 `c4caceed4a36` 是最新，其后**无任何 src 改动** ⇒ 交付物与当前 main 源码一致，非陈旧件。
+   - **③ 三层门禁证据**：静态（符号覆盖 787/835=94.3% + Rule A 门禁 PASS 命中 0 点）、行为（diff_exec PASS 781 / DIVERGE 5 / REAL 发散归零）、模拟（qemu M0–M7 全绿 + exit=124 存活 + 两侧里程碑差集空，`report/QEMU-BOOTCHAIN.md`）。
+   - **④ 验收判据文档链**：`ACCEPTANCE.md`（4181B，A/B/C 三类）、`DEPLOY.md`（4038B，三步操作）、`GAPS.md`（4536B，差距台账）、`report/QEMU-BOOTCHAIN.md`（7196B，真机准入依据）、`_sdcard_drop/DELIVERY-R305.txt`（3467B，换卡清单）。
+   - **⑤ R305 修复铁证**：根因 = 3 处 malloc 尺寸取自未初始化局部 ⇒ malloc(0) ⇒ 16KB 块循环越界写堆 ⇒ inflate 内 SIGSEGV（si_addr=0x10001000）；修复 = 对齐工厂反汇编 `malloc(unc_size)` + ZIPENTRY 304B（`ze_t`）；CI 三绿 `rkgame-rebuild`/`toolchain-ab`/`1to1-verify` 全 success。
+
+### 新发现与决策
+
+1. **交付铁证「零漂移」是新增的最强证据**：此前"交付物是否陈旧"靠 sha256 对账，本轮新增「构建来源 commit == main 最新 src commit」这一条，把"交付物 ↔ 源码"的对应关系坐实到 commit 级。任何后续交付都应附这一条。
+2. **口径纪律（写入 PROJECT-MEMORY"不要重复"清单）**：真机验收 = 约束 2 最终验收（A/B/C 判据一次做全），**不是**「验证某个 bug 修好了」的复测动作。凡表述中出现「换卡验证 X 是否消失」一律视为口径错误。
+
+### 下一步待办
+
+1. **真机验收（用户侧，约束 2 最终验收）**：按 `ACCEPTANCE.md` A/B/C 类判据一次做全（换 `d34316b18` + 回传 `_diag/` ），我判读回填。**不是** R305 单点复测。
+2. B6A 长期线（渲染保真度，非阻塞）；算力通道 InstaBox 已就绪。
