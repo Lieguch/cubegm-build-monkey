@@ -74,6 +74,8 @@ static unsigned slen(const char *s);
 static dlsym_t      g_real_dlsym;
 static disp_frame_t g_real_disp;
 static int          g_calls;
+/* R310：抓第 N 帧（默认 1 = 首帧，逐字保持旧行为）。*/
+static int          g_dump_frame = 1;
 static int          g_printed;
 static int          g_hooked_logged;
 static int          g_probe_on;
@@ -136,6 +138,15 @@ static void abi_probe_init(void)
     /* 首帧原文落盘（诊断用；未设置则完全不影响行为）*/
     g_dump_path = getenv("CGM_ABI_DUMP");
     if (g_dump_path != 0 && g_dump_path[0] == '\0') g_dump_path = 0;
+    /* R310：CGM_ABI_DUMP_FRAME=N（N>1 时在第 N 帧覆盖写一次同一路径）。*/
+    {
+        const char *df = getenv("CGM_ABI_DUMP_FRAME");
+        if (df != 0 && df[0] != '\0') {
+            int v = 0; const char *p = df;
+            while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+            if (v > 0) g_dump_frame = v;
+        }
+    }
     /* R294：状态快照的路径与范围（范围缺省 = 镜像数据区 0x3ae000..0x3f3000） */
     g_state_path = getenv("CGM_STATE_DUMP");
     if (g_state_path != 0 && g_state_path[0] == '\0') g_state_path = 0;
@@ -275,6 +286,27 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
             jq = put_x8(jq, *(const unsigned *)JOY1_PRESS_ADDR);
             *jq++ = '\n';
             emit(jl, (unsigned)(jq - jl));
+        }
+
+        /* ★★ R310 单变量实验：g_dump_frame > 1 时在第 N 帧再落一次盘。
+         *   原 `g_calls == 1` 块（条带哈希 / 状态快照 / 按键表 / 首帧 dump）**完全不动**，
+         *   ⇒ B6A 判据与 G1 状态快照口径不变；本分支只把最终文件覆盖成第 N 帧。
+         *   判据：若第 N 帧 factory↔rebuild 差异收敛 ⇒ 72% 是首帧时序伪影；
+         *         若仍是 ~72% ⇒ 真实渲染缺陷，继续定位 src/ 绘制链。 */
+        if (g_dump_frame > 1 && g_calls == g_dump_frame && g_dump_path != 0) {
+            long fd = sc3(SYS_OPEN, (long)g_dump_path, 0x241, 0644);
+            if (fd >= 0) {
+                unsigned long off = 0;
+                long wr = 1;
+                while (wr > 0 && off < bytes) {
+                    wr = sc3(SYS_WRITE, fd, (long)((const char *)data + off), (long)(bytes - off));
+                    if (wr > 0) off += (unsigned long)wr;
+                }
+                sc3(SYS_CLOSE, fd, 0, 0);
+                emit(MSG_DUMPED, slen(MSG_DUMPED));
+            } else {
+                emit(MSG_DUMPFAIL, slen(MSG_DUMPFAIL));
+            }
         }
 
         if (g_calls == 1) {
