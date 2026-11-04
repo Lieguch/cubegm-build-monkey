@@ -313,6 +313,31 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
             }
         }
 
+        /* R312：多帧运行时读数（默认关闭）。只打印实测值，不作判断。 */
+        if (g_res_probe && g_calls != 1 &&
+            (g_calls == 2 || g_calls == 10 || g_calls == 50 ||
+             g_calls == 100 || g_calls == 200)) {
+            char rl[256], *rq = rl;
+            unsigned rp1 = *(const unsigned *)0x003af28c;
+            unsigned rp2 = *(const unsigned *)0x003af29c;
+            unsigned offs[4];
+            int kk;
+            offs[0] = 0x0u; offs[1] = 0x100000u;
+            offs[2] = 0x200000u; offs[3] = 0x310000u;
+            rq = put_s(rq, "[abiprobe] f="); rq = put_u(rq, (unsigned)g_calls);
+            rq = put_s(rq, " res="); rq = put_x8(rq, rp1);
+            rq = put_s(rq, " scr="); rq = put_x8(rq, rp2);
+            if (rp1) {
+                for (kk = 0; kk < 4; kk++) {
+                    rq = put_s(rq, " r"); rq = put_u(rq, offs[kk]);
+                    rq = put_s(rq, "=");
+                    rq = put_x8(rq, *(const unsigned *)((const char *)rp1 + offs[kk]));
+                }
+            }
+            *rq++ = '\n';
+            emit(rl, (unsigned)(rq - rl));
+        }
+
         if (g_calls == 1) {
             unsigned per, bi;
             /* ★ R311：只读两侧同一固定地址，判定解压缓冲 vs 画布谁先分歧。

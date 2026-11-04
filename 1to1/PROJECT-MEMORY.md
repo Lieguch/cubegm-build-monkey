@@ -7938,3 +7938,26 @@ Debian 13 实测 `elftools OK`（装进 user site）rc=0。
 **分层**：排除项 / 变换枚举 / ze 字段 / 探针读数 / 压缩方式 = 已实测；「解压提前终止」「ASCII 样字节=未解压数据」= 未实测推断；真机 = 无证据。
 
 **下一步（唯一动作，不扩散）**：用 gdb 在 `mui_LoadUIResource` 返回处读 `DAT_003af28c` 缓冲多点采样（0 / 0x100000 / 0x200000 / 0x310000），与 Python zipfile 解压结果对照：缓冲不同 ⇒ 修 `src/upstream/xunzip/unzip.cpp`；缓冲相同但画布不同 ⇒ 修 `mui_menu.c` memcpy / `mui_DispBlock`。根修后第 1/第 200 帧双重对拍，判据主差异收敛、对照端保持 0。真机复测与「启动链完美」裁决仍挂起。
+
+#### T. R312 —— gdb 路径实测失败记录 + shim 多帧运行时读数
+
+**用户指令**：「继续下一步，禁止猜测、禁止推理、禁止假实现、禁止假桩、禁止假代码」。
+
+**gdb 路径四次尝试全失败，按纪律关闭**：`gdb-multiarch 16.3-1`；两侧符号 `mui_LoadUIResource`（factory `0x17dac` / rebuild `0x4e6964`）；wrapper 用既有 shim/桩，未新增桩。① 80 次 continue 全停在 `sfc_init`/`sfc_request` 有意 SIGSEGV；② 加 `handle SIGSEGV nostop noprint pass` 后命中一次 `setting.raw`，第二次 continue 超时 `GDB_RC=124`；③ `Breakpoint.stop()`+`FinishBreakpoint` 零命中；④ 条件断点报 `Cannot execute this command while the target is running`；⑤ `continue &`+`interrupt` 两侧所有 `u32` 同一报错，**打印的 0 是无效读数、作废**。qemu 日志显示程序正常渲染（PageFlip/SetPlane）。
+
+**本轮引起的流程变化**：装 gdb 后 `ci_qemu_behav.sh:801` 的 `bt_probe` 不再跳过，启动 `qemu-arm-static -g 12345` 等待连接导致采集卡住；已 `pkill`（rc=0）。该步无开关变量。
+
+**shim 多帧探针真实读数**（factory，strace 阶段；shim 980,252 B）：
+```
+f=1   res ptr=00000000  scr ptr=44ef0008 px=0000216e 000021d1 000029f2 000021b1 …
+f=2/10/50/100  res=00000000  scr=44ef0008
+```
+`scr` 恒非零且与帧文件逐字一致；`res`(`DAT_003af28c`) 恒 0。
+
+**地址对等静态核对**：`linker/factory.ld:12` `.fimg_data 0x003af000`；rebuild `__f_data_base=0x003af000`、`DAT_003af28c=0x3af28c`、`DAT_003af29c=0x3af29c`、`ze=0x3bc2d0`；`factory_image.S` `+0x28c/+0x29c`；factory `.data 0x3af000 +0x2cfc` ⇒ 读数有效、非镜像不对等。
+
+**覆盖事实**：`coverage_factory.txt` 含 `mui_LoadUIResource 324 B` 与 `mui_menu 3084 B`（均执行）。**源码事实**：`mui_menu.c:60-61` 判空后 `mui_LoadUIResource(&DAT_003af28c,"menu.raw")`；`mui_LoadUIResource.c:30-33` `*param_1 = pvVar3`；仓内无其他显式赋值。
+
+**决策**：本轮**未改 `src/`**（无确定根因）。分层：上述现象/读数/地址/覆盖/源码 = 已实测；gdb 的 0 = 无效作废；`DAT_003af28c` 恒 0 成因 = **无证据，不写结论**；真机 = 无证据。探针改动默认关闭入仓，不改判据。
+
+**下一步（单线）**：① 用 shim 通道在 `mui_LoadUIResource` 赋值时刻附近继续取真值 ② 取到缓冲后与 zipfile 基准（`r0=00000170` / `r1048576=9cf69cf7` / `r2097152=318129a1` / `r3211264=d94fd94e`）逐字对照再决定是否改 `src/` ③ 根修后第 1/第 200 帧双重对拍 ④ 真机复测；「启动链完美」裁决仍挂起。

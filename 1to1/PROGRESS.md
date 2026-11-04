@@ -13763,3 +13763,48 @@ InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: 
    - 两侧解压缓冲相同但画布不同 ⇒ 根因在 `mui_menu` 的 `memcpy` / `mui_DispBlock`，修对应 `src/proprietary/` 文件。
 2. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
 3. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
+
+> 追加前 `old_intact=True`（旧文 1069596 B / sha e214b5af3e3cb717…）；由 `tools/append_progress.py` 原子追加。
+## R312（2026-11-04）gdb 路径实测失败记录 + shim 多帧运行时读数
+
+### 日期
+
+2026-11-04（R311 之后；用户指令「继续下一步，禁止猜测、禁止推理、禁止假实现、禁止假桩、禁止假代码」）
+
+### 完成事项（全部为实测读数，不含推断）
+
+1. **gdb 路径四次尝试，全部失败，按纪律停止**：
+   - 环境：`gdb-multiarch 16.3-1` 已装；两侧 ELF 均有 `mui_LoadUIResource` 符号（factory `0x17dac`、rebuild `0x4e6964`）；wrapper 为 `qemu-arm-static -L /arm-root-device` + 既有 shim/桩（未新增任何桩）。
+   - ① 普通断点：80 次 `continue` 全部停在 `sfc_init`/`sfc_request` 的**有意设备缺页 SIGSEGV**，`MENU_RAW_FOUND = False`。
+   - ② 加 `handle SIGSEGV nostop noprint pass` 后：命中一次 `HIT 1 arg=b'setting.raw'`，第二次 `continue` 阻塞至 140 s 超时（`GDB_RC=124`）。
+   - ③ `Breakpoint.stop()` 自动过滤 + `FinishBreakpoint`：断点**零命中**（gdb 日志仅 5 行），同样超时。
+   - ④ 条件断点 `*(char*)$r1=='m'…`：gdb 报 `Cannot execute this command while the target is running`，`GDB_RC=124`。
+   - ⑤ `continue &` → `shell sleep 10` → `interrupt`：两侧所有 `u32` 均报 `Cannot execute this command while the target is running`；打印出的 0 **是无效读数，不采纳**。
+   - qemu 侧日志显示程序正常渲染（DRM `PageFlip` / `SetPlane` 持续输出），gdb 断点路径未取得任何有效缓冲读数。
+2. **发现并处置一个由本轮引起的流程变化**：安装 `gdb-multiarch` 后，`ci_qemu_behav.sh:801` 的 `bt_probe "$label"` 不再跳过，启动 `qemu-arm-static -g 12345` 等待 gdb 连接，R312 采集卡在该步。已 `pkill` 清掉该进程（rc=0）。该步无开关变量（`bt_probe` 仅在第 355 行定义、第 801 行无条件调用）。
+3. **shim 多帧探针真实读数**（`CGM_RES_PROBE=1`，C 编译通过，shim 980,252 B；strace 阶段 factory）：
+   ```
+   f=1   res ptr=00000000  scr ptr=44ef0008 px=0000216e 000021d1 000029f2 000021b1 000029d0 000021d1 000029d1 000021f1
+   f=2   res=00000000  scr=44ef0008
+   f=10  res=00000000  scr=44ef0008
+   f=50  res=00000000  scr=44ef0008
+   f=100 res=00000000  scr=44ef0008
+   ```
+   `scr` 恒非零且首帧像素与 `frame_factory.bin` 逐字一致；`res`（`DAT_003af28c`）在 f=1/2/10/50/100 恒为 0。
+4. **地址对等静态核对**：`linker/factory.ld:12` `.fimg_data 0x003af000`；rebuild ELF `__f_data_base=0x003af000`、`__f_bss_base=0x003b2178`、`DAT_003af28c=0x003af28c`、`DAT_003af29c=0x003af29c`、`ze=0x003bc2d0`；`factory_image.S:2388/2400` 为 `__f_data_base+0x28c / +0x29c`；factory ELF `.data 0x003af000 +0x2cfc`。⇒ 探针固定地址对两侧是运行时变量地址，上述读数有效。
+5. **覆盖事实**：`report/qemu_r312/coverage_factory.txt` 含 `mui_LoadUIResource 324 B mui` 与 `mui_menu 3084 B mui`（两函数均在执行集合内）。
+6. **源码事实**（静态，未改）：`mui_menu.c:60-61` `if (DAT_003af28c == 0) mui_LoadUIResource(&DAT_003af28c,"menu.raw");`；`mui_LoadUIResource.c:30-33` `pvVar3 = malloc((ze_blob)._296_4_); … *param_1 = pvVar3; UnzipItem(...)`；仓内除 `globals.h` 声明与 `factory_image.S` 定义外，无其他对 `DAT_003af28c` 的显式赋值。
+
+### 新发现与决策
+
+1. **本轮未改 `src/`**：无确定根因，改源码会违反用户「禁止猜测、禁止假实现」。
+2. **gdb 路径关闭**：连续 4 次同一失败（target 持续运行、命令不可执行），按「重复绕圈立即停止」纪律停止，不再重试。
+3. 分层标注：gdb 五次尝试的现象、shim 探针读数、地址值、覆盖文件、源码行 = **已实测**；gdb 打印的 0 = **无效读数，已作废**；`DAT_003af28c` 恒 0 的成因 = **未取得证据，不写结论**；真机行为 = **无证据**。
+4. 探针改动（`CGM_RES_PROBE` 多帧 + 4 点采样）默认关闭入仓，不改变任何门禁判据。
+
+### 下一步待办（单线，不扩散）
+
+1. 用已验证的 shim 通道继续取数：在 `mui_LoadUIResource` 赋值时刻附近取 `DAT_003af28c` 真值（当前恒 0 与源码 `*param_1 = pvVar3` 并存，需更多实测点，不推断）。
+2. 取得解压缓冲内容后，与 Python `zipfile` 基准（`r0=00000170`、`r1048576=9cf69cf7`、`r2097152=318129a1`、`r3211264=d94fd94e`）逐字对照，再决定是否改 `src/`。
+3. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
+4. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
