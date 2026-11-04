@@ -77,3 +77,65 @@ else
     $CC $ARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" -o "$(winpath "$OUT")" || exit 1
 fi
 ls -la "$OUT"
+
+# ★★ 2026-11-04：**产物 glibc 需求自检**（fail-closed，防"仪器静默降级"）
+#   病灶：`ARCH` 的 zig 分支钉了 glibc 版本，但 **GCC 分支没钉** ⇒ GCC 用**宿主 libc 头**
+#     ⇒ 产物可能要求**高于设备**的 GLIBC_x.y。
+#   实测（InstaBox / Debian 13 + gcc-arm-linux-gnueabihf）：产物要求 GLIBC_2.34 与
+#     GLIBC_2.38 ⇒ 设备 sysroot（Buildroot glibc **2.29**）**拒绝加载**：
+#     `/sdcard/cubegm/rkgame: /arm-root-device/lib/libc.so.6: version 'GLIBC_2.38' not found`
+#     ⇒ **guest 连 M0（进程启动）都到不了**，三侧全 exit=1。
+#   ★ 为什么这是"仪器缺陷"而不是"环境噪声"：shim **编译成功**（exit 0）⇒ 调用方
+#     `ci_qemu_behav.sh` 的 `if ... sh build_guest_shim.sh` 判成功 ⇒ **不会触发它那句
+#     响亮的"构建失败"告警** ⇒ 门禁"看起来跑完了"，实则全链路失真。
+#   ⇒ 根修：**产物必须自证**它的 glibc 需求 ≤ 目标基线；超标 ⇒ ① 能用 zig 就用 zig
+#     重编（zig 可精确 `-target arm-linux-gnueabihf.<版本>`）→ 再验；② 仍超标 ⇒
+#     **exit 1 fail-closed**（宁可门禁红，不许静默失真）。
+_glibc_max_need() {           # 打印产物要求的最高 GLIBC_x.y（形如 2.38；无则空）
+    _so="$1"; _re=""
+    for t in readelf arm-linux-gnueabihf-readelf; do
+        command -v "$t" >/dev/null 2>&1 && { _re="$t"; break; }
+    done
+    [ -z "$_re" ] && return 0
+    "$_re" -V "$_so" 2>/dev/null \
+      | sed -n 's/.*Name: GLIBC_\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p' \
+      | awk '{v=$1*100+$2; if (v>m) m=v} END {if (m>0) printf "%d.%d\n", int(m/100), m%100}'
+}
+_ver_num() { echo "$(( $(echo "$1" | cut -d. -f1) * 100 + $(echo "$1" | cut -d. -f2) ))"; }
+_need="$(_glibc_max_need "$OUT")"
+_limit="$(echo "$SHIM_GLIBC" | cut -d. -f1).$(echo "$SHIM_GLIBC" | cut -d. -f2)"
+if [ -z "$_need" ]; then
+    echo "  [shim] glibc 需求：无法判定（无 readelf 或产物无版本需求）⇒ 跳过自检"
+elif [ "$(_ver_num "$_need")" -le "$(_ver_num "$_limit")" ]; then
+    echo "  [shim] glibc 需求自检：最高 GLIBC_$_need ≤ 目标 $_limit ✓"
+else
+    echo "  [shim] glibc 需求自检：★★ 最高 GLIBC_$_need > 目标 $_limit ⇒ 产物在设备上**装不上**"
+    # ① 能用 zig 就用 zig 重编（zig 能精确钉 glibc 基线）
+    _zig=""
+    command -v zig >/dev/null 2>&1 && _zig="$(command -v zig)"
+    if [ -z "$_zig" ]; then
+        _zig="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))' 2>/dev/null || true)"
+    fi
+    if [ -n "$_zig" ]; then
+        echo "  [shim] 改用 zig 重编（-target arm-linux-gnueabihf.${SHIM_GLIBC}）: $_zig"
+        _ZARCH="-target arm-linux-gnueabihf.${SHIM_GLIBC} -mfloat-abi=hard -mfpu=neon"
+        if [ -n "$EXTRA" ]; then
+            "$_zig" cc $_ZARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" "$(winpath "$EXTRA")" -o "$(winpath "$OUT")" || exit 1
+        else
+            "$_zig" cc $_ZARCH -shared -fPIC -O2 -w "$(winpath "$SRC")" -o "$(winpath "$OUT")" || exit 1
+        fi
+        _need2="$(_glibc_max_need "$OUT")"
+        if [ -n "$_need2" ] && [ "$(_ver_num "$_need2")" -le "$(_ver_num "$_limit")" ]; then
+            echo "  [shim] glibc 需求自检：重编后最高 GLIBC_$_need2 ≤ 目标 $_limit ✓"
+            ls -la "$OUT"
+            exit 0
+        fi
+        echo "  [shim] 重编后仍不达标（最高 GLIBC_${_need2:-?} > $_limit）"
+    else
+        echo "  [shim] 无 zig 可用 ⇒ 无法钉 glibc 基线"
+    fi
+    echo "★★ fail-closed：shim 的 glibc 需求高于设备基线 $_limit ⇒ 仪器不可信，**禁止继续**。"
+    echo "★★ 修法：① pip install ziglang（用 zig cc -target arm-linux-gnueabihf.${SHIM_GLIBC}）；"
+    echo "★★       ② 或设 CGM_SHIM_GLIBC=<设备 glibc>；③ 或用工厂同期工具链（bootlin63）编 shim。"
+    exit 1
+fi
