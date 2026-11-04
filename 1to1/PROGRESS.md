@@ -14048,3 +14048,50 @@ R316 把 factory `0x14508..0x14584`（124 B）与 rebuild `0x4e5204..0x4e5280`�
 2. 依据核对结果决定是否修改 `src/`；无确定依据则不改。
 3. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
 4. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
+
+> 追加前 `old_intact=True`（旧文 1095931 B / sha 2db05c50f550928f…）；由 `tools/append_progress.py` 原子追加。
+## R318（2026-11-04）—— 收尾实质推进：GAP:515 旧线索机械证伪 + 交付物质量修复 + InstaBox 就绪确认
+
+### 日期
+
+2026-11-04（用户指令「继续执行任务」，收尾阶段）
+
+### 完成事项
+
+1. **R317 待办 1 机械核对（答复「主线还剩什么」）**：GAP.md §E（`ClearBuffer`/`mui_outputxy_t` 执行集合分歧）旧定论在**当前产物下已失效**。
+   在 InstaBox `report/qemu_r314/`（R314 采集轮，现状产物 `d34316b18` 同源 rebuild）三侧 coverage 机械对照：
+
+   | 函数 | factory | rebuild | control | GAP:515 旧定论 |
+   |---|---|---|---|---|
+   | `mui_outputxy_t`（字体渲染） | ✓ | ✓ | ✓ | 旧说「仅我们执行」→ **失效** |
+   | `mui_InitFont` | ✓ | ✓ | ✓ | — |
+   | `mui_DispBlock` | ✓ | ✓ | ✓ | 旧说「仅我们执行」→ 失效 |
+   | `ClearBuffer` | ✓ | ✓ | ✓ | 旧说「仅工厂执行」→ **失效** |
+   | `mui_DisplayLine_t` | ✗ | ✗ | ✗ | 三侧均未触发（需特定菜单态） |
+
+   证据：`report/_r318_coverage_{factory,rebuild,control}.txt`（factory 96 行 / rebuild 97 行 / control 96 行）。
+   ⇒ R136 时代「重建侧多走字体渲染 → 崩在 stbtt_GetFontVMetrics」的分歧，已被 R305 修复（ZIPENTRY 304B + 字体链路）超越。**B6A 的「多余字体渲染」机制不成立**。B6A 归为渲染保真度**长期线**（需真机或云开发逐帧对拍），非本收尾轮阻塞项。
+
+2. **InstaBox bootstrap 就绪确认（R306 待办 2 闭环）**：`qemu-arm-static`/`qemu-system-arm`（均 `/usr/bin`）、`arm-linux-gnueabihf-gcc`、`gdb-multiarch` 全在；`ziglang`（python 包 `/data/home/.local/.../ziglang`）在；仓库已 clone 至 `/data/workspace/rkgame-1to1/1to1`；`/data` 用 5.2G/20G。CNB 云开发 → InstaBox 迁移完成。
+
+3. **交付物质量修复（真实缺陷）**：`_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf.sha256` 是 **CRLF** 结尾（`0d0a`），`sha256sum -c` 会因文件名带 `\r` 直接 FAIL（`No such file or directory`）——用户换卡校验会撞墙。已原子转 LF（`ubuntu` 端 `sha256sum -c` 现返回 `OK`）。
+
+### 新发现与决策
+
+1. **主线实质状态（不再绕圈读数的依据）**：
+   | 项 | 状态 | 判据 |
+   |---|---|---|
+   | 真机验收（唯一最终判据） | ⏸ 卡用户 | 换卡复测 R305 修复是否消除 0.2-0.4s 闪重启；交付物 `d34316b18` 就绪 |
+   | B6A 渲染保真度 | 长期线 | 不是代码级阻塞：两处 UI 写入点源码↔工厂逐字一致（R317），字体渲染分歧已证伪（本轮） |
+   | 算力通道 | ✅ 就绪 | InstaBox 全工具链 + 仓库 clone 完成 |
+   | 交付物 | ✅ 就绪 | `d34316b18` + sha256 自洽 |
+
+2. **投放包版本错位（记录待办，本轮不动红线内容）**：`_sdcard_drop/cubegm/rkgame` 仍是 R303 诊断版 `94715fe0`（诊断为 5,465,236 B），不是 R305 交付判据对象 `d34316b18`（5,404,120 B）。这是 R305 交付后未同步投放层的收尾缺陷。但按 R305 的换卡指引，用户换的是 `latest_rebuilt/rkgame.rebuilt.elf`（交付版），`cubegm/` 是诊断投放包——两者用途不同，**不擅自覆盖**（避免把诊断版与交付版混为同物），列为待办由用户明确后再动。
+
+3. **纪律补强（写入 PROJECT-MEMORY）**：`sha256sum -c` 校验文件必须**LF 结尾**；win32 环境下用纯文本工具写校验文件会带 `\r`，交付前必须实测 `-c` 通过。
+
+### 下一步待办（按优先级）
+
+1. **真机复测（用户侧，唯一最终验收）**：换 `latest_rebuilt/rkgame.rebuilt.elf`（`d34316b18`），回传「是否还闪重启」或 `_diag/` 日志。
+2. **投放包版本清理（待用户明确）**：确认 `_sdcard_drop/cubegm/rkgame`（`94715fe0` 诊断版）是保留作诊断投放、还是应替换为交付版 `d34316b18` —— 两者用途不同，不擅自覆盖。
+3. B6A 长期线：InstaBox 就绪，可续做云主机逐帧对拍（`[abiprobe] disp#N` 序列 + 16 条带哈希，R224 仪器已在），非本轮优先。

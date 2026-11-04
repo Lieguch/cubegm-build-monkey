@@ -8050,3 +8050,19 @@ item[3] data_off=0x00248be8  x0=106 y0=96  x1=890  y1=358
 **分层**：自查表/逐条对照/枚举/`GAP.md` 引用 = 已实测可核对；输出不同的来源 = **无证据，不写结论**；R316 逐行对照 = 作废；R312 gdb 的 0 = 无效；真机 = 无证据。本轮**未改 `src/`**、未改原厂文件、未造桩、org.bin 零写入。
 
 **待办（单线）**：① 机械核对 `mui_outputxy_t` 当前三侧 `coverage_*.txt` 执行集合与其对 `DAT_003af29c` 的写入范围，与 `GAP.md:53/515/607` 原文逐字对照（只报事实）② 有确定依据才改 `src/` ③ 根修后第 1/第 200 帧双重对拍 ④ 真机复测；「启动链完美」裁决仍挂起。
+#### Z. R318 —— 收尾实质推进：GAP:515 旧线索机械证伪 + 交付物质量修复 + InstaBox 就绪
+
+**主线还剩什么（正面回答，不再绕圈读数）**：
+- **真机验收**（唯一最终判据）= 卡用户换卡复测 R305 修复（交付物 `d34316b18` 就绪，sha256 自洽）。
+- **B6A** = 渲染保真度长期线，非代码级阻塞（两处 UI 写入点源码↔工厂逐字一致 R317；字体渲染分歧本轮证伪）。
+- **算力通道** = InstaBox 全就绪（qemu-arm/qemu-system-arm/arm-gcc/gdb-multiarch 全在、ziglang 在、仓库 clone 至 `/data/workspace/rkgame-1to1/1to1`、/data 5.2G/20G）。
+
+**★ GAP:515 旧线索机械证伪（R317 待办 1 落地）**：InstaBox `report/qemu_r314/` 三侧 coverage 机械对照，`mui_outputxy_t` / `mui_InitFont` / `mui_DispBlock` / `ClearBuffer` **三侧全命中**（factory 96 行 / rebuild 97 行 / control 96 行；证据已取回 `report/_r318_coverage_*.txt`）。⇒ R136 时代「仅我们执行 mui_outputxy_t、仅工厂执行 ClearBuffer ⇒ 重建侧多走字体渲染」的分歧，被 R305 修复（ZIPENTRY 304B + 字体链路）**超越**。B6A 的「多余字体渲染」机制不成立。`mui_DisplayLine_t` 三侧均未命中（需特定菜单态，符合预期）。
+
+**交付物质量修复（真缺陷）**：`_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf.sha256` 是 CRLF，`sha256sum -c` 会 FAIL；已原子转 LF，实测 `-c` 返回 OK。
+
+**投放包版本错位（待用户明确，不擅自覆盖）**：`_sdcard_drop/cubegm/rkgame` 仍是 R303 诊断版 `94715fe0`（诊断用），非交付判据对象 `d34316b18`——两者用途不同（诊断投放 vs 交付替换），不混同。
+
+**新增纪律**：`sha256sum -c` 校验文件必须 LF 结尾（win32 纯文本写文件会带 `\r`），交付前必须实测 `-c` 通过。
+
+**待办**：① 真机换卡复测（唯一最终验收）② 投放包版本清理待用户明确 ③ B6A 长期线（InstaBox 就绪，可续逐帧对拍，非优先）。
