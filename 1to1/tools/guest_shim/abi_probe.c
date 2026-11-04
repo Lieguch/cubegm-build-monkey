@@ -78,6 +78,24 @@ static int          g_calls;
 static int          g_dump_frame = 1;
 /* R311：只读运行时缓冲探针（CGM_RES_PROBE=1 才打印）。*/
 static int          g_res_probe = 0;
+
+/* R314：记录 >=1 MiB 的 malloc 返回块。转发到 libc 真分配器 __libc_malloc，
+ * 只做记录、不改变返回值/语义（不是假桩：nm -D 实测 libc-2.29 导出该符号）。 */
+extern void *__libc_malloc(unsigned int);
+typedef struct { void *p; unsigned int n; } cgm_big_t;
+static cgm_big_t g_big[16];
+static int       g_big_n = 0;
+
+void *malloc(unsigned int n)
+{
+    void *p = __libc_malloc(n);
+    if (g_res_probe && n >= 0x100000u && g_big_n < 16 && p != 0) {
+        g_big[g_big_n].p = p;
+        g_big[g_big_n].n = n;
+        g_big_n++;
+    }
+    return p;
+}
 static int          g_printed;
 static int          g_hooked_logged;
 static int          g_probe_on;
@@ -336,6 +354,32 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
             }
             *rq++ = '\n';
             emit(rl, (unsigned)(rq - rl));
+            /* 第 100 帧打印所有大块分配的真实地址与内容采样 */
+            if (g_calls == 100) {
+                int bi2, oi;
+                unsigned int offs[5];
+                offs[0] = 0x0u; offs[1] = 0x170u; offs[2] = 0x100000u;
+                offs[3] = 0x200000u; offs[4] = 0x310000u;
+                for (bi2 = 0; bi2 < g_big_n && bi2 < 8; bi2++) {
+                    char bl2[256], *bq2 = bl2;
+                    const unsigned char *bp = (const unsigned char *)g_big[bi2].p;
+                    bq2 = put_s(bq2, "[abiprobe] big#");
+                    bq2 = put_u(bq2, (unsigned)bi2);
+                    bq2 = put_s(bq2, " ptr=");
+                    bq2 = put_x8(bq2, (unsigned)g_big[bi2].p);
+                    bq2 = put_s(bq2, " size=");
+                    bq2 = put_u(bq2, g_big[bi2].n);
+                    for (oi = 0; oi < 5; oi++) {
+                        if (g_big[bi2].n > offs[oi] + 3u) {
+                            bq2 = put_s(bq2, " @"); bq2 = put_u(bq2, offs[oi]);
+                            bq2 = put_s(bq2, "=");
+                            bq2 = put_x8(bq2, *(const unsigned int *)(bp + offs[oi]));
+                        }
+                    }
+                    *bq2++ = '\n';
+                    emit(bl2, (unsigned)(bq2 - bl2));
+                }
+            }
         }
 
         if (g_calls == 1) {
