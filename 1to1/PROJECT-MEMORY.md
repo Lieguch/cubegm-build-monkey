@@ -7872,3 +7872,29 @@ Debian 13 实测 `elftools OK`（装进 user site）rc=0。
 **★ 主线收敛**：本项目 1:1 目标 = **`rkgame` ELF 本身**（源码等价 → 构建产物 drop-in 替换），不是固件镜像。后续全部投入回到 B6A 帧级差异：`factory↔rebuild` 72.3584%、`factory↔control` 0%；颜色映射 42/42 集中且全为 `factory 颜色 → 0x0000`，中心区相同率 100% ⇒ 重建侧外围背景像素未绘制（归因到具体函数 = **未实测推断**）。
 
 **待办**：① B6A 定位「颜色→0x0000」的绘制函数/数据表并根修 ② R308 提出的「启动链完美」判据仍待用户裁决，未裁决前不交付 CI 构建版本 ③ 真机复测（唯一最终验收，交付件 sha `d34316b1…`）④ org.bin 只读，零动作。
+
+#### Q. R309c —— **公开更正**：撤回「FastGithub 拦截」；CI 红真因实测落定
+
+**用户质询**：「一直都没有开 FastGithub，何来的拦截？你只是没测过」+「上一轮，你有多少是猜测的？或者直接用历史的？」
+
+**★ 撤回**：R309b 与上一轮答复中「CI 日志被本机 FastGithub 代理 `302→401` 拦截」= **零验证的历史套用**。实测：FastGithub **无进程**；`api.github.com` DNS = `20.205.243.168`（真实 IP）；`Server: github.com`（无 FastGithub）；本机仅 `HTTP(S)_PROXY=http://127.0.0.1:4663`（WorkBuddy 隧道，CONNECT 正常）；PAT `GET /user` = 200、scopes 齐全。
+
+**401 真因（单变量对照）**：`GET /actions/jobs/{id}/logs` → **302** 到 Azure Blob SAS URL。urllib 跟随重定向时把 GitHub `Authorization: Bearer` 带到 Azure ⇒ 同一 SAS URL：裸 GET = **200 / 306,068 B / 3128 行**；带 `Authorization` = **401 `InvalidAuthenticationInfo`**（`Server: Microsoft-HTTPAPI/2.0`）。与代理、FastGithub、token 权限**均无关**。日志一直拿得到。
+
+**CI 红真因（日志原文，run `41812275114`）**：`Built: output/rkgame (1031860 bytes)` / `status=0` / `[artifacts 600b24c] auto: rkgame build artifact` ⇒ ELF 构建成功；step 8 与 step 11 均 `remote: Internal Server Error` + `Request ID 3C00:2C36C8…` / `3C01:1EE2BC…` + `[remote rejected] artifacts -> artifacts` ⇒ **GitHub 服务端 500 拒绝 push**，不是并发冲突/空 commit/代理/构建失败。
+
+**作废的三条旧说法**：并发冲突与空 commit 候选（实测均错）；「瞬时故障、已自愈」（无因果证据，改为「平台 500，后续 run 成功但因果未证实」）；「日志读不到」（是请求头带错）。
+
+**自查清点（上一轮约 22 条断言）**：14 条实测；**4 条沿用历史未验证**（FastGithub〔硬错误〕、`build.yml` 无 paths〔有旁证〕、B6/B6A 零回归〔未逐字比对〕、引用 R308 自身结论）；**4 条凭经验推断**（`UpdateROM.c` 性质〔没读文件〕、其 `M` 状态来源〔没查 git log〕、瞬时自愈、构建成功语义）；1 条半实测（grep 被 head 截断）。「外围背景未绘制」在 R308 标过推断，答复里用成确定语气。
+
+**★★ 新增纪律（写进跨项目记忆）**：
+1. **历史记录不得当现状**：引用 `MEMORY.md` / `PROGRESS.md` 的环境结论，必须当轮复测（进程 / DNS / TLS 头 / 单变量对照），否则标「沿用历史，未验证」。
+2. **凡断言「被 X 拦截」，先测 X 是否存在**（进程、DNS、Server 头、代理变量），缺一不得下结论。
+3. **现象 ≠ 归因**：401 是现象，归因必须单变量对照（同一 URL 只改一个头）。
+4. **`"我没试过" ≠ "拿不到"`**：把「下载失败」写成「通道被封」⇒ 放弃读日志、把平台 500 晾了整轮。
+
+**机械防复发**：`tools/_gh_job_logs.py`（不跟随 302 → 裸 GET SAS URL；`--out` / `--grep`），已实测抓到 `remote rejected` 原文。用户级 `MEMORY.md` 的 FastGithub 两条已就地标注证伪。
+
+**决策**：不改 `build.yml`（真因是平台侧 500；用户禁止「重试绕过」治标；该文件远端独有、不在本地清单）。后续复现直接用新工具取原文。
+
+**待办**：推送 R309b+R309c+新工具；监控 `49428edb7499` qemu-behav 到终态；主线仍是 B6A 颜色映射根修，`org.bin` 只读零动作。
