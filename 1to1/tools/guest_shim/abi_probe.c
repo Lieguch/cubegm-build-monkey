@@ -76,6 +76,8 @@ static disp_frame_t g_real_disp;
 static int          g_calls;
 /* R310：抓第 N 帧（默认 1 = 首帧，逐字保持旧行为）。*/
 static int          g_dump_frame = 1;
+/* R311：只读运行时缓冲探针（CGM_RES_PROBE=1 才打印）。*/
+static int          g_res_probe = 0;
 static int          g_printed;
 static int          g_hooked_logged;
 static int          g_probe_on;
@@ -136,6 +138,8 @@ static void abi_probe_init(void)
         emit(MSG_ENABLED, slen(MSG_ENABLED));
     }
     /* 首帧原文落盘（诊断用；未设置则完全不影响行为）*/
+    { const char *rp = getenv("CGM_RES_PROBE");
+      g_res_probe = (rp != 0 && rp[0] == '1') ? 1 : 0; }
     g_dump_path = getenv("CGM_ABI_DUMP");
     if (g_dump_path != 0 && g_dump_path[0] == '\0') g_dump_path = 0;
     /* R310：CGM_ABI_DUMP_FRAME=N（N>1 时在第 N 帧覆盖写一次同一路径）。*/
@@ -311,6 +315,30 @@ static int probe_disp_frame(void *data, unsigned w, unsigned h, unsigned pitch)
 
         if (g_calls == 1) {
             unsigned per, bi;
+            /* ★ R311：只读两侧同一固定地址，判定解压缓冲 vs 画布谁先分歧。
+             *   0x3af28c = menu.raw 缓冲指针；0x3af29c = 画布指针。
+             *   打印指针 + 所指内存前 8 个 u16（含 w@+4 / h@+6）。 */
+            if (g_res_probe) {
+                char rl[192], *rq = rl;
+                unsigned rp1 = *(const unsigned *)0x003af28c;
+                unsigned rp2 = *(const unsigned *)0x003af29c;
+                int kk;
+                rq = put_s(rq, "[abiprobe] res ptr="); rq = put_x8(rq, rp1);
+                if (rp1) {
+                    const unsigned short *ph = (const unsigned short *)rp1;
+                    rq = put_s(rq, " raw=");
+                    for (kk = 0; kk < 8; kk++) { *rq++ = ' '; rq = put_x8(rq, ph[kk]); }
+                }
+                *rq++ = '\n'; emit(rl, (unsigned)(rq - rl));
+                rq = rl;
+                rq = put_s(rq, "[abiprobe] scr ptr="); rq = put_x8(rq, rp2);
+                if (rp2) {
+                    const unsigned short *ps = (const unsigned short *)rp2;
+                    rq = put_s(rq, " px=");
+                    for (kk = 0; kk < 8; kk++) { *rq++ = ' '; rq = put_x8(rq, ps[kk]); }
+                }
+                *rq++ = '\n'; emit(rl, (unsigned)(rq - rl));
+            }
             char bl[512], *bq = bl;
 
             /* ★★ R227：一次性读出按键映射表与累积键值（定案 A 键为何无效）
