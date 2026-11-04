@@ -13577,3 +13577,34 @@ InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: 
 2. **B6A 主线（可修的产品缺陷）**：用 `_b6a_pixel_diff.py` 的 bbox + 16 条带哈希定位「`factory 颜色 → 0x0000`」对应的绘制函数/数据表，根修后重跑帧对拍至 `factory↔rebuild` 差异收敛；对照端必须保持 0 差异。
 3. 推送本轮 3 个工具 + R308 记录；`bash tools/_close_compute.sh` 收口算力（suspend InstaBox + 自查 CNB running=0）。
 4. 真机复测（用户侧，唯一最终验收）：交付件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`；观察 0.2–0.4 s 闪重启是否消失。
+
+> 追加前 `old_intact=True`（旧文 1046024 B / sha 0eb0b15e9a28274c…）；由 `tools/append_progress.py` 原子追加。
+## R309（2026-11-04）用户划线：org.bin 永久只读，关闭固件修复路线
+
+### 日期
+
+2026-11-04（R308 之后，用户纠偏）
+
+### 完成事项
+
+1. **接受并执行用户划线**：`org.bin` = 从原厂闪存复制出来的 8 MiB GPT 固件镜像；**不修复、不重打包、不写回、不烧录**。理由（用户原话口径）：存在极高烧录风险，且对复刻 `rkgame` 没有帮助。
+2. **只读取证（本轮零写入）**：
+   - 实物 `F:/OTHER/D20游戏机/解包归档/org.bin解析/org.bin`，8,388,608 B；仓内无副本、`git ls-files` 无跟踪、`git status` 零改动。
+   - 唯一接触点 `tools/extract_bootchain_assets.py:53` = `open(org, 'rb').read()`；全部写目标均在 `OUT`（`bootchain/assets/`），`shutil.copy2` 方向为 SRC→OUT，无写回 SRC。
+   - 全仓 grep 无 `dd of=/dev` / `flash_erase` / `nandwrite` / `rkflashtool` / `upgrade_tool` 等写设备路径。
+   - `src/proprietary/flash/FUN_0000ac44_UpdateROM.c` 是逆向出的 **rkgame 内部函数源码**（复刻对象本身），不是烧录工具；其 `M` 状态为 R282 前既有本地改动，与本轮无关。
+3. **明确 R308 的边界**：R308 用 `bootchain/assets/` 在 QEMU **沙箱**内做模拟，从未修改 `org.bin` 或任何设备实物；`bootchain/assets/` 是只读派生副本，不视为待修复对象。R308 结论（QEMU 内真 DRM 链不可达完美）保留为事实，但**不再继续投入固件/启动链侧的完善**。
+
+### 新发现与决策
+
+1. **红线（新增，最高优先）**：`org.bin` 及其解析归档 = **只读参考输入**。允许：只读提取分区供 QEMU 沙箱验证。禁止：修复内容、重打包 GPT/分区、写回归档、任何形式烧录到设备。任何涉及写原厂文件（含 SD 卡原厂文件）的动作仍受既有红线约束（先说「改什么/怎么改/如何回退」）。
+2. **复刻对象收敛**：本项目 1:1 目标 = **`rkgame` ELF 本身**（源码层等价 → 构建产物可 drop-in 替换），不是固件镜像。固件/内核/启动链只作为验证环境，不作为修复目标；`tools/extract_bootchain_assets.py` 已符合只读语义，保留但不再扩展。
+3. **主线回正**：后续全部投入回到 `rkgame` 复刻本身 —— B6A 帧级差异（`factory↔rebuild` 72.3584%，颜色映射 42/42 集中且全为 `factory 颜色 → 0x0000`，中心区 100% 相同 ⇒ 重建侧外围背景像素未绘制）。R308 的 QEMU 启动链结论仅作边界说明，不作为继续投入方向。
+4. 分层标注：零写入 = **已实测**（文件状态 + 脚本源码 + 全仓 grep）；「背景未绘制」归因到具体函数 = **未实测推断**，待定位。
+
+### 下一步待办
+
+1. **B6A 根因定位（主线）**：用 `_b6a_pixel_diff.py` 的 bbox + 16 条带哈希定位「`factory 颜色 → 0x0000`」对应的绘制函数/`.rodata` 数据表，在 `src/` 内根修，重跑帧对拍至 `factory↔rebuild` 差异收敛；对照端须保持 0 差异。
+2. **用户裁决仍挂起**（R308 提出的铁律冲突）：「启动链日志完美」判据是采用 (A) user-mode+三桩 `M0–M7 全✓/差集空/exit=124`，还是 (B) 真 DRM 零失败只能真机。未裁决前不交付 CI 构建版本供验收。
+3. 真机复测（用户侧，唯一最终验收）：交付件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`。
+4. `org.bin`：只读，不再有任何动作。

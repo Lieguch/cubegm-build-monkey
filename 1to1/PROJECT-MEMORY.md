@@ -7854,3 +7854,21 @@ Debian 13 实测 `elftools OK`（装进 user site）rc=0。
 **铁律冲突（须用户裁决，不得静默违反）**：原目标「收尾交付可替代二进制」 vs 新门槛「启动链完美才交付」，QEMU 内后者不可达。选项 A：判据用 user-mode+三桩 `M0–M7 全✓/差集空/exit=124`（R297 已证）但仍须修完 B6A 才交付；B：坚持真 DRM 零失败 ⇒ 只能真机。
 
 **待办**：① 用户裁决判据 ② B6A 定位「颜色→0x0000」的绘制函数/数据表并根修 ③ 推送本轮工具+记录、`_close_compute.sh` 收口 ④ 真机复测（唯一最终验收，交付件 sha `d34316b1…`）。
+
+#### P. R309 —— 用户划线：`org.bin` 永久只读，关闭固件修复路线
+
+**用户指令（原话口径）**：「你不需要修复原厂闪存复制出来的 org.bin。没有意义。因为存在极高烧录风险，而且对复刻 rkgame 没有帮助。」
+
+**★ 新增红线（最高优先）**：`org.bin`（`F:/OTHER/D20游戏机/解包归档/org.bin解析/org.bin`，8,388,608 B，8 MiB GPT 固件镜像）及其解析归档 = **只读参考输入**。
+- 允许：只读提取 GPT 分区供 QEMU 沙箱验证。
+- **禁止**：修复内容 / 重打包 GPT/分区 / 写回归档 / 任何形式烧录到设备。
+- 理由：极高烧录风险 + 对 1:1 复刻 `rkgame` 零帮助。
+- 任何写原厂文件（含原厂 SD 卡）的动作仍受既有红线约束：先说「改什么 / 怎么改 / 如何回退」。
+
+**只读取证（R309 实测）**：仓内无 org.bin 实物、`git ls-files` 未跟踪、`git status` 零改动；唯一接触点 `tools/extract_bootchain_assets.py:53` = `open(org,'rb').read()`，全部写目标在 `OUT=bootchain/assets/`，`shutil.copy2` 方向 SRC→OUT，零写回；全仓 grep 无 `dd of=/dev`/`flash_erase`/`nandwrite`/`rkflashtool`/`upgrade_tool` 等写设备路径。`src/proprietary/flash/FUN_0000ac44_UpdateROM.c` 是逆向出的 **rkgame 内部函数源码**（复刻对象），不是烧录工具。
+
+**边界澄清**：R308 用 `bootchain/assets/` 在 QEMU **沙箱**内模拟，从未修改 org.bin 或设备实物；`bootchain/assets/` 是只读派生副本，不是待修复对象。R308 结论（QEMU 内真 DRM 链不可达完美）保留为事实，但**不再继续投入固件/启动链完善**。`tools/extract_bootchain_assets.py` 已符合只读语义，保留不扩展。
+
+**★ 主线收敛**：本项目 1:1 目标 = **`rkgame` ELF 本身**（源码等价 → 构建产物 drop-in 替换），不是固件镜像。后续全部投入回到 B6A 帧级差异：`factory↔rebuild` 72.3584%、`factory↔control` 0%；颜色映射 42/42 集中且全为 `factory 颜色 → 0x0000`，中心区相同率 100% ⇒ 重建侧外围背景像素未绘制（归因到具体函数 = **未实测推断**）。
+
+**待办**：① B6A 定位「颜色→0x0000」的绘制函数/数据表并根修 ② R308 提出的「启动链完美」判据仍待用户裁决，未裁决前不交付 CI 构建版本 ③ 真机复测（唯一最终验收，交付件 sha `d34316b1…`）④ org.bin 只读，零动作。
