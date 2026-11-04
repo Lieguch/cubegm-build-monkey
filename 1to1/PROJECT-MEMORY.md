@@ -8011,3 +8011,23 @@ big#0/1/3 的指针、大小、全部采样值三侧逐字相同；仅 big#2（1
 **分层**：全部读数/块表/常量 grep = 已实测；数值间对应关系 = **未建立，不写结论**；R312 gdb 的 0 = 无效作废；真机 = 无证据。本轮未改 `src/`、未改原厂文件、org.bin 零写入。
 
 **待办（单线）**：① 取 `mui_DispBlock` 运行时实际块索引 `param_4` 与每次 memcpy 行号/宽度读数，与 23 项及 `y=569 x=675` 逐字对照（只报读数）② 有确定依据才改 `src/` ③ 根修后第 1/第 200 帧双重对拍 ④ 真机复测；「启动链完美」裁决仍挂起。
+
+#### X. R316 —— `mui_DispBlock` 运行时实参（两侧逐字相同）+ 两侧机器码逐行对照
+
+**单次 gdb 普通断点成功**（`GDB_RC=0`）：`break mui_DispBlock` + **一次** `continue` + `handle SIGSEGV pass`；符号 factory `0x14508` / rebuild `0x4e5204`。R312 关闭的是多次 continue / `Breakpoint.stop()` / 条件断点 / `interrupt` 方案；单次普通断点两侧均命中，作为可用读数通道保留。
+
+**factory == rebuild 逐字相同**：
+```
+r0(dst)=0x44ef4008  r1(pitch)=2560  r2(blocktbl)=0x450b7008  r3(index)=1
+item[0] data_off=0x00000050  x0=0   y0=0   x1=1280 y1=720
+item[1] data_off=0x001c2050  x0=104 y0=132 x1=676  y1=570
+item[2] data_off=0x0023c5a0  x0=106 y0=206 x1=388  y1=296
+item[3] data_off=0x00248be8  x0=106 y0=96  x1=890  y1=358
+```
+`r0` = R314 `big#2`（画布）；`r2` = R314 `big#3`（`@0=00000050` 与 `item[0] data_off=0x50` 一致）。R314：三侧 malloc 块指针/大小逐字相同、`big#0/1/3` 内容三侧逐字相同、**仅 big#2 不同**。R315：R 末个非零像素 `y=569 x=675`、`0x163f46`；`item[1] x1=676 y1=570`。
+
+**两侧 `mui_DispBlock` 机器码**（objdump）：对齐 30 行，**机器码不同 30 行、助记符不同 30 行**。节选：L0 `e92d41f0 push {r4..r8,lr}` vs `e92d47f0 push {r4..sl,lr}`；L6/L7 `d8bd81f0 pople {…,pc}` vs `9a000014 bls 4e5278`；L20/L23 `e2855001 add r5,r5,#1` vs `e2855002 add r5,r5,#2`；L24/L21 `ebffd458 bl 96d0 <memcpy@plt>` vs `ebfc70b8 bl 401540`；L28–29/L27–28 `e1530005 cmp r3,r5`+`caffffec bgt` vs `e1560001 cmp r6,r1`+`baffffed blt`。`_g_prop_equiv.txt` 的 `mui_DispBlock OK 124/120` 是抽象属性判据。
+
+**分层**：断点读数/块表项/30 行机器码/R314-R315 并列值 = 已实测；事实间对应关系、`OK` 判据与逐指令差异的关系 = **未建立，不写结论**；R312 gdb 的 0 = 无效作废；真机 = 无证据。本轮**未改 `src/`**、未改原厂文件、未新增桩、org.bin 零写入；沙箱二进制每次回退 sha `8ff3b4b7…`。
+
+**待办（单线）**：① 取 `mui_DispBlock` 内每次 memcpy 的 dst 行偏移/len 逐次读数，与 `item[1]` 及 `y=569 x=675` 逐字对照（只报读数）② 依据 factory 机器码逐条核对 `FUN_00014508_mui_DispBlock.c`（Ghidra 一手证据），有确定依据才改 `src/` ③ 根修后第 1/第 200 帧双重对拍 ④ 真机复测；「启动链完美」裁决仍挂起。

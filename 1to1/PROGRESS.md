@@ -13928,3 +13928,51 @@ InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: 
 2. 之后才判断是否具备修改 `src/` 的确定依据；无依据则不改。
 3. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
 4. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
+
+> 追加前 `old_intact=True`（旧文 1086248 B / sha 519d07d4426aa57b…）；由 `tools/append_progress.py` 原子追加。
+## R316（2026-11-04）`mui_DispBlock` 运行时实参（两侧逐字相同）+ 两侧机器码逐行对照
+
+### 日期
+
+2026-11-04（R315 之后；用户指令「继续下一步，禁止猜测、禁止推理、禁止假实现、禁止假桩、禁止假代码」）
+
+### 完成事项（只读实测，未改产品代码）
+
+1. **单次 gdb 普通断点读数成功**（`GDB_RC=0`）：`break mui_DispBlock` + **一次** `continue` + `handle SIGSEGV nostop noprint pass`。与 R312 失败方案（80 次循环 continue / `Breakpoint.stop()` / 条件断点 / `interrupt`）机制不同：本次只等一次命中，命中后 gdb 命令文件继续执行读寄存器。两侧符号实测 factory `0x14508`、rebuild `0x4e5204`。
+2. **factory / rebuild 命中读数逐字相同**：
+   ```
+   r0(dst)=0x44ef4008  r1(pitch)=2560  r2(blocktbl)=0x450b7008  r3(index)=1
+   item[0] data_off=0x00000050  w=1280 h=720  x0=0   y0=0   x1=1280 y1=720
+   item[1] data_off=0x001c2050  w=1280 h=720  x0=104 y0=132 x1=676  y1=570
+   item[2] data_off=0x0023c5a0  w=1280 h=720  x0=106 y0=206 x1=388  y1=296
+   item[3] data_off=0x00248be8  w=1280 h=720  x0=106 y0=96  x1=890  y1=358
+   ```
+   - `r0 = 0x44ef4008` 为 R314 记录的画布块 `big#2` 地址；`r2 = 0x450b7008` 为 R314 的 `big#3`，其 `@0=00000050` 与 `item[0] data_off=0x50` 逐字一致。
+   - R314 事实：三侧 malloc 块的指针/大小逐字相同，`big#0/1/3` 内容三侧逐字相同，仅 `big#2`（画布）内容不同。
+   - R315 事实：R 末个非零像素 `y=569 x=675`、`byte_off=0x163f46`；`item[1]` 的 `x1=676 y1=570`。
+3. **两侧 `mui_DispBlock` 机器码逐行对照**（`arm-linux-gnueabihf-objdump`，factory `0x14508..0x14584`、rebuild `0x4e5204..0x4e5280`）：**对齐 30 行，机器码不同的行数 = 30，助记符不同的行数 = 30**。逐字差异节选：
+
+   | 行 | factory | rebuild |
+   |---|---|---|
+   | L0 | `e92d41f0 push {r4,r5,r6,r7,r8,lr}` | `e92d47f0 push {r4,r5,r6,r7,r8,r9,sl,lr}` |
+   | L1 | `e0824203 add r4,r2,r3,lsl #4` | `e0827203 add r7,r2,r3,lsl #4` |
+   | L6 / L7 | `d8bd81f0 pople {r4,r5,r6,r7,r8,pc}` | `9a000014 bls 4e5278` |
+   | L20 / L23 | `e2855001 add r5,r5,#1` | `e2855002 add r5,r5,#2` |
+   | L24 / L21 | `ebffd458 bl 96d0 <memcpy@plt>` | `ebfc70b8 bl 401540` |
+   | L28–29 / L27–28 | `e1530005 cmp r3,r5` / `caffffec bgt 14534` | `e1560001 cmp r6,r1` / `baffffed blt 4e5230` |
+
+   既有静态判据 `_g_prop_equiv.txt` 中 `mui_DispBlock OK 124/120` 为抽象属性判据；本次逐指令对照给出的是原始机器码事实。
+4. **本轮未改 `src/`、未改原厂文件、未新增桩、org.bin 零写入**。gdb 脚本只做读数；沙箱 `/sdcard/cubegm/rkgame` 每次跑完回退（回退 sha `8ff3b4b70c253ff7`）。
+
+### 新发现与决策
+
+1. 分层标注：两侧断点读数、5 个块表项、30 行机器码对照、R314/R315 并列值 = **已实测**；这些事实之间的对应关系、以及 `mui_DispBlock OK` 判据与逐指令差异的关系 = **未建立，不写结论**；R312 gdb 打印的 0 = 无效作废；真机行为 = 无证据。
+2. 本轮只做读数与逐字对照，未作因果判断、未修改产品源码。
+3. R312「gdb 路径关闭」的适用范围更正：关闭的是多次 `continue` / 条件断点 / `interrupt` 方案；**单次普通断点 + 一次 `continue`** 在本轮两侧均 `GDB_RC=0` 命中，作为可用读数通道保留。
+
+### 下一步待办（单线，不扩散）
+
+1. 取 `mui_DispBlock` 内部每次 `memcpy` 的运行时实参（`dst` 行偏移、`len` 宽度）逐次读数，与 `item[1] x0=104 y0=132 x1=676 y1=570` 及 R315 的 `y=569 x=675` 逐字对照；仍只报读数。
+2. 依据 factory 机器码逐条核对 `src/proprietary/mui/FUN_00014508_mui_DispBlock.c` 的重建实现（Ghidra 一手证据），有确定依据后才改 `src/`；无依据则不改。
+3. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
+4. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
