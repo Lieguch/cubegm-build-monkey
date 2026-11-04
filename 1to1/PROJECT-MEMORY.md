@@ -7686,3 +7686,61 @@ B6 `b5449dc5 vs b5449dc5` / B6A `dfdaf563 vs ffc51130` / B6R `3072 vs 3072` / �
 | ④ **实体机验收** | 用户换卡复测：0.2–0.4s 闪重启是否消失 | **是（唯一最终判据）** |
 
 ⇒ 任何结论只能写到「③ 已取证」；**④ 未发生前禁止宣称「闪重启已修复」**。
+#### L. R306（2026-11-03/04）—— Rule A 固化为 CI 硬门禁 + 三项方法论根治 + **CNB 工作区泄漏 3h52m 自曝** + 算力路线切 InstaBox
+
+##### L.1 交付
+
+| 项 | 值 |
+|---|---|
+| 提交 | `2d36a14bbe828907633dbcdee328840a78709604` |
+| 新 step | `s54`「Rule A 门禁（malloc 家族尺寸实参取自未初始化局部）★ 硬门禁」 |
+| `1to1-verify` run `41647626724` | **success**（Rule A step PASS：受检 TU=214（豁免 0）、命中 TU=0 / 点数 0） |
+| 门禁总账 | 「步骤总数 54 / 失败 0 步 / ✓ 全部步骤 success」 |
+| `rkgame-rebuild` run `41647626706` | **success** |
+| `1to1-qemu-behav` run `41647626689` | **failure = 既有红 B6A，零回归**（判据行见 §0.51 K / PROGRESS R306 §4） |
+
+台账入口：`tools/rule_a_pending.txt`（0 项）、`tools/rule_a_skip.txt`（0 项）——
+fail-closed 唯一出口是台账+豁免，**没有"忽略"动作**。
+
+##### L.2 ★★★ 新纪律（跨项目适用，写进"不要重复"）
+
+1. **★★★ 任何靠编译诊断做判据的仪器，每次运行必须用全新 `ZIG_GLOBAL_CACHE_DIR`。**
+   zig 磁盘缓存**命中时不重放 warning** ⇒ 同一 TU 第二次编译输出 0 行 ⇒ 看起来像"编译器不报"。
+   CNB 云开发是长驻实例（缓存跨轮次存活，实测 `/root/.cache/zig` 83 MB）⇒ 地面真值可被污染。
+   这是本项目踩过的**最隐蔽假绿源**，比"误加断点"危险得多：它污染的是"真值"本身。
+2. **地面真值树必须取「修复提交的 parent」，不得用陈旧镜像。** 本轮真值 = `ad13c99b` = parent(`c4caceed4a36`)。
+3. **比较两树前先对齐目录层级**（GitHub 仓根有 `1to1/`，CNB 镜像根即 1to1 内容）——
+   此前一切"伪差异"皆源于 `cd` 层级不同。
+4. **GitHub Actions step `id` 必须唯一**（`s52` 已被「抓取 bootlin63」占用 ⇒ 新门禁用 `s54`）；
+   重复 id 会让 `toJSON(steps)` 结构异常、总账引用歧义。
+5. **推送脚本必须拒绝未知参数**（`tools/push_1to1.py` `--help` 曾直接执行推送，
+   白跑两轮 CI ⇒ 已工具层根治：`--help` 只打印用法、未知参数 SystemExit(2)）。
+
+##### L.3 ★★★ CNB 工作区泄漏 3h52m —— 自曝与机械补救
+
+| 项 | 事实 |
+|---|---|
+| 工作区 | `cnb-akg-1k6gf9r99`（`lieguch/cubeGM`，10:29:47Z 创建） |
+| 泄漏 | `duration=13959387` ms ≈ **3 h 52 min** |
+| 关闭方 | **用户手动关闭**（我先没关） |
+| 现有纪律 | §R203「今后纪律」第 1/3 条**一条都没执行** |
+
+**病因不是记忆，是没把"关工作区"当成本轮任务。**「用完立即停」「收尾自查 running=0」早就写着，
+但收尾清单里没有它 ⇒ 每次都是用户发现。**机械补救：每轮收尾清单第 0 项 = 关算力**
+（CNB：`cnb workspace workspace-stop --sn <sn>`；InstaBox：`ibx_gmail.sh suspend`），
+且**用脚本代劳，不依赖我记得**。
+
+##### L.4 算力路线切换（用户 2026-11-04 11:52 指令：**暂停 CNB 云开发，改用 InstaBox**）
+
+| 项 | 值 |
+|---|---|
+| 新密钥 | `ibk_waygry…` → `~/.config/instabox/key.gmail`（0600）；旧账号 key 备份 `key.test.keep`（**不覆盖**） |
+| 机器 | `m_agqzan6cwfm6xzdhptjslezw3u`（name=`gmail`），`instabox-gmail`；Debian 13 trixie / kernel 6.18.54 / 4vCPU/8GiB/`/data` 20 GiB |
+| **自动暂停** | **1800 s** ⇒ 用完必须 `suspend`（这就是新的"关工作区"） |
+| 单条 exec | ≤600 s ⇒ 长任务 `setsid nohup` + 日志文件 |
+| helper | `~/.workbuddy/user-*/bin/ibx_gmail.sh`（账号/key 与旧机隔离，用法同 `ibx.sh`） |
+
+CNB 镜像滞后（R259 起 46 轮）**不迁移**：直接从 GitHub main 拉，避免把陈旧态带过来。
+
+> **待办分层**：① 真机复测（用户侧，唯一最终验收）② InstaBox 工具链 bootstrap
+> ③ B6A 逐帧对拍（转 InstaBox）④ R306 文档 push ⑤ CNB 暂停中（待通知）。

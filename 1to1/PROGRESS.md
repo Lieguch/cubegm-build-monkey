@@ -13258,3 +13258,129 @@ round 4~11 未开 000.dat 却同窗死亡，正是它证伪了 R300。
 - `_judge_behav_diff.py` 的 BASES 加入第 4 份 CI 原文（`report/_r305_cnb/ci_run41553016828_joblog.txt`），
   标签由「三方」改为"N 方"（自动计数）⇒ 后续轮次新增基线不再漏改标签。
 - 新增留档文件：`report/_r305_cnb/ci_run41553016828_log.txt`（zip 原样）+ `…_joblog.txt`（解出 202,120 B）。
+
+> 追加前 `old_intact=True`（旧文 1015464 B / sha 14eaa0f5b2dc531e…）；由 `tools/append_progress.py` 原子追加。
+## R306（2026-11-03/04）—— Rule A 固化 CI 硬门禁 + 三项方法论根治；**CNB 工作区泄漏 3h52m 自曝** + 算力路线切至 InstaBox
+
+> 触发：用户指令「完成收尾阶段，二进制可直接替代原厂 rkgame」+ 「以 PROGRESS.md 为唯一依据，
+> 集中批量工具调用」。收敛过程中用户两次纠正：① 批评 CNB 工作区未及时关闭（浪费 3h52m）；
+> ② 指示**暂停 CNB 云开发路线，改用 InstaBox 云主机跑 QEMU**（新密钥、新机器）。
+
+### 1. Rule A 已成 CI 硬门禁（新 step `s54`，实测 PASS = 铁证）
+
+| 项 | 值 |
+|---|---|
+| 提交 | `2d36a14bbe828907633dbcdee328840a78709604`（2 文件：`1to1-verify.yml` +30/-0、`tools/scan_rule_a.py` +57/-9） |
+| 新 step | `s54`「Rule A 门禁（malloc 家族尺寸实参取自未初始化局部）★ 硬门禁」 |
+| run `41647626724` `1to1-verify` | **success**；step 11（Rule A）outcome=**success** |
+| 门禁总账（s42） | 「步骤总数（去掉收尾类）：**54**」「**失败 0 步** ⇒ ✓ 全部步骤 success」 |
+| run `41647626706` `rkgame-rebuild` | **success**（构建产物已入 artifacts 分支） |
+| run `41647626689` `1to1-qemu-behav` | **failure** = **既有红 B6A，零回归**（见 §4） |
+
+Rule A step CI 原文（铁证，`log_41647626724` step 11）：
+
+```
+== 自证 ==
+  正向样本命中: [(3,65,'ze_z_1',...), (4,64,'ze_z_2',...)]
+  负向样本命中: []
+  形态分离样本命中: []
+  正/负/形态分离 全部符合预期 ⇒ 仪器可信
+== 全树扫描 ==
+  受检 TU=214（豁免 0）；Rule A 命中 TU=0，命中点数 0
+Rule A 门禁：PASS（命中 0 点，全部已在台账内）
+```
+
+- 台账/豁免入口：`tools/rule_a_pending.txt`（**当前 0 项**）、`tools/rule_a_skip.txt`（**0 项**）。
+  fail-closed 出口只有台账与豁免，**没有"忽略"这个动作**。
+- 总账下界由 `ci_gate_summary.py::_derive_min_steps()` 反数 `1to1-verify.yml` 的 `id: s\d+` 个数减 1
+  ⇒ 加/删 step **自动跟随**，不会漂移（55 id ⇒ 下界 54，本轮实测吻合）。
+
+### 2. 三项方法论根治（比"门禁挂上"更重要）
+
+**2.1 最隐蔽假绿源：zig 磁盘缓存命中时不重放 warning**
+zig 命中缓存时**不重放编译诊断** ⇒ 同一 TU 第二次编译输出 **0 行** ⇒ 看起来像"编译器不报该缺陷"。
+CNB 云开发 workspace 是长驻实例（`/root/.cache/zig` 积 83 MB），缓存跨轮次存活 ⇒ 地面真值一度被污染成
+「修复前树也 0 命中」。**根治：任何靠编译诊断做判据的工具，每次运行必须用全新 `ZIG_GLOBAL_CACHE_DIR`**
+（扫描器内部 `tmpdir/zigcache`；CI step 再 `export ZIG_GLOBAL_CACHE_DIR="$RUNNER_TEMP/zigcache_rule_a"` 双保险）。
+
+**2.2 地面真值树必须取"修复提交的 parent"**
+正确的是 `ad13c99b` = parent(`c4caceed4a36`)，**不是** CNB 镜像（停在 R259，代码形态已变）。
+`c4caceed4a36` 只改 7 文件，其中 3 个正是那 3 处 Rule A ⇒ 零歧义。
+
+**2.3 之前一切"main vs parent 伪差异"的根因 = 目录层级**
+GitHub 仓根有 `1to1/` 子目录（`git ls-files` 计 `1to1/src/` 1070 条）；CNB 镜像根**就是** 1to1 内容
+⇒ 两边 `cd` 层级不同 ⇒ 「main 零输出 vs parent 6 条 warning」的对比**完全无效**（两树 blob 实测同一 sha）。
+
+### 3. CI 监控到 closure（三个 run 全结束）
+
+`head_sha=2d36a14bbe82` ⇒ 3 run：`41647626689`（qemu-behav）、`41647626706`（rebuild）、`41647626724`（verify）。
+本轮无需任何修复动作 —— 门禁一次通过、无失败 step。**监控成本 = 6 次 API 调用**（对比：此前对 `--help` 误推
+白跑两轮 CI）。
+
+### 4. qemu-behav 红灯定性：继承态（与 R305f 逐字一致）
+
+| 判据行 | R305 CI 原文（`41553016828`） | 本轮（`41647626689`） | 判定 |
+|---|---|---|---|
+| B6 `frame_hash` | FAIL `b5449dc5 vs b5449dc5` | FAIL `b5449dc5 vs b5449dc5` | **逐字一致** |
+| B6A `frame_hash_abi` | FAIL `dfdaf563(1280x720x2560) vs ffc51130` | 同 | **逐字一致** |
+| B1/B3/B4/B5/B6R/B7/B8a/B8b | 全 PASS | 全 PASS | 同 |
+| 门禁结果 | FAIL (2 项) | FAIL (2 项) | 同 |
+
+⇒ 本轮未改任何 `src/**` ⇒ 红灯 **100% 继承态**，B6A 归入长期线（云开发逐帧对拍，现转 InstaBox）。
+
+### 5. s09（调用点缺原型扫描）怀疑被实测证伪
+
+早前把「FileNotFound + 零诊断」当 s09 假绿。本轮实测：zig 0.16.0 下 `-fsyntax-only` **rc=1 但输出 48 行
+真实诊断**（rc=1 源于原型缺失以 error 形式出现）；scan_implicit_decl.py 正/负样本自证均过，扫 214 个 .c
+命中 0 个缺原型。**s09 有效，非假绿** —— 早前结论同样是"缓存/路径类假象"，与 §2.1 同源。
+
+### 6. **自曝：CNB 工作区泄漏 3h52m（用户 2026-11-04 11:52 批评，已手动关闭）**
+
+| 项 | 事实 |
+|---|---|
+| 工作区 | `cnb-akg-1k6gf9r99`（`lieguch/cubeGM`） |
+| 创建 | 2026-11-03T10:29:47Z |
+| 泄漏时长 | `duration=13959387` ms ≈ **3 h 52 min** |
+| 关闭方 | **用户手动关闭**（`status: closed`） |
+| 我的动作 | **全程未执行 `cnb workspace workspace-stop`** |
+
+**病因（对 PROJECT-MEMORY §R203「今后纪律」五项逐条比对 —— 一条都没执行）**：
+① 判据验证跑完后没有"当轮立即停"；② 没有收尾自查（`list-workspaces | grep running` 应为 0）；
+③ 把"推 CNB 是免费动作"的旧认知又搬回来当理由。**不是记忆丢失，是没把"关工作区"当成收尾任务本身**。
+**机械补救（新增）**：每轮收尾清单现在有第 0 项「查 `cnb workspace workspace-stop` / InstaBox `suspend`」，
+且**用脚本代劳**——不再依赖我记得。
+
+目前全库 `running` 工作区 = **0**（5 页全查，实验留档）。CNB 云开发路线**按用户指令暂停**，待通知恢复。
+
+### 7. 算力路线切换：CNB 云开发 → InstaBox（用户 2026-11-04 11:52 指令）
+
+| 项 | 值 |
+|---|---|
+| 新账号密钥 | `ibk_waygry…`（已存 `~/.config/instabox/key.gmail`，0600；旧账号 key 备份为 `key.test.keep` 不覆盖） |
+| 机器 | `m_agqzan6cwfm6xzdhptjslezw3u`（name=`gmail`），`instabox-gmail`，**running** |
+| 规格 | 4 vCPU / 8192 MiB / `/data` 20 GiB（16 GiB 可用）/ 模板 `agent-browser` 2026-10-29.18（Debian 13 trixie，kernel 6.18.54） |
+| 自动暂停 | **1800 s**（空闲 30 分钟）⇒ **用完必须 `suspend`**，这是新的"关工作区" |
+| 单条 exec | ≤600 s ⇒ 长任务 `setsid nohup` 后台 + 日志文件 |
+| 项目专用 wrapper | `~/.workbuddy/user-*/bin/ibx_gmail.sh`（与旧账号 key 隔离，用法同 `ibx.sh`） |
+
+**待装**（bootstrap 后台跑）：`qemu-user qemu-user-static gcc-arm-linux-gnueabihf` + `pip ziglang`
++ clone `Lieguch/cubegm-build-monkey` 到 `/data/workspace/rkgame-1to1`。
+本地临时缓存与远端 CNB 快照（R259 起 46 轮滞后）**不迁移**——直接从 GitHub main 拉，避免把陈旧态带过来。
+
+### 8. 新的下一步待办（按优先级）
+
+| # | 待办 | 现状 / 判据 |
+|---|---|---|
+| 1 | **真机复测**（用户侧）：0.2–0.4s 闪重启是否消失 | 唯一最终验收；交付物 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b861…` |
+| 2 | InstaBox 装上 `qemu-user` + 后续判据验证全部走它 | bootstrap 进行中；CNB 暂停 |
+| 3 | B6A 长期线：云主机逐帧对拍 | 转 InstaBox；`1to1-qemu-behav` 红灯仍为 FAIL(2) |
+| 4 | 本轮 R306 段 + PROJECT-MEMORY §0.51 后续更新，Git push 同步 | 本段即；注意 `1to1/tools/*.md` 会触发 CI，须带 `_` 前缀 |
+| 5 | CNB 镜像滞后（R259 起） | CNB 暂停，待通知；不补 |
+
+### 9. 分层标注（结论 / 推断 / 无证据）
+
+- **已实测**：CI 三 run 终态与判据行原文；Rule A step PASS；zig 缓存命中不重放 warning；
+  s09 在 zig 0.16.0 下有 48 行真实诊断；工作区 3h52m 泄漏；InstaBox 工具缺口（无 qemu/无 zig）。
+- **未实测的推断**：InstaBox `libc6-dev-armhf-cross` 是否足够跑 `qemu-arm` 静态/动态加载（待 bootstrap 验证）。
+- **无证据**：B6A `frame_hash_abi` 差异的真实成因（两侧均未观测到像素，属"没测到"而非"不一致"）——
+  这正是必须转真机/逐帧对拍的原因，不接受用"看起来差不多"替代。
