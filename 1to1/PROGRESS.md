@@ -13538,3 +13538,42 @@ InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: 
 3. 同步监控 1ea290c25cc1 / aac80c198e3f 的 run 到终态。
 4. 收尾第 0 项：`bash tools/_close_compute.sh` ⇒ suspend InstaBox + 自查 CNB running=0。
 5. 真机复测（用户侧，唯一最终验收）：交付件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`。
+
+> 追加前 `old_intact=True`（旧文 1038391 B / sha f399d8514be2f743…）；由 `tools/append_progress.py` 原子追加。
+## R308（2026-11-04）QEMU 设备原厂启动链验证 —— 「启动链日志完美」门槛的实测结论
+
+### 日期
+
+2026-11-04（R307 之后；用户补充定义「QEMU 原厂启动链 = QEMU 模拟设备备份出来的设备原厂启动链」）
+
+### 完成事项
+
+1. **全量读取 `PROGRESS.md`** 并机械解析：1,038,391 B / 13,540 行 / 118 轮 / 142 处「下一步待办」，最后一轮 R307 的 5 项待办逐条核对。
+2. **R307 闭环**：提交 `0c0e8e5fabf3` 三 run 全部终态 —— `1to1-verify` success、`rkgame-rebuild` success、`1to1-qemu-behav` failure（既有红 B6/B6A，零回归），其中**帧采集步 step 13 历史首次 success**。InstaBox 负对照 `CGM_STATE_RANGE=3af000,3e1000` ⇒ 传输边界守卫 `NEGCTL_RC=13`（响亮打印 offending 串）；正式双 env 采集三侧帧各 1,843,200 B、状态快照各 204,816 B（16 B 头 + 204,800 B 满血）。`factory↔control` 差异 **0 / 921600**（16 条带全 SAME、中心相同率 100%）⇒ 采集确定性成立；`factory↔rebuild` 差异 **666855 / 921600 = 72.3584%** ⇒ 真实渲染差异（B6A 首个帧级证据）。
+3. **按用户澄清建立「QEMU 设备原厂启动链」验证线**：`tools/bootchain.sh` = qemu-system-arm `-M virt` + 设备备份 `rootfs.sqsh`（`/sbin/init`→`rcS`→`S80icube`→`icube`→`driver.so`→`rkgame`）+ 真 virtio-gpu / snd-dummy；内核按脚本注释 E 用 Alpine `vmlinuz-lts` 替身（`-M virt` 无 RK3036 机器模型）。原厂资产 4 件 sha256 与本地逐字一致（`rootfs.sqsh 6f8412c7…`、`driver.so 16bbf93d…`、`icube d26f900d…`、`rkgame 8ff3b4b7…`）。
+4. **按 InstaBox 官方指引重做上传下载**（用户指令）：查 `instabox.sh/docs/api/commands.md` + `/v1/openapi.json`，改用 `PUT /v1/machines/{id}/files?path=<abs>&parents=true --data-binary @file`（≤5 GiB，返回 sha256）与 `GET .../files/content`（任意大小）。弃用自造 `ibx put`（exec 塞 base64）：实测 32 KiB 可过、**128 KiB 即 400 Bad Request**、2.8 MiB SIGTERM；官方 PUT 一次成功 2,176,907 B，`sha256=0bdf7b04…` 与本地逐字一致。新增 `tools/_instabox_io.sh` 封装官方 put/get/info，双向 sha256 校验（helper 自身两处 bug：`%2F` 编码、MSYS 路径污染 `safe="/"`，均按官方「裸绝对路径」根治并实测复通）。
+5. **仪器五处根修**（`tools/fetch_kmods.sh` + `tools/bootchain.sh`，累计 diff 58 插入 / 11 删除）：
+   - `KV` 硬编码 `6.12.110-0-lts` ⇒ **机械探测** modloop 解出的 `*-lts` 目录名（官方 netboot 已于 2026-10-21 升 `6.12.114-0-lts`）；旧值会让 `find` 失败 exit 13，且 `modprobe` 按 `uname -r` 找不到模块。实测 2449 个 `.ko` 落位。
+   - **模块落位顺序根修**：原第 3 节放模块、第 4 节 `rm -rf "$V/rootfs"` 再解包 ⇒ 模块被整目录删除（两个运行目录实测 `/lib/modules` 均不存在）。改为解包在前、模块在后，并加 `.ko < 100 ⇒ exit 15` fail-closed。
+   - **补齐设备备份原厂 SD 资源** `golden/sdcard_min/` 16 件（沙箱共 18 件）；修前 `open config.xml fail!` ×23，修后消失。
+   - `modprobe` 去掉 `2>/dev/null` 静默吞错，新增 virtio devices / lsmod / dmesg 诊断；错误原文 `can't change directory to '/lib/modules'` ×10 由此暴露。
+   - **判据去假绿**：`hit "★ 真实 DRM 设备"` 原用 `/dev/dri` 字面 ⇒ 被 `cmdmod: --- /dev/dri ---` 这行文本命中（旧基线假绿 ✓1）；改 `card0|Initialized virtio_gpu`。新增「rkgame 单次启动」硬判据（>1 即反复重启）。
+6. **原厂基线③ vs 重建侧 A/B 对照**（各 60 s，`CGM_BOOTCHAIN_DIR` 隔离）：
+   - 真设备全就位：`[drm] Initialized virtio_gpu 0.1.0 for a003e00.virtio_mmio on minor 0`、`/dev/dri/card0 (226,0)`、`/dev/snd/{controlC0,pcmC0D0c,pcmC0D0p}`、`/sys/class/drm/{card0,card0-Virtual-1,renderD128}`、lsmod virtio_gpu/drm 全加载、真 DRM 调用 ✓21/✓24。
+   - 判定逐项：内核 ✓1/✓1、initramfs ✓1/✓1、rcS ✓2/✓2、S80icube ✓1/✓1、icube dlopen ✓7/✓8、真 DRM 设备 ✓4/✓4、rkgame 打开 DRM ✓7/✓8、真 DRM 调用 ✓21/✓24、真声卡 ✓1/✓1、主循环 ✓14/✓16、**仍存在失败点 ✓28/✓32**、**单次启动 ·7/·8**。
+   - 两侧**同一崩溃签名**：`open drm!` → `DRM_IOCTL_MODE_CREATE_DUMB failed ret=-1`（每轮 ×3）→ `Unknown format 875713089` → `double free or corruption (fasttop)` → `rkgame v1.42` 重启。计数差来自 60 s 窗口内调度次数，非代码差异。
+7. **红线遵守**：仅替换云端沙箱工作副本 `bootchain/assets/sdcard/rkgame` 为 `d34316b1…`，跑完回退至 `8ff3b4b7…` 并校验；本地 `D:\output\rkgame-1to1\bootchain\assets\` 原封不动。
+
+### 新发现与决策
+
+1. **「启动链日志完美」在 QEMU 内不可达**（已实测 + 上游核实）：崩的是**原厂二进制自身**，不是重建产物。联网核实：QEMU 官方 virtio-gpu 文档仅要求 guest `CONFIG_DRM_VIRTIO_GPU`；Linux `drm/virtio` 的 `DRM_IOCTL_MODE_CREATE_DUMB` 只给 size 不给 format（上游 `drm/virtio: Defer the host dumb buffer creation` patch 才处理），render node 上 flags=0 还会被 `drm_ioctl_permit()` 拒；`DIAG-RUNBOOK.md` §10.4 早已把「真 DRM 语义」列为 qemu 结构性限制。⇒ **按用户门槛，不交付 CI 构建版本供验收**（`仍存在失败点 28/32`、重启 7/8），不静默放宽判据。
+2. **B6A 帧差异根因方向**（已实测的差分数据 + 未定位到函数的推断）：`[6] 颜色映射集中度 42/42`，最高频 8 组映射全为 `factory 颜色 → 0x0000`（如 `0x19e8 (n=256) -> 0x0000(256)`），`[5] 中心区逐像素相同率 100%` ⇒ 重建侧**外围背景像素未绘制**（局部块差异，非全图毁坏）。对照端 0 差异排除采集随机性。**分层标注：颜色映射数据 = 已实测；「背景未绘制」归因到具体函数 = 未实测，下一轮定位。**
+3. **铁律冲突需用户裁决**：原目标「完成收尾、产物可直接替代原厂 rkgame」 vs 新门槛「启动链日志完美才用 CI 构建版本供验收」；QEMU 内后者不可达 ⇒ 不得静默违反，须显式协商判据（见待办 1）。
+4. 分层总账：**已实测** = 官方上传端点/顺序根修/真设备就位/两侧同签名/帧对拍；**推断** = 计数差来自调度、B6A 背景未绘制归因；**无证据** = 真机行为（唯一最终验收仍待用户换卡）。
+
+### 下一步待办
+
+1. **用户裁决「启动链完美」判据**：(A) 采用 user-mode + 三桩路径的 `M0–M7 全 ✓ / 两侧差集空 / exit=124 存活`（R297 `report/QEMU-BOOTCHAIN.md` 已证），但仍须修完 B6A 帧差异才交付；(B) 坚持 system-mode 真 DRM 链零失败 ⇒ QEMU 内不可达，只能真机。
+2. **B6A 主线（可修的产品缺陷）**：用 `_b6a_pixel_diff.py` 的 bbox + 16 条带哈希定位「`factory 颜色 → 0x0000`」对应的绘制函数/数据表，根修后重跑帧对拍至 `factory↔rebuild` 差异收敛；对照端必须保持 0 差异。
+3. 推送本轮 3 个工具 + R308 记录；`bash tools/_close_compute.sh` 收口算力（suspend InstaBox + 自查 CNB running=0）。
+4. 真机复测（用户侧，唯一最终验收）：交付件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`；观察 0.2–0.4 s 闪重启是否消失。

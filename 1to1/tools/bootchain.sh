@@ -53,14 +53,25 @@ if [ ! -s "$V/vmlinuz" ]; then
 fi
 echo "  vmlinuz = $(stat -c%s "$V/vmlinuz") B  [0x24]=$(od -An -tx1 -j36 -N4 "$V/vmlinuz"|tr -d ' ')（期望 18286f01）"
 
-echo "########## 3) 真实内核模块（DRM/声卡/输入）##########"
-sh "$ROOT/tools/fetch_kmods.sh" "$V/rootfs/lib/modules" 2>&1 | sed 's/^/  /'
-
-echo "########## 4) 解原厂 rootfs ##########"
+echo "########## 3) 解原厂 rootfs（★必须先于模块落位）##########"
 if [ ! -d "$V/rootfs/bin" ]; then
   rm -rf "$V/rootfs"
   unsquashfs -q -no-xattrs -d "$V/rootfs" "$A/rootfs.sqsh" > "$V/unsq.log" 2>&1
   echo "  rc=$? 条目=$(find "$V/rootfs" 2>/dev/null | wc -l)"
+fi
+
+echo "########## 4) 真实内核模块（DRM/声卡/输入）##########"
+# ★★ R308 顺序根修：原顺序把模块放在**解包之前**，而解包第一步是 `rm -rf "$V/rootfs"`
+#   ⇒ 2449 个 .ko 被整目录删掉 ⇒ guest 里没有 /lib/modules ⇒ modprobe 全失败
+#   （实测 `modprobe: can't change directory to '/lib/modules': No such file or directory` ×10）
+#   ⇒ 真 virtio-gpu / snd-dummy 设备全部缺失 ⇒ `cannot find/open a drm device`、rkgame 反复重启。
+#   ⇒ 模块必须**在 rootfs 解包之后**落位，并 fail-closed 校验，禁止把仪器故障当成环境属性。
+sh "$ROOT/tools/fetch_kmods.sh" "$V/rootfs/lib/modules" 2>&1 | sed 's/^/  /'
+_KO=$(find "$V/rootfs/lib/modules" -name '*.ko' 2>/dev/null | wc -l)
+echo "  落位校验：$V/rootfs/lib/modules 共 $_KO 个 .ko"
+if [ "$_KO" -lt 100 ]; then
+  echo "  ★★ 内核模块未落位（<100 个 .ko）⇒ 真 DRM/声卡必然缺失，fail-closed"
+  exit 15
 fi
 
 echo "########## 5) 铺 SD + 新增 S00cgmmod ##########"
@@ -69,12 +80,23 @@ mkdir -p "$V/rootfs/proc" "$V/rootfs/sys" "$V/rootfs/tmp" "$V/rootfs/run" \
          "$V/rootfs/mnt/sdcard/cubegm/lib"
 cp -a "$A/sdcard/." "$V/rootfs/mnt/sdcard/cubegm/" 2>/dev/null
 chmod +x "$V/rootfs/mnt/sdcard/cubegm/icube" "$V/rootfs/mnt/sdcard/cubegm/rkgame" 2>/dev/null
+# ★★ R308：原厂启动链需要**完整 SD 卡资源**，不只是 3 个可执行文件。
+#   实测事故：只铺 icube/rkgame/driver.so ⇒ guest 反复 `open config.xml fail!`、
+#   `cannot find/open a drm device`，`rkgame v1.42` 重启 19+ 次 ⇒ 启动链日志不完美。
+#   golden/sdcard_min/ 是设备备份出来的原厂资源（16 件，MANIFEST.sha256 可校验）。
+if [ -d "$ROOT/golden/sdcard_min" ]; then
+  cp -a "$ROOT/golden/sdcard_min/." "$V/rootfs/mnt/sdcard/cubegm/" 2>/dev/null
+  echo "  已铺原厂 SD 资源：$(find "$V/rootfs/mnt/sdcard/cubegm" -type f | wc -l) 个文件"
+else
+  echo "  ★★ 缺 golden/sdcard_min ⇒ 原厂启动链资源不完整，禁止继续"
+  exit 14
+fi
 cat > "$V/rootfs/etc/init.d/S00cgmmod" <<'EOS'
 #!/bin/sh
 # ★ 本项目新增（不是原厂文件，红线遵守）。真机上这些驱动由内核 built-in 提供；
 #   本沙箱加载**同版本内核的真实模块**，让 rkgame 面对真实的 DRM/声卡/输入设备。
 log() { echo "cmdmod: $*"; }
-ld() { modprobe "$1" 2>/dev/null; }
+ld() { echo "cmdmod: modprobe $1"; modprobe "$1" 2>&1 | sed 's/^/cmdmod:   /'; }
 case "$1" in
   start)
     mount -t devtmpfs devtmpfs /dev 2>/dev/null
@@ -92,6 +114,9 @@ case "$1" in
     log "--- /dev/dri ---";  ls -l /dev/dri 2>/dev/null
     log "--- /dev/snd ---";  ls   /dev/snd 2>/dev/null
     log "--- /sys/class/drm ---"; ls /sys/class/drm 2>/dev/null
+    log "--- virtio devices ---"; ls /sys/bus/virtio/devices 2>/dev/null
+    log "--- lsmod ---"; lsmod 2>/dev/null | head -20
+    log "--- dmesg virtio/drm ---"; dmesg 2>/dev/null | grep -aiE "virtio|drm|gpu" | tail -15
     ;;
 esac
 exit 0
@@ -121,12 +146,20 @@ hit "initramfs 解包成功"    "Run /sbin/init as init process"
 hit "rcS 跑起来"            "Starting logging|Starting network"
 hit "S80icube 被拉起"       "Starting icube"
 hit "icube dlopen 成功"     "open driver.so sucess"
-hit "★ 真实 DRM 设备"       "/dev/dri|Initialized virtio_gpu"
+hit "★ 真实 DRM 设备"       "card0|Initialized virtio_gpu"
 hit "★ rkgame 打开 DRM"     "open drm!"
 hit "★ 真实 DRM 调用"       "DRM_IOCTL|drmMode"
 hit "★ 真实声卡"            "controlC|pcmC0D0"
 hit "rkgame 主循环"         "MemFree|MemTotal"
 hit "仍存在失败点"           "failed ret=|cannot find|Segmentation|abort|corruption"
+# ★ R308：原厂基线实测 `rkgame v1.42` 19+ 次 ⇒ icube 守护循环反复拉起崩溃的 rkgame，
+#   这是最容易被"看起来跑起来了"掩盖的失败。单次启动才叫启动链完美。
+_rc=$(grep -ac "rkgame v" "$V/boot.log" 2>/dev/null)
+if [ "${_rc:-0}" -eq 1 ]; then
+  echo "  ✓ [ 1] rkgame 单次启动（无重启）"
+else
+  echo "  · [${_rc:-0}] rkgame 单次启动（>1 ⇒ 反复重启，启动链不完美）"
+fi
 echo
 echo "  --- 去重后的关键段 ---"
 grep -aE "cmdmod: ---|Starting |open driver.so|video_driver|open drm|rkgame v|DRM_IOCTL|failed ret|Unknown format|corruption|Initialized virtio_gpu|MemTotal" \

@@ -7822,3 +7822,35 @@ Debian 13 实测 `elftools OK`（装进 user site）rc=0。
 **推送前隐患排除**：本地 `build/rkgame.rebuilt.elf`（`60f7c1a0…`）≠ 交付件（`d34316b1…`）；清单 1034 项无 `build/` + 远端 `1to1/build` contents 404 ⇒ 双向证实无污染路径。远端 golden/factory.rkgame.bin 完整。
 
 **待办**：推送（触发 3 run，帧步首次真跑）⇒ InstaBox 重编 shim + 帧采集 + 两组像素对拍（B6A 首个帧级证据，**未取得，不预填**）⇒ 监控 1ea290c25cc1 / aac80c198e3f 到终态 ⇒ `_close_compute.sh` 收口 ⇒ 真机复测（用户侧唯一最终验收）。
+
+#### O. R308 —— QEMU 设备原厂启动链验证：「启动链日志完美」门槛的实测结论
+
+**用户新门槛**：用 QEMU 模拟设备备份出来的**设备原厂启动链**验证本项目产物；**只有启动链日志完美时才使用 CI 构建版本供用户验收**。
+
+**结论（不交付）**：原厂二进制自身在真 virtio-gpu 上崩溃重启 ⇒ QEMU 内该链**不可达完美** ⇒ 按门槛不交付 CI 构建版本；不静默放宽判据，须用户显式裁决。
+
+**链**：`tools/bootchain.sh` = qemu-system-arm `-M virt` + 设备备份 `rootfs.sqsh`（`/sbin/init`→`rcS`→`S80icube`→`icube`→`driver.so`→`rkgame`）+ 真 virtio-gpu/snd-dummy；内核按注释 E 用 Alpine `vmlinuz-lts` 替身。原厂资产 4 件 sha256 与本地逐字一致。
+
+**★★ InstaBox 官方上传下载（用户点名，必须照做）**：`https://instabox.sh/docs/api/commands.md` + `/v1/openapi.json` ⇒
+- `PUT /v1/machines/{id}/files?path=<裸绝对路径>&parents=true --data-binary @file`（≤5 GiB，返回 sha256；实测 2,176,907 B 一次成功，`0bdf7b04…` 与本地一致）
+- `GET /v1/machines/{id}/files/content?path=<abs>`（任意大小）
+- CLI `instabox push/pull`；`exec` 的 `stdin` ≤1 MiB（二进制 base64 ≤768 KiB）
+- **禁用**自造 `ibx.sh put`（exec 塞 base64）：实测 32 KiB 可过 / 128 KiB 即 400 / 2.8 MiB SIGTERM；`INSTABOX.md` §8 早记「~64 KB 命令体 400」。
+- 项目封装 `tools/_instabox_io.sh`（put/get/info，双向 sha256）；两处自身 bug（`%2F` 编码 / MSYS 污染 `safe="/"`）按官方裸路径根治并实测复通。
+
+**仪器五处根修**（`tools/fetch_kmods.sh` + `tools/bootchain.sh`，diff 58+/11-）：
+1. `KV` 硬编码 `6.12.110-0-lts` → 机械探测 modloop 目录名（官方已升 `6.12.114-0-lts`）；2449 个 `.ko`。
+2. **顺序根修**：原第 3 节放模块、第 4 节 `rm -rf "$V/rootfs"` 解包 ⇒ 模块全删（两运行目录实测 `/lib/modules` 不存在）⇒ guest `modprobe: can't change directory to '/lib/modules'` ×10。改解包在前 + `.ko<100 ⇒ exit 15` fail-closed。
+3. 补齐 `golden/sdcard_min/` 16 件原厂 SD 资源（沙箱 18 件）⇒ `open config.xml fail!` ×23 消失。
+4. `modprobe` 去 `2>/dev/null` + virtio/lsmod/dmesg 诊断。
+5. 判据去假绿：`/dev/dri` 字面被 `cmdmod: --- /dev/dri ---` 文本命中 ⇒ 改 `card0|Initialized virtio_gpu`；新增「rkgame 单次启动」硬判据。
+
+**A/B 对照（各 60 s，工作副本替换后回退 sha 校验）**：真设备全就位（`[drm] Initialized virtio_gpu ... minor 0`、`/dev/dri/card0 (226,0)`、`controlC0/pcmC0D0c/pcmC0D0p`）；判定 内核✓1/✓1、真 DRM 设备✓4/✓4、真 DRM 调用✓21/✓24、真声卡✓1/✓1，**仍存在失败点✓28/✓32、单次启动·7/·8**；两侧**同一崩溃签名** `open drm!`→`DRM_IOCTL_MODE_CREATE_DUMB failed ×3/轮`→`Unknown format 875713089`→`double free or corruption (fasttop)`→`rkgame v` 重启。计数差 = 60 s 窗口调度次数，非代码差异。
+
+**上游核实**：QEMU 官方 virtio-gpu 文档仅要求 guest `CONFIG_DRM_VIRTIO_GPU`；Linux `drm/virtio` 的 `CREATE_DUMB` 只给 size 不给 format（上游 `Defer the host dumb buffer creation` patch），render node flags=0 被 `drm_ioctl_permit()` 拒；`DIAG-RUNBOOK.md` §10.4 已列真 DRM 语义为 qemu 结构性限制。
+
+**★ B6A 帧级根因方向**：R307 首取帧证据 —— 三侧帧各 1,843,200 B、状态快照各 204,816 B 满血；`factory↔control` **0/921600**（确定性成立）；`factory↔rebuild` **666855/921600 = 72.3584%**；`[6] 颜色映射集中度 42/42`，最高频映射全为 `factory 颜色 → 0x0000`（`0x19e8(256)->0x0000(256)` 等），`[5] 中心区相同率 100%` ⇒ 重建侧**外围背景像素未绘制**。分层：颜色数据=已实测；归因到具体函数=**未实测，下一轮定位**。
+
+**铁律冲突（须用户裁决，不得静默违反）**：原目标「收尾交付可替代二进制」 vs 新门槛「启动链完美才交付」，QEMU 内后者不可达。选项 A：判据用 user-mode+三桩 `M0–M7 全✓/差集空/exit=124`（R297 已证）但仍须修完 B6A 才交付；B：坚持真 DRM 零失败 ⇒ 只能真机。
+
+**待办**：① 用户裁决判据 ② B6A 定位「颜色→0x0000」的绘制函数/数据表并根修 ③ 推送本轮工具+记录、`_close_compute.sh` 收口 ④ 真机复测（唯一最终验收，交付件 sha `d34316b1…`）。
