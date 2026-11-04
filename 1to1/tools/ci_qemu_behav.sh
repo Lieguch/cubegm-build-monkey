@@ -245,10 +245,28 @@ mk_wrap() {
     #   为什么必须逐个列举：qemu 的 `-E` 不支持通配；不转发的话"宿主设了 CGM_KEY2_SEED"
     #   在 guest 里完全看不到 ⇒ 场景 B 会**静默退化成场景 A**（典型假绿）。
     _ENVS=""
-    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE CGM_ABI_PROBE CGM_ABI_DUMP CGM_STATE_DUMP CGM_STATE_RANGE; do
+    for _v in CGM_SFC_MODE CGM_SHIM_VERBOSE CGM_KEY2_SEED CGM_KEY2_PROBE CGM_KEY2_HOOK CGM_IO_TRACE CGM_FOPEN_CHAIN CGM_SFC_PATTERN CGM_DBGUNZ CGM_INPUT_HEX CGM_INPUT_JS CGM_INPUT_FILL CGM_MMIO_TRACE CGM_MMIO_STRICT CGM_MMIO_MIN_WIDTH CGM_STRCMP_TRACE CGM_FSEEK_TRACE CGM_FREAD_TRACE CGM_ABI_PROBE CGM_ABI_DUMP CGM_STATE_DUMP CGM_STATE_RANGE CGM_STATE_RANGE_START CGM_STATE_RANGE_END; do
         eval "_val=\${$_v:-}"
         if [ -n "$_val" ]; then _ENVS="$_ENVS -E $_v=$_val"; fi
     done
+    # ★★★ R307 **传输边界 fail-closed（rc=13）**：qemu 的 `-E` 用 `strsep(&p, ",")` 把
+    #   逗号当**多变量分隔符**（QEMU v6.2 / v10 源码逐字相同，CI qemu 6.2 与 InstaBox
+    #   qemu 10.0.13 双机实测矩阵一致）⇒ 任何含逗号的值都会被拆成两个变量，第二段无
+    #   `=` ⇒ usage 退出 ⇒ **guest 零启动**，而里程碑全 ✗ 与"没差异"同签名，
+    #   帧采集步 continue-on-error 连告警都没有（B6A 帧级证据正是这样丢了 6 次）。
+    #   ⇒ 不针对任何特定变量：**任何**经 `-E` 转发的值含逗号即就地停止（rc=13，
+    #   与桩缺失的 rc=12、门禁 rc=2/3 互不混淆），把"仪器故障"与"被测差异"彻底分开。
+    #   合法值无一需要逗号（CGM_INPUT_HEX 对非十六进制字符本来就是 continue 跳过；
+    #   CGM_SFC_PATTERN 8 位定长十六进制）⇒ 守卫零误伤。
+    case "$_ENVS" in
+        *,*)
+            echo "★★★★ 传输边界守卫（rc=13）：qemu \`-E\` 转发值含逗号 ⇒ 被 qemu 当多变量分隔符 ⇒ guest 零启动。" >&2
+            echo "  当前转发串：$_ENVS" >&2
+            echo "  含逗号的复合值必须拆成多个独立 env（如 CGM_STATE_RANGE_START/_END）。" >&2
+            echo "  ⇒ fail-closed：禁止把仪器故障伪装成'没差异'。" >&2
+            exit 13
+            ;;
+    esac
     # ★ 场景 C：若已用 tools/build_libkms_stub.sh 造好桩目录，把它并进 guest 的库搜索路径
     #   ⇒ `dlopen("/sdcard/cubegm/driver.so")` 的 DT_NEEDED `libkms.so.1` 才能解析成功。
     #   ★ 目录不存在时**不改** LD_LIBRARY_PATH ⇒ 场景 A/B 完全不受影响（保守）。

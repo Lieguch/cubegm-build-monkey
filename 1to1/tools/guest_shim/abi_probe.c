@@ -81,7 +81,8 @@ static unsigned     g_last_hash;      /* 上次已判定的哈希（变化检测
 static int          g_keyprint;       /* R230：按键状态打印计数（限 30 条）*/
 static char        *g_dump_path;      /* CGM_ABI_DUMP：把首帧原文落盘（NULL=不落盘）*/
 /* ★★★ R294（G1 主体）：**状态快照落盘**。CGM_STATE_DUMP=<path> 时，在首帧触发点
- *   把数据区 [lo,hi) 原样写盘（CGM_STATE_RANGE 可覆盖，十六进制 lo,hi）。
+ *   把数据区 [lo,hi) 原样写盘（R307 起优先用 CGM_STATE_RANGE_START + CGM_STATE_RANGE_END
+ *   两个独立 env；旧格式 CGM_STATE_RANGE=lo,hi 仅作 guest 内 getenv 兼容保留，不得经 qemu `-E` 转发）。
  *   为什么要它：diff_exec 过去只能喂**合成输入**，凡依赖真实运行时状态（菜单模型、
  *   OutRect、字体上下文）的函数一律 DEADEQ/TRUNC ⇒ "判不了"被当成"没问题"。
  *   有了真实快照，任何函数都能用**同一份真实状态**在两侧起跑（G1 的目标）。
@@ -139,10 +140,47 @@ static void abi_probe_init(void)
     g_state_path = getenv("CGM_STATE_DUMP");
     if (g_state_path != 0 && g_state_path[0] == '\0') g_state_path = 0;
     {
-        char *rg = getenv("CGM_STATE_RANGE");
-        if (rg != 0) {
+        /* ★★★ R307：状态范围改走**两个独立 env**（CGM_STATE_RANGE_START / CGM_STATE_RANGE_END）。
+         *   根因：host 经 qemu `-E` 转发时，值里的逗号被 qemu 的 `strsep(&p, ",")`
+         *   当**多变量分隔符**吃掉（QEMU v6.2 / v10 源码逐字相同，CI 与 InstaBox 双机实测）
+         *   ⇒ 第二段无 `=` ⇒ usage 退出 ⇒ **guest 零启动**，而失败在整条链路上**完全静默**
+         *   （帧采集步 continue-on-error 吞掉）⇒ B6A 帧级证据连丢 6 次。
+         *   结构上不能再犯：单个值不含任何分隔符，qemu 无从切分。
+         *   保留 `CGM_STATE_RANGE=lo,hi` 兼容读（guest 内 getenv 不经 qemu `-E`，逗号无害）；
+         *   仅当两个拆分变量都未设置时才回退到它。 */
+        const char *rs = getenv("CGM_STATE_RANGE_START");
+        const char *re = getenv("CGM_STATE_RANGE_END");
+        const char *rg = getenv("CGM_STATE_RANGE");
+        if ((rs != 0 && rs[0] != '\0') || (re != 0 && re[0] != '\0')) {
+            unsigned lo = 0, hi = 0;
+            int ok = 1;
+            const char *s;
+            for (s = (rs != 0) ? rs : ""; *s != '\0'; s++) {      /* 十六进制 lo */
+                unsigned d = (*s >= '0' && *s <= '9') ? (unsigned)(*s - '0')
+                           : (*s >= 'a' && *s <= 'f') ? (unsigned)(*s - 'a' + 10)
+                           : (*s >= 'A' && *s <= 'F') ? (unsigned)(*s - 'A' + 10) : 99u;
+                if (d > 15u) { ok = 0; break; }
+                lo = (lo << 4) | d;
+            }
+            for (s = (re != 0) ? re : ""; *s != '\0'; s++) {      /* 十六进制 hi */
+                unsigned d = (*s >= '0' && *s <= '9') ? (unsigned)(*s - '0')
+                           : (*s >= 'a' && *s <= 'f') ? (unsigned)(*s - 'a' + 10)
+                           : (*s >= 'A' && *s <= 'F') ? (unsigned)(*s - 'A' + 10) : 99u;
+                if (d > 15u) { ok = 0; break; }
+                hi = (hi << 4) | d;
+            }
+            if (ok && hi > lo && (hi - lo) <= (16u << 20)) {
+                g_state_lo = lo; g_state_hi = hi;
+            } else if (!ok) {
+                /* 设置了解析不了 ⇒ 响亮失败（两侧 env 同值 ⇒ 同时同形出现，不影响差分公平）；
+                 * host 侧传输边界守卫（rc=13）才是真正的 fail-closed，这里是 guest 内兜底。 */
+                static const char bad[] =
+                    "[shim] \xe2\x98\x85 CGM_STATE_RANGE_START/END 含非十六进制字符 \xe2\x87\x92 忽略该范围，沿用默认\n";
+                if (write(2, bad, sizeof(bad) - 1) < 0) { /* 告警写失败只能忽略 */ }
+            }
+        } else if (rg != 0 && rg[0] != '\0') {
             unsigned lo = 0, hi = 0; int i = 0;
-            while (rg[i] && rg[i] != ',') {                      /* 十六进制 lo */
+            while (rg[i] && rg[i] != ',') {                      /* 十六进制 lo（兼容旧格式） */
                 unsigned d = (rg[i] >= '0' && rg[i] <= '9') ? (unsigned)(rg[i] - '0')
                            : (rg[i] >= 'a' && rg[i] <= 'f') ? (unsigned)(rg[i] - 'a' + 10)
                            : (rg[i] >= 'A' && rg[i] <= 'F') ? (unsigned)(rg[i] - 'A' + 10) : 99u;
@@ -151,7 +189,7 @@ static void abi_probe_init(void)
             }
             if (rg[i] == ',') {
                 i++;
-                while (rg[i]) {                                  /* 十六进制 hi */
+                while (rg[i]) {                                  /* 十六进制 hi（兼容旧格式） */
                     unsigned d = (rg[i] >= '0' && rg[i] <= '9') ? (unsigned)(rg[i] - '0')
                                : (rg[i] >= 'a' && rg[i] <= 'f') ? (unsigned)(rg[i] - 'a' + 10)
                                : (rg[i] >= 'A' && rg[i] <= 'F') ? (unsigned)(rg[i] - 'A' + 10) : 99u;

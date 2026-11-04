@@ -13,9 +13,20 @@ shim 的状态快照按 `CGM_STATE_RANGE=lo,hi` 一次性 `write()` 整块。
 取两侧 **PT_LOAD(RW) 且 p_vaddr 落在低地址数据区（< 0x600000）** 的区间，
 求交集，再向页内取整（lo 向下、hi 向上都会引入未映射风险，故 **hi 向下取整**）。
 
-用法：
-  python tools/state_range_for.py <factory.elf> <ours.elf>     # 打印 lo,hi（十六进制）
-  python tools/state_range_for.py ... --range                  # 打印 lo,hi 供 env 使用
+用法（flag 与两个 ELF 路径顺序任意）：
+  python tools/state_range_for.py <factory.elf> <ours.elf>         # 打印 lo,hi（十六进制，人读/旧契约）
+  python tools/state_range_for.py --start <factory.elf> <ours.elf>  # 只打印 lo（供 env 注入）
+  python tools/state_range_for.py --end   <factory.elf> <ours.elf>  # 只打印 hi（供 env 注入）
+
+## ★★★ R307：为什么必须能分开打印（split output）
+qemu-user 的 `-E NAME=VALUE` 用 `strsep(&p, ",")` 把**逗号当多变量分隔符**
+（QEMU v6.2 / v10.0 源码逐字相同，GitHub CI 与 InstaBox 双机实测）：
+值 `3af000,3e1000` 被拆成 `NAME=3af000` + 无 `=` 的裸 token ⇒ `envlist_setenv()`
+返 EINVAL ⇒ usage 退出 ⇒ **guest 零启动**；而调用链上所有步骤都 `|| true` /
+continue-on-error ⇒ 失败完全静默，B6A 帧级证据连丢 6 次。
+修法：范围拆成 **CGM_STATE_RANGE_START / CGM_STATE_RANGE_END 两个独立 env**
+（单值无分隔符，qemu 无从切分）；host 侧另加传输边界守卫（值含逗号即 rc=13）。
+stdout 仍是机器消费契约：stderr 出人读诊断，stdout 只出一个值 / `lo,hi`。
 """
 import sys
 
@@ -51,7 +62,23 @@ def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 2
-    fa, oa = argv[0], argv[1]
+    fa = oa = None
+    mode = 'range'
+    pos = []
+    for a in argv:
+        if a == '--start':
+            mode = 'start'
+        elif a == '--end':
+            mode = 'end'
+        else:
+            pos.append(a)
+    if len(pos) < 2:
+        print(__doc__)
+        return 2
+    fa, oa = pos[0], pos[1]
+    for a in pos[2:]:
+        print('未知参数：%s（只支持 --start / --end）' % a, file=sys.stderr)
+        return 2
     flo, fhi = rw_span(fa)
     olo, ohi = rw_span(oa)
     lo = max(flo, olo)
@@ -61,7 +88,12 @@ def main(argv):
     if hi <= lo:
         print('★★ 交集为空：两侧数据段不重叠，状态快照不可用', file=sys.stderr)
         return 3
-    print('%x,%x' % (lo, hi))
+    if mode == 'start':
+        print('%x' % lo)
+    elif mode == 'end':
+        print('%x' % hi)
+    else:
+        print('%x,%x' % (lo, hi))
     return 0
 
 

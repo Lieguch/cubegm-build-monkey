@@ -13384,3 +13384,157 @@ GitHub 仓根有 `1to1/` 子目录（`git ls-files` 计 `1to1/src/` 1070 条）�
 - **未实测的推断**：InstaBox `libc6-dev-armhf-cross` 是否足够跑 `qemu-arm` 静态/动态加载（待 bootstrap 验证）。
 - **无证据**：B6A `frame_hash_abi` 差异的真实成因（两侧均未观测到像素，属"没测到"而非"不一致"）——
   这正是必须转真机/逐帧对拍的原因，不接受用"看起来差不多"替代。
+
+> 追加前 `old_intact=True`（旧文 1023973 B / sha 91735ba9fc2f1b4c…）；由 `tools/append_progress.py` 原子追加。
+## R306b（2026-11-04）—— **算力通道从 CNB 云开发切到 InstaBox**；实测挖出 3 个真机专属缺陷并根修；**重建产物可复现性得证**
+
+> 触发：用户 2026-11-04 11:52「暂停 CNB 云开发路线，待用户通知；替代：去 InstaBox 的云主机做 QEMU 模拟」
+> + 11:52「批评你没有及时关闭 CNB 云开发现成的工作流，白白浪费了 3 个多小时」。
+> 本段 = R306 的续篇（§8 待办 #2 的执行结果）+ 那条批评的**制度化处置**。
+
+### 1. InstaBox 通道建立（已实测可用）
+
+| 项 | 值 |
+|---|---|
+| 账号/机器 | 新账号密钥（`ibk_waygry…`）→ `m_agqzan6cwfm6xzdhptjslezw3u`（name=`gmail`），`instabox-gmail` |
+| 系统 | Debian 13 trixie / kernel 6.18.54 / Firecracker microVM / **4 vCPU / 8192 MiB / `/data` 20 GiB** |
+| 自动暂停 | **1800 s**（空闲 30 分钟）⇒ 用完必须 `suspend`（这就是新的"关工作区"） |
+| 单条 exec | ≤600 s ⇒ 长任务必须 `setsid nohup` + 日志文件 |
+| 凭据隔离 | 新 key → `~/.config/instabox/key.gmail`（0600）；旧账号 key 备份为 `key.test.keep`（**不覆盖**） |
+| 项目 wrapper | `~/.workbuddy/user-*/bin/ibx_gmail.sh`（key 与旧机隔离，用法同 `ibx.sh`） |
+| 已装工具链 | `qemu-user` 10.0.13、`gcc-arm-linux-gnueabihf` 14.2.0、**`ziglang==0.16.0`（与 CI 同版本）** |
+| 仓库 | `git clone` GitHub main ⇒ `1to1/` 子目录布局与 GitHub 一致（**与 CNB 镜像布局不同，勿混**） |
+
+### 2. ★★ 三个"只在这台机器上才暴露"的缺陷（全部根修，非绕过）
+
+**2.1 PEP 668：`tools/ensure_pydeps.sh` 在 Debian 13 装不上 `pyelftools`**
+- 症状：`link_full.sh` fail-closed `exit 5` ⇒ **拿不到 `build/rkgame.rebuilt.elf`** ⇒ 行为差分门禁根本起不了跑。
+- 根因：原安装链只有 `--user` → 系统级两档；Debian 的 `EXTERNALLY-MANAGED` 标记**连 `--user` 也拒**
+  ⇒ 必须 `--break-system-packages`（PEP 668 的开关）。
+- 修法（`tools/ensure_pydeps.sh`，提交 `1ea290c25cc1`）：`--user` → `--user --break-system-packages`
+  → `--break-system-packages` → 系统级 → venv（venv 须用 `.pth` 挂进 `$PY` 的 user site，否则 `$PY` 依然缺依赖）。
+- 实测（Debian 13）：`elftools OK /data/home/.local/lib/python3.13/site-packages/elftools/__init__.py`，rc=0。
+
+**2.2 `/sdcard` 需 root**：CI 的 runner 免密 sudo，`stage_sdcard_env.sh` 直接建 `/sdcard/cubegm`；
+InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: cannot create directory '/sdcard'`。
+⇒ 非代码缺陷，是**运行环境等价性缺口**；本轮在通道侧补 `sudo mkdir -p /sdcard/cubegm` + chown。
+
+**2.3 ★ shim 的 glibc 基线没钉 ⇒ 仪器静默降级（真缺陷，已根修）**
+- 症状：shim **编译成功**（exit 0）⇒ `ci_qemu_behav.sh` 的成功判定成立 ⇒ **不触发它那句响亮的"构建失败"告警**
+  ⇒ 门禁"看起来跑完了"，实则 guest 连 **M0（进程启动）**都到不了，**三侧全 exit=1**。
+- 真因：`_cc_detect` 在本机有 `arm-linux-gnueabihf-gcc` 时选它（Debian 13 glibc **2.41** 头）
+  ⇒ 产物要求 `GLIBC_2.34`/`GLIBC_2.38` ⇒ 设备 sysroot（Buildroot glibc **2.29**）拒绝加载：
+  `/sdcard/cubegm/rkgame: /arm-root-device/lib/libc.so.6: version 'GLIBC_2.38' not found`。
+  （zig 分支本来就钉了 `-target arm-linux-gnueabihf.2.29`，**只有 GCC 分支没钉** ⇒ CI 恰好一直是 zig 口径，才没暴露。）
+- 修法（`tools/build_guest_shim.sh`，提交 `aac80c198e3f`）：**产物自证** ——
+  ① 用 `readelf -V` 取产物要求的最高 `GLIBC_x.y`；② 超标 ⇒ 自动改用 zig 重编（zig 可精确钉版本）；
+  ③ 再验仍超标 ⇒ **exit 1 fail-closed**（宁可门禁红，不许静默失真），并给出三条修法。
+- ⇒ 教训：**CI 绿 ≠ 环境可移植**。CI（Ubuntu 22.04）`pip --user` 直接过、shim 一直是 zig 口径，
+  这两个缺陷在 CI 上**永远看不见** ⇒ 必须有第二台异构机器。
+
+### 3. ★★ 重建产物**可复现性**得证（bit-for-bit）
+
+| 来源 | sha256 | 备注 |
+|---|---|---|
+| 交付真机件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` | `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc` | 与 `DELIVERY-R305.txt` 逐字一致 |
+| **InstaBox 独立构建**（Debian 13 + zig 0.16.0） | **同 sha256** | **不同机器、不同发行版 ⇒ 字节级一致** |
+
+⇒ 不再只是"某台机器上编出来的"，而是**可复现构建**；交付的那份 ELF 正是当前 main 源码的产物。
+
+### 4. 判据行**三方对照**（CI / CNB / InstaBox）
+
+| 判据行 | CI（`41647626689`，R305f 原文） | **InstaBox（本轮）** | 判定 |
+|---|---|---|---|
+| 参考端 sha | `8ff3b4b70c253ff7` | `8ff3b4b70c253ff7` | **逐字一致** |
+| 重建端 sha | `d34316b18485b861` | `d34316b18485b861` | **逐字一致** |
+| B1 exit_code | PASS 124 vs 124 | PASS 124 vs 124 | ✓ |
+| B2 events | PASS 228/228 | PASS **227/227** | 行数差 1（与当年 CNB 口径**同一**差异） |
+| B3 new_files | PASS 0 vs 0 | PASS 0 vs 0 | ✓ |
+| B4 changed_files | PASS 0 vs 0 | PASS 0 vs 0 | ✓ |
+| B5 log_sha | PASS `d7c86a6f1f399930` | PASS `d7c86a6f1f399930` | ✓ |
+| B6 frame_hash | FAIL `b5449dc5 vs b5449dc5` | FAIL `b5449dc5 vs b5449dc5` | **逐字一致**（全零基线 ⇒ 未观测到像素） |
+| B6A frame_hash_abi | FAIL `dfdaf563 vs ffc51130` | FAIL `dfdaf563 vs ffc51130` | **逐字一致** |
+| B6R frame_commits | PASS 3072 vs 3072 | PASS 3072 vs 3072 | ✓ |
+| B7 shm / B8a sfc_cmds / B8b sfc_faults | PASS 1/1 · 4/4 · 180/180 | PASS 1/1 · 4/4 · 180/180 | ✓ |
+| 里程碑 M0–M7 | 全 ✓ | **全 ✓（三侧）** | ✓ |
+| 里程碑差集 | 空 | **空** | ✓ |
+| 门禁结果 | FAIL（2 项失败） | FAIL（2 项失败） | **逐字一致** |
+
+⇒ **结论：InstaBox 通道与 GitHub CI 口径等价**（唯一差异 B2 行数，与 CNB 当年同一环境性差异）。
+⇒ B6/B6A 红灯 = **继承态**，在第二台异构机器上复现 ⇒ 排除"CI 机器特有假象"。
+
+### 5. ★★ 自曝：我的 PEP 668 修复 **v1 版引入 CI 回归**（已由 v2 修正）
+
+- `c5ce6c04b4ce` 的 v1 版把 **venv 分支排在最前**，venv 装成功即"宣称成功"，
+  但 `$PY` 仍 import 不到 elftools ⇒ 最终校验失败 ⇒ `exit 5`。
+- **CI（Ubuntu）上因此构建失败**：run `41775581193` 在 step 10 报
+  `ModuleNotFoundError: No module named 'elftools'` ⇒ `##[error]Process completed with exit code 5`。
+  ⚠ 该 run 的失败**不是**继承红 B6A，是**我自己造成的**。
+- v2（`1ea290c25cc1`）改为「`--user` 优先 + PEP 668 两档 + venv 必须 `.pth` 挂进 `$PY`」，
+  在 **Debian 13（InstaBox）实测 rc=0**，且 CI run `41776169492` 的 step 10（构建）+ step 11（三桩）**均 OK** ⇒ 回归已消除。
+- **教训（写进"不要重复"）**：安装链的兜底分支必须**满足被调用方的契约**（`$PY` 能 import），
+  "装上了"不等于"调用方能用" —— 我第一版正是把「venv 装成功」误当成「依赖就绪」。
+
+### 6. 关算力：从「记忆」改成「脚本」
+
+| 项 | 处置 |
+|---|---|
+| 新增 | `tools/_close_compute.sh`（`--check` 只查 / 默认关）：InstaBox `suspend` + CNB `workspace-stop` + 自查 `running=0` |
+| 本轮实测 | `--check` 输出：`InstaBox running` / `CNB running 计数 = 0` ⇒ rc=0 |
+| 纪律 | **每轮收尾第 0 项 = 跑这个脚本**，不再依赖我记得（CNB 泄漏 3h52m 的根因就是"纪律只写在文档里"） |
+
+### 7. 本轮提交链（全部已推送，CI 监控中）
+
+| 提交 | 内容 | 触发的 run |
+|---|---|---|
+| `bb39bb47f281` | PROGRESS R306 + PROJECT-MEMORY §L + `tools/_append_memory.py` | **仅 1 个**（`rkgame-rebuild` success）⇒ 再次实证 `1to1/*.md` + `tools/_*` 零触发 |
+| `c5ce6c04b4ce` | PEP 668 修复 v1 + `tools/_close_compute.sh` | 3 个（其中 qemu-behav 因 v1 回归失败，见 §5） |
+| `1ea290c25cc1` | PEP 668 修复 v2（正确版） | 3 个 |
+| `aac80c198e3f` | shim glibc 基线自检 + fail-closed | 3 个 |
+
+### 8. 新的下一步待办
+
+| # | 待办 | 状态 / 判据 |
+|---|---|---|
+| 1 | **真机复测**（用户侧，唯一最终验收）：0.2–0.4s 闪重启是否消失 | 交付件 sha `d34316b1…`（已与 DELIVERY 文档逐字核对） |
+| 2 | 监控 `1ea290c25cc1` / `aac80c198e3f` 的 6 个 CI run 到终态 | 进行中 |
+| 3 | **B6A 长期线**：两侧 `frame_hash_abi` 不同（`dfdaf563` vs `ffc51130`）⇒ 两侧**都观测到了像素但不一致** | 已在 InstaBox 具备可复现环境；下一步取帧级差异证据 |
+| 4 | 收尾：`bash tools/_close_compute.sh`（suspend InstaBox）+ 本段补充 | 待办 |
+| 5 | CNB 云开发 | **暂停中**，待用户通知 |
+
+### 9. 分层标注
+
+- **已实测**：三个缺陷的根因与修法；ELF 字节级可复现；判据行三方逐字对照；我的 v1 回归及其修正；
+  CNB 工作区泄漏 3h52m；`tools/_close_compute.sh` 可用。
+- **未实测的推断**：v2 的 `--user --break-system-packages` 在"user site 不可写"的环境下会退到系统级安装
+  （Debian 13 实测走的是 `--user --break-system-packages`，成功）。
+- **无证据**：B6A 像素差异的**机制**（为何工厂与重建渲染出不同帧）—— 现有证据只到"两侧都观测到像素且哈希不同"，
+  **不足以断言重建侧有渲染缺陷**（也可能是设备 rootfs 资源/时序差异）。不猜，下一步取帧级证据。
+
+> 追加前 `old_intact=True`（旧文 1033708 B / sha 4d3dea1750795da8…）；由 `tools/append_progress.py` 原子追加。
+## R307（2026-11-04）qemu `-E` 逗号 bug 根修 —— B6A 帧级证据长期缺失的真根因
+
+### 日期
+2026-11-04（R306b 之后；InstaBox 复刻 CI 帧步失败 ⇒ 定位）
+
+### 完成事项
+1. **根因钉死（上游源码 + 双机实测双向互证，非猜测）**：qemu-user 的 `-E NAME=VALUE` 在 `linux-user/main.c` 的 `handle_arg_set_env()` 里用 `strsep(&p, ",")` **把逗号当多变量分隔符**（QEMU v6.2.0 与 v10.0.0 源码逐字相同）；被拆出的裸 token 无 `=` ⇒ `envlist_setenv()` 返 EINVAL ⇒ `usage(EXIT_FAILURE)`。InstaBox（qemu 10.0.13）实测矩阵：`3af000,3e1000`→usage；`:` / `-` / 分两次 `-E`→正常；`QEMU_SET_ENV=` 环境变量入口走同一条 `strsep` 路径 ⇒ 换入口绕不开。CI 日志（run 41647626689）侧有 6 次 usage ⇒ **帧采集步从未真正跑起来** ⇒ B6A 长期线只有哈希、无帧 dump 的真根因。
+2. **四处根修**（随本记录同笔推送）：
+   - `tools/guest_shim/abi_probe.c`：状态范围改双 env（`CGM_STATE_RANGE_START` / `CGM_STATE_RANGE_END`，单值无分隔符 ⇒ qemu 无从切分）；旧 `CGM_STATE_RANGE=lo,hi` 仅作 guest 内 getenv 兼容保留（不经 `-E`，逗号无害）；设置了解析不了 ⇒ stderr 响亮告警（两侧 env 同值 ⇒ 同形出现，不破坏差分公平）。
+   - `tools/state_range_for.py`：新增 `--start` / `--end`（flag 与两个 ELF 路径顺序任意）；本地实测**当场抓出我自己"flag 在前"的解析 bug 并修掉**；默认输出 `lo,hi` 旧契约不变；stdout 机器消费 / stderr 人读诊断的分层不变。
+   - `tools/ci_qemu_behav.sh`：`-E` 白名单补双 env；**新增传输边界守卫（fail-closed，rc=13）**——不针对任何特定变量：**任何**经 `-E` 转发的值含逗号即就地停止；与桩缺失的 rc=12、门禁 rc=2/3 互不混淆；零误伤（`CGM_INPUT_HEX` 遇非十六进制字符本来就 `continue`、`CGM_SFC_PATTERN` 8 位定长十六进制，无合法值需要逗号）。
+   - `.github/workflows/1to1-qemu-behav.yml` 帧步：分两个 env 注入 + START/END 非空前置校验（空则 `::error::` + exit 1）+ **rc≥12 补 `::error::` 注解**（continue-on-error 会吞退出码 ⇒ "仪器没跑"必须在 UI 上响亮）。
+3. **本地四件套校验全过**：`bash -n ci_qemu_behav.sh` / `py_compile state_range_for.py` / pyyaml 全量 5 个 workflow / 生产者功能实测（三种模式 + 误参拒绝 + 缺参 rc=2）。
+4. **推送前隐患排除（有证据，非假设）**：本地 `build/rkgame.rebuilt.elf` sha256=`60f7c1a0…` ≠ 交付件 `d34316b1…`；双向证实不影响远端：① 推送清单 1034 项无 `build/`；② 远端 `1to1/build` contents API **404**（远端根本无 build 目录）。远端 `golden/factory.rkgame.bin`（blob `4fb95a93…`，3,921,108 B）完整在位。
+
+### 新发现与决策
+1. **失败签名同源（本轮最重要认知）**：qemu usage ⇒ guest 零启动 ⇒ 指纹/里程碑全零 ⇒ **与 B6「诚实红」完全同签名** ⇒ 历史上 6 次被当成"没差异"放过。⇒ 根修三件套：**结构**（单值无分隔符，不可能再撞）+ **边界**（任何 `-E` 值含逗号即 rc=13，未来新变量也覆盖）+ **可见性**（CI `::error::` 注解，仪器故障与"被测差异"彻底分开）。
+2. **分层标注**：源码级结论 = **已实测**（上游源码逐字 + 双机矩阵 + CI 日志 6 次 usage）；帧级差异结论 = **未取得**（待 InstaBox 跑出帧 dump 后据实更新，不预填）。
+3. 远端无 `build/` 推翻了"本地 build/ 即远端"的隐含假设 ⇒ 纪律：今后凡动本地产物目录，先查清单 membership + 远端 contents，再谈推送。
+
+### 下一步待办
+1. 单笔推送本修（代码 4 文件 + 本记录 + 记忆）⇒ 按路径过滤将触发 verify + qemu-behav + rebuild 三 run；**qemu-behav 的帧步将历史上第一次真正跑起来**（预期产出 report/frames 三侧 dump）。
+2. InstaBox：pull ⇒ zig 重编 shim（编译即验证 C 改动）⇒ 帧采集（START/END）⇒ `_b6a_pixel_diff.py` 两组对拍（factory↔rebuild / factory↔control）⇒ B6A 首个帧级证据。
+3. 同步监控 1ea290c25cc1 / aac80c198e3f 的 run 到终态。
+4. 收尾第 0 项：`bash tools/_close_compute.sh` ⇒ suspend InstaBox + 自查 CNB running=0。
+5. 真机复测（用户侧，唯一最终验收）：交付件 `_sdcard_drop/latest_rebuilt/rkgame.rebuilt.elf` sha256 `d34316b18485b86175bb36c0c00141590f427c4d960734e3d4b5c65da7ff69cc`。
