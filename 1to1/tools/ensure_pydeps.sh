@@ -42,33 +42,49 @@ fi
 #   再退到 venv（最干净）。**不改变"装不上就 fail-closed"的语义** —— 宁可红，不静默跳过。
 echo "  [env] $PY 缺 pyelftools ⇒ 就地安装（幂等；CI 无预装）" >&2
 _pkgs="pyelftools"
-_ok=0
-# 3.1 venv（最干净：完全不动系统 site-packages；优先放仓库外的临时目录）
-_VENV="${CGM_PYDEPS_VENV:-${TMPDIR:-/tmp}/rkgame-pydeps-venv}"
-if [ "$_ok" = "0" ] && "$PY" -c 'import venv' >/dev/null 2>&1; then
+# 3.1 `--user`（CI Ubuntu 22.04 走这档）
+"$PY" -m pip install --user --quiet "$_pkgs" >/dev/null 2>&1 || true
+# 3.2 PEP 668：`--user --break-system-packages`（**Debian 13 实测走这档**）
+#     ★ 关键：`--break-system-packages` 是 PEP 668 的开关；**只加 `--user` 不够**
+#       （Debian 的 EXTERNALLY-MANAGED 标记连 `--user` 也拒）。
+#     ★ 装进 `$PY` 自己的 user site ⇒ `$PY` 直接能 import ⇒ 满足本脚本契约
+#       （"给到的 `$PY` 必须能用"）⇒ 调用方**无需**换解释器。
+if ! "$PY" -c 'import elftools' >/dev/null 2>&1; then
+    "$PY" -m pip install --user --break-system-packages --quiet "$_pkgs" >/dev/null 2>&1 || true
+fi
+# 3.3 PEP 668：系统级 + --break-system-packages（user site 不可写时的退路）
+if ! "$PY" -c 'import elftools' >/dev/null 2>&1; then
+    "$PY" -m pip install --break-system-packages --quiet "$_pkgs" >/dev/null 2>&1 || true
+fi
+# 3.4 老口径兜底（非 PEP 668 发行版的系统级安装）
+if ! "$PY" -c 'import elftools' >/dev/null 2>&1; then
+    "$PY" -m pip install --quiet "$_pkgs" >/dev/null 2>&1 || true
+fi
+# 3.5 venv（**仅当上面全失败**才用；装完用 .pth 把 venv 的 site-packages 挂进 `$PY` 的 user site，
+#     这样 `$PY` 仍能 import ⇒ 不破坏本脚本契约。**不装就宣称成功** —— 那会让 $PY 依然缺依赖。）
+if ! "$PY" -c 'import elftools' >/dev/null 2>&1 \
+   && "$PY" -c 'import venv' >/dev/null 2>&1; then
+    _VENV="${CGM_PYDEPS_VENV:-${TMPDIR:-/tmp}/rkgame-pydeps-venv}"
+    rm -rf "$_VENV" >/dev/null 2>&1 || true
     if "$PY" -m venv "$_VENV" >/dev/null 2>&1 \
-       && "$_VENV/bin/python" -m pip install --quiet "$_pkgs" >/dev/null 2>&1 \
-       && "$_VENV/bin/python" -c 'import elftools' >/dev/null 2>&1; then
-        echo "  [env] pyelftools 已装入 venv: $_VENV" >&2
-        echo "  [env] （提示：调用方如需复用，请 export PY=$_VENV/bin/python）" >&2
-        _ok=1
-    else
-        rm -rf "$_VENV" >/dev/null 2>&1 || true
+       && "$_VENV/bin/python" -m pip install --quiet "$_pkgs" >/dev/null 2>&1; then
+        _VSP="$("$_VENV/bin/python" -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')"
+        _USP="$("$PY" -c 'import site;print(site.getusersitepackages())')"
+        if mkdir -p "$_USP" 2>/dev/null \
+           && printf '%s\n' "$_VSP" > "$_USP/rkgame-pydeps.pth" 2>/dev/null \
+           && "$PY" -c 'import elftools' >/dev/null 2>&1; then
+            echo "  [env] pyelftools 经 venv 挂载到 \$PY 的 user site: $_VENV → $_USP/rkgame-pydeps.pth" >&2
+        else
+            rm -f "$_USP/rkgame-pydeps.pth" >/dev/null 2>&1 || true
+            rm -rf "$_VENV" >/dev/null 2>&1 || true
+        fi
     fi
 fi
-# 3.2 --user（CI Ubuntu 22.04 走这档）
-[ "$_ok" = "0" ] && "$PY" -m pip install --user --quiet "$_pkgs" >/dev/null 2>&1 && _ok=1
-# 3.3 PEP 668：--user + --break-system-packages（Debian 13 走这档）
-[ "$_ok" = "0" ] && "$PY" -m pip install --user --break-system-packages --quiet "$_pkgs" >/dev/null 2>&1 && _ok=1
-# 3.4 PEP 668：系统级 + --break-system-packages
-[ "$_ok" = "0" ] && "$PY" -m pip install --break-system-packages --quiet "$_pkgs" >/dev/null 2>&1 && _ok=1
-# 3.5 老口径兜底（非 PEP 668 发行版的系统级安装）
-[ "$_ok" = "0" ] && "$PY" -m pip install --quiet "$_pkgs" >/dev/null 2>&1 && _ok=1
 
 # 4) 装完仍缺 ⇒ **fail-closed**（绝不静默降级成"跳过门禁"）
 if ! "$PY" -c 'import elftools' >/dev/null 2>&1; then
     echo "★★ 依赖仍缺失：$PY 无法 import elftools" >&2
-    echo "   已试：venv / --user / --user+--break-system-packages / --break-system-packages / 系统级" >&2
+    echo "   已试：--user / --user+--break-system-packages / --break-system-packages / 系统级 / venv+.pth" >&2
     echo "   ⇒ fail-closed（门禁不得静默跳过）" >&2
     exit 5
 fi
