@@ -13808,3 +13808,40 @@ InstaBox 的 `user` 虽有免密 sudo，但脚本自身不建目录 ⇒ `mkdir: 
 2. 取得解压缓冲内容后，与 Python `zipfile` 基准（`r0=00000170`、`r1048576=9cf69cf7`、`r2097152=318129a1`、`r3211264=d94fd94e`）逐字对照，再决定是否改 `src/`。
 3. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
 4. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。
+
+> 追加前 `old_intact=True`（旧文 1074364 B / sha e485a9643adcc408…）；由 `tools/append_progress.py` 原子追加。
+## R313（2026-11-04）红线判定：`src\` 不属于 org.bin；机器码核对 `DAT_003af28c` 传参
+
+### 日期
+
+2026-11-04（R312 之后；用户问「`src\` 是否闪存内目录（org.bin），如果是，请放弃修改」）
+
+### 完成事项（只读实测，无推断）
+
+1. **`src\` 判定 = 不是闪存内目录、不属于 org.bin**：
+   | 项 | 实测 |
+   |---|---|
+   | `src/` | 本地 `D:/output/rkgame-1to1/src/`，539 文件（261 `.c` / 242 `.h` / 3 `.cpp` / 4 `.S` / 4 `.S` 等），git 跟踪 226 个；文件头为 Ghidra 反编译注释（`mui_menu @ 0x00023204 size=2840B`），git 历史含 `71811f95 R275-final` |
+   | `org.bin` | `F:\OTHER\D20游戏机\解包归档\org.bin解析\org.bin`，8,388,608 B，sha256 `d5ca3396c2dae460…`；GPT 分区 `IDBlock / uboot / boot / rootfs / data`，**无 src 分区** |
+   | org.bin 的 rootfs 派生件 `bootchain/assets/rootfs.sqsh` | 顶层 `squashfs-root/bin/{ash,busybox,cat,…}`，`unsquashfs -l` 中**无 `src` 目录、无 `.c`** |
+   | 设备 SD 副本 `golden/sdcard_min` | 无 `src`、无 `.c` |
+   | `src/` 内引用 | 无 `org.bin` / `F:/OTHER` 路径 |
+   ⇒ `src/` 是本项目自建的重建源码树（Ghidra 反编译 + 上游开源 + `factory_image.S` 数据镜像汇编），R309 的 org.bin 只读红线不适用，**无需放弃修改**。本轮对 org.bin 只读解析了 GPT 分区名 / 列出派生 squashfs 目录，未写入、未烧录。
+2. **factory 机器码核对（`arm-linux-gnueabihf-objdump` + `tool/factory_t1.txt`）**：
+   - `mui_LoadUIResource`：`3: mov r7,r0`；`42: ldr r0,[r5,#512]`（`r5+216=ze` ⇒ `ze+296`）；`43: bl malloc@plt`；`48: str r3,[r7]` = `*param_1 = malloc 结果`；`52: bl UnzipItem`。objdump 原文 `17e6c: e5873000 str r3,[r7]`。
+   - `mui_menu` 调用点（`factory_t1.txt:27657`）：`473: ldr r1,[sp,#48]` / `474: ldr r0,[sp,#52]` / `475: bl @mui_LoadUIResource`；`23260: add r5,r0,#40` → `23268: str r5,[sp,#52]`；判空处 `23314: ldr r3,[r3,#40]`（`[sp,#32]=r0`）。
+   - literal pool `0x23d2c` 两侧同为 `0x0038c008`：`base = 0x2325c + 0x38c008 = 0x003af264`，`base+40 = 0x003af28c` ⇒ **传参地址 = `0x3af28c`，factory 与 rebuild 逐字一致**。
+3. **R312 探针读数与地址核对合并事实**：`scr ptr=44ef0008` 恒非零、首帧像素与帧文件逐字一致；`res(0x3af28c)` 在 f=1/2/10/50/100 恒为 0；`linker/factory.ld` `.fimg_data 0x003af000`、rebuild `__f_data_base=0x003af000`、`DAT_003af28c=0x003af28c` ⇒ 探针地址对两侧是运行时变量地址。
+4. **本轮未改 `src/`**：无确定根因，改源码会违反「禁止猜测、禁止假实现」。红线对象（org.bin、原厂 SD 文件）零改动。
+
+### 新发现与决策
+
+1. 红线判定结论：`src/` 可改（是自建源码），但**本轮不改**。R309「org.bin 只读、禁止修复/重打包/烧录」继续有效。
+2. 分层标注：`src/` 元数据、org.bin 分区名、rootfs 目录、机器码指令、literal pool 计算值、探针读数 = **已实测**；`0x3af28c` 运行时恒 0 与 `str r3,[r7]` 并存的成因 = **无证据，不写结论**；gdb 打印的 0（R312）= 无效读数作废；真机行为 = 无证据。
+3. `src/data/factory_image.S` 的数据来源是**原厂 `rkgame` ELF 的数据段**，不是 org.bin；该文件属重建源码的一部分。
+
+### 下一步待办（单线，不扩散）
+
+1. 用已验证的 shim 通道在 `mui_LoadUIResource` 赋值时刻附近继续取 `0x3af28c` 真值；取得解压缓冲后与 Python `zipfile` 基准（`r0=00000170` / `r1048576=9cf69cf7` / `r2097152=318129a1` / `r3211264=d94fd94e`）逐字对照，再决定是否改 `src/`。
+2. 根修后重跑第 1 / 第 200 帧双重对拍：主差异收敛、对照端保持 0。
+3. 真机换卡复测（用户侧，唯一最终验收）；「启动链完美」判据裁决仍挂起。

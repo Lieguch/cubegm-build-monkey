@@ -7961,3 +7961,17 @@ f=2/10/50/100  res=00000000  scr=44ef0008
 **决策**：本轮**未改 `src/`**（无确定根因）。分层：上述现象/读数/地址/覆盖/源码 = 已实测；gdb 的 0 = 无效作废；`DAT_003af28c` 恒 0 成因 = **无证据，不写结论**；真机 = 无证据。探针改动默认关闭入仓，不改判据。
 
 **下一步（单线）**：① 用 shim 通道在 `mui_LoadUIResource` 赋值时刻附近继续取真值 ② 取到缓冲后与 zipfile 基准（`r0=00000170` / `r1048576=9cf69cf7` / `r2097152=318129a1` / `r3211264=d94fd94e`）逐字对照再决定是否改 `src/` ③ 根修后第 1/第 200 帧双重对拍 ④ 真机复测；「启动链完美」裁决仍挂起。
+
+#### U. R313 —— 红线判定：`src\` 不属于 org.bin；机器码核对 `DAT_003af28c` 传参
+
+**用户问**：「`src\` 是否闪存内目录（org.bin），如果是，请放弃修改」。
+
+**判定：不是**。只读实测：`src/` = 本地 `D:/output/rkgame-1to1/src/`，539 文件（261 `.c`/242 `.h`/3 `.cpp`/4 `.S`），git 跟踪 226 个，文件头为 Ghidra 反编译注释，git 历史含 `71811f95 R275-final`；`org.bin` = `F:\OTHER\D20游戏机\解包归档\org.bin解析\org.bin`，8,388,608 B，sha256 `d5ca3396…`，GPT 分区 `IDBlock/uboot/boot/rootfs/data`，**无 src 分区**；其 rootfs 派生件 `bootchain/assets/rootfs.sqsh` 顶层 `bin/{ash,busybox,…}`，`unsquashfs -l` 无 `src` 目录、无 `.c`；设备 SD 副本 `golden/sdcard_min` 同样无；`src/` 内无 `org.bin`/`F:/OTHER` 引用。⇒ `src/` 是本项目自建重建源码树（Ghidra 反编译 + 上游开源 + `factory_image.S` 数据镜像汇编，后者来源是原厂 rkgame ELF 数据段，非 org.bin）。R309 的 org.bin 只读红线不适用，**无需放弃修改**；本轮对 org.bin 只读、零写入零烧录。
+
+**factory 机器码事实**（`arm-linux-gnueabihf-objdump` + `tool/factory_t1.txt`）：`mui_LoadUIResource` `3: mov r7,r0` / `42: ldr r0,[r5,#512]`（=`ze+296`）/ `43: bl malloc@plt` / `48: str r3,[r7]`（objdump `17e6c: e5873000 str r3,[r7]`）/ `52: bl UnzipItem`。`mui_menu` 调用点 `474: ldr r0,[sp,#52]` + `475: bl @mui_LoadUIResource`；`23260: add r5,r0,#40` → `23268: str r5,[sp,#52]`；判空 `23314: ldr r3,[r3,#40]`。literal pool `0x23d2c` 两侧同为 `0x0038c008` ⇒ `base=0x2325c+0x38c008=0x003af264`，`base+40=0x003af28c` ⇒ **传参地址 = `0x3af28c`，factory/rebuild 逐字一致**。
+
+**合并 R312 事实**：`scr ptr=44ef0008` 恒非零且与帧文件逐字一致；`res(0x3af28c)` 在 f=1/2/10/50/100 恒 0；`linker/factory.ld` `.fimg_data 0x3af000`、rebuild `__f_data_base=0x3af000`、`DAT_003af28c=0x3af28c` ⇒ 探针地址对两侧是运行时变量地址。
+
+**决策**：本轮**未改 `src/`**（无确定根因，禁止猜测/假实现）；红线对象零改动。分层：上述全部 = 已实测；`0x3af28c` 恒 0 与 `str r3,[r7]` 并存的成因 = **无证据，不写结论**；gdb 的 0（R312）= 无效作废；真机 = 无证据。
+
+**待办（单线）**：① shim 通道在赋值时刻附近继续取 `0x3af28c` 真值，取到缓冲后与 zipfile 基准（`r0=00000170`/`r1048576=9cf69cf7`/`r2097152=318129a1`/`r3211264=d94fd94e`）逐字对照再决定是否改 `src/` ② 根修后第 1/第 200 帧双重对拍（主差异收敛、对照端 0）③ 真机复测；「启动链完美」裁决仍挂起。
