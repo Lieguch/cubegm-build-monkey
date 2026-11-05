@@ -489,12 +489,65 @@ static void cgm_do_snap(void)
      *   ⇒ R303：周期只留一行计数；环形帧历史改由**崩溃/退出**路径一次性落盘
      *     （cgm_lifecycle → frames.bin；crash handler → crash.txt）。 */
     g_nsnap++;
-    char b[192]; int n = 0;
+    char b[512]; int n = 0;
     n += vfmt(b + n, (int)sizeof(b) - n,
-              "  ## snapshot n=%u werr=%u errno=%d frames=%u\n",
+              "  ## snapshot n=%u werr=%u errno=%d frames=%u",
               g_nsnap, g_werr, g_werr_no, g_rpos);
+    /* ★ R323（2026-11-05）：内存预算观测——真机第 16/17/18 轮出现
+     *   "UI 图块只加载几块（满屏一整块 UI、其余黑屏）+ 宕机"，
+     *   而文件层 trace 全绿、QEMU 不复现 ⇒ 怀疑地址空间/分配约束，
+     *   但 glibc malloc 内部的 mmap/brk 不经 PLT、wrap 不可见。
+     *   ⇒ 每 5s 打 RLIMIT_AS + VmPeak/VmSize/VmRSS 曲线，
+     *     直接看"分配停在哪个值、离 limit 还有多远"。 */
+    {
+        long rl[2];
+        if (sc3(76 /*SYS_getrlimit*/, 9 /*RLIMIT_AS*/, (long)rl, 0) == 0)
+            n += vfmt(b + n, (int)sizeof(b) - n, " rlimit_as=%u/%u kB",
+                      (unsigned)rl[0] >> 10, (unsigned)rl[1] >> 10);
+        {
+            int fd = sys_open("/proc/self/status", 0x0000, 0);
+            if (fd >= 0) {
+                static char st[3072];
+                long got, r = 0;
+                unsigned vp = 0, vs = 0, vr = 0;
+                while (r < (long)sizeof(st) - 1 &&
+                       (got = sc3(3 /*SYS_read*/, fd, (long)(st + r),
+                                  (long)(sizeof(st) - 1 - r))) > 0)
+                    r += got;
+                sys_close(fd);
+                st[r] = 0;
+                {
+                    char *p = st;
+                    while (p && *p) {
+                        char *e = p; while (*e && *e != '\n') e++;
+                        if (!*e) break;
+                        *e = 0;
+                        if (!vp && p[0]=='V' && p[1]=='m' && p[2]=='P' && p[3]=='e')
+                            vp = atou_kB(p + 7);
+                        else if (!vs && p[0]=='V' && p[1]=='m' && p[2]=='S')
+                            vs = atou_kB(p + 7);
+                        else if (!vr && p[0]=='V' && p[1]=='m' && p[2]=='R')
+                            vr = atou_kB(p + 7);
+                        p = e + 1;
+                    }
+                }
+                n += vfmt(b + n, (int)sizeof(b) - n,
+                          " vm=%ukB rss=%ukB peak=%ukB", vs, vr, vp);
+            }
+        }
+    }
+    b[n++] = '\n';
     wraw(g_logfd, b, (unsigned)n);
     g_logbytes += (unsigned)n;
+}
+
+/* ★ R323：跳过空格读十进制数（status 行 "VmSize:     9868 kB"）——诊断仪无 libc strtoul */
+static unsigned atou_kB(const char *p)
+{
+    unsigned v = 0;
+    while (*p == ' ' || *p == '\t') p++;
+    while (*p >= '0' && *p <= '9') { v = v * 10u + (unsigned)(*p - '0'); p++; }
+    return v;   /* kB 原样（行内已是 kB） */
 }
 
 /* 周期任务：由 instrument 每次调用顺带驱动，**不需要线程** */
