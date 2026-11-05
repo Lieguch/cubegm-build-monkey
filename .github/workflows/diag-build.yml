@@ -99,3 +99,75 @@ jobs:
             1to1/build/rkgame.diag.sha256
             1to1/build/diag_build.log
           if-no-files-found: warn
+
+  # ============================================================
+  # ★ R320：升级版**交付**（无 DIAG）—— 全功能但不含诊断仪。
+  #   与 1:1 纯净线（1to1-verify，M15 已封存）分属两条产品线：
+  #     · 1:1 纯净线：CGM_UPGRADE=0，判据 = 机器码行为等价（diff_exec 棘轮）
+  #     · 升级线（本 job）：CGM_UPGRADE=both，判据 = 功能验收（SRAM 落盘+读回 / evdev 回退不崩）
+  #   差异只在有无插桩 + wrap + 诊断仪；SRAM+evdev 两者源路径同一（src/upgrade/ + 4 处挂钩）。
+  # ============================================================
+  build-upgrade:
+    name: 构建升级版交付（无 DIAG，含 SRAM+evdev）
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 zig（与诊断版/1:1 线同一工具链）
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check ziglang==0.16.0
+          ZIG="$(python3 -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__),"zig"))')"
+          chmod +x "$ZIG"
+          echo "CC=$ZIG cc" >> "$GITHUB_ENV"
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zigcache" >> "$GITHUB_ENV"
+          "$ZIG" version
+
+      - name: 抓取 Bootlin 2017.05 工厂同期真头
+        run: |
+          cd 1to1
+          sh tools/fetch_bootlin63.sh
+          test -d cache_tc/bootlin63 || { echo '::error::bootlin63 未就绪'; exit 1; }
+
+      - name: 构建升级版交付（CGM_UPGRADE=both，无插桩）
+        run: |
+          cd 1to1
+          mkdir -p build report
+          rc=0
+          PY=python3 CGM_UPGRADE=both sh tools/link_audit.sh report/link_audit.txt || rc=$?
+          echo "link_audit rc=$rc"
+          [ -s build/obj/cgm_sram_persist.o ] || { echo '::error::升级对象 cgm_sram_persist.o 未产出'; exit 1; }
+          [ -s build/obj/cgm_evdev_gamepad.o ] || { echo '::error::升级对象 cgm_evdev_gamepad.o 未产出'; exit 1; }
+          PY=python3 sh tools/build_upstream.sh build/upstream
+          PY=python3 sh tools/link_full.sh build/rkgame.rebuilt.elf
+
+      - name: 产物终检（SRAM+evdev 符号在场 ＆ 诊断仪符号**不在场**）
+        run: |
+          cd 1to1
+          ls -la build/rkgame.rebuilt.elf
+          sha256sum build/rkgame.rebuilt.elf | tee build/rkgame.rebuilt.elf.sha256
+          python3 - <<'PY'
+          d = open('build/rkgame.rebuilt.elf','rb').read()
+          # 必须在场：升级模块符号
+          need = [b'cgm_sram_set_base', b'cgm_sram_poll_base', b'cgm_evdev_poll', b'cgm_evdev_ready']
+          miss = [n.decode() for n in need if n not in d]
+          if miss:
+              print('::error::升级产物缺少关键符号: %s' % miss)
+              raise SystemExit(1)
+          # 必须不在场：诊断仪独有符号（保证「无 DIAG」）
+          forbid = [b'cgm_diag_boot', b'__wrap___libc_start_main', b'__cyg_profile_func_enter']
+          bad = [n.decode() for n in forbid if n in d]
+          if bad:
+              print('::error::升级产物不应含诊断仪符号: %s' % bad)
+              raise SystemExit(1)
+          print('SRAM+evdev 符号在场 ＆ 无诊断仪污染 —— 升级版交付终检 PASS')
+          PY
+
+      - name: 上传升级版交付产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rkgame-upgrade
+          path: |
+            1to1/build/rkgame.rebuilt.elf
+            1to1/build/rkgame.rebuilt.elf.sha256
+          if-no-files-found: warn

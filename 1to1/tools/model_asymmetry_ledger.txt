@@ -20,3 +20,11 @@ putchar	构建事实差异；真头 `stdio.h:587` 把 `putc` 定义为**无条�
 	工厂**同时**导入 putchar 与 _IO_putc ⇒ 其构建是 **per-TU 优化档**（应用 -Os / 上游 -O2）。
 	我方旧构建（zig 头 -Os）也产 putchar；臂 B（全 -O2）把它内联掉 ⇒ 反证了 per-TU。
 	处置：应用代码回到 -Os（见 BUILD-FACT-ALIGNMENT.md §七）。
+# R320：目的 2 升级（SRAM+evdev）引入的单侧符号 —— 工厂二进制无这两个模块，属「有意偏离 1:1」
+opendir	目的2升级(evdev)；evdev_gamepad.c 枚举 /dev/input/event* 用 opendir+readdir+closedir，工厂无手柄自适应模块；有意引入，不建模
+readdir	目的2升级(evdev)；同上 opendir；有意引入，不建模
+closedir	目的2升级(evdev)；同上 opendir；有意引入，不建模
+ioctl	目的2升级(evdev)；evdev_gamepad.c EVIOCGBIT 判定按键/轴能力；有意引入，不建模
+getenv	目的2升级(evdev)；evdev_gamepad.c 读 CGM_CTRL_DB 环境变量；有意引入，不建模
+strtok_r	目的2升级(evdev)；evdev_gamepad.c 解析 controller_db.txt 行；有意引入，不建模
+time	目的2升级(sram)；sram_persist.c 每~5s 节流轮询时间戳；有意引入，不建模

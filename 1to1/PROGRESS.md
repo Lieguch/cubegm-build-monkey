@@ -14126,3 +14126,41 @@ R316 把 factory `0x14508..0x14584`（124 B）与 rebuild `0x4e5204..0x4e5280`�
 
 1. **真机验收（用户侧，约束 2 最终验收）**：按 `ACCEPTANCE.md` A/B/C 类判据一次做全（换 `d34316b18` + 回传 `_diag/` ），我判读回填。**不是** R305 单点复测。
 2. B6A 长期线（渲染保真度，非阻塞）；算力通道 InstaBox 已就绪。
+
+> 追加前 `old_intact=True`（旧文 1103622 B / sha 5daae8154b639d8c…）；由 `tools/append_progress.py` 原子追加。
+## R320（2026-11-04）—— 真机第 15 轮验收判读（3 缺陷已定位，2 条根因铁证锁定）
+
+### 日期
+
+2026-11-04（用户回传第 15 轮真机验收观感：① 菜单音乐正常 ② 000 街机(KOF)加载失败 ③ MD SRAM 缺失 ④ 手柄即插即用缺失）
+
+### 完成事项（判读，未改源码）
+
+1. **问题 1（菜单音乐正常）**：✅ 通过。R305 ZIPENTRY 修复（3 处 malloc(unc_size)）生效，闪重启/菜单崩溃消失。
+
+2. **问题 3/4（SRAM 缺失 + 手柄即插即用缺失）—— 根因铁证锁定**：
+   - **同一根因**：交付版 `d34316b18` **升级符号 0 个**，诊断版 `94715fe0` 升级符号 **20 个**。
+   - 机制（全部实测）：`1to1-verify.yml` s21 调 `link_audit.sh` 时**未设 `CGM_UPGRADE`** ⇒ `cgm_upgrade_flags.sh` 判 0 ⇒ `CGM_ENABLE_SRAM`/`CGM_ENABLE_EVDEV` 两宏未定义 ⇒ 主链 4 处 `#ifdef` 挂钩（SaveDefaultState/LoadDefaultState/ReadUSBJoy/Load_Proc2）全部排除 ⇒ `src/upgrade/{sram_persist,evdev_gamepad}.c` 未编译。
+   - 对照：`build_diag.sh` 默认 `CGM_UPGRADE=both`（第 50 行）⇒ 诊断版含 SRAM+evdev。
+   - **这是交付口径缺陷，不是代码缺陷**。R258 已登记 C1「both 交付产物从未跑过行为差分全量」，但一直未闭环，真机第 15 轮把后果暴露。
+   - 修复方向：交付版构建加 `CGM_UPGRADE=both` + diff_exec 4 个升级钩子豁免登记（目的 2 有意偏离口径，R252/R256 已定）+ 重新构建。
+
+3. **问题 2（000 街机 KOF 加载失败）—— core 存在，根因待第 15 轮 trace 定位**：
+   - **用户纠正**：001 不是 FC（用户回忆错）；正确是 **000 街机（KOF）**。
+   - 实测证据链：
+     - `filelist.xml`：`000/kof96.zip → libemu_fbalpha2012.so`（72/105 条 000 街机都指 fbalpha2012）。
+     - `fbalpha2012` core **在 golden 里**（19,978,800 B），且**含 KOF 驱动**（'kof' 字节命中 335、'neogeo' 56）⇒ 它就能跑 KOF，**不缺**。
+     - 无第 15 轮 trace ⇒ 具体断点（FBA_Load 遍历到哪槽失败 / dlopen 失败 / retro_load_game 失败 / core 内部崩）**未定位**。
+   - **另发现资产缺口（非 KOF 阻塞，但需补）**：golden cores 缺 13 个原厂 core：`libemu_fba3100.so`、`libemu_fbafast.so`（fba 变体）+ `libemu_a5200/handy/lynx/ngp/pce/wswan.so`（其他系统）+ 5 个 `*_libretro.so`（libretro 标准命名冗余）。
+
+### 新发现与决策
+
+1. **真机验收发现了 qemu/CI 从未暴露的真问题**：SRAM/evdev「功能缺失」不是 bug 回归，是**交付口径没对齐**（交付版一直用纯净 1:1 构建，从未把目的 2 的两个升级编进去）。qemu 侧这两个功能在 R250–R257 都是走 `CGM_UPGRADE=boot/sram/evdev` 单独验证的，从没进过 `1to1-verify` 的交付构建。这是「验证路径」与「交付路径」的分裂。
+2. **001=FC 是我上轮暂回退的口径，用户本轮纠正为 000=街机** —— 需重新固化 folder→core 映射认知，避免再混（R220 已警示「数字 folder 映射是 SF3000 另一条线的口径，不可混用」）。
+3. **分层标注**：交付版升级符号 0 vs 诊断版 20 = 已实测；`fbalpha2012` 含 KOF 驱动 = 已实测；「KOF 加载失败具体断点」= 未定位（缺第 15 轮 trace）；「补 13 个 core 能解问题 2」= 未证实（fbalpha2012 已够跑 KOF，缺的 fba3100/fbafast 不是 KOF 指派的）。
+
+### 下一步待办（按优先级）
+
+1. **P0（问题 3/4 根修）**：改 `1to1-verify.yml` 交付构建加 `CGM_UPGRADE=both` → diff_exec 升级钩子豁免登记 → 重新构建含 both 的交付版 → sha256 重新校验（红线级改动，先报方案）。
+2. **P0（问题 2 定位）**：用户回传第 15 轮 `_diag/` 日志（trace.log），定位 KOF 加载失败断点。
+3. **P1（资产补齐）**：golden cores 补 13 个原厂 core（本机 `原厂SD卡根目录结构/cubegm/cores/` 有全部副本）—— 属 T12/T13 运行时资产，非复刻对象。

@@ -8078,3 +8078,14 @@ item[3] data_off=0x00248be8  x0=106 y0=96  x1=890  y1=358
 - R305 修复铁证：3 处 malloc 未初始化 ⇒ malloc(0) ⇒ 16KB 越界写堆 ⇒ inflate SIGSEGV（0x10001000）；修复 = 对齐工厂 `malloc(unc_size)` + ZIPENTRY 304B。
 
 **待办**：① 真机最终验收（A/B/C 判据一次做全，非 R305 单点复测）② B6A 长期线非阻塞。
+#### AB. R320 —— 真机第 15 轮验收判读（2 条根因铁证锁定）
+
+**用户第 15 轮观感**：① 菜单音乐正常 ② 000 街机(KOF)加载失败 ③ MD SRAM 缺失 ④ 手柄即插即用缺失。
+
+**问题 3/4 根因铁证锁定（同一根因）**：交付版 `d34316b18` 升级符号 **0**，诊断版 `94715fe0` 升级符号 **20**。机制：`1to1-verify.yml` 交付构建未设 `CGM_UPGRADE` ⇒ SRAM/evdev 两宏未定义 ⇒ 4 处 `#ifdef` 挂钩排除 ⇒ `src/upgrade/*.c` 未编译。诊断版 `build_diag.sh` 默认 `both` 才含。**这是交付口径缺陷（验证路径 vs 交付路径分裂），非代码 bug**。R258 C1 已登记未闭环。
+
+**问题 2（KOF 加载失败）**：用户纠正 001→000（街机）。`filelist.xml` KOF→`libemu_fbalpha2012.so`（在 golden，19,978,800 B，'kof' 命中 335/'neogeo' 56 ⇒ 含 KOF 驱动，不缺）。断点未定位（缺第 15 轮 trace）。另发现 golden cores 缺 13 个原厂 core（fba3100/fbafast + a5200/handy/lynx/ngp/pce/wswan + 5 × libretro 命名），非 KOF 阻塞。
+
+**决策**：问题 3/4 修法 = 交付构建加 `CGM_UPGRADE=both` + 升级钩子豁免登记 + 重构建（红线级，先报方案）。问题 2 待 trace。补 13 core 属运行时资产。
+
+**纪律**：folder→core 数字映射是 SF3000 另线口径，不可混用（R220 已警示，本轮又差点踩）。
