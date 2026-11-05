@@ -87,6 +87,11 @@ static unsigned int g_key[4];
 static int g_btn_code[4][32];     /* 序号 → keycode */
 static int g_btn_n[4];
 static const cgm_prof *g_match[4];
+/* ★ R322：摇杆绝对轴校准（open 时 EVIOCGABS）。
+ *   [slot][0=X,1=Y] → {center, flat}；center<0 = 未校准（该轴不参与映射）。
+ *   为什么要校准：真机 16 号 trace 证实摇杆绝对轴的静止值≠0（Xbox360 center=128），
+ *   旧代码用裸 value 的符号判方向 ⇒ "128>0"把 DOWN 永久钉死。 */
+static int g_ax_cal[4][2][2];
 
 /* ---------------- 数据库 ---------------- */
 
@@ -281,6 +286,22 @@ int cgm_evdev_open(int slot)
         build_btn_order(slot, keyb);
         g_fd[slot] = fd;
         g_key[slot] = 0;
+        /* ★ R322：摇杆绝对轴校准——center=(min+max)/2；flat=max(内核 flat, 量程/32)，
+         *   防"静止值≠center"与"flat=0 噪声"把方向钉死（16 号 trace DOWN 恒按根因）。 */
+        {
+            int ax_i;
+            for (ax_i = 0; ax_i < 2; ax_i++) {
+                struct input_absinfo ai;
+                g_ax_cal[slot][ax_i][0] = -1;
+                g_ax_cal[slot][ax_i][1] = 0;
+                if (ioctl(fd, EVIOCGABS(ax_i == 0 ? ABS_X : ABS_Y), &ai) == 0
+                    && ai.maximum > ai.minimum) {
+                    int rng_flat = (ai.maximum - ai.minimum) / 32;
+                    g_ax_cal[slot][ax_i][0] = (ai.minimum + ai.maximum) / 2;
+                    g_ax_cal[slot][ax_i][1] = ai.flat > rng_flat ? ai.flat : rng_flat;
+                }
+            }
+        }
         printf("[evdev] slot%d 打开 %s  name='%s' vid:pid=%04x:%04x btn_n=%d profile=%s\n",
                slot, path, name, id.vendor, id.product, g_btn_n[slot],
                pr ? pr->name : "(兜底映射)");
@@ -309,13 +330,19 @@ const char *cgm_evdev_profile_name(int slot)
     return g_match[slot] ? g_match[slot]->name : NULL;
 }
 
-/* ---------------- 事件 → rkgame 位域 ---------------- */
+/* ---------------- 事件 → rkgame 位域 ----------------
+ * ★ R322 语义定案（16 号 trace 根因）：旧实现在三处把"释放/回中"事件映射成 0
+ *   —— 置位后永不清除 ⇒ 方向键永久卡死（tag=K 358/358 恒 0x40；第 6 轮 0xf0
+ *   组合同源，被重启病掩盖）。新语义：映射只回答"该事件管哪些位"，置位/清位由
+ *   统一出口执行：KEY 按下/连发(≠0)置位、释放(0)清位；hat ±1 置位、回中(0)清两端
+ *   （hat 中心值就是 0，pair 技法安全）；摇杆绝对轴 center≠0，**不能**走该出口，
+ *   在 ev_apply 内直接维护（见下）。 */
 
-/* 兜底映射：BTN_SOUTH→A, EAST→B, NORTH→Y, WEST→X；hat0 走方向 */
+/* 兜底映射：BTN_* → 位（不看 value）；hat0 回中返回"两端并"交统一出口清 */
 static unsigned int map_fallback(const struct input_event *ev)
 {
     unsigned int bit = 0;
-    if (ev->type == EV_KEY && ev->value == 1) {
+    if (ev->type == EV_KEY) {
         switch (ev->code) {
         case BTN_SOUTH: bit = RK_A; break;
         case BTN_EAST:  bit = RK_B; break;
@@ -328,8 +355,10 @@ static unsigned int map_fallback(const struct input_event *ev)
         default: break;
         }
     } else if (ev->type == EV_ABS) {
-        if (ev->code == ABS_HAT0Y) bit = (ev->value < 0) ? RK_UP : ((ev->value > 0) ? RK_DOWN : 0);
-        else if (ev->code == ABS_HAT0X) bit = (ev->value < 0) ? RK_LEFT : ((ev->value > 0) ? RK_RIGHT : 0);
+        if (ev->code == ABS_HAT0Y)
+            bit = (ev->value < 0) ? RK_UP : ((ev->value > 0) ? RK_DOWN : (RK_UP | RK_DOWN));
+        else if (ev->code == ABS_HAT0X)
+            bit = (ev->value < 0) ? RK_LEFT : ((ev->value > 0) ? RK_RIGHT : (RK_LEFT | RK_RIGHT));
     }
     return bit;
 }
@@ -338,6 +367,74 @@ static int code_of_index(int slot, int idx)
 {
     if (idx < 0 || idx >= g_btn_n[slot]) return -1;
     return g_btn_code[slot][idx];
+}
+
+/* 单事件应用：含 profile 按键/ hat / 摇杆绝对轴与兜底映射，唯一维护 g_key[slot]。
+ * 独立成函数以便离线单元门禁（tools/test_evdev_state.c）直接注入事件序列。 */
+static void ev_apply(int slot, const struct input_event *ev)
+{
+    const cgm_prof *p = g_match[slot];
+    unsigned int hit = 0;
+    int ax_direct = 0;
+
+    if (p != NULL) {
+        int i;
+        for (i = 0; i < 12; i++) {
+            int code = code_of_index(slot, p->btn[i]);
+            if (code < 0) continue;
+            if (ev->type == EV_KEY && ev->code == (unsigned short)code) {
+                switch (i) {
+                case 0: hit = RK_A; break; case 1: hit = RK_B; break;
+                case 2: hit = RK_X; break; case 3: hit = RK_Y; break;
+                case 4: hit = RK_TL1; break; case 5: hit = RK_TR1; break;
+                case 6: hit = RK_TL2; break; case 7: hit = RK_TR2; break;
+                case 10: hit = RK_SELECT; break; case 11: hit = RK_START; break;
+                default: break;
+                }
+            }
+        }
+        if (hit == 0 && ev->type == EV_ABS) {
+            if (p->hat_up || p->hat_dn || p->hat_lf || p->hat_rt) {
+                if (ev->code == ABS_HAT0Y)
+                    hit = (ev->value < 0) ? RK_UP
+                        : ((ev->value > 0) ? RK_DOWN : (RK_UP | RK_DOWN));
+                else if (ev->code == ABS_HAT0X)
+                    hit = (ev->value < 0) ? RK_LEFT
+                        : ((ev->value > 0) ? RK_RIGHT : (RK_LEFT | RK_RIGHT));
+            } else if (p->ax_up || p->ax_dn || p->ax_lf || p->ax_rt) {
+                /* 摇杆绝对轴：以 open 时 EVIOCGABS 的 center/flat 归一；
+                 * 命中区按 profile 极性（d*ax_dir > flat）置位，离开命中区/回中清两端。
+                 * center≠0 ⇒ 不能走"value!=0 判按压"的统一出口，这里直接维护。 */
+                int axis = (ev->code == ABS_Y) ? 1 : ((ev->code == ABS_X) ? 0 : -1);
+                if (axis >= 0 && g_ax_cal[slot][axis][0] >= 0) {
+                    int c = g_ax_cal[slot][axis][0];
+                    int f = g_ax_cal[slot][axis][1];
+                    long d = (long)ev->value - c;
+                    unsigned int set = 0, clr = 0;
+                    if (axis == 1) {   /* Y 轴 */
+                        if (p->ax_up && d * p->ax_up > f) set |= RK_UP;
+                        else clr |= RK_UP;
+                        if (p->ax_dn && d * p->ax_dn > f) set |= RK_DOWN;
+                        else clr |= RK_DOWN;
+                    } else {           /* X 轴 */
+                        if (p->ax_lf && d * p->ax_lf > f) set |= RK_LEFT;
+                        else clr |= RK_LEFT;
+                        if (p->ax_rt && d * p->ax_rt > f) set |= RK_RIGHT;
+                        else clr |= RK_RIGHT;
+                    }
+                    g_key[slot] = (g_key[slot] | set) & ~clr;
+                    ax_direct = 1;
+                }
+            }
+        }
+    }
+    if (!ax_direct) {
+        if (hit == 0) hit = map_fallback(ev);
+        if (hit != 0) {
+            if (ev->value != 0) g_key[slot] |= hit;
+            else g_key[slot] &= ~hit;
+        }
+    }
 }
 
 unsigned int cgm_evdev_poll(int slot)
@@ -351,44 +448,6 @@ unsigned int cgm_evdev_poll(int slot)
         if (n <= 0 && (errno == ENODEV || errno == EIO)) { close(g_fd[slot]); g_fd[slot] = -1; }
         return (int)g_key[slot];
     }
-    {
-        const cgm_prof *p = g_match[slot];
-        unsigned int hit = 0;
-        if (p != NULL) {
-            int i;
-            for (i = 0; i < 12; i++) {
-                int code = code_of_index(slot, p->btn[i]);
-                if (code < 0) continue;
-                if (ev.type == EV_KEY && ev.code == (unsigned short)code) {
-                    switch (i) {
-                    case 0: hit = RK_A; break; case 1: hit = RK_B; break;
-                    case 2: hit = RK_X; break; case 3: hit = RK_Y; break;
-                    case 4: hit = RK_TL1; break; case 5: hit = RK_TR1; break;
-                    case 6: hit = RK_TL2; break; case 7: hit = RK_TR2; break;
-                    case 10: hit = RK_SELECT; break; case 11: hit = RK_START; break;
-                    default: break;
-                    }
-                }
-            }
-            if (hit == 0 && ev.type == EV_ABS) {
-                if (p->hat_up || p->hat_dn || p->hat_lf || p->hat_rt) {
-                    if (ev.code == ABS_HAT0Y) hit = (ev.value < 0) ? RK_UP : ((ev.value > 0) ? RK_DOWN : 0);
-                    else if (ev.code == ABS_HAT0X) hit = (ev.value < 0) ? RK_LEFT : ((ev.value > 0) ? RK_RIGHT : 0);
-                } else if (p->ax_up || p->ax_dn || p->ax_lf || p->ax_rt) {
-                    if (ev.code == (unsigned short)ABS_X || ev.code == 1) {
-                        if (p->ax_up && ev.value < 0) hit = RK_UP;
-                        if (p->ax_dn && ev.value > 0) hit = RK_DOWN;
-                        if (p->ax_lf && ev.value < 0) hit = RK_LEFT;
-                        if (p->ax_rt && ev.value > 0) hit = RK_RIGHT;
-                    }
-                }
-            }
-        }
-        if (hit == 0) hit = map_fallback(&ev);
-        if (hit != 0) {
-            if (ev.value != 0) g_key[slot] |= hit;
-            else g_key[slot] &= ~hit;
-        }
-    }
+    ev_apply(slot, &ev);
     return (int)g_key[slot];
 }
