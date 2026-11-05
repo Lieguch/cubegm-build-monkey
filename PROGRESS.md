@@ -14229,3 +14229,66 @@ R316 把 factory `0x14508..0x14584`（124 B）与 rebuild `0x4e5204..0x4e5280`�
 排查用 `_sdcard_drop/latest_diag/rkgame.diag`（**8b015687**，同源配套）。验收点：①手柄即插即用
 （现走原厂 joydev 路径：插入→jsN 节点→access 命中→joystick.zip 映射）②MD SRAM（.sav 组合键 + .srm）
 ③KOF 加载（问题 2，未动）④菜单音乐不回归。
+
+---
+
+## R323（2026-11-05）第 18 轮判读 → 推演方法论落地 → mmap 配额复现真机形态
+
+### 用户三次方法论纠偏（全部成立，已入账）
+
+1. **"第 6 轮不是合法基线"**——唯一合法对照 = **M15 封存版 d34316b1**（第 15 轮真机 UI 正常）。
+   且 M15→16 轮之间**源码零改动**，全部差异 = 构建配置（CGM_UPGRADE=both → cgm_*.o 链入）。
+2. **"不要聚焦哪修哪，看增删改的连锁反应，用模拟推演"**——转为 diff 驱动 + QEMU 推演。
+3. **"禁止盲测/偷懒，全面调查"**——对照实验只能回答"哪个坏"不能回答"为什么坏"，撤回。
+
+### 推翻自己（已证伪，防再犯）
+
+- **"menu.raw 截断 87%"**：那条 16384×66 流 + font.ttf(9,913) = **1,091,257 = setting.raw 压缩大小精确相等** ⇒ 流是 setting.raw 且**读取完整**。menu.raw 可能根本没被读（懒加载）。
+- **"SF3000 内存不足"**：联网实证 **SF3000 = 2GB DDR3 RAM**（三源一致）——物理内存不是约束。
+- **"RLIMIT_AS ≈10MB 顶死"**：VmPeak==VmSize 只是快照相等，非顶死证据。**真因待 diag 直读**。
+
+### 推演成果（QEMU mmap 配额模拟，shim 实装 CGM_MMAP_BUDGET）
+
+| 配额（shim 视角匿名 mmap） | ui_cn.zip fd=5 读取 | 形态 |
+|---|---|---|
+| ≥6MB | 4,787,124 B | 全量（=QEMU 常规） |
+| 4MB | 出现新流 fd=7（1,328,811B） | 读取模式改变 |
+| **2.5MB** | **fd=98 = 1,097,088 B（两遍各 3.56MB）** | **与真机截断形态同族（~1.1MB 停）** |
+
+**结论**：真机"UI 满屏一整块只加载几块（其余黑屏）+ 宕机"与**匿名 mmap 配额耗尽形态同族**——
+malloc(unc_size)（R305 修复的解压缓冲，setting.raw=2.86MB）在真机地址空间约束下失败 ⇒ 该块黑屏 +
+后续卡死。**精确 limit 值由 R323 诊断仪（banner+snapshot 的 getrlimit(RLIMIT_AS)+Vm 曲线）下轮真机直读。**
+
+### R323 交付
+
+- shim：`CGM_MMAP_BUDGET`（配额模拟，默认 0=不变；教训：mmap wrap 路径严禁 note()→递归 SIGABRT）
+- diag：RLIMIT_AS + Vm 曲线观测（R323b 修 atou_kB 前置声明编译错，rerun failed jobs 省额度）
+- evdev：g_prof[640] 静态 118KB → 运行时 malloc（单测 23 断言 ALL PASS）
+- commit 415d0ae7 / 推送 5a8a062106+15c9a87015 / run 42010920485（upgrade success；diag rerun 中）
+
+### 下一步
+
+1. diag rerun 成功 → 下载 diag → 真机一轮 → **banner 读 RLIMIT_AS 实值 + Vm 曲线** → 定案根因。
+2. 若 limit 确认低（如 12MB）：两路修复可选——(a) 启动器/环境调 limit（若可改）(b) 降低升级线内存画像
+   （g_prof 动态化已做，下一步查 12 个 LoadUIResource 调用方的驻留策略——是否有多块同时驻留）。
+
+### R323c（2026-11-05）第 19 轮判读 + 诊断仪改"原文搬移"
+
+**第 19 轮（c3a45404，无手柄，20s）两个定案**：
+1. **VmSize 曲线（snapshot 读数）：5s=45,064kB → 10s=68,116kB（平台）**——UI 资源加载期
+   进程地址空间真实长到 68MB；**拔卡时刻 env.txt：VmPeak=VmSize=9,748kB**——
+   ⇒ **宕机态进程自行释放了全部资源**（16/17/18 轮的 9868kB 同为残骸态，非上限）。
+   ⇒ **"~10MB 上限"假设正式证伪**。
+2. **evdev 枚举 271 轮（每 74ms 一轮）**——主循环恢复规律活动（16/17/18 轮 84s 仅 9 轮卡死态）。
+   fread 构成与 16/17/18 一致（66×16384+9913=setting.raw 完整）。ENOMEM=0。
+
+**矛盾与修正**：snapshot 的 vm 读数（45/68MB）与拔卡 maps（9.75MB）都真实——是**两个时刻**。
+为杜绝解析干扰，**R323c 把 snapshot 改为原文搬移**：status 的 Vm 三行原文 + smaps_rollup
+（Rss/Private 拆分）原文直接附进 snapshot 行，零解析。
+
+**交付**：`latest_diag/rkgame.diag` = **70c3b22c**（R323c，run 42017182625 双 job success）；
+`latest_upgrade` = 4f66aee0（不变）。CI run 42017182625。
+
+**第 20 轮（用户）**：换 `latest_diag` 跑一轮（可无手柄）→ trace 的 snapshot 行将含
+RLIMIT_AS（banner 段 getrlimit）+ Vm 三行原文 + Rss/Private 拆分原文 →
+配合 68MB 峰值时刻的构成（若 UI 崩则看 Private 涨在哪），根因定案。
