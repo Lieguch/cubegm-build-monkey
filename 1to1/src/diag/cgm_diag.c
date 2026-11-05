@@ -514,12 +514,15 @@ static void cgm_do_snap(void)
         if (sc3(76 /*SYS_getrlimit*/, 9 /*RLIMIT_AS*/, (long)rl, 0) == 0)
             n += vfmt(b + n, (int)sizeof(b) - n, " rlimit_as=%u/%u kB",
                       (unsigned)rl[0] >> 10, (unsigned)rl[1] >> 10);
+        /* ★ R323c：**原文搬移**（R323b 的 atou_kB 数值解析产生过 45/68MB 假数——
+         *   事实上 20s 时 VmSize 确到 68MB、拔卡时 9.7MB，但为排除解析干扰，
+         *   本版直接把 status 的 Vm 三行**原文**与 smaps_rollup 汇总**原文**附进
+         *   snapshot 行，零解析零换算。 */
         {
             int fd = sys_open("/proc/self/status", 0x0000, 0);
             if (fd >= 0) {
                 static char st[3072];
                 long got, r = 0;
-                unsigned vp = 0, vs = 0, vr = 0;
                 while (r < (long)sizeof(st) - 1 &&
                        (got = sc3(3 /*SYS_read*/, fd, (long)(st + r),
                                   (long)(sizeof(st) - 1 - r))) > 0)
@@ -530,19 +533,41 @@ static void cgm_do_snap(void)
                     char *p = st;
                     while (p && *p) {
                         char *e = p; while (*e && *e != '\n') e++;
-                        if (!*e) break;
-                        *e = 0;
-                        if (!vp && p[0]=='V' && p[1]=='m' && p[2]=='P' && p[3]=='e')
-                            vp = atou_kB(p + 7);
-                        else if (!vs && p[0]=='V' && p[1]=='m' && p[2]=='S')
-                            vs = atou_kB(p + 7);
-                        else if (!vr && p[0]=='V' && p[1]=='m' && p[2]=='R')
-                            vr = atou_kB(p + 7);
-                        p = e + 1;
+                        if (p[0]=='V' && p[1]=='m' &&
+                            (p[2]=='P' || p[2]=='S' || p[2]=='R')) {
+                            n += vfmt(b + n, (int)sizeof(b) - n, " | %.*s",
+                                      (int)(e - p), p);
+                        }
+                        p = (*e) ? e + 1 : NULL;
                     }
                 }
-                n += vfmt(b + n, (int)sizeof(b) - n,
-                          " vm=%ukB rss=%ukB peak=%ukB", vs, vr, vp);
+            }
+        }
+        {
+            int fd = sys_open("/proc/self/smaps_rollup", 0x0000, 0);
+            if (fd >= 0) {
+                static char st[1024];
+                long got, r = 0;
+                while (r < (long)sizeof(st) - 1 &&
+                       (got = sc3(3, fd, (long)(st + r), (long)(sizeof(st) - 1 - r))) > 0)
+                    r += got;
+                sys_close(fd);
+                st[r] = 0;
+                {
+                    char *p = st;
+                    while (p && *p) {
+                        char *e = p; while (*e && *e != '\n') e++;
+                        if (p[0]=='R' && p[1]=='s' && p[2]=='s') {
+                            n += vfmt(b + n, (int)sizeof(b) - n, " | %.*s",
+                                      (int)(e - p), p);
+                        }
+                        if (p[0]=='P' && p[1]=='r' && p[2]=='i' && p[3]=='v') {
+                            n += vfmt(b + n, (int)sizeof(b) - n, " | %.*s",
+                                      (int)(e - p), p);
+                        }
+                        p = (*e) ? e + 1 : NULL;
+                    }
+                }
             }
         }
     }
