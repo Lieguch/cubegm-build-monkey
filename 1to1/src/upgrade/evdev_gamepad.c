@@ -77,7 +77,12 @@ typedef struct {
     int   ax_up, ax_dn, ax_lf, ax_rt;       /* 带符号：+N/-N；0=无 */
 } cgm_prof;
 
-static cgm_prof g_prof[CGM_MAX_PROF];
+/* ★ R323：g_prof 改运行时分配（里程碑内存预算纪律）。
+ *   静态 cgm_prof[640]≈118KB 把 .bss 从 194,911 推到 321,515（+124KB），
+ *   真机地址空间被 ~10MB 上限顶死 ⇒ 挤掉 menu.raw 解压配额 ⇒ UI 区域性缺失。
+ *   新规：新增功能的内存只能用增量预算，不得挤占 M15 里程碑已验证的画像。
+ *   load_db 时按实际行数 malloc；失败 ⇒ 0 条 profile（兜底映射仍可用）。 */
+static cgm_prof *g_prof;
 static int      g_prof_n;
 static int      g_db_loaded;
 
@@ -149,6 +154,15 @@ static int load_db(const char *path)
     f = fopen(path, "r");
     if (f == NULL) {
         printf("[evdev] db 打开失败 %s（将只用兜底映射）\n", path);
+        return 0;
+    }
+    /* ★ R323：按需分配 profile 表（原静态 640×184B≈118KB 挤占 .bss，真机
+     *   地址空间敏感——R322 的 .bss +124KB 增量主要来源）。失败 ⇒ 兜底映射。 */
+    g_prof = (cgm_prof *)malloc(sizeof(cgm_prof) * CGM_MAX_PROF);
+    if (g_prof == NULL) {
+        printf("[evdev] profile 表分配失败 %u B（将只用兜底映射）\n",
+               (unsigned)(sizeof(cgm_prof) * CGM_MAX_PROF));
+        fclose(f);
         return 0;
     }
     while (fgets(line, sizeof line, f) && n < CGM_MAX_PROF) {
