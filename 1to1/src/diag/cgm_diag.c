@@ -478,6 +478,16 @@ static void dump_ring(int fd)
     }
 }
 static unsigned g_nsnap;
+/* ★ R323：跳过空格读十进制数（status 行 "VmSize:     9868 kB"）——诊断仪无 libc strtoul。
+ *   必须定义在 cgm_do_snap **之前**（R323b：后置定义触发
+ *   "static declaration follows non-static declaration"，diag job 编译错）。 */
+static unsigned atou_kB(const char *p)
+{
+    unsigned v = 0;
+    while (*p == ' ' || *p == '\t') p++;
+    while (*p >= '0' && *p <= '9') { v = v * 10u + (unsigned)(*p - '0'); p++; }
+    return v;   /* kB 原样（行内已是 kB） */
+}
 static void cgm_do_snap(void)
 {
     /* ★★★★★ R303（2026-11-02）：**周期快照不再落盘**。
@@ -542,14 +552,6 @@ static void cgm_do_snap(void)
 }
 
 /* ★ R323：跳过空格读十进制数（status 行 "VmSize:     9868 kB"）——诊断仪无 libc strtoul */
-static unsigned atou_kB(const char *p)
-{
-    unsigned v = 0;
-    while (*p == ' ' || *p == '\t') p++;
-    while (*p >= '0' && *p <= '9') { v = v * 10u + (unsigned)(*p - '0'); p++; }
-    return v;   /* kB 原样（行内已是 kB） */
-}
-
 /* 周期任务：由 instrument 每次调用顺带驱动，**不需要线程** */
 /* ★ R303（2026-11-02）：内核侧取证钩子（在 cgm_wrap.c 用 libc 实现：
  *   statfs 剩余空间 / shm 心跳活性 / watchdog sysfs）。
