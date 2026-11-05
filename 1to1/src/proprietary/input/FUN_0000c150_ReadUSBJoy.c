@@ -29,17 +29,22 @@ gh_uint ReadUSBJoy(int param_1)
 #define ev_type   (*(unsigned char *)(void *)(ev_buf + 6))
 #define ev_number (*(unsigned char *)(void *)(ev_buf + 7))
   char acStack_38 [36];
-  
-#ifdef CGM_ENABLE_EVDEV
-  /* ★ 目的 2：evdev 自适应手柄（全量库 controller_db.txt，按 vid:pid/名字自动匹配）。
-   *   R257：**仅在 event* 设备就绪时才整体替换** joydev；就绪失败（qemu 无 /dev/input/event*、
-   *   或某精简内核）则**回退下方 joydev 原逻辑**，绝不失灵。关宏即回到 1:1 行为。 */
-  if (cgm_evdev_ready(param_1)) {
-    return cgm_evdev_poll(param_1);
-  }
-#endif
+
   iVar1 = access((&JOYSTICK_DEVNAME)[param_1],4);
   if (iVar1 < 0) {
+#ifdef CGM_ENABLE_EVDEV
+    /* ★★★ R322 非破坏式集成（总根因修复）：
+     *   旧钩子放在原厂路径**之前**短路：`if (cgm_evdev_ready) return cgm_evdev_poll;`
+     *   ——只要 /dev/input 有被收留的 event* 设备，下方**原厂 jsN 全路径**（joydev
+     *   内核归一轴值 + 成对按下/释放 + access() 热插拔 + joystick.zip 表）就被整体
+     *   跳过，换成当时语义残缺的用户态 evdev（释放/回中事件被丢弃 ⇒ 方向键永久
+     *   卡死 ⇒ 菜单"等释放"冻结）。真机 16 轮 tag=K 358/358 恒 0x40 实锤。
+     *   新序：**原厂 jsN 路径永远优先**；evdev 仅在"原厂设备不存在"（access<0）
+     *   时作为补充通道——升级层只能增加覆盖，不得替换已验证行为。 */
+    if (cgm_evdev_ready(param_1)) {
+      return cgm_evdev_poll(param_1);
+    }
+#endif
     if (*(int *)(&joystick_fd + param_1 * 4) < 0) {
       return *(gh_uint *)(&joy_key_tmp + param_1 * 4);
     }
