@@ -1940,32 +1940,39 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
      *   ⇒ 这里覆盖「匿名可写映射」这一类，与 fd 无关。
      *   尺寸判据仍是**与桩 CREATE_DUMB 回填的 size 精确相等**（见 shim_canvas_note）。 */
     if (fd < 0 && (flags & MAP_ANONYMOUS) && (prot & PROT_WRITE)) {
-        void *p = sys_mmap2(addr, len, prot, flags, -1, uoff);
-        if (p != MAP_FAILED) {
-            /* ★★★ R189 决定性诊断埋点（2026-10-18）：
-             *   R189 strace 铁证：driver 在每次 MAP_DUMB 后紧跟一次
-             *   `mmap(NULL, 同size, PROT_RW, MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, 0)`，
-             *   且**全程零 MAP_SHARED**。同时 `nm` 证明 driver.so 的 mmap 是
-             *   `U mmap@@GLIBC_2.4`（**libc 导入，非自封定义**）⇒ 必然经过 glibc 包装
-             *   ⇒ **必然被本 shim 拦截**。
-             *   但 R188 实测 `fb_lookup HIT` 零行、且 canvas 登记也零行
-             *   ⇒ 必须确认「这些匿名映射到底进没进本分支」。
-             *   本埋点打**每一次**进入（前 24 次，避免刷屏）：
-             *     · 有行 ⇒ 走 shim，canvas 机制可用，缺的只是「尺寸判据/入口条件」；
-             *     · 零行 ⇒ driver 的画布 mmap 不经本 shim（另有路径），
-             *       则 R137 的"自封定义"结论以另一种形式成立，必须换观测点。 */
-            {
-                static int anon_logged;
-                if (anon_logged < 24) {
-                    anon_logged++;
-                    note("[shim] ANON_WR mmap#%u len=%u -> %p\n",
-                         (unsigned int)anon_logged, (unsigned int)len, p);
-                }
-            }
-            shim_canvas_note(p, len);
-            return p;
+        /* ★★★ R323（2026-11-05）：**mmap 配额模拟** —— 真机第 16/17/18 轮
+         *   "UI 满屏一整块只加载几块（图块级黑屏）+ 宕机"，而文件层 trace 全绿、
+         *   QEMU 常规跑不复现 ⇒ 嫌疑收敛到**进程地址空间/分配约束**。
+         *   glibc malloc 的 mmap 型大块不经过 PLT，分配失败无法从外部观测。
+         *   ⇒ CGM_MMAP_BUDGET=<字节>：**经 shim 的匿名可写映射累计超限即
+         *     静默返回 ENOMEM**——glibc malloc 拿不到 mmap ⇒ 返回 NULL ⇒
+         *     上层（mui_LoadUIResource 的 malloc(unc_size)）真实失败路径被走通。
+         *   ★ 安全铁律：本路径**严禁调用 note/printf**（2026-11-05 实测：
+         *     note 在 mmap wrap 路径内引发递归 ⇒ qemu SIGABRT，已回退）。
+         *   只增不减（munmap 未 wrap）＝模拟"驻留峰值"；不设（默认 0）＝
+         *   行为与既往逐字节一致。观测靠配额扫描的行为差异（zip 读取量
+         *   /UI 块加载数），不靠日志。 */
+        static long g_anon_used;
+        static int  g_budget_ready;
+        static long g_budget;
+        if (!g_budget_ready) {
+            const char *e = getenv("CGM_MMAP_BUDGET");
+            g_budget = e ? atol(e) : 0;
+            g_budget_ready = 1;
         }
-        return MAP_FAILED;
+        if (g_budget > 0 && g_anon_used + (long)len > g_budget) {
+            g_anon_used += (long)len;   /* 计入失败请求（地址空间压力仍在） */
+            return MAP_FAILED;
+        }
+        g_anon_used += (long)len;
+        {
+            void *p = sys_mmap2(addr, len, prot, flags, -1, uoff);
+            if (p != MAP_FAILED) {
+                shim_canvas_note(p, len);
+                return p;
+            }
+            return MAP_FAILED;
+        }
     }
 
     return sys_mmap2(addr, len, prot, flags, fd, uoff);
