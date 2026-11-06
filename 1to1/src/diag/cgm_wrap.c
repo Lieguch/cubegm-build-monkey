@@ -178,11 +178,11 @@ size_t __wrap_fread(void *b, size_t sz, size_t n, FILE *f)
 {
     size_t r = __real_fread(b, sz, n, f);
     if (cgm_want(CGM_LVL_IO)) {
-        /* ★ R303（2026-11-02）：**1 字节读只计数、不写行**。
-         *   真机第 13 轮：18,216 次 1 字节读（zip 中央目录逐字节）⇒ 每行 ~50 B
-         *   ⇒ 单轮 ~900 KB 的**纯日志写放大**（真机 SD 卡，主循环每帧都要写）。
-         *   降噪后总量仍可从 ctr("fread1") 读到，不丢信息。 */
-        if (sz == 1) cgm_bump("fread1");
+        /* ★ R303：1 字节读只计数、不写行（zip 逐字节降噪）。
+         *   ★ R328 放行：sz==1 但 n>=256 的大块读（cgm_sram_load 的
+         *   fread(ptr,1,16384,f) 正落盲区 ⇒ 22 轮读回链不可观测）。
+         *   zip 的 sz=1 n=1/2/4 仍静默。 */
+        if (sz == 1 && n < 256) cgm_bump("fread1");
         else { LOG("IO", "fread %p sz=%u n=%u ret=%u", (void *)f, (unsigned)sz, (unsigned)n, (unsigned)r); cgm_bump("fread"); }
     }
     TICK();
@@ -558,8 +558,19 @@ void cgm_kernel_periodic(void)
         }
     }
     unsigned d = (hb_ok && g_shm_have) ? (hb - g_shm_last) : 0;
-    LOG("KS", "seq=%u sd_total=%lu sd_free=%lu sd_avail=%lu shm_hb=%u shm_delta=%u statfs=%d",
-        ++g_ks_seq, total_b, free_b, avail_b, hb, d, sfr);
+    /* ★ R328：SRAM 视图状态进 KS 行（每 5s）——第 22 轮「.srm 文件写了但游戏内
+     *   无档」读回链被 fread 降噪盲区吞掉（sz==1 只计数不写行），KS size 字段
+     *   直接可见 SRAM 视图是否建立（size>0 = core 报了存档缓冲）。 */
+    unsigned s0 = 0, s1 = 0;
+#if defined(CGM_ENABLE_SRAM)
+    {
+        extern size_t cgm_sram_size(int);   /* cgm_upgrade.h（避免引整个头） */
+        s0 = (unsigned)cgm_sram_size(0);
+        s1 = (unsigned)cgm_sram_size(1);
+    }
+#endif
+    LOG("KS", "seq=%u sd_total=%lu sd_free=%lu sd_avail=%lu shm_hb=%u shm_delta=%u statfs=%d sram0=%u sram1=%u",
+        ++g_ks_seq, total_b, free_b, avail_b, hb, d, sfr, s0, s1);
     if (hb_ok) { g_shm_last = hb; g_shm_have = 1; }
     g_ks_busy = 0;
 }
