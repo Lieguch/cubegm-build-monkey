@@ -141,7 +141,12 @@ void AudioProcess(void)
       gettimeofday(&local_50,&tStack_40);
       if (5000 < ((local_50.tv_sec - local_58.tv_sec) * 1000000 + local_50.tv_usec) -
                  local_58.tv_usec) {
-        RARCH_LOG("[%d.%06d] ++++ AudioProcess timer over %dus ++++\n");
+        /* ★ R327：Ghidra 还原变参漏参（spec=3 args=0 ⇒ %d/%06d/%d 读野寄存器 UB）。
+         *   语义复原：起止时刻 + 耗时（与上方 if 判据同式）。 */
+        RARCH_LOG("[%d.%06d] ++++ AudioProcess timer over %dus ++++\n",
+                  (int)local_58.tv_sec, (int)local_58.tv_usec,
+                  (int)(((local_50.tv_sec - local_58.tv_sec) * 1000000 + local_50.tv_usec) -
+                        local_58.tv_usec));
         errorcount = errorcount + 1;
       }
       return;
