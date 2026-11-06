@@ -10,6 +10,10 @@
 
 #include <stddef.h>   /* size_t */
 
+/* ★ R328：sram_persist 的诊断日志走原厂 RARCH_LOG（stdout→诊断仪 fwrite wrap 可见，
+ *   控制台/串口可见文本）。printf 与日志体系混用会导致升级版日志不可观测。 */
+void RARCH_LOG(char *param_1, ...);
+
 #ifdef __cplusplus
 extern "C" {
 #endif
