@@ -14405,3 +14405,43 @@ B. 清零分支 memcpy 源判空
   若下轮真机仍崩，需设计 heap 哨兵探针（诊断仪 v2）。
 - 「无缩略图无限重试」是工厂既有逻辑（工厂 SD 有对应缩略图故不触发）；
   R326 的缓存仅收窄窗口，不改工厂可见语义。
+
+---
+
+## R327（2026-11-06）RARCH_LOG 变参缺参根修——真机 22 轮 SIGSEGV 定案
+
+### 22 轮崩溃链（crash.txt + R326 diag 符号反查，确定性铁证）
+```
+[00] mui_run_game+0 → [01] RARCH_LOG → [02] RARCH_LOG_V → 崩 (si_addr=0x3a98)
+崩前事件：UnzipItem→inflateEnd→zcfree（缩略图解压完成）→ SaveMenuLog
+```
+⇒ `mui_run_game` 第一行 `RARCH_LOG("mui_run_game:%s\n")` **无实参**（Ghidra 还原
+变参漏参）⇒ printf 读寄存器残留 0x3a98 当指针解引用 ⇒ SIGSEGV。
+**21/22 轮同 si_addr = 寄存器残留确定性**。「1945 加载失败 + 卡死重置」根因
+= 选中任何游戏第一行必崩（1945 无关特定 ROM）。
+
+### 全仓扫描（修正判据 spec>args + 剔注释）：真缺参恰好 2 条
+1. `mui_run_game.c:31` spec=1 args=0 ← 本轮崩溃点，补 param_1
+2. `AudioProcess.c:141` spec=3 args=0 ← 同款 UB（audio 超时低频触发），补 3 实参
+（其余 spec=1/args=2 均为扫描 off-by-one 误报，实际实参匹配）
+
+### 22 轮附带确认（铁证）
+- **SRAM R325 生效**：`fopen /mnt/sdcard/roms/...srm wb ret=0x0133c7c0`（写成功）+ rb 读成功
+  ⇒ 用户报「SRAM 缺失」需复核 SD 卡实际文件（trace 显示已写）
+- **R326 缩略图缓存生效**：s1945p want=0 次（同 index 不再重复全量遍历）
+- 手柄「重置前后按键异常」新证据：js0/js1 access ret=0 6513 次但 read 恒 -1 +
+  access ret=-1 366 次（**手柄 USB 掉线窗口**）⇒ 原厂逻辑 read 失败保持旧键值
+  （0x40=DOWN 冻结）⇒ 原厂既有缺陷（掉线检测缺失），非本轮引入，待下一轮专案
+
+### 交付
+- 提交 `8f5c1e4d` / GitHub `5def2b4ba2` + `95098839a6`
+- CI dispatch run `42186859087` 双 job success；**upgrade `e962a5a0f3898a14f9ee` == InstaBox 字节级一致**
+- 交付：latest_upgrade=`e962a5a0`，latest_diag=`d88d50b5`
+
+### 教训（不要重复清单）
+- **Ghidra 还原变参函数（printf 家族）必漏栈参**——修复任何 RARCH_LOG 相关崩溃时
+  先跑「spec vs args」全仓扫描（tools 可脚本化），不要只修单点。
+- 22 轮「感官没变化」的原因：用户感知的三个症状里，SRAM/缩略图两项修复**已在
+  trace 生效**但不可见（.srm 写成功用户未查卡；缩略图跳过本就无可见差异）；
+  第三个症状（游戏加载）的根因（RARCH_LOG 缺参）是 R327 才修——修复链每轮
+  只剥一层洋葱时，务必向用户预告「哪项症状预期在哪轮消失」。
