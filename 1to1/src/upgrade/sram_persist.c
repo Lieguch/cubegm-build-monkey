@@ -120,7 +120,7 @@ void cgm_sram_report(void)
     int c;
     cgm_refresh();
     for (c = 0; c < 2; c++)
-        printf("[sram] %-8s id=%u size=%zu ptr=%p\n",
+        RARCH_LOG("[sram] %-8s id=%u size=%zu ptr=%p\n",
                g_chan[c].tag, g_chan[c].id, g_chan[c].size, (void *)g_chan[c].ptr);
 }
 
@@ -150,10 +150,9 @@ int cgm_sram_load(const char *base)
             got++;
             g_chan[c].last_sum = cgm_sum(g_chan[c].ptr, g_chan[c].size);  /* 读回后记指纹，避免 poll 立即回写 */
             g_chan[c].has_sum = 1;
-            printf("[sram] load %s <- %s (%zu B)\n", g_chan[c].tag, path, n);
+            RARCH_LOG("[sram] load %s <- %s (%zu B)\n", (char*)g_chan[c].tag, path, n);
         } else {
-            printf("[sram] load %s 短读 %zu/%zu（文件与当前 ROM 不匹配？忽略）\n",
-                   g_chan[c].tag, n, g_chan[c].size);
+            RARCH_LOG("[sram] load %s 短读 %zu/%zu\n", (char*)g_chan[c].tag, n, g_chan[c].size);
         }
     }
     return got;
@@ -176,7 +175,7 @@ int cgm_sram_flush(const char *base)
         snprintf(path, sizeof path, "%s%s", base, g_chan[c].ext);
         f = fopen(path, "wb");
         if (f == NULL) {
-            printf("[sram] flush %s FAIL fopen %s\n", g_chan[c].tag, path);
+            RARCH_LOG("[sram] flush %s FAIL fopen %s\n", (char*)g_chan[c].tag, path);
             continue;
         }
         n = fwrite(g_chan[c].ptr, 1, g_chan[c].size, f);
@@ -188,7 +187,7 @@ int cgm_sram_flush(const char *base)
             wrote++;
             g_chan[c].last_sum = cgm_sum(g_chan[c].ptr, g_chan[c].size);
             g_chan[c].has_sum  = 1;
-            printf("[sram] flush %s -> %s (%zu B)\n", g_chan[c].tag, path, n);
+            RARCH_LOG("[sram] flush %s -> %s (%zu B)\n", (char*)g_chan[c].tag, path, n);
         }
     }
     return wrote;
