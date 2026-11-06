@@ -14292,3 +14292,46 @@ malloc(unc_size)（R305 修复的解压缓冲，setting.raw=2.86MB）在真机�
 **第 20 轮（用户）**：换 `latest_diag` 跑一轮（可无手柄）→ trace 的 snapshot 行将含
 RLIMIT_AS（banner 段 getrlimit）+ Vm 三行原文 + Rss/Private 拆分原文 →
 配合 68MB 峰值时刻的构成（若 UI 崩则看 Private 涨在哪），根因定案。
+
+---
+
+## R324（2026-11-05/06）evdev 失败退避 —— 根治真机「满屏只加载几块+宕机」（第 84+ 轮）
+
+### 根因（源码 + 日志双重铁证，非推理）
+
+- `ReadJoystickThread`/`ReadJoystickProc` 每 ~15ms 调 `ReadUSBJoy(0..3)`；无实体手柄时
+  每槽 `access("/dev/input/jsN")<0` → `CGM_ENABLE_EVDEV` → `cgm_evdev_ready` → `cgm_evdev_open`，
+  而 `cgm_evdev_open` 每次 `opendir(/dev/input)+open(event0)+ioctl×4+close`，无幂等/退避守卫。
+- 真机 18 轮 strace：opendir 42 次 / open event0 42 次（load_db 只读 1 次，空转来自 open）。
+- M15 纯净版对照（QEMU 实测，`d34316b1` 字节级可复现）：access js 7119 次但 opendir=0 / event0=0
+  ⇒ 空转源头确认 = evdev 层。16 轮 trace opendir=4 是 cgm_evdev_ready 单次探测（非循环）。
+
+### 修复（src/upgrade/evdev_gamepad.c，35 insert / 2 delete）
+
+- `static long long g_backoff_until_ms[4]` + `mono_ms()`（CLOCK_MONOTONIC）
+- `cgm_evdev_open` 开头：冷期内直接 `return g_fd[slot]`（不枚举）
+- 两个失败退出点（opendir 失败 / 枚举无命中）记退避 1s；成功路径与热插拔不受影响
+
+### 推演验证
+
+- ARM 语法校验：zig 0.16.0 编译 rc=0，产出 30140 B 对象
+- QEMU 菜单场景 40s（升级 ELF 重编 `fce13b7980ff48e88f62`）：
+  opendir 42→**0** 次，open event0 42→**0** 次
+- 提交 `0a5735c1` / GitHub commit `10b6c7b91e`（evdev_gamepad.c `88cf9e8e80f1`）
+- 触发 CI：1to1-qemu-behav / 1to1-verify / rkgame-rebuild / diag-build（4 个 workflow）
+
+### 教训（写入「不要重复」）
+
+- **故障先从新功能的代码本身审查，再做症状端调试**（用户两轮纠正）。
+- **合法对照 = M15 封存 d34316b1，不是第 6 轮**（带重启病、二进制失传）。
+- evdev 无手柄空转 = R272「撤回失败退避」的连锁代价；失败退避与成功去重是两件事，撤回时不能连坐。
+
+### R324b 修门禁（2026-11-06）
+
+- **首版 R324 用 `clock_gettime(CLOCK_MONOTONIC)` 触发「单侧未建模门禁」失败**（工厂侧无 clock_gettime，
+  我方新增 ⇒ 门禁 correctly fail，exit 19）。
+- **改法**：退避时间源换成 `time(NULL)`（秒级，工厂侧已有此符号、台账已登记）。
+  1s 冷期用秒级精度足够；`static time_t g_backoff_until[4]`，两处 `return -1` 记 `time(NULL)+1`。
+- R324b 双 job success（upgrade `16a24900` / diag `8f797a69`），已同步 `_sdcard_drop/latest_*`。
+- 教训：**升级代码新增 libc 符号前，先查 `clock_gettime`/`gettimeofday` 是否在工厂符号面，
+  工厂没有的用工厂已有同族符号**（如 time），否则「单侧未建模门禁」正确拦截，浪费一轮 CI。
