@@ -14505,3 +14505,36 @@ B. 清零分支 memcpy 源判空
 ### 遗留待办
 - 设置界面 UI 撕裂（21/22/23 轮持续）：setting.raw blit 渲染缺陷，需专门取证轮
 - SRAM 判读需 langrisser（MD）同测
+
+---
+
+## R330（2026-11-06）第 23 轮复核修正：SRAM 读回链已证明 100% 通 + KS 编译开关修复
+
+### 用户纠正「与 22 轮一致」后的重新取证
+- **SRAM 读回链 100% 通（R328 观测生效的铁证）**：23 轮两次
+  `fopen rb → fread sz=1 n=16384 ret=16384 → fclose`（jiffies 22144/67369）
+  —— 22 轮写的 .srm 被全量读回。**读回不再是盲区。**
+- **全程无 wb** = langrisser 运行中 SRAM 未变脏（无游戏内存档动作写进视图）
+- **KS sram0=0×20 根因**：build_diag.sh:86 诊断仪自身编译用 $BASE（不带
+  CGM_DEFS），cgm_wrap.c 的 #if defined(CGM_ENABLE_SRAM) 拿不到宏
+  ⇒ sram0 恒 0。**观测缺口，非 SRAM 故障。**
+- 1945 定性维持（崩点后移铁证）：fopen s1945p.zip（95104）→ FBA 探测 →
+  retro_load_game（95790）→ loading 0.00% 卡（fread1 158 万）→ 硬件复位。
+  **最终结果与 22 轮一致（都失败），但死点已从「选中瞬间」移到「core 加载 10s 后」，
+  死法从 SIGSEGV 变为看门狗复位——这是 R327 修复的真实效果。**
+
+### R330 两刀
+1. build_diag.sh 诊断仪自身编译加 $CGM_DEFS（CGM_UPGRADE=0 时为空 ⇒ 两版安全）
+2. cgm_sram_flush 入口 RARCH_LOG size 快照——区分「游戏没存档」vs「退出丢档」
+
+### 交付
+- 提交 `48fba250` / GitHub `2534fba14a` + `1acd0eb3f0`
+- CI run `42198471539` 双 success；upgrade `81e530e9` == InstaBox 字节级一致
+- 交付：latest_upgrade=`81e530e9`，latest_diag=`45c751df`
+
+### 待办（未解决，排队）
+- **本地 cgm_diag.c 有未提交差异**（R303 重构版 9a2ef2d5 vs GitHub 旧版）——
+  未验证过真机，**不混入本轮**；单独验证后另推
+- 设置界面 UI 撕裂（21/22/23 轮持续）——setting.raw blit 渲染专案
+- 手柄 USB 掉线后键值冻结（22 轮证据）——原厂掉线检测缺失专案
+- 第 24 轮：升级版测 1945（看门狗定性验证）+ langrisser 游戏内存档操作（SRAM 写链验证）
