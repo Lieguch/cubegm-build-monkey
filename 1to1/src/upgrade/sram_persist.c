@@ -130,29 +130,36 @@ int cgm_sram_load(const char *base)
     char path[512];
     if (base == NULL) return -1;
     cgm_refresh();
-    /* ★ R256：md/SFC 等 core 的 SRAM 是**延迟建立**的 —— retro_load_game 之后立刻查仍为 0，
-     *   需等首帧 retro_run 后才变 size>0。此时无可写目标 ⇒ 记 pending，交给每帧 poll 补读。 */
-    if (g_chan[0].size == 0 && g_chan[1].size == 0) {
-        g_pending_load = 1;         /* SRAM 未建立：交 poll 每帧补读（不设壁钟超时——qemu 下不可靠） */
-        return 0;
-    }
-    g_pending_load = 0;
+    /* ★ R331：MD core 的 retro_get_memory_size(0) 做「SRAM 全零检测」（反汇编
+     *   0xaaaf4：扫描整个缓冲，全零 ⇒ 返回 0）。游戏启动清 SRAM ⇒ size==0
+     *   是常态，R256 的「延迟建立」解释作废。ptr!=NULL（视图已映射）时用
+     *   .srm 文件长度做读回长度（cap 64KB = MD SRAM 硬上限），把档在
+     *   「游戏首帧检测 SRAM 之前」读回。 */
     for (c = 0; c < 2; c++) {
         FILE *f;
-        size_t n;
-        if (g_chan[c].size == 0 || g_chan[c].ptr == NULL) continue;   /* 该通道无存档 */
+        size_t n, use;
+        long flen;
+        if (g_chan[c].ptr == NULL) continue;
         snprintf(path, sizeof path, "%s%s", base, g_chan[c].ext);
         f = fopen(path, "rb");
         if (f == NULL) continue;
-        n = fread(g_chan[c].ptr, 1, g_chan[c].size, f);
+        fseek(f, 0, SEEK_END);
+        flen = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        use = (g_chan[c].size > 0)
+            ? g_chan[c].size
+            : (size_t)(flen > 65536 ? 65536 : (flen > 0 ? flen : 0));
+        if (use == 0) { fclose(f); continue; }
+        n = fread(g_chan[c].ptr, 1, use, f);
         fclose(f);
-        if (n == g_chan[c].size) {
+        if (n == use) {
             got++;
-            g_chan[c].last_sum = cgm_sum(g_chan[c].ptr, g_chan[c].size);  /* 读回后记指纹，避免 poll 立即回写 */
+            g_chan[c].size = use;   /* 记录实际视图大小，供后续 flush 使用 */
+            g_chan[c].last_sum = cgm_sum(g_chan[c].ptr, use);  /* 读回后记指纹，避免 poll 立即回写 */
             g_chan[c].has_sum = 1;
             RARCH_LOG("[sram] load %s <- %s (%zu B)\n", (char*)g_chan[c].tag, path, n);
         } else {
-            RARCH_LOG("[sram] load %s 短读 %zu/%zu\n", (char*)g_chan[c].tag, n, g_chan[c].size);
+            RARCH_LOG("[sram] load %s 短读 %zu/%zu\n", (char*)g_chan[c].tag, n, use);
         }
     }
     return got;
