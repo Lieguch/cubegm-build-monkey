@@ -14335,3 +14335,32 @@ RLIMIT_AS（banner 段 getrlimit）+ Vm 三行原文 + Rss/Private 拆分原文 
 - R324b 双 job success（upgrade `16a24900` / diag `8f797a69`），已同步 `_sdcard_drop/latest_*`。
 - 教训：**升级代码新增 libc 符号前，先查 `clock_gettime`/`gettimeofday` 是否在工厂符号面，
   工厂没有的用工厂已有同族符号**（如 time），否则「单侧未建模门禁」正确拦截，浪费一轮 CI。
+
+---
+
+## R325（2026-11-06）SRAM 目录改到 ROM 所在目录（用户定案）
+
+### 根因（第 21 轮真机铁证）
+- `.srm`/`.rtc` 原用 `GetWorkPath()`(=work_path="/sdcard/cubegm") + `saves/%03d/`（gameType 数字）
+  ⇒ 真机 `saves/003/` 目录从未 mkdir ⇒ fopen wb 全部 `ret=0` 失败 ⇒ SRAM 功能缺失。
+- 而 `.scf` 用 `ArchivePath`（folder 名如 "MD"），`.sav`/`.srm` 用 `%03d`（folder 序号）——
+  两套路径体系并存，`saves/003/` 恰好没人建。
+
+### 修复（2 文件，SaveDefaultState.c + LoadDefaultState.c）
+- SRAM base 从 `fileName`（ROM 全路径，12 个 core load 函数统一 strcpy）截取目录段 + `RomName`（basename 去扩展名）。
+- 即 `.srm`/`.rtc` 落盘到 **ROM 所在目录**，文件名 = RomName.srm / .rtc。
+
+### 验证
+- ARM 语法校验：zig 0.16.0 `-DCGM_ENABLE_SRAM` 两文件 rc=0
+- InstaBox 全链重编：link_audit rc=0 + build_upstream + link_full「单侧未建模符号全部在台账内 ⇒ OK」
+- 产物 sha `25078a0ed9ab872d60b3`
+
+### 交付
+- 提交 `56fde08` / GitHub commit `a5175fb5`(save) + `98e70e84b5`(load)
+- 手动 dispatch diag-build（paths 不含 proprietary/misc，push 不触发）→ run `42152905935`
+
+### 教训
+- **升级版交付 ELF 的 CI 触发路径不含 `proprietary/**`** ⇒ 改核心游戏路径必须手动 dispatch diag-build，
+  否则改了不构建 = 假绿。后续评估是否把 `proprietary/misc/**` 加入 diag-build paths。
+- InstaBox 是**早期镜像**：其 `tools/model_asymmetry_ledger.txt`（22 行）与 `cgm_evdev_gamepad.o`（R324 老版）
+  都比本地陈旧——本地验证前必须先同步这两处，否则门禁 FAIL 是环境陈旧而非代码缺陷。
