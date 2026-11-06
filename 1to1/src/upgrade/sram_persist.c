@@ -167,6 +167,10 @@ int cgm_sram_flush(const char *base)
      *   get_memory_size 仍是 0，稍后才变 16384（实测）。所以每次操作前必须重查，
      *   绝不能沿用 bind 时缓存的 size（那会是 0 ⇒ 永远不落盘）。 */
     cgm_refresh();
+    /* ★ R330：每次 flush 先报 size 快照——第 23 轮「退出游戏无 wb」时 size 状态
+     *   不可见（size==0 静默 continue），无法区分「游戏没存档」vs「退出时 size 归零丢档」。 */
+    RARCH_LOG("[sram] flush enter base=%s size0=%zu size1=%zu\n",
+              base, g_chan[0].size, g_chan[1].size);
     for (c = 0; c < 2; c++) {
         FILE *f;
         size_t n;
