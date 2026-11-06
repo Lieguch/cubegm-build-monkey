@@ -88,7 +88,10 @@ for f in "$ROOT"/src/diag/*.c; do
     [ -f "$f" ] || continue
     b=$(basename "$f" .c)
     o="$SELFD/$b.o"
-    if $CC $BASE -I"$(winpath "$ROOT/src/diag")" -I"$WINROOT/src/compat" "$(winpath "$f")" -o "$(winpath "$o")" 2>"$ROOT/report/diag_cc_err.txt"; then
+    # ★ R330：诊断仪自身编译也带 $CGM_DEFS——cgm_wrap.c 的 KS 行引 cgm_sram_size
+    #   （#if defined(CGM_ENABLE_SRAM) 包裹），拿不到宏 ⇒ sram0 恒 0（23 轮 KS 全 0 的根因）。
+    #   CGM_UPGRADE=0 时 CGM_DEFS 为空 ⇒ #if 假 ⇒ 不引用符号，链接安全。
+    if $CC $BASE$CGM_DEFS -I"$(winpath "$ROOT/src/diag")" -I"$WINROOT/src/compat" "$(winpath "$f")" -o "$(winpath "$o")" 2>"$ROOT/report/diag_cc_err.txt"; then
         SELFOBJS="$SELFOBJS $o"
         echo "   ✓ $b.o  ($(wc -c < "$o" 2>/dev/null) B)"
     else
