@@ -29,11 +29,16 @@ void LoadDefaultState(void)
 #ifdef CGM_ENABLE_SRAM
   /* ★ 目的 2：把 .srm/.rtc 读回 core 的 SRAM 视图。
    *   ★ 注意：md/SFC 的 SRAM 是**延迟建立**的，首帧此处 size 可能仍=0，
-   *     load 会记 pending，由 Load_Proc2 主循环每帧 cgm_sram_poll_base() 在 size>0 后补读。 */
+   *     load 会记 pending，由 Load_Proc2 主循环每帧 cgm_sram_poll_base() 在 size>0 后补读。
+   *   ★ R325（用户要求 2026-11-06）：SRAM 目录 = ROM 所在目录（不再 saves/%03d/）。
+   *     fileName = ROM 全路径；取目录段 + RomName（basename 去扩展名）拼 base。 */
   {
     char cgmBase [4100];
     int cgmN;
-    sprintf(cgmBase,"%ssaves/%03d/%s",uVar1,uVar2,RomName);
+    const char *slash = strrchr((const char *)fileName, '/');
+    size_t dirlen = (slash != NULL) ? (size_t)(slash - (const char *)fileName) + 1u : 0u;
+    memcpy(cgmBase, fileName, dirlen);
+    strcpy(cgmBase + dirlen, RomName);
     cgm_sram_set_base(cgmBase);
     (void)cgm_sram_bind(handle_emurun);
     cgmN = cgm_sram_load_base();
