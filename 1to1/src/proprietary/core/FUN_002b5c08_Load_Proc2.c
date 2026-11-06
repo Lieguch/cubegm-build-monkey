@@ -58,6 +58,12 @@ void Load_Proc2(void)
     fps = 0x32;
   }
   maxSkips = 2;
+#ifdef CGM_ENABLE_SRAM
+  /* ★ R331：读回提前到「首帧 retro_run 之前」——MD 游戏在启动早期检测 SRAM
+   *   决定主菜单 CONTINUE 与否，首帧后才写（LoadDefaultState）= 太晚。
+   *   cgm_sram_load 已支持 size==0（全零检测）时用 .srm 文件长度兜底读回。 */
+  (void)cgm_sram_load_base();
+#endif
   FrameCount0 = 0;
   skipCounter = 0;
   FrameCount = 0;
@@ -66,7 +72,13 @@ void Load_Proc2(void)
       iVar6 = PauseMenu();
       if (iVar6 != 0) {
 LAB_002b60a4:
-        run_process("retro_unload_game",0);
+#ifdef CGM_ENABLE_SRAM
+      /* ★ R331：退出落盘——SaveDefaultState 仅热键触发（Load_Proc2:91），退出路径
+       *   原本不落盘，存档后 5s 内退出必丢（poll 5s 节流窗口）。必须在
+       *   retro_unload_game/retro_deinit/dlclose 之前无条件 flush（SRAM 视图还活着）。 */
+      (void)cgm_sram_flush_base();
+#endif
+      run_process("retro_unload_game",0);
         run_process("retro_deinit",0);
         dlclose(handle_emurun);
         return;
