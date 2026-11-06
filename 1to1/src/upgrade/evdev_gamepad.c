@@ -40,6 +40,7 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <linux/input.h>
+#include <time.h>   /* clock_gettime / CLOCK_MONOTONIC —— cgm_evdev_open 失败退避的时间源 */
 
 /* ★ userspace 的 <linux/input.h> 不提供内核私有宏（R250 首次编译即 5 个 error） */
 #ifndef LONG_BITS
@@ -97,6 +98,23 @@ static const cgm_prof *g_match[4];
  *   为什么要校准：真机 16 号 trace 证实摇杆绝对轴的静止值≠0（Xbox360 center=128），
  *   旧代码用裸 value 的符号判方向 ⇒ "128>0"把 DOWN 永久钉死。 */
 static int g_ax_cal[4][2][2];
+
+/* ★ R324（2026-11-05）：evdev 失败退避 —— 真机 16/17/18 轮 UI「满屏只加载几块+宕机」根因。
+ *   ReadJoystickThread 每 ~15ms 调 ReadJoystickProc → ReadUSBJoy(0..3)；无实体手柄时每槽
+ *   access("/dev/input/jsN")<0 → CGM_ENABLE_EVDEV 分支 → cgm_evdev_ready → cgm_evdev_open，
+ *   而 cgm_evdev_open 每次 open("/dev/input/event0")+ioctl×4+close，无任何幂等/退避守卫 ⇒
+ *   每次调用都完整重枚举 /dev/input（真机 18 轮 strace：opendir 42 次、open event0 42 次）。
+ *   M15 纯净版对照（QEMU 实测）：access js 7119 次但 opendir=0（无从 evdev 层）⇒ 空转源头是 evdev。
+ *   ★ 修法：失败路径退避 1s（CLOCK_MONOTONIC），成功路径与开放状态不受影响；
+ *     退避仅抑制「已知无手柄」时的全量重枚举，不改变 R322「原厂 jsN 优先」语义。 */
+static long long g_backoff_until_ms[4];   /* 每槽下次可重试的时刻（单调 ms），0 = 立即可试 */
+
+static long long mono_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
 
 /* ---------------- 数据库 ---------------- */
 
@@ -257,10 +275,23 @@ int cgm_evdev_open(int slot)
     struct dirent *e;
     if (slot < 0 || slot > 3) return -1;
     if (g_fd[slot] >= 0) return g_fd[slot];
+    /* ★ R324：失败退避——「上次枚举未找到手柄」后 1s 内不再重枚举。
+     *   否则 ReadJoystickThread 每 ~15ms 调 ReadUSBJoy(0..3)，无手柄时每槽都全量
+     *   opendir(/dev/input)+open(event0)+ioctl×4+close，真机 18 轮实测 42 次空转，
+     *   拖垮 UI 主循环 ⇒ menu.raw 图块表从未加载 ⇒「满屏只加载几块+宕机」。 */
+    {
+        long long now = mono_ms();
+        if (now > 0 && g_backoff_until_ms[slot] > now)
+            return g_fd[slot];   /* 冷期内：不枚举，保持 -1 */
+        g_backoff_until_ms[slot] = 0;
+    }
     /* ★★★ R272（回退到第 6 轮形态）：这里曾有"失败退避 1 s"的早退。
      *   第 6 轮（无退避、无去重）实测：tag=K=549、用户证实"按键无迟滞"；
      *   第 7/9 轮（有退避+去重）实测：tag=K=0。用户明确要求"在第 6 轮基础上只修间歇重启"，
-     *   因此把这段改动整体撤回，恢复第 6 轮行为。 */
+     *   因此把这段改动整体撤回，恢复第 6 轮行为。
+     *   ★ R324 修订（2026-11-05）：R272 的撤回把「成功后的热插拔去重」与「失败后的退避」
+     *     一并移除，导致无手柄时 evdev 全量重枚举空转。本版**只恢复失败退避**，
+     *     成功路径与去重仍保持 R272 撤回后的形态（不改第 6 轮按键语义）。 */
     /* ★ R257：懒加载 controller_db.txt（幂等）。此前 load_db 只在 cgm_evdev_init 里被调，
      *   而主链 ReadUSBJoy 只调 cgm_evdev_poll→cgm_evdev_open，从不调 cgm_evdev_init
      *   ⇒ 426 条 profile 从未装载，match_prof 恒返回 NULL，只剩兜底映射（全量库形同虚设）。 */
@@ -268,6 +299,7 @@ int cgm_evdev_open(int slot)
     d = opendir("/dev/input");
     if (d == NULL) {
         printf("[evdev] /dev/input 打不开（errno=%d）\n", errno);
+        g_backoff_until_ms[slot] = mono_ms() + 1000;   /* R324：失败退避 1s */
         return -1;
     }
     while ((e = readdir(d)) != NULL) {
@@ -323,7 +355,8 @@ int cgm_evdev_open(int slot)
         return fd;
     }
     closedir(d);
-    return -1;   /* ★ R272：不再设退避时间戳（随去重一并撤回） */
+    g_backoff_until_ms[slot] = mono_ms() + 1000;   /* R324：枚举完未命中手柄 ⇒ 退避 1s，避免每 15ms 空转 */
+    return -1;   /* ★ R272：不再设退避时间戳（随去重一并撤回）—— R324 恢复失败退避 */
 }
 
 int cgm_evdev_db_count(void) { return g_prof_n; }
