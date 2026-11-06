@@ -14445,3 +14445,36 @@ B. 清零分支 memcpy 源判空
   trace 生效**但不可见（.srm 写成功用户未查卡；缩略图跳过本就无可见差异）；
   第三个症状（游戏加载）的根因（RARCH_LOG 缺参）是 R327 才修——修复链每轮
   只剥一层洋葱时，务必向用户预告「哪项症状预期在哪轮消失」。
+
+---
+
+## R328（2026-11-06）SRAM 链全可观测 + 22 轮重置原因复核
+
+### 用户两点纠正的回应
+1. **「SRAM 文件无意义，游戏内看不到存档」**——22 轮 trace 深查：
+   - 写链完整：`fopen wb + fwrite sz=1 n=16384 ret=16384 + fflush + fclose`（全量落盘 ✓）
+   - 读回链：`fopen rb ret=0x0133bc78` 成功 → 下一行 fclose，**0 个 fread 记录**
+   - **真相**：`cgm_sram_load` 的 `fread(ptr,1,16384,f)` **sz==1 恰落 R303 降噪盲区**
+     （cgm_wrap.c:185 `if (sz==1) cgm_bump only`）——读回执行与否**不可观测**。
+     「读回成功与否」这一决定性问题在 22 轮日志里**无法回答**。
+   - ⇒ R328 观测性根修（不改 SRAM 语义）：
+     a. KS 行（每 5s）加 `sram0=/sram1=` 字段（SRAM 视图建立状态全程可见）
+     b. fread 降噪放行 `sz==1 && n>=256`（SRAM 读回落入可见区；zip sz=1 n=1/2/4 仍静默）
+     c. sram_persist 全部 5 处 printf → RARCH_LOG（走原厂日志体系）
+   - **第 23 轮判读表**：KS 行 `sram0=16384` = 视图建立；`fread ... ret=16384` = 读回成功；
+     `[sram] load ... (16384 B)` = 内容进视图。三者齐 = 链通；缺哪环断哪环。
+
+2. **「查重置原因，不是手柄」**——重置原因已在 R327 定案并修复：
+   - 铁证：crash.txt `signal=11 si_addr=0x3a98` + 调用链 `mui_run_game+0 → RARCH_LOG → RARCH_LOG_V`
+     （符号反查 R326 diag）+ 崩前事件（缩略图解压完成 → SaveMenuLog → ENTER mui_run_game）
+   - 根因：`RARCH_LOG("mui_run_game:%s\n")` 缺 `%s` 实参（Ghidra 变参漏参）→
+     printf 读寄存器残留 0x3a98 当指针 → SIGSEGV → autorun 拉起 = 用户看到的「卡死重置」
+   - 证据侧旁证：trace 两段（pid 318/332）、KS seq 跨段连续、第二段 `how=libc_start_main`
+   - R327 已修（补 param_1 + 全仓扫描修 AudioProcess 同款），**第 23 轮选游戏不应再崩**。
+
+### 交付
+- 提交 `0fa9dfa4` / GitHub `1384c8764c` + `440a3e1dd1` + `3a9b0a04da`
+- CI run `42191176223` 双 job success；**upgrade `29d5727ea54518dce87c` == InstaBox 字节级一致**
+- 交付：latest_upgrade=`29d5727e`，latest_diag=`9aaf42d0`
+- 教训：InstaBox 源树多处陈旧（cgm_diag.c/evdev_gamepad.c/台账）——**每次本地验证前先
+  sha256 对齐本地 vs InstaBox**，否则把环境陈旧误判为代码缺陷（本轮 cgm_diag atou_kB 错误即此）。
