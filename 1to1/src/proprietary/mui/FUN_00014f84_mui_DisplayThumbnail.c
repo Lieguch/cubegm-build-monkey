@@ -74,7 +74,33 @@ void mui_DisplayThumbnail(void)
    * 【回退】本段整体还原为 `gh_u1 auStack_158[296]` + `size_t local_30` +
    *   `__ptr = malloc(local_30);` 即可（但会重新引入 malloc(0) 崩溃）。 */
   ze_t auStack_158;
-  
+
+  /* ★★★ R326（2026-11-06，真机 21 轮 SIGSEGV 防御）：
+   *   真机 21 轮 crash：缩略图线程在 000.dat 遍历中 fread 内部 SIGSEGV
+   *   （si_addr=0x3a98，pc 在 libc fread，FILE 结构字段被踩）。
+   *   已证伪：UAF（fopen 同地址复用）/双关（17 open=16 close+1 在用）/
+   *   几何并发越界（6b8/6c0/6c4 仅 LoadConfig 写一次）/free×遍历（崩时未按键）。
+   *   已确证：每 1.2s 全量 2×3905 条遍历（找不到时无限重试，清零分支后 index
+   *   不递增）＝30 万次 fread 的病态负载 × 与主线程长并发＝踩踏暴露窗口。
+   *   ★ 修法 A（本条）：缓存「该 index 无缩略图」结论——清零分支即定论，
+   *     后续同 index 直接跳过遍历（可见行为不变：仍显示空白）。
+   *     这把并发/IO 窗口从无限次收窄到 1 次，不动 XUnzip 一行（1:1 安全）。 */
+  static int s_no_thumb = -1;   /* 上次确认「无缩略图」的 index（-1=无缓存） */
+  int want_idx = (int)DAT_003af280;   /* 入口快照：清零分支会把全局清 0，原值在此保全 */
+  if (want_idx != 0 && s_no_thumb == want_idx) {
+    /* 同 index 已确认无缩略图：跳过 000.dat 全量遍历（原清零逻辑保留画面一致） */
+    if (DAT_003af28c != 0 && DAT_003af29c != 0) {
+      int r2;
+      for (r2 = 0; r2 < DAT_003af6c4; r2++) {
+        int off = DAT_003af2a0 * 2 * (r2 + DAT_003af6bc);
+        memcpy((void *)(DAT_003af29c + off + DAT_003af6b8 * 2),
+               (void *)((int)DAT_003af28c + DAT_003af6b8 * 2 + *DAT_003af28c + off),
+               DAT_003af6c0 << 1);
+      }
+    }
+    return;
+  }
+
   puVar4 = auStack_358;
   mui_extract_basepath(puVar4,&file_info_list + DAT_003af27c * 0x404,0x80);
   mui_extract_basename(auStack_2d8,&file_info_list + DAT_003af27c * 0x404,0x80);
@@ -92,16 +118,23 @@ void mui_DisplayThumbnail(void)
       iVar2 = FindZipItemA(iVar1,acStack_1d8,1,&local_38c,(ZIPENTRY *)&auStack_158);   /* R305：ze_t 304B 缓冲（对齐 4） */
       if (iVar2 == 0) break;
       if (DAT_003af280 == 0) {
+        int r2;
+        s_no_thumb = want_idx;   /* R326：登记「该 index 无缩略图」，下次跳过遍历 */
         iVar2 = 0;
-        if (0 < DAT_003af6c4) {
-          do {
-            iVar3 = iVar2 + DAT_003af6bc;
-            iVar2 = iVar2 + 1;
-            iVar3 = DAT_003af2a0 * 2 * iVar3;
-            memcpy((void *)(DAT_003af29c + iVar3 + DAT_003af6b8 * 2),
-                   (void *)((int)DAT_003af28c + DAT_003af6b8 * 2 + *DAT_003af28c + iVar3),
-                   DAT_003af6c0 << 1);
-          } while (iVar2 < DAT_003af6c4);
+        /* ★ R326 修法 B：memcpy 源 DAT_003af28c（menu.raw）无判空——主线程
+         *   mui_run_game/ui_deinit 会 free 并置 0，缩略图线程读到已 free 块
+         *   （悬挂读，确凿缺陷）。判空跳过。 */
+        if (DAT_003af28c != 0 && DAT_003af29c != 0) {
+          if (0 < DAT_003af6c4) {
+            do {
+              iVar3 = iVar2 + DAT_003af6bc;
+              iVar2 = iVar2 + 1;
+              iVar3 = DAT_003af2a0 * 2 * iVar3;
+              memcpy((void *)(DAT_003af29c + iVar3 + DAT_003af6b8 * 2),
+                     (void *)((int)DAT_003af28c + DAT_003af6b8 * 2 + *DAT_003af28c + iVar3),
+                     DAT_003af6c0 << 1);
+            } while (iVar2 < DAT_003af6c4);
+          }
         }
         goto LAB_00015128;
       }
