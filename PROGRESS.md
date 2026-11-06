@@ -14364,3 +14364,44 @@ RLIMIT_AS（banner 段 getrlimit）+ Vm 三行原文 + Rss/Private 拆分原文 
   否则改了不构建 = 假绿。后续评估是否把 `proprietary/misc/**` 加入 diag-build paths。
 - InstaBox 是**早期镜像**：其 `tools/model_asymmetry_ledger.txt`（22 行）与 `cgm_evdev_gamepad.o`（R324 老版）
   都比本地陈旧——本地验证前必须先同步这两处，否则门禁 FAIL 是环境陈旧而非代码缺陷。
+
+---
+
+## R326（2026-11-06）缩略图线程防崩——真机 21 轮 SIGSEGV 防御
+
+### 崩溃定性（第 21 轮 crash.txt + trace 全链取证）
+- SIGSEGV si_addr=0x3a98，pc 在 libc fread 内部，FILE 结构字段被踩（野指针）
+- 崩溃时 f 为**打开状态**（遍历 000.dat 第 2 轮 idx=1655 的 fseek 成功后 fread 崩）
+
+### 四条假设全部证伪（各附铁证反例）
+| 假设 | 反例铁证 |
+|---|---|
+| UAF（fread 跨 fclose） | 行 211260 有同地址新 fopen（malloc 地址复用） |
+| 双关 | 17 open = 16 close + 1 崩溃时在用（配平） |
+| 几何并发越界 | DAT_003af6b8/6c0/6c4 仅 LoadConfig 写一次 |
+| free×遍历并发 | 崩时（jiffies 71088）用户未按键，无 free 发生 |
+
+### 已确证病灶（源码铁证）
+- **病态负载**：清零分支后 `DAT_003af280` 不递增 ⇒ 每 1.2s 全量 2×3905 条遍历
+  无限重试（17 轮 ≈ 30 万次 fread）× 与主线程长并发 = 踩踏暴露窗口
+- **悬挂读**：清零分支 `*DAT_003af28c`（menu.raw）无判空——主线程
+  mui_run_game/ui_deinit 会 free 置 0（确凿缺陷）
+
+### 修法（不动 XUnzip 一行，1:1 安全）
+A. `s_no_thumb` 缓存「该 index 无缩略图」结论 + `want_idx` 入口快照
+   （清零分支会把全局清 0，原值需保全）——同 index 跳过遍历，窗口 17 轮→1 轮
+B. 清零分支 memcpy 源判空
+
+### 验证与交付
+- ARM 双配置语法 rc=0（纯净线 + 升级线）
+- InstaBox 端到端：link_audit rc=0 + 门禁 OK，产物 `b067503316b9759e3db7`
+- CI dispatch run `42164473084` 双 job success，**upgrade 产物 == InstaBox 字节级一致**
+- 提交 `e2ef4ee` / GitHub `056bbc0268`
+- 交付：latest_upgrade=`b0675033`，latest_diag=`af8be604`
+
+### 诚实标注（未闭环项）
+- **踩踏者未唯一锁定**：现有诊断仪无 heap 哨兵/ASAN 级观测，FILE 结构的写入方
+  无法从 trace 唯一定性。R326 是防御性根修（消除病态负载窗口 + 确凿悬挂读），
+  若下轮真机仍崩，需设计 heap 哨兵探针（诊断仪 v2）。
+- 「无缩略图无限重试」是工厂既有逻辑（工厂 SD 有对应缩略图故不触发）；
+  R326 的缓存仅收窄窗口，不改工厂可见语义。
