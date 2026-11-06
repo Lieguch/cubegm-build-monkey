@@ -14478,3 +14478,30 @@ B. 清零分支 memcpy 源判空
 - 交付：latest_upgrade=`29d5727e`，latest_diag=`9aaf42d0`
 - 教训：InstaBox 源树多处陈旧（cgm_diag.c/evdev_gamepad.c/台账）——**每次本地验证前先
   sha256 对齐本地 vs InstaBox**，否则把环境陈旧误判为代码缺陷（本轮 cgm_diag atou_kB 错误即此）。
+
+---
+
+## R329（2026-11-06）第 23 轮定性：1945 加载超看门狗窗口 = 诊断仪 IO 开销放大
+
+### R327/R328 生效确认（铁证）
+- mui_run_game 不再崩：链全通 `dlopen neogeo/capcom/pgm FAIL → fba OK → dlsym retro_load_game`
+- KS 行 sram0=0（本轮只测 FBA 街机无 SRAM，正常）
+
+### 新病灶定性（铁证）
+- SUMMARY 三连拍：ms=75082 fread1=4156 → ms=90082 **fread1=1,591,299**
+  （retro_load_game 内部逐字节解密 1945.zip，158 万次）
+- trace 戛然而止（最后 jiffies 98053），**无 crash.txt / 无第二段 CGM-DIAG BEGIN**
+  ⇒ **硬件看门狗复位**（非 SIGSEGV、非进程重启）
+- 机制：core 同步加载阻塞主线程 → 喂狗点停摆 → WDT 超时
+- **工厂能过而我们咬死的差异 = 诊断仪 IO wrap 开销**：
+  fseek=35275 条 + fread=17872 条全量写 trace（~2MB SD 写）叠在解密读上
+  ⇒ 加载时间被拖过看门狗窗口。工厂零开销。
+
+### 第 24 轮决定性实验
+换升级版交付（latest_upgrade = 29d5727e，零诊断仪开销）测 1945：
+- 能进游戏 ⇒ 定性成立，随后诊断版做 fseek/IO 二次降噪（v2）
+- 仍卡 ⇒ 喂狗窗口独立问题，需喂狗探针专案
+
+### 遗留待办
+- 设置界面 UI 撕裂（21/22/23 轮持续）：setting.raw blit 渲染缺陷，需专门取证轮
+- SRAM 判读需 langrisser（MD）同测
