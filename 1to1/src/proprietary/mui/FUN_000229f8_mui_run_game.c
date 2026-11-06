@@ -31,7 +31,10 @@ gh_u4 mui_run_game(char *param_1)
   char local_1a8 [388];
   pthread_t *ppVar6;
   
-  RARCH_LOG("mui_run_game:%s\n");
+  /* ★ R327（2026-11-06，真机 22 轮 SIGSEGV ms=61762 根因）：Ghidra 还原变参漏参。
+   *   格式串含 %s 但无实参 ⇒ printf 读寄存器残留值（0x3a98）当指针解引用 ⇒ 崩。
+   *   crash 链铁证：mui_run_game+0 → RARCH_LOG → RARCH_LOG_V（崩）。 */
+  RARCH_LOG("mui_run_game:%s\n", param_1);
   mui_extract_basename(RomName,param_1,0x100);
   RARCH_LOG("RomName:%s\n",RomName);
   sprintf(acStack_52c,"%s/%s",root_path,param_1);
