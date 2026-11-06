@@ -14538,3 +14538,35 @@ B. 清零分支 memcpy 源判空
 - 设置界面 UI 撕裂（21/22/23 轮持续）——setting.raw blit 渲染专案
 - 手柄 USB 掉线后键值冻结（22 轮证据）——原厂掉线检测缺失专案
 - 第 24 轮：升级版测 1945（看门狗定性验证）+ langrisser 游戏内存档操作（SRAM 写链验证）
+
+---
+
+## R331（2026-11-06）SRAM 游戏内记忆缺失——三断点根修（MD core 反汇编铁证）
+
+### 反汇编 libemu_md.so（原厂 core，0xaaaf4/0xaabbc）铁证
+- **retro_get_memory_size(0) 做「SRAM 全零检测」**：扫描整个缓冲，全零 ⇒ 返回 0
+  ⇒ **R256 的「延迟建立」解释作废**，R251 实测的 load 后 size=0 = 全零
+- **retro_get_memory_data(0)**：bit0=1 返回 68000 模拟内存 SRAM 区（+0x110000+0x200）
+  ——游戏存档与视图同一块内存（同步无误，排除同步断点）
+
+### 三个断点（游戏内存档→退出→再进看不到档的完整链）
+A. **读回太晚**：LoadDefaultState 挂首帧后，游戏启动早期已检测 SRAM
+B. **退出不落盘**：SaveDefaultState 仅热键触发（Load_Proc2:91），退出路径
+   （LAB_002b60a4：retro_unload_game→deinit→dlclose）不 flush，存档后 5s 内退出必丢
+C. **size==0 全零期 load 跳过**：early 时机彼时 SRAM 必全零（旧代码直接跳过）
+
+### 修复（3 处）
+1. `cgm_sram_load`：ptr!=NULL 但 size==0 时用 .srm **文件长度**兜底（cap 64KB=MD 硬上限）
+2. `Load_Proc2` 主循环前 **early load**（首帧 retro_run 之前读回）
+3. `Load_Proc2` LAB_002b60a4 退出入口：**retro_unload 之前无条件 flush_base**
+
+### 交付
+- 提交 / GitHub push（sram_persist + Load_Proc2）+ dispatch run `42203694833` 双 success
+- 产物：latest_upgrade=`007d0af17f20ad991170`，latest_diag=`30a1a3fb52db27fdbc65`
+
+### 第 24 轮 SRAM 判读表（升级版或诊断版均可，langrisser）
+1. 进游戏（首帧前）：`[sram] load SAVE_RAM <- .../langrisser...srm (16384 B)` ← **early 读回**
+2. **游戏内存档**（菜单操作）
+3. 退出：`[sram] flush enter base=... size0=16384` + `flush SAVE_RAM -> ... (16384 B)` ← **退出落盘**
+4. 再进：`[sram] load ... (16384 B)` ← **档回来了**
+5. **游戏内主菜单出现 CONTINUE / 存档槽有内容** = **功能层验收通过**
